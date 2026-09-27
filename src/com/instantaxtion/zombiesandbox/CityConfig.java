@@ -28,7 +28,7 @@ final class CityConfig implements OptionSet {
             {"0", "5", "10", "20", "40"},
             {"0", "5", "10", "20"},
             {"0", "1", "5", "20", "50"},
-            {"Off", "On"},
+            {"Off", "Low", "Medium", "High"},
             {"Grid", "Varied", "Organic"},
             {"0", "1", "2", "3"},
             {"None", "Yes"},
@@ -60,7 +60,8 @@ final class CityConfig implements OptionSet {
     int cops() { return COPS[v[10]]; }
     int soldiers() { return SOLDIERS[v[11]]; }
     int zombies() { return ZOMBIES[v[12]]; }
-    boolean reinforcements() { return v[13] == 1; }
+    /** 0 off, 1 low, 2 medium, 3 high: how many reserve squads and backup waves can be called in. */
+    int reinforcements() { return v[13]; }
     int layout() { return v[14]; }
     int policeStations() { return v[15]; }
     boolean militaryBase() { return v[16] == 1; }
@@ -94,7 +95,7 @@ final class CityConfig implements OptionSet {
         v[0] = p;
         if (p >= presets.length) return;
         System.arraycopy(presets[p], 0, v, 1, presets[p].length);
-        v[13] = 1;
+        v[13] = 2;
         System.arraycopy(extras[p], 0, v, 14, 3);
     }
 

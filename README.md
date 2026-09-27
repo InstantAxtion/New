@@ -13,7 +13,7 @@ away from the middle of the screen as you pan, and the game plays in both portra
   Island, Parkland, Night City), or change any option to make a custom city: map size, building style
   (offices, houses, warehouses or mixed), density, building height, parks, water (river, island or
   both), traffic, time of day (day, sunset, night), and how many civilians, cops, military and zombies
-  are there at the start, whether reinforcements can arrive, the street layout (Grid, Varied or
+  are there at the start, how many reserves can be called in (Off, Low, Medium, High), the street layout (Grid, Varied or
   Organic), how many police stations there are and whether there is a military base. **Randomize** rolls a random city.
 - **Settings**: music and sound volume, 3D buildings, blood, health bars, screen shake, FPS counter
   and max population. Saved between sessions.
@@ -40,12 +40,13 @@ military safe zone.
   (shown on the map as a red 911 marker) and sends the closest free cops, who report en route, on
   scene and all clear.
 - **Police and military talk on the radio.** Big incidents, downed officers or a police safe zone
-  under attack make police request military support. The military sends a free squad or, with
-  reinforcements on, a new squad arrives from the edge of the map. Police get backup officers when
-  every unit is busy.
+  under attack make police request military support. The military sends a free squad, or one of its
+  limited reserve squads. Police get backup officers from the precinct when every unit is busy.
+  Reserves never refill; the stats panel shows how many are left.
 - **Safe zones**: police and military set up guarded zones (sandbags, a tent and guards on posts
   around the edge) in parks, plazas and parking lots. Civilians run there when scared or when they
-  hear about one, and shelter inside. A zone with no guards left is overrun; police then fall back
+  hear about one, and shelter inside. Each zone has a capacity (25 to 60 people); a full zone turns
+  people away. A zone with no guards left is overrun; police then fall back
   to a military zone.
 - Recent radio messages appear on screen. Tap one to jump the camera to where it happened.
 

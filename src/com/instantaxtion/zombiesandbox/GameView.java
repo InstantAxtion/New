@@ -250,10 +250,10 @@ final class GameView extends View implements Menu.Host {
         float lh = 17 * dp;
         if (portrait) {
             float top = 10 * dp + th + 8 * dp;
-            statsRect.set(10 * dp, top, 10 * dp + Math.min(260 * dp, w - 20 * dp), top + lh * 6 + 12 * dp);
+            statsRect.set(10 * dp, top, 10 * dp + Math.min(260 * dp, w - 20 * dp), top + lh * 7 + 12 * dp);
             feedRect.set(10 * dp, statsRect.bottom + 8 * dp, w - 10 * dp, statsRect.bottom + 8 * dp + 4 * 24 * dp);
         } else {
-            statsRect.set(10 * dp, 10 * dp, 190 * dp, 10 * dp + lh * 9 + 12 * dp);
+            statsRect.set(10 * dp, 10 * dp, 190 * dp, 10 * dp + lh * 10 + 12 * dp);
             feedRect.set(topRects[0].left, topRects[0].bottom + 8 * dp, w - 10 * dp, topRects[0].bottom + 8 * dp + 4 * 24 * dp);
         }
         if (oldw == 0) {
@@ -748,7 +748,8 @@ final class GameView extends View implements Menu.Host {
             Dispatch.SafeZone z = world.dispatch.zones.get(i);
             float sx = screenX(z.x), sy = screenY(z.y - z.r) - 10 * dp;
             if (sx < -100 * dp || sx > getWidth() + 100 * dp || sy < 0 || sy > barTop) continue;
-            String label = (z.military ? "MILITARY" : "POLICE") + " SAFE ZONE  -  " + z.sheltered + " sheltered";
+            String label = (z.military ? "MILITARY" : "POLICE") + " SAFE ZONE  -  " + z.sheltered + "/" + z.capacity
+                    + (z.full ? "  FULL" : "");
             float tw = text.measureText(label);
             oval.set(sx - tw / 2 - 8 * dp, sy - 14 * dp, sx + tw / 2 + 8 * dp, sy + 5 * dp);
             fill.setColor(z.military ? 0xD0304A20 : 0xD0203A66);
@@ -961,6 +962,8 @@ final class GameView extends View implements Menu.Host {
         int secs = (int) world.time;
         c.drawText(String.format("Sheltered %d   Time %d:%02d", d.sheltered, secs / 60, secs % 60),
                 pad + 12 * dp, y, text);
+        y += lh;
+        c.drawText("Reserves: " + d.policeReserve + " police, " + d.squadReserve + " army", pad + 12 * dp, y, text);
 
         drawMapLabels(c);
         drawFeed(c);

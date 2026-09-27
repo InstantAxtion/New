@@ -32,9 +32,9 @@ final class Dispatch {
 
     static final class SafeZone {
         float x, y, r, age, attackCd, statusTimer;
-        boolean military, removed;
+        boolean military, removed, full, fullAnnounced;
         String place;
-        int guards, sheltered, wantGuards;
+        int guards, sheltered, wantGuards, capacity;
     }
 
     static final class Message {
@@ -71,17 +71,21 @@ final class Dispatch {
     private final ArrayList<Entity> picked = new ArrayList<Entity>();
     final int[] zoneField;
 
-    final boolean reinforcements;
+    /** Reserves left to call in: police backup waves and military squads (4 each). Never refilled. */
+    int policeReserve, squadReserve;
     int calls, sheltered, messageCount;
     int copCount, soldierCount;
-    private int freeCops, freeSoldiers, militaryWaves, policeWaves;
+    private int freeCops, freeSoldiers;
     private float tick, zoneFieldTimer, policeZoneCd = 10, militaryZoneCd = 6, militaryCd, policeCd;
     private boolean zonesDirty = true;
 
-    Dispatch(World w, boolean reinforcements) {
+    private static final int[] POLICE_RESERVE = {0, 1, 2, 3}, SQUAD_RESERVE = {0, 1, 2, 3};
+
+    Dispatch(World w, int reinforcementLevel) {
         this.w = w;
         this.city = w.city;
-        this.reinforcements = reinforcements;
+        policeReserve = POLICE_RESERVE[reinforcementLevel];
+        squadReserve = SQUAD_RESERVE[reinforcementLevel];
         zoneField = new int[city.w * city.h];
         java.util.Arrays.fill(zoneField, City.FAR);
     }
@@ -360,30 +364,36 @@ final class Dispatch {
             say(WHO_MILITARY, lead, "Copy that, Police. " + SQUADS[lead.squad % SQUADS.length]
                     + " squad moving to " + place + ".", lead.x, lead.y);
             squad.clear();
-        } else if (reinforcements && militaryWaves < 4) {
-            militaryWaves++;
-            Arrival a = new Arrival();
-            a.time = 8;
-            a.type = Entity.SOLDIER;
-            a.count = 5;
-            a.incident = inc;
-            a.zone = zone;
-            a.x = x;
-            a.y = y;
-            a.place = place;
-            arrivals.add(a);
-            City.Facility base = origin(Entity.SOLDIER, x, y);
-            say(WHO_MILITARY, null, "Military: Copy. " + (base != null ? "Deploying a squad from " + base.name
-                    : "Reinforcements inbound") + " to " + place + ", ETA 8 seconds.", x, y);
-        } else {
-            say(WHO_MILITARY, null, "Military: Negative, no units available. Hold them off, Police.", x, y);
+        } else if (!sendReserveSquad(x, y, place, inc, zone)) {
+            say(WHO_MILITARY, null, "Military: Negative, no units or reserves left. Hold them off, Police.", x, y);
         }
     }
 
+    /** Calls in one of the limited reserve squads. Returns false if none are left. */
+    private boolean sendReserveSquad(float x, float y, String place, Incident inc, SafeZone zone) {
+        if (squadReserve <= 0) return false;
+        squadReserve--;
+        Arrival a = new Arrival();
+        a.time = 8;
+        a.type = Entity.SOLDIER;
+        a.count = 4;
+        a.incident = inc;
+        a.zone = zone;
+        a.x = x;
+        a.y = y;
+        a.place = place;
+        arrivals.add(a);
+        City.Facility base = origin(Entity.SOLDIER, x, y);
+        say(WHO_MILITARY, null, "Military: Copy. " + (base != null ? "Deploying a reserve squad from " + base.name
+                : "Reserve squad inbound") + " to " + place + ", ETA 8 seconds."
+                + (squadReserve == 0 ? " That's our last one." : " " + squadReserve + " left in reserve."), x, y);
+        return true;
+    }
+
     private boolean policeBackup(Incident inc) {
-        if (!reinforcements || policeWaves >= 5 || policeCd > 0) return false;
+        if (policeReserve <= 0 || policeCd > 0) return false;
         policeCd = 40;
-        policeWaves++;
+        policeReserve--;
         Arrival a = new Arrival();
         a.time = 6;
         a.type = Entity.COP;
@@ -395,7 +405,8 @@ final class Dispatch {
         arrivals.add(a);
         City.Facility station = origin(Entity.COP, inc.x, inc.y);
         say(WHO_POLICE, null, "Dispatch: All units busy. Sending backup from " + (station != null ? station.name
-                : "the precinct") + " to " + inc.place + ".", inc.x, inc.y);
+                : "the precinct") + " to " + inc.place + "." + (policeReserve == 0 ? " That's the last of our officers."
+                : ""), inc.x, inc.y);
         return true;
     }
 
@@ -448,20 +459,20 @@ final class Dispatch {
                 say(z.military ? WHO_MILITARY : WHO_POLICE, null, (z.military ? "Military" : "Police") + ": The "
                         + z.place + " safe zone is under attack! " + near + " hostiles at the perimeter!", z.x, z.y);
                 if (!z.military) requestMilitary(z.x, z.y, z.place, null, z);
-                else if (reinforcements && militaryWaves < 4) {
-                    militaryWaves++;
-                    Arrival a = new Arrival();
-                    a.time = 10;
-                    a.type = Entity.SOLDIER;
-                    a.count = 5;
-                    a.zone = z;
-                    a.x = z.x;
-                    a.y = z.y;
-                    a.place = z.place;
-                    arrivals.add(a);
-                    say(WHO_MILITARY, null, "Military Command: Sending reinforcements to " + z.place + ".", z.x, z.y);
+                else sendReserveSquad(z.x, z.y, z.place, null, z);
+            }
+            // Capacity: announce when a zone fills up, and stop sending people there.
+            boolean full = z.sheltered >= z.capacity;
+            if (full != z.full) {
+                z.full = full;
+                zonesDirty = true;
+                if (full && !z.fullAnnounced) {
+                    z.fullAnnounced = true;
+                    say(z.military ? WHO_MILITARY : WHO_POLICE, null, (z.military ? "Military" : "Police") + ": The "
+                            + z.place + " safe zone is full (" + z.capacity + "). Turning people away!", z.x, z.y);
                 }
             }
+            if (z.sheltered < z.capacity * 0.8f) z.fullAnnounced = false;
             z.statusTimer += step;
             if (z.statusTimer > 60) {
                 z.statusTimer = 0;
@@ -567,6 +578,8 @@ final class Dispatch {
         z.y = y;
         z.military = military;
         z.r = radius;
+        // Bases and stations hold more people than a zone thrown up in a park.
+        z.capacity = military ? (facility != null ? 60 : 40) : (facility != null ? 35 : 25);
         z.wantGuards = military ? 6 : 4;
         z.place = place;
         int got = assignGuards(z, z.wantGuards, Float.MAX_VALUE, military ? Entity.SOLDIER : Entity.COP);
@@ -665,6 +678,22 @@ final class Dispatch {
         return false;
     }
 
+    /** True if some safe zone still has room. */
+    boolean hasRoom() {
+        for (int i = 0; i < zones.size(); i++) if (!zones.get(i).full) return true;
+        return false;
+    }
+
+    /** Lets a civilian into a zone if there is room. */
+    boolean admit(Entity e, SafeZone z) {
+        if (z.sheltered >= z.capacity) return false;
+        z.sheltered++;
+        sheltered++;
+        e.task = T_SHELTER;
+        e.zone = z;
+        return true;
+    }
+
     /** The safe zone containing (x, y), if any. */
     SafeZone zoneAt(float x, float y, float margin) {
         for (int i = 0; i < zones.size(); i++) {
@@ -678,11 +707,14 @@ final class Dispatch {
     private void updateZoneField() {
         zonesDirty = false;
         zoneFieldTimer = 2;
-        int n = zones.size();
-        float[] xs = new float[n], ys = new float[n];
-        for (int i = 0; i < n; i++) {
-            xs[i] = zones.get(i).x;
-            ys[i] = zones.get(i).y;
+        // Only zones with room attract people.
+        int n = 0;
+        float[] xs = new float[zones.size()], ys = new float[zones.size()];
+        for (int i = 0; i < zones.size(); i++) {
+            if (zones.get(i).full) continue;
+            xs[n] = zones.get(i).x;
+            ys[n] = zones.get(i).y;
+            n++;
         }
         city.fieldFromPoints(zoneField, xs, ys, n);
     }

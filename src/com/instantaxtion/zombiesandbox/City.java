@@ -390,6 +390,17 @@ final class City {
 
     /** Floods the planned river and ocean, knocking out any building that stood in the way. */
     private void carveWater() {
+        // Keep a 2-tile bank along the river: buildings there are cleared and the ground becomes grass.
+        boolean[] bank = new boolean[w * h];
+        for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++) {
+                if (!river[y * w + x]) continue;
+                for (int dy = -2; dy <= 2; dy++)
+                    for (int dx = -2; dx <= 2; dx++) {
+                        int nx = x + dx, ny = y + dy;
+                        if (nx >= 0 && ny >= 0 && nx < w && ny < h && !river[ny * w + nx]) bank[ny * w + nx] = true;
+                    }
+            }
         for (int y = 0; y < h; y++)
             for (int x = 0; x < w; x++) {
                 int i = y * w + x;
@@ -405,18 +416,25 @@ final class City {
             boolean wet = false;
             for (int y = l[1]; y < l[1] + l[3] && !wet; y++)
                 for (int x = l[0]; x < l[0] + l[2]; x++)
-                    if (tiles[y * w + x] == WATER || tiles[y * w + x] == SAND || tiles[y * w + x] == BRIDGE) wet = true;
+                    if (tiles[y * w + x] == WATER || tiles[y * w + x] == SAND || tiles[y * w + x] == BRIDGE
+                            || bank[y * w + x]) wet = true;
             if (!wet) continue;
             buildingLots.remove(k);
             for (int y = l[1]; y < l[1] + l[3]; y++)
                 for (int x = l[0]; x < l[0] + l[2]; x++)
                     if (tiles[y * w + x] == BUILDING) tiles[y * w + x] = GRASS;
         }
+        for (int i = 0; i < w * h; i++) {
+            if (!bank[i]) continue;
+            byte t = tiles[i];
+            if (t == PLAZA || t == LOT || t == FOUNTAIN || t == BUILDING || (t == CAR && carKind[i] == 0 && !roadCol[i % w] && !roadRow[i / w]))
+                tiles[i] = GRASS;
+        }
         for (int k = fountains.size() - 1; k >= 0; k--) {
             int[] f = fountains.get(k);
             if (tiles[f[1] * w + f[0]] != FOUNTAIN || tiles[(f[1] + 1) * w + f[0] + 1] != FOUNTAIN) {
                 fountains.remove(k);
-                fill(f[0], f[1], 2, 2, PLAZA);
+                fill(f[0], f[1], 2, 2, tiles[f[1] * w + f[0]] == GRASS ? GRASS : PLAZA);
                 carveWaterTiles(f[0], f[1], 2, 2);
             }
         }
@@ -694,15 +712,30 @@ final class City {
             for (int i = x; i < x + pw; i++) tiles[cy * w + i] = PLAZA;
             for (int j = y; j < y + ph; j++) tiles[j * w + cx] = PLAZA;
         }
-        if (pw >= 8 && ph >= 8 && rnd.nextFloat() < (organic ? 0.7f : 0.35f)) {
-            // A pond, off-centre so paths can go around it.
-            float px = x + pw * (0.3f + rnd.nextFloat() * 0.4f), py = y + ph * (0.3f + rnd.nextFloat() * 0.4f);
-            float rx = pw * 0.18f + 0.5f, ry = ph * 0.15f + 0.5f;
-            for (int j = y + 1; j < y + ph - 1; j++)
-                for (int i = x + 1; i < x + pw - 1; i++) {
-                    float u = (i + 0.5f - px) / rx, v = (j + 0.5f - py) / ry;
-                    if (u * u + v * v < 1) tiles[j * w + i] = WATER;
-                }
+        if (pw >= 9 && ph >= 9 && rnd.nextFloat() < (organic ? 0.7f : 0.35f)) {
+            // A pond that never touches a path: inside the loop of a curved path, or tucked into one
+            // quarter of the park between the straight paths.
+            float px, py, rx, ry;
+            if (organic) {
+                px = x + pw / 2f;
+                py = y + ph / 2f;
+                rx = pw * 0.19f;
+                ry = ph * 0.17f;
+            } else {
+                int qx = rnd.nextBoolean() ? x : cx + 1, qy = rnd.nextBoolean() ? y : cy + 1;
+                int qw = (qx == x ? cx - x : x + pw - qx), qh = (qy == y ? cy - y : y + ph - qy);
+                px = qx + qw / 2f;
+                py = qy + qh / 2f;
+                rx = qw / 2f - 0.8f;
+                ry = qh / 2f - 0.8f;
+            }
+            if (rx >= 1.2f && ry >= 1.2f) {
+                for (int j = y + 1; j < y + ph - 1; j++)
+                    for (int i = x + 1; i < x + pw - 1; i++) {
+                        float u = (i + 0.5f - px) / rx, v = (j + 0.5f - py) / ry;
+                        if (u * u + v * v < 1 && tiles[j * w + i] == GRASS) tiles[j * w + i] = WATER;
+                    }
+            }
         }
         for (int j = y; j < y + ph; j++)
             for (int i = x; i < x + pw; i++)

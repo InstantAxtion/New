@@ -464,16 +464,14 @@ final class World {
         }
 
         // Safe zones: scared people head for one, and some go as soon as they hear it on the news.
-        boolean anyZone = !dispatch.zones.isEmpty();
-        if ((e.task == Dispatch.T_SEEK || e.task == Dispatch.T_SHELTER) && !anyZone) e.task = Dispatch.T_NONE;
-        if (e.task == Dispatch.T_NONE && anyZone && (e.fleeTimer > 0 || rnd.nextFloat() < dt * 0.03f))
+        boolean room = dispatch.hasRoom();
+        if (e.task == Dispatch.T_SHELTER && dispatch.zones.isEmpty()) e.task = Dispatch.T_NONE;
+        if (e.task == Dispatch.T_SEEK && !room) e.task = Dispatch.T_NONE;
+        if (e.task == Dispatch.T_NONE && room && (e.fleeTimer > 0 || rnd.nextFloat() < dt * 0.03f))
             e.task = Dispatch.T_SEEK;
         if (e.task == Dispatch.T_SEEK) {
             Dispatch.SafeZone z = dispatch.zoneAt(e.x, e.y, 0.7f);
-            if (z != null) {
-                e.task = Dispatch.T_SHELTER;
-                e.zone = z;
-            }
+            if (z != null) dispatch.admit(e, z);
         }
 
         if (e.task == Dispatch.T_SEEK && threatDist > 28) {

@@ -2,11 +2,20 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "1.4";
-    static final int VERSION_CODE = 5;
+    static final String VERSION = "1.5";
+    static final int VERSION_CODE = 6;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "1.5  -  Limits",
+                    "Safe zones have a capacity: 25 in a park zone, 35 at a police station, 40 for a military zone and 60 at a base. Labels show how full each one is.",
+                    "Full zones radio that they're turning people away, and civilians head for a zone with room or keep running.",
+                    "Reinforcements are now a small, fixed reserve that never refills. Choose Off, Low, Medium or High on the New Game screen (Medium: 2 backup waves of officers and 2 army squads of 4).",
+                    "The stats panel shows the reserves left, and the radio says when the last one is sent.",
+                    "Ponds no longer cut through park footpaths.",
+                    "Rivers keep a grassy bank: no building stands on or right next to the water.",
+            },
             {
                     "1.4  -  Less grid, more city",
                     "New Street layout option: Grid, Varied or Organic.",

@@ -8,7 +8,20 @@ import java.util.Random;
  */
 final class CityConfig implements OptionSet {
     static final String[] PRESETS = {"Classic", "Downtown", "Suburbs", "Industrial", "Parkland", "Old Town",
-            "Small Town", "Campus"};
+            "Small Town", "Campus", "Metropolis", "Village"};
+    /** One line about each map, shown on the New Game screen. */
+    static final String[] PRESET_INFO = {
+            "A bit of everything: downtown towers, suburbs, parks, a precinct and an army base.",
+            "Tall office towers, shopping streets, parking garages and two precincts. No base.",
+            "Winding streets of houses with yards, schools, playgrounds and a few apartment blocks.",
+            "Warehouses, truck yards, gas stations and a military base.",
+            "Green city: big parks, gardens, sports fields and low buildings.",
+            "Narrow streets packed with shops, churches, a cemetery and old houses.",
+            "A quiet little town with a main street, a church, a school and plenty of gardens.",
+            "Schools, sports fields, courts and student apartments.",
+            "A huge, dense skyline: towers, apartments, garages, three precincts and a base.",
+            "A few lanes of cottages among fields and gardens. Help is far away.",
+    };
 
     static final int STYLE_MIXED = 0, STYLE_OFFICES = 1, STYLE_HOUSES = 2, STYLE_WAREHOUSES = 3;
 
@@ -19,17 +32,17 @@ final class CityConfig implements OptionSet {
     private static final String[][] VALUES = {
             PRESETS,
             {"Small", "Medium", "Large"},
-            {"0", "50", "100", "150", "250", "400"},
+            {"0", "50", "100", "150", "250", "400", "600", "800"},
+            {"0", "5", "10", "20", "40", "60"},
             {"0", "5", "10", "20", "40"},
-            {"0", "5", "10", "20"},
-            {"0", "1", "5", "20", "50"},
+            {"0", "1", "5", "20", "50", "100", "200"},
             {"Off", "Low", "Medium", "High"},
     };
     private static final int[] SIZES = {64, 96, 128};
-    private static final int[] CIVILIANS = {0, 50, 100, 150, 250, 400};
-    private static final int[] COPS = {0, 5, 10, 20, 40};
-    private static final int[] SOLDIERS = {0, 5, 10, 20};
-    private static final int[] ZOMBIES = {0, 1, 5, 20, 50};
+    private static final int[] CIVILIANS = {0, 50, 100, 150, 250, 400, 600, 800};
+    private static final int[] COPS = {0, 5, 10, 20, 40, 60};
+    private static final int[] SOLDIERS = {0, 5, 10, 20, 40};
+    private static final int[] ZOMBIES = {0, 1, 5, 20, 50, 100, 200};
 
     // How each preset's city is built:  style, density, height, parks, traffic, layout, stations, base
     private static final int[][] MAPS = {
@@ -41,6 +54,8 @@ final class CityConfig implements OptionSet {
             {STYLE_HOUSES, 2, 0, 1, 1, 2, 1, 0},      // Old Town
             {STYLE_HOUSES, 1, 0, 2, 1, 1, 1, 0},      // Small Town
             {STYLE_MIXED, 1, 1, 3, 1, 2, 1, 0},       // Campus
+            {STYLE_OFFICES, 2, 3, 1, 2, 1, 3, 1},     // Metropolis
+            {STYLE_HOUSES, 0, 0, 3, 1, 2, 1, 0},      // Village
     };
 
     // Landmarks per medium map:  churches, schools, fire stations, supermarkets, gas stations, cemeteries,
@@ -54,6 +69,13 @@ final class CityConfig implements OptionSet {
             {2, 1, 1, 1, 1, 1, 45},   // Old Town
             {1, 1, 1, 1, 2, 1, 35},   // Small Town
             {1, 3, 1, 1, 1, 0, 20},   // Campus
+            {2, 2, 2, 2, 1, 0, 50},   // Metropolis
+            {1, 1, 1, 1, 1, 1, 20},   // Village
+    };
+    // Share of office lots that become apartment blocks, parking garages and pharmacies (percent).
+    private static final int[][] BUILDING_MIX = {
+            {15, 6, 5}, {15, 15, 5}, {20, 0, 6}, {5, 8, 2}, {15, 3, 6}, {10, 0, 8}, {10, 2, 8}, {20, 5, 6},
+            {25, 15, 4}, {0, 0, 10},
     };
     // Which kinds of park each map likes: park, playground, sports field, courts, garden, skatepark.
     private static final int[][] PARK_MIX = {
@@ -65,6 +87,8 @@ final class CityConfig implements OptionSet {
             {3, 1, 0, 0, 3, 0},
             {3, 2, 2, 1, 2, 1},
             {2, 1, 4, 4, 1, 1},
+            {2, 1, 1, 3, 0, 2},
+            {4, 2, 2, 0, 3, 0},
     };
 
     /** Current index into VALUES for each option. */
@@ -78,8 +102,11 @@ final class CityConfig implements OptionSet {
      * Share it and anyone can play the same streets.
      */
     String code() {
-        return (v[OPT_PRESET] + 1) + "" + (v[OPT_SIZE] + 1) + "-" + seed;
+        return CODE_MAPS.charAt(v[OPT_PRESET]) + "" + (v[OPT_SIZE] + 1) + "-" + seed;
     }
+
+    /** The character for each map in a city code. */
+    private static final String CODE_MAPS = "123456789A";
 
     /** Reads a city code. Returns false (changing nothing) if it isn't one. */
     boolean applyCode(String text) {
@@ -87,7 +114,7 @@ final class CityConfig implements OptionSet {
         String t = text.trim().replace(" ", "");
         int dash = t.indexOf('-');
         if (dash != 2 || t.length() < 4 || t.length() > 22) return false;
-        int preset = t.charAt(0) - '1', size = t.charAt(1) - '1';
+        int preset = CODE_MAPS.indexOf(Character.toUpperCase(t.charAt(0))), size = t.charAt(1) - '1';
         if (preset < 0 || preset >= PRESETS.length || size < 0 || size >= SIZES.length) return false;
         long s;
         try {
@@ -135,6 +162,9 @@ final class CityConfig implements OptionSet {
     }
 
     int shopShare() { return LANDMARKS[v[OPT_PRESET]][6]; }
+
+    /** Percent of office lots that become apartments, garages and pharmacies. */
+    int[] buildingMix() { return BUILDING_MIX[v[OPT_PRESET]]; }
 
     /** Relative weights of the park kinds for this map. */
     int[] parkMix() { return PARK_MIX[v[OPT_PRESET]]; }

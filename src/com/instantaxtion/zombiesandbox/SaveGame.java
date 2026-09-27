@@ -17,7 +17,7 @@ import java.util.ArrayList;
  * damaged or collapsed buildings.
  */
 final class SaveGame {
-    private static final int VERSION = 2;
+    private static final int VERSION = 3;
 
     private SaveGame() {
     }
@@ -51,6 +51,7 @@ final class SaveGame {
             out.writeInt(d.policeReserve);
             out.writeInt(d.squadReserve);
             out.writeInt(d.airSorties);
+            out.writeInt(d.tankReserve);
             out.writeInt(d.copCount);
             out.writeInt(d.soldierCount);
             out.writeInt(d.zones.size());
@@ -186,6 +187,7 @@ final class SaveGame {
         out.writeInt(zone);
         out.writeFloat(e.postX);
         out.writeFloat(e.postY);
+        out.writeInt(e.role);
     }
 
     static World load(File file) throws IOException {
@@ -221,6 +223,7 @@ final class SaveGame {
             d.policeReserve = in.readInt();
             d.squadReserve = in.readInt();
             d.airSorties = in.readInt();
+            if (version >= 3) d.tankReserve = in.readInt();
             int copCount = in.readInt(), soldierCount = in.readInt();
             int zones = in.readInt();
             for (int i = 0; i < zones; i++)
@@ -331,6 +334,7 @@ final class SaveGame {
         int zone = in.readInt();
         e.postX = in.readFloat();
         e.postY = in.readFloat();
+        if (version >= 3) e.role = in.readInt();
         if (zone >= 0 && zone < d.zones.size()) e.zone = d.zones.get(zone);
         return e;
     }

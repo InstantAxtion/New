@@ -9,8 +9,8 @@ away from the middle of the screen as you pan, and the game plays in both portra
 
 ## Main menu
 
-- **New Game** opens the city setup, which has 7 options: the map (Classic, Downtown, Suburbs,
-  Industrial, Parkland, Old Town, Small Town or Campus), map size, how many civilians, cops, military and zombies there are at the
+- **New Game** opens the city setup, with a live preview of the city and 7 options: the map (Classic,
+  Downtown, Suburbs, Industrial, Parkland, Old Town, Small Town, Campus, Metropolis or Village), map size, how many civilians, cops, military and zombies there are at the
   start, and how many reinforcements can be called in (Off, Low, Medium or High). Each map decides its
   own buildings, layout, parks, police stations and military base. **Randomize** rolls a random setup.
   **City code** replays a city: every city has a code like `12-483920` (shown in the pause menu and
@@ -30,6 +30,11 @@ on the phone, so the APK contains no audio files.
   zombies, crashes, gunfire and blasts, smoke when damaged and break down (sometimes burning) at zero.
 - **Traffic**: people fleeing wave down passing cars and get driven to a safe zone. Zombies chase cars.
 - **Fire engines** drive out from fire stations and hose down burning cars and gas pumps.
+- **Tanks** roll out for big hordes; **ambulances** fetch badly hurt people to the hospital. The
+  **helicopter** takes off from and lands on its helipad. Every vehicle shows a status label.
+- **Military roles**: riflemen, machine gunners, snipers and a commander who boosts nearby soldiers
+  and calls in armor or air support.
+- **Buildings** include apartment blocks, parking garages and pharmacies (which patch people up).
 - **Destructible buildings**: blasts crack, scorch and eventually collapse buildings. Walls collect
   bullet holes and scorch marks.
 - **Families and dogs**: families stay and hide together; dogs follow their owners and fight zombies.
@@ -99,7 +104,8 @@ military safe zone.
 - Top buttons: **Pause/Play**, **Speed** (1x/2x/4x), **Brush** (spawn 1/5/10 at a time),
   **View** (3D or bird's-eye), **Clear** (remove everyone), **Menu**.
 - Zoom right in and roofs turn see-through, so you can see who is hiding inside.
-- Tap the **Civilian** button again to spawn dogs, and the **Zombie** button again for other zombie types.
+- Tap the **Civilian** button again to spawn dogs, the **Military** button again for commanders,
+  snipers and gunners, and the **Zombie** button again for other zombie types.
 
 A person killed by a zombie gets up again as a zombie a few seconds later. Bites can also infect: an
 infected person glows green and turns within about 12–26 seconds, even if they escape.

@@ -8,12 +8,12 @@ import java.util.ArrayList;
  * for air support. Cars take damage from zombies, crashes and blasts, and break down when it is too much.
  */
 final class Fleet {
-    static final int CRUISER = 0, TRUCK = 1, HELI = 2, CAR = 3, FIRE_ENGINE = 4;
+    static final int CRUISER = 0, TRUCK = 1, HELI = 2, CAR = 3, FIRE_ENGINE = 4, TANK = 5, AMBULANCE = 6;
     private static final int WAIT = 0, DRIVE = 1, RETURN = 2, FLY_IN = 3, CIRCLE = 4, FLY_OUT = 5, CRUISE = 6,
-            ABANDONED = 7, SPRAY = 8;
+            ABANDONED = 7, SPRAY = 8, SPOOL = 9, LAND = 10, ENGAGE = 11, LOAD = 12;
     private static final int[] CAR_COLORS = {0xFFB03A2E, 0xFF2E5FB0, 0xFFE0E0E0, 0xFF222428, 0xFFD4A21C, 0xFF3C8A4E,
             0xFF8A8F96, 0xFF6B2E8A, 0xFFE07A2E};
-    private static final float[] MAX_HP = {160, 260, 1, 100, 240};
+    private static final float[] MAX_HP = {160, 260, 1, 100, 240, 1400, 160};
     /** Most people a car will squeeze in. */
     static final int SEATS = 4;
 
@@ -42,9 +42,68 @@ final class Fleet {
         float sprayX, sprayY;
         boolean spraying;
         int number;
+        /** Helicopter height (0 on the pad, 1 cruising) and how hard it is banking. */
+        float alt, bank;
+        /** The helicopter took off from (and lands back on) a helipad, rather than flying in from the edge. */
+        boolean pad;
+        /** Tanks: where the turret points and the cannon's reload. */
+        float turret, cannonCd, idleTimer;
+        /** Ambulances: the person they came for. */
+        Entity patient;
+        /** A stopped car rolls over to the kerb. */
+        float pullX, pullY;
+        boolean pulling;
 
         float length() {
-            return type == TRUCK || type == FIRE_ENGINE ? 9.5f : 8f;
+            return type == TANK ? 11f : type == TRUCK || type == FIRE_ENGINE || type == AMBULANCE ? 9.5f : 8f;
+        }
+    }
+
+    /** A short line about what a vehicle is doing, shown above it on the map. */
+    String status(Vehicle v) {
+        String where = v.place != null ? v.place : null;
+        switch (v.type) {
+            case HELI:
+                switch (v.state) {
+                    case SPOOL: return "Air 1: Starting up";
+                    case FLY_IN: return v.alt < 0.9f ? "Air 1: Taking off" : "Air 1: En route" + (where != null ? " to " + where : "");
+                    case CIRCLE: return "Air 1: Door gunner engaging (" + (int) v.timer + "s)";
+                    case LAND: return "Air 1: Landing";
+                    default: return "Air 1: Returning to base";
+                }
+            case TANK:
+                if (v.broken) return "Tank: Knocked out";
+                switch (v.state) {
+                    case WAIT: return "Tank: Starting engine";
+                    case DRIVE: return "Tank: Moving to " + (where != null ? where : "contact");
+                    case ENGAGE: return v.cannonCd > 2.5f ? "Tank: Firing!" : "Tank: Engaging";
+                    default: return "Tank: Returning to base";
+                }
+            case AMBULANCE:
+                if (v.broken) return "Ambulance: Broken down";
+                if (v.state == RETURN) return v.riders.isEmpty() ? "Ambulance: Returning" : "Ambulance: Patient on board";
+                if (v.state == LOAD) return "Ambulance: Loading patient";
+                return "Ambulance: Responding";
+            case FIRE_ENGINE:
+                if (v.broken) return "Engine " + v.number + ": Out of action";
+                if (v.state == SPRAY) return "Engine " + v.number + ": Fighting fire";
+                if (v.state == RETURN) return "Engine " + v.number + ": Returning";
+                return "Engine " + v.number + ": Responding";
+            case CRUISER:
+            case TRUCK: {
+                String who = v.type == CRUISER ? "Police car" : "Army truck";
+                if (v.broken) return who + ": Wrecked";
+                if (v.state == WAIT) return who + ": Loading up";
+                if (v.state == DRIVE) return who + ": " + (v.type == TRUCK ? "Carrying squad" : "Responding") + (where != null ? " to " + where : "");
+                return who + ": Returning";
+            }
+            default:
+                if (v.broken) return v.burnt ? "Burnt out" : "Broken down";
+                if (v.state == ABANDONED) return "Abandoned";
+                if (v.rescue) return "Driving " + v.riders.size() + " to safety";
+                if (v.waitTimer > 0) return "Picking someone up";
+                if (!v.riders.isEmpty()) return v.riders.size() + " on board";
+                return null;
         }
     }
 
@@ -196,10 +255,61 @@ final class Fleet {
         return v;
     }
 
+    /** A tank rolls out of the base towards heavy fighting. */
+    boolean sendTank(float fromX, float fromY, float toX, float toY, String place) {
+        float[] start = city.nearestDrivable(fromX, fromY);
+        if (start == null) return false;
+        Vehicle v = make(TANK);
+        v.x = start[0];
+        v.y = start[1];
+        if (!route(v, toX, toY)) return false;
+        v.state = WAIT;
+        v.timer = 2;
+        v.homeX = start[0];
+        v.homeY = start[1];
+        v.place = place;
+        v.angle = v.turret = (float) Math.atan2(toY - v.y, toX - v.x);
+        vehicles.add(v);
+        return true;
+    }
+
+    int count(int type) {
+        int n = 0;
+        for (int i = 0; i < vehicles.size(); i++) if (vehicles.get(i).type == type && !vehicles.get(i).broken) n++;
+        return n;
+    }
+
+    boolean hasPatient(Entity e) {
+        for (int i = 0; i < vehicles.size(); i++) if (vehicles.get(i).patient == e) return true;
+        return false;
+    }
+
+    /** An ambulance leaves the hospital to fetch someone who is hurt. */
+    boolean sendAmbulance(City.Facility hospital, Entity patient) {
+        float[] start = city.nearestDrivable(hospital.x, hospital.y);
+        if (start == null) return false;
+        Vehicle v = make(AMBULANCE);
+        v.x = start[0];
+        v.y = start[1];
+        if (!route(v, patient.x, patient.y)) return false;
+        v.state = WAIT;
+        v.timer = 1;
+        v.homeX = start[0];
+        v.homeY = start[1];
+        v.patient = patient;
+        v.place = city.placeName(patient.x, patient.y);
+        vehicles.add(v);
+        return true;
+    }
+
     /** The helicopter: flies from the helipad (or the map edge) and circles the target with a door gunner. */
     void sendHeli(float fromX, float fromY, float toX, float toY, String place) {
         Vehicle v = make(HELI);
-        v.state = FLY_IN;
+        float[] hp = city.nearestHelipad(fromX, fromY);
+        v.pad = hp != null && Math.hypot(hp[0] - fromX, hp[1] - fromY) < 10;
+        v.state = v.pad ? SPOOL : FLY_IN;
+        v.alt = v.pad ? 0 : 1;
+        v.timer = 2.5f;
         v.x = fromX;
         v.y = fromY;
         v.homeX = fromX;
@@ -231,7 +341,9 @@ final class Fleet {
             v.crashCd -= dt;
             boolean done;
             if (v.type == HELI) done = updateHeli(v, dt);
-            else if (v.broken) done = updateWreck(v);
+            else if (v.broken || v.parked) done = updateWreck(v, dt);
+            else if (v.type == TANK) done = updateTank(v, dt);
+            else if (v.type == AMBULANCE) done = updateAmbulance(v, dt);
             else if (v.type == CAR) done = updateTraffic(v, dt);
             else if (v.type == FIRE_ENGINE) done = updateFireEngine(v, dt);
             else done = updateCar(v, dt);
@@ -274,6 +386,7 @@ final class Fleet {
         if (v.type == CAR && v.state == CRUISE) {
             v.state = ABANDONED;
             getOut(v, true);
+            pullOver(v);
         }
         dropRiders(v, true);
         if (v.type == FIRE_ENGINE)
@@ -322,6 +435,8 @@ final class Fleet {
                     float dmg = closing * 0.35f;
                     damage(a, dmg, false);
                     damage(b, dmg, false);
+                    w.skid(a.x, a.y, a.angle, Math.min(14, a.speed * 0.2f + 4));
+                    w.skid(b.x, b.y, b.angle, Math.min(14, b.speed * 0.2f + 4));
                     a.speed *= 0.3f;
                     b.speed *= 0.3f;
                     float cx = (a.x + b.x) / 2, cy = (a.y + b.y) / 2;
@@ -348,9 +463,37 @@ final class Fleet {
         return false;
     }
 
-    private boolean updateWreck(Vehicle v) {
+    private boolean updateWreck(Vehicle v, float dt) {
         v.speed = 0;
+        if (v.pulling) {
+            // Rolling to a stop against the kerb.
+            float dx = v.pullX - v.x, dy = v.pullY - v.y, d = (float) Math.sqrt(dx * dx + dy * dy);
+            if (d < 0.5f) v.pulling = false;
+            else {
+                float step = Math.min(d, 20 * dt);
+                v.x += dx / d * step;
+                v.y += dy / d * step;
+            }
+        }
         return false;
+    }
+
+    /** Where a stopped car ends up: the nearest kerb to its right, if it is close. */
+    private void pullOver(Vehicle v) {
+        if (v.type != CAR) return;
+        float nx = (float) -Math.sin(v.angle), ny = (float) Math.cos(v.angle);
+        for (int side = 1; side >= -1; side -= 2)
+            for (float s = 4; s <= 26; s += 3) {
+                float x = v.x + nx * s * side, y = v.y + ny * s * side;
+                int tx = (int) (x / City.T), ty = (int) (y / City.T);
+                if (tx < 0 || ty < 0 || tx >= city.w || ty >= city.h) break;
+                byte t = city.tiles[ty * city.w + tx];
+                if (t == City.ROAD || t == City.CAR) continue;
+                v.pullX = x - nx * side * 6.5f;
+                v.pullY = y - ny * side * 6.5f;
+                v.pulling = true;
+                return;
+            }
     }
 
     // ------------------------------------------------------------------ driving
@@ -452,6 +595,7 @@ final class Fleet {
         boolean person = w.personAhead(v.x, v.y, v.angle);
         if ((person && v.timer < 2.5f) || (v.waitTimer > 0 && !zombiesClose)) {
             // Brake for pedestrians (then creep through, nudging them aside) or wait for someone to get in.
+            if (v.speed > 45 && person) w.skid(v.x, v.y, v.angle, 6);
             v.speed = Math.max(0, v.speed - dt * 200);
             if (!person) v.timer = 0;
         } else {
@@ -479,6 +623,7 @@ final class Fleet {
             v.state = ABANDONED;
             v.speed = 0;
             v.field = null;
+            pullOver(v);
             getOut(v, true);
             dropRiders(v, true);
         }
@@ -488,7 +633,7 @@ final class Fleet {
     /** Called by World when someone climbs in. */
     void boarded(Vehicle v, Entity e) {
         v.riders.add(e);
-        if (v.rescue) return;
+        if (v.rescue || v.type != CAR) return;
         // Take them to a safe zone with room if there is one.
         Dispatch.SafeZone best = null;
         float bd = Float.MAX_VALUE;
@@ -663,13 +808,30 @@ final class Fleet {
 
     private boolean updateHeli(Vehicle v, float dt) {
         if (v.soundCd <= 0) {
-            v.soundCd = 0.6f;
+            v.soundCd = v.state == SPOOL ? 0.9f : 0.6f;
             w.emit(Sfx.ROTOR, v.x, v.y);
+        }
+        // Rotor wash kicks up dust when it's low.
+        if (v.alt < 0.6f && v.state != SPOOL || (v.state == SPOOL && v.timer < 1.5f)) {
+            if (w.rnd.nextFloat() < dt * 25) {
+                float a = w.rnd.nextFloat() * (float) Math.PI * 2;
+                w.particle(v.x + (float) Math.cos(a) * 10, v.y + (float) Math.sin(a) * 10, (float) Math.cos(a) * 45,
+                        (float) Math.sin(a) * 45, 0.8f, 2.5f, 0xFFB8AE98, World.P_SMOKE);
+            }
+        }
+        if (v.state == SPOOL) {
+            // Spinning up on the pad.
+            v.timer -= dt;
+            if (v.timer <= 0) v.state = FLY_IN;
+            return false;
         }
         float gx, gy, speed = 130;
         if (v.state == FLY_IN) {
+            v.alt = Math.min(1, v.alt + dt * 0.35f);
             gx = v.tx;
             gy = v.ty;
+            // Climb before speeding off.
+            speed = 20 + 110 * v.alt;
             if (Math.hypot(gx - v.x, gy - v.y) < 60) {
                 v.state = CIRCLE;
                 v.timer = 25;
@@ -681,6 +843,8 @@ final class Fleet {
             gx = v.tx + (float) Math.cos(v.circle) * 80;
             gy = v.ty + (float) Math.sin(v.circle) * 80;
             speed = 70;
+            // Drops a little lower to give the gunner a better shot.
+            v.alt += (0.75f - v.alt) * Math.min(1, dt);
             // Door gunner.
             v.gunCd -= dt;
             if (v.gunCd <= 0) {
@@ -696,19 +860,155 @@ final class Fleet {
                 v.state = FLY_OUT;
                 w.dispatch.say(Dispatch.WHO_MILITARY, null, "Military: Air support is Winchester, returning to base.", v.x, v.y);
             }
-        } else {
+        } else if (v.state == FLY_OUT) {
+            v.alt += (1 - v.alt) * Math.min(1, dt);
             gx = v.homeX;
             gy = v.homeY;
-            if (Math.hypot(gx - v.x, gy - v.y) < 20) return true;
+            float d = (float) Math.hypot(gx - v.x, gy - v.y);
+            speed = Math.min(130, 25 + d * 0.8f);
+            if (d < 12) {
+                if (!v.pad) return true;
+                v.state = LAND;
+            }
+        } else {
+            // Settle onto the pad, then shut down.
+            gx = v.homeX;
+            gy = v.homeY;
+            speed = 8;
+            v.alt -= dt * 0.4f;
+            if (v.alt <= 0) return true;
         }
         float want = (float) Math.atan2(gy - v.y, gx - v.x);
         float diff = want - v.angle;
         while (diff > Math.PI) diff -= Math.PI * 2;
         while (diff < -Math.PI) diff += Math.PI * 2;
-        v.angle += Math.max(-dt * 2.5f, Math.min(dt * 2.5f, diff));
+        float turn = Math.max(-dt * 2.5f, Math.min(dt * 2.5f, diff));
+        v.angle += turn;
+        v.bank += (turn / Math.max(dt, 0.001f) * 0.25f - v.bank) * Math.min(1, dt * 3);
         v.speed += (speed - v.speed) * Math.min(1, dt * 1.5f);
         v.x += (float) Math.cos(v.angle) * v.speed * dt;
         v.y += (float) Math.sin(v.angle) * v.speed * dt;
+        return false;
+    }
+
+    // ------------------------------------------------------------------ tanks and ambulances
+
+    private boolean updateTank(Vehicle v, float dt) {
+        v.cannonCd -= dt;
+        v.gunCd -= dt;
+        if (v.state == WAIT) {
+            v.timer -= dt;
+            if (v.timer <= 0) v.state = DRIVE;
+            return false;
+        }
+        // The turret tracks the nearest zombie; the cannon fires at crowds, the coax gun at stragglers.
+        Entity z = w.nearestZombie(v.x, v.y, 260);
+        float aim = z != null ? (float) Math.atan2(z.y - v.y, z.x - v.x) : v.angle;
+        v.turret = turnTo(v.turret, aim, dt * 1.8f);
+        if (z != null) {
+            float off = Math.abs(aim - v.turret);
+            if (v.cannonCd <= 0 && off < 0.15f && w.countZombiesNear(z.x, z.y, 40) >= 3 && !w.peopleNear(z.x, z.y, 55)
+                    && Math.hypot(z.x - v.x, z.y - v.y) > 60) {
+                v.cannonCd = 3.5f;
+                w.tankShell(v.x + (float) Math.cos(v.turret) * 14, v.y + (float) Math.sin(v.turret) * 14, z.x, z.y);
+            } else if (v.gunCd <= 0 && Math.hypot(z.x - v.x, z.y - v.y) < 160) {
+                v.gunCd = 0.15f;
+                w.airShot(v.x, v.y, z);
+            }
+        }
+        if (v.state == DRIVE) {
+            v.stuckTimer += dt;
+            boolean moving = driveStep(v, dt, 45, 1);
+            if (moving) w.runOver(v.x, v.y, 10, Math.max(v.speed, 25), v.angle);
+            if (!moving || v.stuckTimer > 5) {
+                v.state = ENGAGE;
+                v.timer = 70;
+                v.speed = 0;
+            }
+            return false;
+        }
+        if (v.state == ENGAGE) {
+            v.speed = 0;
+            v.timer -= dt;
+            v.idleTimer = z == null ? v.idleTimer + dt : 0;
+            if (v.timer <= 0 || v.idleTimer > 15) {
+                v.state = RETURN;
+                w.dispatch.say(Dispatch.WHO_MILITARY, null, "Military: Armor pulling back to base.", v.x, v.y);
+                return !route(v, v.homeX, v.homeY);
+            }
+            return false;
+        }
+        v.stuckTimer += dt;
+        boolean moving = driveStep(v, dt, 45, 1);
+        if (moving) w.runOver(v.x, v.y, 10, Math.max(v.speed, 25), v.angle);
+        return !moving || v.stuckTimer > 8;
+    }
+
+    private boolean updateAmbulance(Vehicle v, float dt) {
+        if (v.state == WAIT) {
+            v.timer -= dt;
+            if (v.timer <= 0) {
+                v.state = DRIVE;
+                w.emit(Sfx.SIREN, v.x, v.y);
+            }
+            return false;
+        }
+        Entity p = v.patient;
+        if (v.state == DRIVE || v.state == LOAD) {
+            boolean gone = p == null || (p.dead && !v.riders.contains(p)) || p.isZombie();
+            if (!v.riders.isEmpty()) {
+                // Patient on board: back to the hospital.
+                v.state = RETURN;
+                w.emit(Sfx.SIREN, v.x, v.y);
+                return !route(v, v.homeX, v.homeY);
+            }
+            if (gone) {
+                v.patient = null;
+                v.state = RETURN;
+                return !route(v, v.homeX, v.homeY);
+            }
+            float d = (float) Math.hypot(p.x - v.x, p.y - v.y);
+            if (v.state == DRIVE) {
+                v.stuckTimer += dt;
+                if (v.soundCd <= 0) {
+                    v.soundCd = 3.5f;
+                    w.emit(Sfx.SIREN, v.x, v.y);
+                }
+                boolean moving = driveStep(v, dt, 90, carAhead(v) ? 0.5f : 1f);
+                if (moving) hit(v, w.runOver(v.x, v.y, 8, v.speed, v.angle));
+                if (d < 70 || !moving || v.stuckTimer > 4) {
+                    v.state = LOAD;
+                    v.timer = 12;
+                    v.waitTimer = 12;
+                    w.callRide(p, v);
+                }
+            } else {
+                v.speed = Math.max(0, v.speed - dt * 150);
+                v.timer -= dt;
+                if (v.timer <= 0 || w.countZombiesNear(v.x, v.y, 30) >= 2) {
+                    if (p.ride == v) p.ride = null;
+                    v.patient = null;
+                    v.state = RETURN;
+                    return !route(v, v.homeX, v.homeY);
+                }
+            }
+            return false;
+        }
+        v.stuckTimer += dt;
+        boolean moving = driveStep(v, dt, 90, carAhead(v) ? 0.5f : 1f);
+        if (moving) hit(v, w.runOver(v.x, v.y, 8, v.speed, v.angle));
+        if (!moving || v.stuckTimer > 6) {
+            // At the hospital: the patient goes inside to be treated.
+            for (int i = 0; i < v.riders.size(); i++) {
+                Entity e = v.riders.get(i);
+                if (w.release(e, v.x, v.y)) {
+                    e.task = Dispatch.T_HEAL;
+                    e.hp = Math.max(e.hp, e.maxHp * 0.5f);
+                }
+            }
+            v.riders.clear();
+            return true;
+        }
         return false;
     }
 }

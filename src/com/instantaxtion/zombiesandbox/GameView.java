@@ -15,7 +15,7 @@ import java.util.Random;
 
 /** Renders the world, runs the game loop and handles all touch input and on-screen buttons. */
 final class GameView extends View implements Menu.Host {
-    private static final int TOOL_PAN = 0, TOOL_ORDER = 1, TOOL_CIV = 2, TOOL_ZOMBIE = 6, TOOL_ZONE = 7, TOOL_BOMB = 8,
+    private static final int TOOL_PAN = 0, TOOL_ORDER = 1, TOOL_CIV = 2, TOOL_MIL = 4, TOOL_ZOMBIE = 6, TOOL_ZONE = 7, TOOL_BOMB = 8,
             TOOL_ERASE = 9;
     // Tool index -> entity type spawned (or -1). The zombie tool spawns the selected zombie variant.
     private static final int[] TOOL_TYPE = {-1, -1, Entity.CIVILIAN, Entity.COP, Entity.SOLDIER, Entity.MEDIC,
@@ -54,7 +54,7 @@ final class GameView extends View implements Menu.Host {
     private long lastFrame;
     private int speedIdx, brushIdx;
     private int tool = TOOL_PAN;
-    private int zombieVariant, civVariant;
+    private int zombieVariant, civVariant, milVariant;
     private boolean statsCollapsed;
     /** Units picked with the Orders tool. */
     private final java.util.ArrayList<Entity> selection = new java.util.ArrayList<Entity>();
@@ -453,8 +453,22 @@ final class GameView extends View implements Menu.Host {
         for (int i = 0; i < world.dcount; i++) {
             float x = world.dx[i], y = world.dy[i], r = world.dr[i];
             if (r <= 0 || x < vx0 || x > vx1 || y < vy0 || y > vy1) continue;
-            fill.setColor(world.dcol[i]);
-            c.drawCircle(x, y, r, fill);
+            byte kind = world.dkind[i];
+            if (kind == World.D_SKID) {
+                // Tyre marks.
+                stroke.setColor(world.dcol[i]);
+                stroke.setStrokeWidth(1.4f);
+                float ca = (float) Math.cos(world.dang[i]) * r, sa = (float) Math.sin(world.dang[i]) * r;
+                c.drawLine(x - ca, y - sa, x, y, stroke);
+            } else if (kind == World.D_PUDDLE) {
+                fill.setColor(world.dcol[i]);
+                c.drawCircle(x, y, r, fill);
+                fill.setColor(0x20FFFFFF);
+                c.drawCircle(x - r * 0.3f, y - r * 0.3f, r * 0.35f, fill);
+            } else {
+                fill.setColor(world.dcol[i]);
+                c.drawCircle(x, y, r, fill);
+            }
         }
 
         for (int i = 0, n = world.dispatch.zones.size(); i < n; i++) drawZone(c, world.dispatch.zones.get(i));
@@ -572,8 +586,19 @@ final class GameView extends View implements Menu.Host {
                     size *= 0.4f + f * 0.6f;
                     break;
                 case World.P_FLASH:
+                    // The flash lights up the ground around the muzzle.
+                    fill.setColor(0x1CFFD27A);
+                    c.drawCircle(x, y, size * 3, fill);
                     fill.setColor(alpha(col, 0.9f));
                     break;
+                case World.P_CASING:
+                    fill.setColor(alpha(col, Math.min(1, f * 3)));
+                    c.drawRect(x - 0.45f, y - 0.25f, x + 0.45f, y + 0.25f, fill);
+                    continue;
+                case World.P_DEBRIS:
+                    fill.setColor(alpha(col, Math.min(1, f * 2)));
+                    c.drawRect(x - size, y - size * 0.7f, x + size, y + size * 0.7f, fill);
+                    continue;
                 default:
                     fill.setColor(alpha(col, Math.min(1, f * 2)));
                     break;
@@ -948,8 +973,12 @@ final class GameView extends View implements Menu.Host {
 
     /** A car, police cruiser, army truck or fire engine, with its damage showing. */
     private void drawVehicle(Canvas c, Fleet.Vehicle v) {
-        boolean truck = v.type == Fleet.TRUCK, engine = v.type == Fleet.FIRE_ENGINE;
-        float hl = truck || engine ? 9.5f : 8f, hw = truck ? 5.2f : engine ? 4.9f : 4.4f;
+        if (v.type == Fleet.TANK) {
+            drawTank(c, v);
+            return;
+        }
+        boolean truck = v.type == Fleet.TRUCK, engine = v.type == Fleet.FIRE_ENGINE, amb = v.type == Fleet.AMBULANCE;
+        float hl = truck || engine || amb ? 9.5f : 8f, hw = truck ? 5.2f : engine || amb ? 4.9f : 4.4f;
         if (v.spraying) {
             // The hose: an arc of water from the engine to the fire.
             stroke.setColor(0x99A8D8FF);
@@ -970,7 +999,7 @@ final class GameView extends View implements Menu.Host {
         oval.set(-hl + 1.5f, -hw + 1.5f, hl + 1.5f, hw + 1.5f);
         c.drawRoundRect(oval, 2.5f, 2.5f, fill);
         boolean civ = v.type == Fleet.CAR;
-        int body = civ ? v.color : truck ? 0xFF4F5A33 : engine ? 0xFFC8302A : 0xFF1C1D22;
+        int body = civ ? v.color : truck ? 0xFF4F5A33 : engine ? 0xFFC8302A : amb ? 0xFFF2F2F2 : 0xFF1C1D22;
         if (v.burnt) body = 0xFF2B2623;
         else if (v.broken) body = City.darken(body, 0.65f);
         fill.setColor(body);
@@ -1007,6 +1036,19 @@ final class GameView extends View implements Menu.Host {
             c.drawRect(-hl + 0.8f, -hw + 0.8f, hl * 0.3f, hw - 0.8f, fill);
             fill.setColor(0xFF1E2A33);
             c.drawRect(hl * 0.45f, -hw + 1, hl * 0.7f, hw - 1, fill);
+        } else if (amb) {
+            fill.setColor(0xFF1E2A33);
+            c.drawRect(hl * 0.55f, -hw + 1, hl * 0.78f, hw - 1, fill);
+            fill.setColor(0xFFD83A3A);
+            c.drawRect(-hl, -hw, hl * 0.5f, -hw + 1, fill);
+            c.drawRect(-hl, hw - 1, hl * 0.5f, hw, fill);
+            c.drawRect(-3.5f, -0.8f, 0.5f, 0.8f, fill);
+            c.drawRect(-2.3f, -2f, -0.7f, 2f, fill);
+            if (!v.broken && v.state != 0) {
+                boolean blink = ((int) (v.anim * 8)) % 2 == 0;
+                fill.setColor(blink ? 0xFFFF3A30 : 0xFF3A7BFF);
+                c.drawRect(hl * 0.42f, -hw + 1, hl * 0.52f, hw - 1, fill);
+            }
         } else if (engine) {
             fill.setColor(0xFF1E2A33);
             c.drawRect(hl * 0.5f, -hw + 1, hl * 0.75f, hw - 1, fill);
@@ -1050,28 +1092,77 @@ final class GameView extends View implements Menu.Host {
         c.restore();
     }
 
-    /** The helicopter: shadow on the ground, body, tail and a spinning rotor. */
-    private void drawHeli(Canvas c, Fleet.Vehicle v) {
-        fill.setColor(0x40000000);
-        c.drawCircle(v.x + 18, v.y + 24, 11, fill);
+    /** A tank: tracks, hull and a turret that turns on its own. */
+    private void drawTank(Canvas c, Fleet.Vehicle v) {
+        float hl = 11, hw = 7;
         c.save();
         c.translate(v.x, v.y);
         c.rotate((float) Math.toDegrees(v.angle));
+        fill.setColor(0x55000000);
+        c.drawRect(-hl + 2, -hw + 2, hl + 2, hw + 2, fill);
+        fill.setColor(0xFF2B2E24);
+        c.drawRect(-hl, -hw, hl, -hw + 2.6f, fill);
+        c.drawRect(-hl, hw - 2.6f, hl, hw, fill);
+        // Track links rolling by.
+        fill.setColor(0xFF454A3A);
+        float off = (v.anim * v.speed * 0.3f) % 2.5f;
+        for (float x = -hl + off; x < hl; x += 2.5f) {
+            c.drawRect(x, -hw, x + 0.8f, -hw + 2.6f, fill);
+            c.drawRect(x, hw - 2.6f, x + 0.8f, hw, fill);
+        }
+        fill.setColor(v.broken ? 0xFF3A3E2C : 0xFF55623A);
+        c.drawRect(-hl + 1, -hw + 2.4f, hl - 0.5f, hw - 2.4f, fill);
+        fill.setColor(0xFF4A5532);
+        c.drawRect(-hl + 1, -1, -hl + 4, 1, fill);
+        c.rotate((float) Math.toDegrees(v.turret - v.angle));
+        stroke.setColor(0xFF3A4228);
+        stroke.setStrokeWidth(1.6f);
+        float recoil = v.cannonCd > 3.2f ? -2 : 0;
+        c.drawLine(3 + recoil, 0, 17 + recoil, 0, stroke);
+        fill.setColor(v.broken ? 0xFF434830 : 0xFF627042);
+        oval.set(-5, -4.2f, 5, 4.2f);
+        c.drawRoundRect(oval, 2, 2, fill);
+        fill.setColor(0xFF3E4829);
+        c.drawCircle(-1.5f, -1.5f, 1.3f, fill);
+        c.restore();
+    }
+
+    /** The helicopter: its shadow on the ground (further off the higher it flies), body, tail and rotor. */
+    private void drawHeli(Canvas c, Fleet.Vehicle v) {
+        float alt = v.alt;
+        fill.setColor(alpha(0x40000000, 0.5f + 0.5f * (1 - alt)));
+        c.drawCircle(v.x + 4 + 16 * alt, v.y + 5 + 21 * alt, 11 - 2 * alt, fill);
+        c.save();
+        c.translate(v.x, v.y);
+        c.rotate((float) Math.toDegrees(v.angle));
+        // Bigger when it's high (closer to the camera), squashed sideways when it banks.
+        float sz = 0.85f + 0.3f * alt;
+        c.scale(sz, sz * (1 - Math.min(0.3f, Math.abs(v.bank) * 0.25f)));
         stroke.setColor(0xFF3E4A2C);
         stroke.setStrokeWidth(2.4f);
         c.drawLine(-6, 0, -20, 0, stroke);
         c.drawLine(-19, -3, -19, 3, stroke);
+        // Skids.
+        stroke.setColor(0xFF2A2E22);
+        stroke.setStrokeWidth(0.9f);
+        c.drawLine(-6, -5.5f, 7, -5.5f, stroke);
+        c.drawLine(-6, 5.5f, 7, 5.5f, stroke);
         fill.setColor(0xFF4F5E36);
         oval.set(-8, -5, 9, 5);
         c.drawOval(oval, fill);
         fill.setColor(0xFF7FA3B8);
         oval.set(3, -3.2f, 9, 3.2f);
         c.drawOval(oval, fill);
-        fill.setColor(0x30000000);
+        boolean blink = ((int) (v.anim * 3)) % 2 == 0;
+        fill.setColor(blink ? 0xFFFF3A30 : 0xFF3AFF6A);
+        c.drawCircle(-19, 0, 0.9f, fill);
+        // Rotor: a blurred disc when spinning fast, separate blades while spooling up or landing.
+        float spin = v.state == 9 ? 6 + (2.5f - v.timer) * 10 : 30;
+        fill.setColor(alpha(0x30000000, Math.min(1, spin / 30)));
         c.drawCircle(0, 0, 17, fill);
         stroke.setColor(0xB0202020);
         stroke.setStrokeWidth(1.4f);
-        float a = v.anim * 30;
+        float a = v.anim * spin;
         for (int k = 0; k < 2; k++) {
             float ca = (float) Math.cos(a + k * Math.PI / 2) * 17, sa = (float) Math.sin(a + k * Math.PI / 2) * 17;
             c.drawLine(-ca, -sa, ca, sa, stroke);
@@ -1219,6 +1310,27 @@ final class GameView extends View implements Menu.Host {
             text.setColor(0xFFFFFFFF);
             c.drawText(label, sx, sy, text);
         }
+        // What each vehicle is up to.
+        boolean close = scale / dp > 0.9f;
+        text.setTextSize(10 * dp);
+        for (int i = 0, n = world.fleet.vehicles.size(); i < n; i++) {
+            Fleet.Vehicle v = world.fleet.vehicles.get(i);
+            if (v.type == Fleet.CAR && !close) continue;
+            String label = world.fleet.status(v);
+            if (label == null) continue;
+            float sx = screenX(v.x), sy = screenY(v.y) - (v.type == Fleet.HELI ? 22 + 14 * v.alt : 14) * dp;
+            if (sx < -80 * dp || sx > getWidth() + 80 * dp || sy < 0 || sy > barTop) continue;
+            float tw = text.measureText(label);
+            oval.set(sx - tw / 2 - 6 * dp, sy - 11 * dp, sx + tw / 2 + 6 * dp, sy + 4 * dp);
+            if (uiCovers(oval)) continue;
+            int col = v.type == Fleet.HELI || v.type == Fleet.TANK || v.type == Fleet.TRUCK ? 0xC8304A20
+                    : v.type == Fleet.FIRE_ENGINE ? 0xC8802018 : v.type == Fleet.AMBULANCE ? 0xC8A03030
+                    : v.type == Fleet.CRUISER ? 0xC8203A66 : 0xB0202226;
+            fill.setColor(col);
+            c.drawRoundRect(oval, 6 * dp, 6 * dp, fill);
+            text.setColor(0xFFF2F2F2);
+            c.drawText(label, sx, sy, text);
+        }
     }
 
     /** The last few radio messages. Tapping one moves the camera to where it happened. */
@@ -1352,8 +1464,23 @@ final class GameView extends View implements Menu.Host {
             c.drawLine(0, -r * 0.8f, r * 1.05f, r * 0.15f, stroke);
             c.drawLine(0, r * 0.8f, r * 1.3f, r * 0.35f, stroke);
             stroke.setColor(0xFF161616);
-            stroke.setStrokeWidth(soldier ? r * 0.42f : r * 0.32f);
-            c.drawLine(r * 0.6f, r * 0.3f, soldier ? r * 2.5f : r * 2f, r * 0.3f, stroke);
+            int role = soldier ? e.role : 0;
+            stroke.setStrokeWidth(role == Entity.ROLE_GUNNER ? r * 0.6f : role == Entity.ROLE_COMMANDER ? r * 0.3f
+                    : soldier ? r * 0.42f : r * 0.32f);
+            float muzzle = role == Entity.ROLE_SNIPER ? r * 3.4f : role == Entity.ROLE_GUNNER ? r * 2.6f
+                    : role == Entity.ROLE_COMMANDER ? r * 1.8f : soldier ? r * 2.5f : r * 2f;
+            c.drawLine(r * 0.6f, r * 0.3f, muzzle, r * 0.3f, stroke);
+            if (role == Entity.ROLE_SNIPER) {
+                // Scope.
+                fill.setColor(0xFF0E0E0E);
+                c.drawRect(r * 1.1f, r * 0.05f, r * 1.9f, r * 0.2f, fill);
+            } else if (role == Entity.ROLE_GUNNER) {
+                // Ammo box and belt.
+                fill.setColor(0xFF4A4A30);
+                c.drawRect(r * 0.9f, r * 0.55f, r * 1.5f, r * 1.1f, fill);
+                fill.setColor(0xFFC8A040);
+                c.drawRect(r * 1.0f, r * 0.45f, r * 1.9f, r * 0.55f, fill);
+            }
         } else {
             float sw = (float) Math.sin(e.phase) * r * 0.55f;
             fill.setColor(e.skin);
@@ -1395,8 +1522,21 @@ final class GameView extends View implements Menu.Host {
             oval.set(r * 0.35f, -r * 0.45f, r * 0.85f, r * 0.45f);
             c.drawOval(oval, fill);
         } else if (e.type == Entity.SOLDIER) {
-            fill.setColor(0xFF4C5833);
-            c.drawCircle(r * 0.0f, -r * 0.1f, r * 0.2f, fill);
+            if (e.role == Entity.ROLE_COMMANDER) {
+                // Beret with a gold badge.
+                fill.setColor(0xFF6E1414);
+                c.drawCircle(-r * 0.12f, -r * 0.12f, r * 0.38f, fill);
+                fill.setColor(0xFFF2C94C);
+                c.drawCircle(r * 0.18f, -r * 0.2f, r * 0.14f, fill);
+            } else if (e.role == Entity.ROLE_SNIPER) {
+                // Ghillie hood.
+                fill.setColor(0xFF4E5A2E);
+                c.drawCircle(-r * 0.1f, r * 0.15f, r * 0.22f, fill);
+                c.drawCircle(-r * 0.2f, -r * 0.25f, r * 0.2f, fill);
+            } else {
+                fill.setColor(0xFF4C5833);
+                c.drawCircle(r * 0.0f, -r * 0.1f, r * 0.2f, fill);
+            }
         } else if (e.isZombie()) {
             fill.setColor(0xFF5A1414);
             c.drawCircle(-r * 0.1f, r * 0.18f, r * 0.2f, fill);
@@ -1569,9 +1709,10 @@ final class GameView extends View implements Menu.Host {
             drawToolIcon(c, i, cx, cy, r.height() * 0.26f);
             text.setColor(sel ? 0xFFFFFFFF : 0xFFC8CCD2);
             String name = i == TOOL_ZOMBIE ? Entity.NAMES[ZOMBIE_VARIANTS[zombieVariant]]
-                    : i == TOOL_CIV ? Entity.NAMES[CIV_VARIANTS[civVariant]] : TOOL_NAMES[i];
+                    : i == TOOL_CIV ? Entity.NAMES[CIV_VARIANTS[civVariant]]
+                    : i == TOOL_MIL && milVariant > 0 ? Entity.ROLE_NAMES[milVariant] : TOOL_NAMES[i];
             c.drawText(name, cx, r.bottom - 7 * dp, text);
-            if ((i == TOOL_ZOMBIE || i == TOOL_CIV) && sel) {
+            if ((i == TOOL_ZOMBIE || i == TOOL_CIV || i == TOOL_MIL) && sel) {
                 text.setTextSize(9 * dp);
                 c.drawText("tap to change", cx, r.top + 10 * dp, text);
                 text.setTextSize(11.5f * dp);
@@ -1636,6 +1777,12 @@ final class GameView extends View implements Menu.Host {
         int type = t == TOOL_ZOMBIE ? ZOMBIE_VARIANTS[zombieVariant] : t == TOOL_CIV ? CIV_VARIANTS[civVariant] : TOOL_TYPE[t];
         if (type >= 0) {
             Entity e = icons[type];
+            if (type == Entity.SOLDIER) {
+                // Show the chosen kind of soldier.
+                e.role = t == TOOL_MIL ? milVariant : 0;
+                e.head = e.role == Entity.ROLE_COMMANDER ? 0xFF8E1F1F : 0xFF3C4628;
+                e.radius = e.role == Entity.ROLE_GUNNER ? 4.3f : 4f;
+            }
             float s = size / 5.2f;
             if (type == Entity.BRUTE) s *= 0.62f;
             if (type == Entity.DOG) s *= 1.3f;
@@ -1762,6 +1909,7 @@ final class GameView extends View implements Menu.Host {
                     click();
                     if (tool == i && i == TOOL_ZOMBIE) zombieVariant = (zombieVariant + 1) % ZOMBIE_VARIANTS.length;
                     if (tool == i && i == TOOL_CIV) civVariant = (civVariant + 1) % CIV_VARIANTS.length;
+                    if (tool == i && i == TOOL_MIL) milVariant = (milVariant + 1) % Entity.ROLE_NAMES.length;
                     if (i != TOOL_ORDER) selection.clear();
                     tool = i;
                     hintTime = Math.min(hintTime, 3);
@@ -1934,6 +2082,8 @@ final class GameView extends View implements Menu.Host {
     private void spawnBrush(float wx, float wy) {
         int type = tool == TOOL_ZOMBIE ? ZOMBIE_VARIANTS[zombieVariant] : tool == TOOL_CIV ? CIV_VARIANTS[civVariant] : TOOL_TYPE[tool];
         int n = BRUSHES[brushIdx];
+        // Only one commander at a time.
+        if (tool == TOOL_MIL && milVariant == Entity.ROLE_COMMANDER) n = 1;
         for (int i = 0; i < n; i++) {
             float ox = 0, oy = 0;
             if (n > 1) {
@@ -1941,7 +2091,8 @@ final class GameView extends View implements Menu.Host {
                 ox = (float) (Math.cos(a) * r);
                 oy = (float) (Math.sin(a) * r);
             }
-            world.spawn(type, wx + ox, wy + oy);
+            if (tool == TOOL_MIL) world.spawnSoldier(milVariant, wx + ox, wy + oy);
+            else world.spawn(type, wx + ox, wy + oy);
         }
     }
 

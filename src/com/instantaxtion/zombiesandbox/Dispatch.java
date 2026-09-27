@@ -73,14 +73,16 @@ final class Dispatch {
     final int[] zoneField;
 
     /** Reserves left to call in: police backup waves and military squads (4 each). Never refilled. */
-    int policeReserve, squadReserve, airSorties;
+    int policeReserve, squadReserve, airSorties, tankReserve;
+    private float ambulanceTimer;
     int calls, sheltered, messageCount;
     int copCount, soldierCount;
     private int freeCops, freeSoldiers;
     private float tick, zoneFieldTimer, policeZoneCd = 10, militaryZoneCd = 6, militaryCd, policeCd;
     private boolean zonesDirty = true;
 
-    private static final int[] POLICE_RESERVE = {0, 1, 2, 3}, SQUAD_RESERVE = {0, 1, 2, 3}, AIR_SORTIES = {0, 1, 1, 2};
+    private static final int[] POLICE_RESERVE = {0, 1, 2, 3}, SQUAD_RESERVE = {0, 1, 2, 3}, AIR_SORTIES = {0, 1, 1, 2},
+            TANKS = {0, 1, 1, 2};
 
     Dispatch(World w, int reinforcementLevel) {
         this.w = w;
@@ -88,13 +90,16 @@ final class Dispatch {
         policeReserve = POLICE_RESERVE[reinforcementLevel];
         squadReserve = SQUAD_RESERVE[reinforcementLevel];
         airSorties = AIR_SORTIES[reinforcementLevel];
+        tankReserve = TANKS[reinforcementLevel];
         zoneField = new int[city.w * city.h];
         java.util.Arrays.fill(zoneField, City.FAR);
     }
 
     static String name(Entity e) {
+        if (e.type == Entity.SOLDIER && e.role == Entity.ROLE_COMMANDER) return "Command";
+        if (e.type == Entity.SOLDIER && e.role == Entity.ROLE_SNIPER) return "Overwatch-" + (Math.max(0, e.squad) + 1);
         if (e.type == Entity.COP) return "Unit " + e.callsign;
-        if (e.type == Entity.SOLDIER) return SQUADS[e.squad % SQUADS.length] + "-" + e.member;
+        if (e.type == Entity.SOLDIER) return SQUADS[Math.max(0, e.squad) % SQUADS.length] + "-" + e.member;
         return "Caller";
     }
 
@@ -181,6 +186,7 @@ final class Dispatch {
         if (tick < 0.5f) return;
         float step = tick;
         tick = 0;
+        sendAmbulances(step);
         policeZoneCd -= step;
         militaryZoneCd -= step;
         militaryCd -= step;
@@ -259,12 +265,62 @@ final class Dispatch {
     }
 
     /** Calls the helicopter in, if a sortie is left and it isn't already flying. */
+    /**
+     * Heavy fighting (a commander calling it in, or a big horde): the army sends a tank if it has one,
+     * otherwise the helicopter.
+     */
+    void heavyContact(Entity commander, float x, float y, int count) {
+        String place = city.placeName(x, y);
+        City.Facility base = city.nearestFacility(City.FACILITY_BASE, x, y);
+        if (tankReserve > 0 && base != null && w.fleet.count(Fleet.TANK) == 0
+                && w.fleet.sendTank(base.x, base.y, x, y, place)) {
+            tankReserve--;
+            if (commander != null) say(WHO_MILITARY, commander, "Heavy contact at " + place + ", " + count
+                    + "+ hostiles. Sending in armor!", x, y);
+            else say(WHO_MILITARY, null, "Military: Big horde at " + place + ". A tank is rolling out."
+                    + (tankReserve == 0 ? " It's the only one we have." : ""), x, y);
+            return;
+        }
+        if (airSorties > 0 && !w.fleet.heliBusy()) {
+            if (commander != null) say(WHO_MILITARY, commander, "Heavy contact at " + place + ". Requesting air support!", x, y);
+            requestAir(x, y, place);
+        }
+    }
+
+    /** The hospital sends an ambulance for someone badly hurt when the street around them is quiet. */
+    private void sendAmbulances(float step) {
+        ambulanceTimer -= step;
+        if (ambulanceTimer > 0) return;
+        ambulanceTimer = 4;
+        City.Facility hospital = city.nearestFacility(City.FACILITY_HOSPITAL, 0, 0);
+        if (hospital == null || w.fleet.count(Fleet.AMBULANCE) >= 2) return;
+        Entity best = null;
+        float worst = 1;
+        for (int i = 0, n = w.entities.size(); i < n; i++) {
+            Entity e = w.entities.get(i);
+            if (e.dead || e.type != Entity.CIVILIAN || e.ride != null || e.task == T_SHELTER) continue;
+            float f = e.hp / e.maxHp - (e.infected && !e.cureTried ? 0.3f : 0);
+            if (f >= Math.min(worst, 0.5f)) continue;
+            if (Math.hypot(e.x - hospital.x, e.y - hospital.y) < 300 || w.countZombiesNear(e.x, e.y, 60) > 0) continue;
+            if (w.fleet.hasPatient(e)) continue;
+            worst = f;
+            best = e;
+        }
+        if (best != null && w.fleet.sendAmbulance(hospital, best))
+            say(WHO_INFO, null, "Hospital: Ambulance on its way to an injured person on " + city.placeName(best.x, best.y) + ".",
+                    best.x, best.y);
+    }
+
     private void requestAir(float x, float y, String place) {
         if (airSorties <= 0 || w.fleet.heliBusy()) return;
         airSorties--;
         float fx, fy;
         City.Facility base = city.nearestFacility(City.FACILITY_BASE, x, y);
-        if (base != null) {
+        float[] pad = city.nearestHelipad(x, y);
+        if (pad != null) {
+            fx = pad[0];
+            fy = pad[1];
+        } else if (base != null) {
             fx = base.x;
             fy = base.y;
         } else {
@@ -423,7 +479,7 @@ final class Dispatch {
                     e.incident = inc;
                 }
             }
-            say(WHO_MILITARY, lead, "Copy that, Police. " + SQUADS[lead.squad % SQUADS.length]
+            say(WHO_MILITARY, lead, "Copy that, Police. " + SQUADS[Math.max(0, lead.squad) % SQUADS.length]
                     + " squad moving to " + place + ".", lead.x, lead.y);
             squad.clear();
         } else if (!sendReserveSquad(x, y, place, inc, zone)) {
@@ -504,7 +560,7 @@ final class Dispatch {
         }
         if (first == null) return;
         if (a.type == Entity.SOLDIER)
-            say(WHO_MILITARY, first, SQUADS[first.squad % SQUADS.length] + " squad "
+            say(WHO_MILITARY, first, SQUADS[Math.max(0, first.squad) % SQUADS.length] + " squad "
                     + (from != null ? "rolling out of " + from.name : "on the ground") + ". Moving to " + a.place + ".", p[0], p[1]);
         else say(WHO_POLICE, first, (from != null ? "Leaving " + from.name : "Backup has arrived") + ". Heading to "
                 + a.place + ".", p[0], p[1]);

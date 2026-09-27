@@ -88,7 +88,7 @@ final class World {
     final float[] plife = new float[MAXP], pmax = new float[MAXP], psize = new float[MAXP];
     final int[] pcol = new int[MAXP];
     final byte[] ptype = new byte[MAXP];
-    static final byte P_DOT = 0, P_SMOKE = 1, P_FLASH = 2, P_FIRE = 3;
+    static final byte P_DOT = 0, P_SMOKE = 1, P_FLASH = 2, P_FIRE = 3, P_CASING = 4, P_DEBRIS = 5;
     private int pnext;
 
     // Bullet tracers.
@@ -101,6 +101,10 @@ final class World {
     static final int MAXD = 700;
     final float[] dx = new float[MAXD], dy = new float[MAXD], dr = new float[MAXD];
     final int[] dcol = new int[MAXD];
+    /** Decal shape: a round splat, a skid streak (dang = direction, dr = length) or a puddle. */
+    static final byte D_SPLAT = 0, D_SKID = 1, D_PUDDLE = 2;
+    final byte[] dkind = new byte[MAXD];
+    final float[] dang = new float[MAXD];
     int dcount;
     private int dnext;
 
@@ -168,11 +172,28 @@ final class World {
             for (int i = 0; i < n; i++) spawn(Entity.COP, f.x + rnd.nextFloat() * 40 - 20, f.y + rnd.nextFloat() * 40 - 20);
         }
         spawnRandom(Entity.COP, cfg.cops() - copsAtStations);
+        int firstSoldier = entities.size();
         if (base != null) {
             for (int i = 0; i < cfg.soldiers(); i++)
                 spawn(Entity.SOLDIER, base.x + rnd.nextFloat() * base.r - base.r / 2, base.y + rnd.nextFloat() * base.r - base.r / 2);
         } else {
             spawnRandom(Entity.SOLDIER, cfg.soldiers());
+        }
+        // Every fourth soldier carries the squad's machine gun, big garrisons have snipers, and a
+        // commander runs the show.
+        int snipers = cfg.soldiers() >= 10 ? 2 : 0;
+        for (int i = firstSoldier, n = entities.size(); i < n; i++) {
+            Entity e = entities.get(i);
+            if (e.type != Entity.SOLDIER) continue;
+            if (e.member == 4) applyRole(e, Entity.ROLE_GUNNER);
+            else if (e.member == 3 && snipers > 0) {
+                applyRole(e, Entity.ROLE_SNIPER);
+                snipers--;
+            }
+        }
+        if (cfg.soldiers() >= 5) {
+            float[] p = base != null ? new float[]{base.x, base.y} : city.randomWalkable(rnd);
+            spawnSoldier(Entity.ROLE_COMMANDER, p[0], p[1]);
         }
         // Guards on the precinct doors and the base gates.
         for (City.Facility f : city.facilities) {
@@ -372,6 +393,8 @@ final class World {
     /** Water from a fire hose: the fire dies down fast and anything about to blow up is made safe. */
     void douse(Fire f, float dt) {
         f.life -= 9 * dt;
+        if (rnd.nextFloat() < dt * 1.5f)
+            decal(f.x + rnd.nextFloat() * 24 - 12, f.y + rnd.nextFloat() * 24 - 12, 4 + rnd.nextFloat() * 6, 0x3060A0D0, D_PUDDLE, 0);
         if (rnd.nextFloat() < dt * 5)
             particle(f.x, f.y - 3, rnd.nextFloat() * 8 - 4, -12, 1.5f, 3, 0xFFE8E8E8, P_SMOKE);
         for (int i = pendingBlasts.size() - 1; i >= 0; i--) {
@@ -587,6 +610,64 @@ final class World {
         return e;
     }
 
+    /** Spawns a soldier with a particular job. */
+    Entity spawnSoldier(int role, float x, float y) {
+        Entity e = spawn(Entity.SOLDIER, x, y);
+        if (e == null) return null;
+        applyRole(e, role);
+        if (role == Entity.ROLE_COMMANDER) {
+            // The commander isn't part of a squad.
+            dispatch.soldierCount--;
+            e.squad = -1;
+        }
+        return e;
+    }
+
+    /** Commanders carry a pistol and a radio, snipers a scoped rifle, gunners a belt-fed machine gun. */
+    void applyRole(Entity e, int role) {
+        e.role = role;
+        switch (role) {
+            case Entity.ROLE_COMMANDER:
+                e.hp = e.maxHp = 130;
+                e.magSize = 15;
+                e.reserve = 60;
+                e.grenades = 0;
+                e.body = 0xFF4A5634;
+                e.head = 0xFF8E1F1F;
+                break;
+            case Entity.ROLE_SNIPER:
+                e.hp = e.maxHp = 80;
+                e.magSize = 5;
+                e.reserve = 45;
+                e.grenades = 0;
+                e.body = 0xFF434B2C;
+                e.head = 0xFF363D22;
+                break;
+            case Entity.ROLE_GUNNER:
+                e.hp = e.maxHp = 130;
+                e.magSize = 100;
+                e.reserve = 200;
+                e.grenades = 0;
+                e.speed = 19;
+                e.runSpeed = 31;
+                e.mass = 1.6f;
+                e.radius = 4.3f;
+                break;
+        }
+        e.ammo = e.magSize;
+    }
+
+    /** Full spare ammo for a unit's weapon. */
+    static int fullReserve(Entity e) {
+        if (e.type != Entity.SOLDIER) return 48;
+        switch (e.role) {
+            case Entity.ROLE_COMMANDER: return 60;
+            case Entity.ROLE_SNIPER: return 45;
+            case Entity.ROLE_GUNNER: return 200;
+            default: return 150;
+        }
+    }
+
     /** Makes a person or zombie without adding it to the city (used when loading a save). */
     Entity create(int type, float x, float y) {
         return make(type, x, y, -1, 0);
@@ -719,9 +800,25 @@ final class World {
         histCount++;
     }
 
+    /** Commanders on the map this tick (their soldiers shoot better when they're close). */
+    final ArrayList<Entity> commanders = new ArrayList<Entity>();
+
+    private boolean commanded(Entity e) {
+        for (int i = 0, n = commanders.size(); i < n; i++) {
+            Entity c = commanders.get(i);
+            if (c != e && (c.x - e.x) * (c.x - e.x) + (c.y - e.y) * (c.y - e.y) < 170 * 170) return true;
+        }
+        return false;
+    }
+
     private void recount() {
         Arrays.fill(counts, 0);
-        for (int i = 0, n = entities.size(); i < n; i++) counts[entities.get(i).type]++;
+        commanders.clear();
+        for (int i = 0, n = entities.size(); i < n; i++) {
+            Entity e = entities.get(i);
+            counts[e.type]++;
+            if (e.role == Entity.ROLE_COMMANDER && e.type == Entity.SOLDIER) commanders.add(e);
+        }
         hiding = 0;
         for (int i = 0, n = city.buildings.size(); i < n; i++) hiding += city.buildings.get(i).occupants.size();
         riding = fleet.riderCount();
@@ -1031,6 +1128,7 @@ final class World {
                 z.hordeAnnounced = true;
                 dispatch.say(Dispatch.WHO_INFO, null, "A horde of about " + (size / 5 * 5) + " zombies is moving through "
                         + city.placeName(z.x, z.y) + ".", z.x, z.y);
+                if (size >= 25) dispatch.heavyContact(null, z.x, z.y, size);
             }
             return;
         }
@@ -1283,12 +1381,9 @@ final class World {
                 float d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
                 if (d < 8) {
                     enterBuilding(e, b);
-                } else {
-                    steer(e, ddx / d, ddy / d, e.runSpeed);
-                    if (e.blocked && rnd.nextFloat() < 0.2f) {
-                        e.task = Dispatch.T_NONE;
-                        e.building = null;
-                    }
+                } else if (!walkTo(e, b, ddx, ddy, d, e.runSpeed) && e.blocked && rnd.nextFloat() < 0.1f) {
+                    e.task = Dispatch.T_NONE;
+                    e.building = null;
                 }
                 return;
             }
@@ -1525,14 +1620,76 @@ final class World {
         wander(e, e.speed * 0.6f);
     }
 
+    private final ArrayList<City.Building> doorPaths = new ArrayList<City.Building>();
+
+    /**
+     * Walks to a building's door around the building (not into its wall): a path field to the door is
+     * made the first time anyone needs it. Returns false if it had to fall back to walking straight.
+     */
+    private boolean walkTo(Entity e, City.Building b, float ddx, float ddy, float d, float speed) {
+        if (d < 20 && city.los(e.x, e.y, b.doorX, b.doorY) && !e.blocked) {
+            steer(e, ddx / d, ddy / d, speed);
+            return true;
+        }
+        if (b.field == null) {
+            // Keep a limited number of these around.
+            if (doorPaths.size() >= 60) doorPaths.remove(0).field = null;
+            b.field = new int[city.w * city.h];
+            city.fieldFromPoints(b.field, new float[]{b.doorX}, new float[]{b.doorY}, 1);
+            doorPaths.add(b);
+        }
+        e.blocked = false;
+        if (followField(e, b.field, speed)) return true;
+        steer(e, ddx / d, ddy / d, speed);
+        return false;
+    }
+
+    /** A pharmacy with stock left, if one is closer than the hospital. */
+    private City.Building pharmacyNear(Entity e, float maxDist) {
+        City.Building best = null;
+        float bd = maxDist * maxDist;
+        for (int i = 0, n = city.buildings.size(); i < n; i++) {
+            City.Building b = city.buildings.get(i);
+            if (b.kind != City.PHARMACY || b.collapsed || b.stock <= 0) continue;
+            float d = (b.doorX - e.x) * (b.doorX - e.x) + (b.doorY - e.y) * (b.doorY - e.y);
+            if (d < bd) {
+                bd = d;
+                best = b;
+            }
+        }
+        return best;
+    }
+
     /** Hurt people walk to the hospital when nothing is chasing them, and heal there. */
     private boolean healSeeking(Entity e, Entity threat, float dt) {
         City.Facility hospital = city.nearestFacility(City.FACILITY_HOSPITAL, e.x, e.y);
-        if (hospital == null) return false;
         boolean needs = e.hp < e.maxHp * 0.45f || (e.infected && e.infectTimer > 6 && !e.cureTried);
         if (e.task == Dispatch.T_NONE && needs && threat == null) e.task = Dispatch.T_HEAL;
         if (e.task != Dispatch.T_HEAL) return false;
         if (threat != null && e.fleeTimer > 0) {
+            e.task = Dispatch.T_NONE;
+            return false;
+        }
+        // A pharmacy on the way patches people up (and sometimes stops an infection).
+        float hd = hospital == null ? Float.MAX_VALUE : (float) Math.hypot(hospital.x - e.x, hospital.y - e.y);
+        City.Building ph = pharmacyNear(e, Math.min(hd, 700));
+        if (ph != null) {
+            float ddx = ph.doorX - e.x, ddy = ph.doorY - e.y;
+            float d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
+            if (d < 10) {
+                ph.stock--;
+                e.hp = Math.min(e.maxHp, e.hp + e.maxHp * 0.5f);
+                if (e.infected && !e.cureTried) tryCure(e, 0.3f);
+                e.task = Dispatch.T_NONE;
+                e.talkTimer = 1.5f;
+                for (int k = 0; k < 6; k++)
+                    particle(e.x + rnd.nextFloat() * 6 - 3, e.y - 4, 0, -12, 0.6f, 1.2f, 0xFF63E06B, P_DOT);
+                return true;
+            }
+            walkTo(e, ph, ddx, ddy, d, e.speed * 1.3f);
+            return true;
+        }
+        if (hospital == null) {
             e.task = Dispatch.T_NONE;
             return false;
         }
@@ -1612,7 +1769,8 @@ final class World {
 
     private void thinkArmed(Entity e, float dt) {
         boolean soldier = e.type == Entity.SOLDIER;
-        float range = soldier ? 230 : 160;
+        float range = soldier ? (e.role == Entity.ROLE_SNIPER ? 380 : e.role == Entity.ROLE_COMMANDER ? 180 : 230) : 160;
+        if (e.role == Entity.ROLE_COMMANDER && soldier) command(e, dt);
         if (e.meleeCd <= 0) {
             Entity z = nearestInReach(e);
             if (z != null) shove(e, z, true);
@@ -1623,7 +1781,7 @@ final class World {
             City.Facility f = supplyPoint(e);
             if (f != null && (f.x - e.x) * (f.x - e.x) + (f.y - e.y) * (f.y - e.y) < f.r * f.r * 2) {
                 // Already at the armoury (guards on a post): restock on the spot.
-                e.reserve = soldier ? 150 : 48;
+                e.reserve = fullReserve(e);
                 e.reload = 2;
                 dry = false;
             }
@@ -1647,7 +1805,7 @@ final class World {
             } else {
                 float ddx = f.x - e.x, ddy = f.y - e.y;
                 if (ddx * ddx + ddy * ddy < f.r * f.r) {
-                    e.reserve = soldier ? 150 : 48;
+                    e.reserve = fullReserve(e);
                     e.ammo = e.magSize;
                     e.task = Dispatch.T_NONE;
                     e.outOfAmmoSaid = false;
@@ -1664,10 +1822,10 @@ final class World {
             }
         }
         // Standing at a supply point quietly tops up spare ammo.
-        if (e.reserve < (soldier ? 150 : 48) && rnd.nextFloat() < dt) {
+        if (e.reserve < fullReserve(e) && rnd.nextFloat() < dt) {
             City.Facility f = supplyPoint(e);
             if (f != null && (f.x - e.x) * (f.x - e.x) + (f.y - e.y) * (f.y - e.y) < f.r * f.r * 1.5f)
-                e.reserve = Math.min(soldier ? 150 : 48, e.reserve + e.magSize);
+                e.reserve = Math.min(fullReserve(e), e.reserve + e.magSize);
         }
 
         Entity t = e.ammo > 0 || e.reserve > 0 ? pickTarget(e, range) : null;
@@ -1675,7 +1833,7 @@ final class World {
         if (t != null && e.task != Dispatch.T_MOVE) {
             float ddx = t.x - e.x, ddy = t.y - e.y;
             float d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
-            float keep = soldier ? 40 : 50;
+            float keep = soldier ? (e.role == Entity.ROLE_COMMANDER ? 90 : e.role == Entity.ROLE_SNIPER ? 60 : 40) : 50;
             Dispatch.SafeZone guarding = e.task == Dispatch.T_GUARD ? e.zone : null;
             boolean swarmed = countZombiesNear(e.x, e.y, 40) >= 3;
             if (stationary) standAt(e, e.postX, e.postY, 0.5f);
@@ -1689,7 +1847,7 @@ final class World {
                 float side = (e.callsign + e.member) % 2 == 0 ? 1 : -1;
                 steer(e, -ddy / d * side, ddx / d * side, e.speed);
             }
-            if (soldier && e.grenades > 0 && e.grenadeCd <= 0 && d > 70 && d < 200
+            if (soldier && e.role == Entity.ROLE_RIFLE && e.grenades > 0 && e.grenadeCd <= 0 && d > 70 && d < 200
                     && countZombiesNear(t.x, t.y, 40) >= 5 && !peopleNear(t.x, t.y, 60)) {
                 throwGrenade(e, t.x, t.y);
             }
@@ -1736,7 +1894,7 @@ final class World {
         if (soldier && e.task == Dispatch.T_NONE) {
             if (e.taskTimer <= 0) {
                 e.taskTimer = 2;
-                e.leader = squadLead(e);
+                e.leader = e.role == Entity.ROLE_COMMANDER ? biggestGroup(e) : squadLead(e);
             }
             Entity lead = e.leader;
             if (lead != null && !lead.dead) {
@@ -1781,7 +1939,7 @@ final class World {
         e.aiming = true;
         e.angle = turn(e.angle, (float) Math.atan2(t.y - e.y, t.x - e.x), dt * 14);
         if (e.ammo <= 0) {
-            if (e.reload <= 0 && e.reserve > 0) e.reload = e.type == Entity.SOLDIER ? 2.2f : 1.6f;
+            if (e.reload <= 0 && e.reserve > 0) e.reload = e.type == Entity.SOLDIER ? (e.role == Entity.ROLE_GUNNER ? 4f : 2.2f) : 1.6f;
             return true;
         }
         if (e.reload <= 0 && e.cooldown <= 0) {
@@ -1846,7 +2004,7 @@ final class World {
     }
 
     /** Anyone who isn't a zombie within a radius (so soldiers don't grenade their own side). */
-    private boolean peopleNear(float x, float y, float radius) {
+    boolean peopleNear(float x, float y, float radius) {
         int cx0 = Math.max(0, (int) ((x - radius) / CELL)), cx1 = Math.min(gw - 1, (int) ((x + radius) / CELL));
         int cy0 = Math.max(0, (int) ((y - radius) / CELL)), cy1 = Math.min(gh - 1, (int) ((y + radius) / CELL));
         for (int cy = cy0; cy <= cy1; cy++)
@@ -1859,6 +2017,37 @@ final class World {
                 }
             }
         return false;
+    }
+
+    /** The commander stays with the soldier who has the most of the army around them. */
+    private Entity biggestGroup(Entity e) {
+        Entity best = null;
+        int most = 0;
+        for (int i = 0, n = entities.size(); i < n; i++) {
+            Entity o = entities.get(i);
+            if (o == e || o.dead || o.type != Entity.SOLDIER || o.member != 1) continue;
+            int near = 0;
+            for (int k = 0; k < n; k++) {
+                Entity q = entities.get(k);
+                if (q.type == Entity.SOLDIER && Math.abs(q.x - o.x) < 120 && Math.abs(q.y - o.y) < 120) near++;
+            }
+            if (near > most) {
+                most = near;
+                best = o;
+            }
+        }
+        return best;
+    }
+
+    /** The commander calls in armour or air support when the fighting around them gets heavy. */
+    private void command(Entity e, float dt) {
+        e.screamCd -= dt;
+        if (e.screamCd > 0) return;
+        e.screamCd = 3;
+        int near = countZombiesNear(e.x, e.y, 220);
+        if (near < 12) return;
+        e.screamCd = 45;
+        dispatch.heavyContact(e, e.x, e.y, near);
     }
 
     /** The squad member a soldier sticks with: the lowest-numbered one still standing. */
@@ -1877,8 +2066,19 @@ final class World {
         boolean soldier = e.type == Entity.SOLDIER;
         e.ammo--;
         shotsFired++;
-        float dmg;
-        if (soldier) {
+        float dmg, accuracy = e.hasGun ? 0.5f : 0.7f;
+        if (soldier && e.role == Entity.ROLE_SNIPER) {
+            e.cooldown = 1.6f;
+            dmg = 75;
+            accuracy = 0.97f;
+        } else if (soldier && e.role == Entity.ROLE_GUNNER) {
+            e.cooldown = 0.075f;
+            dmg = 10;
+            accuracy = 0.55f;
+        } else if (soldier && e.role == Entity.ROLE_COMMANDER) {
+            e.cooldown = 0.5f;
+            dmg = 12;
+        } else if (soldier) {
             e.burst++;
             e.cooldown = e.burst % 3 == 0 ? 0.45f : 0.1f;
             dmg = 16;
@@ -1886,12 +2086,19 @@ final class World {
             e.cooldown = e.hasGun ? 0.8f : 0.55f;
             dmg = 10;
         }
-        if (e.ammo <= 0 && e.reserve > 0) e.reload = soldier ? 2.2f : 1.6f;
-        if (rnd.nextFloat() < 0.25f) noise(e.x, e.y, 220);
+        // Soldiers near their commander fight better.
+        if (soldier && e.role != Entity.ROLE_COMMANDER && !commanders.isEmpty() && commanded(e)) accuracy += 0.12f;
+        if (e.ammo <= 0 && e.reserve > 0) e.reload = soldier ? (e.role == Entity.ROLE_GUNNER ? 4f : 2.2f) : 1.6f;
+        if (rnd.nextFloat() < (e.role == Entity.ROLE_GUNNER ? 0.08f : 0.25f)) noise(e.x, e.y, e.role == Entity.ROLE_SNIPER ? 300 : 220);
+        // A spent case flies out of the side of the gun.
+        float ea = e.angle + 1.57f + (rnd.nextFloat() - 0.5f) * 0.6f;
+        if (rnd.nextFloat() < 0.7f)
+            particle(e.x, e.y, (float) Math.cos(ea) * (25 + rnd.nextFloat() * 20), (float) Math.sin(ea) * (25 + rnd.nextFloat() * 20),
+                    2.5f, 0.45f, 0xFFD9B44A, P_CASING);
         float ca = (float) Math.cos(e.angle), sa = (float) Math.sin(e.angle);
         float mx = e.x + ca * e.radius * (soldier ? 2.5f : 2f) - sa * e.radius * 0.3f;
         float my = e.y + sa * e.radius * (soldier ? 2.5f : 2f) + ca * e.radius * 0.3f;
-        float hit = (e.hasGun ? 0.5f : 0.7f) * (1 - 0.4f * d / range) + (t.type == Entity.BRUTE ? 0.1f : 0);
+        float hit = accuracy * (1 - (e.role == Entity.ROLE_SNIPER ? 0.1f : 0.4f) * d / range) + (t.type == Entity.BRUTE ? 0.1f : 0);
         if (t.type == Entity.CRAWLER) hit *= 0.6f;
         if (rnd.nextFloat() < hit) {
             t.hp -= dmg;
@@ -1921,7 +2128,7 @@ final class World {
             tracer(mx, my, ex, ey);
         }
         particle(mx, my, 0, 0, 0.06f, soldier ? 3.2f : 2.6f, 0xFFFFE9A0, P_FLASH);
-        emit(soldier ? Sfx.RIFLE : Sfx.PISTOL, e.x, e.y);
+        emit(soldier && e.role != Entity.ROLE_COMMANDER ? Sfx.RIFLE : Sfx.PISTOL, e.x, e.y);
     }
 
     // ------------------------------------------------------------------ hiding indoors, pickups
@@ -2387,7 +2594,7 @@ final class World {
         return true;
     }
 
-    private void callRide(Entity e, Fleet.Vehicle v) {
+    void callRide(Entity e, Fleet.Vehicle v) {
         e.ride = v;
         if (e.type == Entity.CIVILIAN) e.task = Dispatch.T_RIDE;
         e.talkTimer = 1.5f;
@@ -2435,6 +2642,16 @@ final class World {
             }
         }
         return best;
+    }
+
+    /** A tank round: a flash at the muzzle and a blast where it lands. */
+    void tankShell(float fx, float fy, float tx, float ty) {
+        particle(fx, fy, 0, 0, 0.12f, 7, 0xFFFFE9A0, P_FLASH);
+        for (int i = 0; i < 8; i++)
+            particle(fx, fy, rnd.nextFloat() * 30 - 15, rnd.nextFloat() * 30 - 15, 1.2f, 4, 0xFF8A8478, P_SMOKE);
+        tracer(fx, fy, tx, ty);
+        shotsFired++;
+        explode(tx, ty, 50, 230);
     }
 
     /** One burst from the helicopter's door gun. */
@@ -2534,6 +2751,12 @@ final class World {
             float a = rnd.nextFloat() * TAU, s = 30 + rnd.nextFloat() * radius * 2.2f;
             particle(x, y, (float) Math.cos(a) * s, (float) Math.sin(a) * s, 0.3f + rnd.nextFloat() * 0.4f,
                     2 + rnd.nextFloat() * 3, rnd.nextBoolean() ? 0xFFFFB030 : 0xFFFF6A1A, P_FIRE);
+        }
+        // Chunks of debris thrown out.
+        for (int i = 0; i < 18; i++) {
+            float a = rnd.nextFloat() * TAU, s = 60 + rnd.nextFloat() * radius * 2.5f;
+            particle(x, y, (float) Math.cos(a) * s, (float) Math.sin(a) * s, 0.8f + rnd.nextFloat() * 0.6f,
+                    0.8f + rnd.nextFloat() * 1.2f, rnd.nextBoolean() ? 0xFF3A3632 : 0xFF6A645C, P_DEBRIS);
         }
         for (int i = 0; i < 22; i++) {
             float a = rnd.nextFloat() * TAU, s = 5 + rnd.nextFloat() * radius * 0.8f;
@@ -2668,6 +2891,10 @@ final class World {
     }
 
     private void decal(float x, float y, float r, int color) {
+        decal(x, y, r, color, D_SPLAT, 0);
+    }
+
+    void decal(float x, float y, float r, int color, byte kind, float angle) {
         int i = dnext;
         dnext = (dnext + 1) % MAXD;
         if (dcount < MAXD) dcount++;
@@ -2675,6 +2902,15 @@ final class World {
         dy[i] = y;
         dr[i] = r;
         dcol[i] = color;
+        dkind[i] = kind;
+        dang[i] = angle;
+    }
+
+    /** Rubber left on the road by a car braking hard or skidding in a crash. */
+    void skid(float x, float y, float angle, float length) {
+        float sx = (float) -Math.sin(angle) * 2.8f, sy = (float) Math.cos(angle) * 2.8f;
+        decal(x + sx, y + sy, length, 0x55101010, D_SKID, angle);
+        decal(x - sx, y - sy, length, 0x55101010, D_SKID, angle);
     }
 
     private void updateEffects(float dt) {
@@ -2683,7 +2919,7 @@ final class World {
             plife[i] -= dt;
             px[i] += pvx[i] * dt;
             py[i] += pvy[i] * dt;
-            float drag = ptype[i] == P_SMOKE ? 1.5f : 5f;
+            float drag = ptype[i] == P_SMOKE ? 1.5f : ptype[i] == P_CASING ? 9f : ptype[i] == P_DEBRIS ? 2.5f : 5f;
             pvx[i] -= pvx[i] * Math.min(1, drag * dt);
             pvy[i] -= pvy[i] * Math.min(1, drag * dt);
             if (ptype[i] == P_SMOKE) psize[i] += dt * 6;

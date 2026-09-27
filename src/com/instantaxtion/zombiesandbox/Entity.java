@@ -8,7 +8,11 @@ final class Entity {
     static final String[] NAMES = {"Civilian", "Cop", "Soldier", "Medic", "Dog", "Zombie", "Runner", "Brute",
             "Crawler", "Screamer"};
 
-    int type;
+    /** Soldiers' jobs: rifleman, the commander, snipers and machine gunners. */
+    static final int ROLE_RIFLE = 0, ROLE_COMMANDER = 1, ROLE_SNIPER = 2, ROLE_GUNNER = 3;
+    static final String[] ROLE_NAMES = {"Soldier", "Commander", "Sniper", "Gunner"};
+
+    int type, role;
     float x, y, vx, vy, angle;
     float hp, maxHp, radius, speed, runSpeed, mass = 1f;
 

@@ -10,11 +10,11 @@ final class Settings implements OptionSet {
     private static final String[] LABELS = {"Music", "Sound effects", "View", "Blood", "Health bars",
             "Screen shake", "Show FPS", "Max population", "Radio messages"};
     private static final String[][] VALUES = {VOLUME, VOLUME, {"Bird's-eye", "3D"}, ON_OFF, ON_OFF, ON_OFF, ON_OFF,
-            {"800", "1600", "2500"}, ON_OFF};
+            {"800", "1600", "2500", "4000", "6000"}, ON_OFF};
     private static final String[] KEYS = {"music", "sfx", "buildings3d", "gore", "healthBars", "shake", "fps",
             "maxPop", "radio"};
-    private static final int[] DEFAULTS = {2, 3, 1, 1, 1, 1, 0, 1, 1};
-    private static final int[] MAX_POP = {800, 1600, 2500};
+    private static final int[] DEFAULTS = {2, 3, 1, 1, 1, 1, 0, 2, 1};
+    private static final int[] MAX_POP = {800, 1600, 2500, 4000, 6000};
 
     private final SharedPreferences prefs;
     private final int[] v = DEFAULTS.clone();

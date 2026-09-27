@@ -20,7 +20,11 @@ final class City {
             STATUE = 7, LOT = 8, BASE = 9, FENCE = 10, PUMP = 11, RUBBLE = 12;
 
     static final int OFFICE = 0, HOUSE = 1, WAREHOUSE = 2, STATION = 3, BARRACKS = 4, TOWER = 5, HOSPITAL = 6,
-            SHOP = 7, CHURCH = 8, SCHOOL = 9, FIRE_STATION = 10, MARKET = 11, KIOSK = 12, SPIRE = 13, CRYPT = 14;
+            SHOP = 7, CHURCH = 8, SCHOOL = 9, FIRE_STATION = 10, MARKET = 11, KIOSK = 12, SPIRE = 13, CRYPT = 14,
+            APARTMENT = 15, GARAGE = 16, PHARMACY = 17;
+    static final int KIND_COUNT = 18;
+    private static final int[] APARTMENT_WALLS = {0xFFC9B8A0, 0xFFB5A08A, 0xFFD4C8B8, 0xFFA89484, 0xFFBFB0C0};
+    private static final String[] PHARMACIES = {"CityCare Pharmacy", "Main Street Drugs", "HealthPlus", "Corner Pharmacy"};
     /** Ground decorations drawn into the map: {kind, x0, y0, x1, y1, variant} in world units. */
     static final int D_COURT = 0, D_FIELD = 1, D_PLAYGROUND = 2, D_GARDEN = 3, D_GRAVE = 4, D_SKATE = 5,
             D_CANOPY = 6;
@@ -168,6 +172,11 @@ final class City {
             "Walnut St", "Spruce St", "Birch St", "Chestnut St", "Harbor St", "Union St"};
 
     City(CityConfig cfg) {
+        this(cfg, 1f);
+    }
+
+    /** A city; with a detail below 1 the map bitmap is drawn smaller (for the New Game preview). */
+    City(CityConfig cfg, float detail) {
         this.cfg = cfg;
         w = h = cfg.tiles();
         rnd = new Random(cfg.seed);
@@ -195,7 +204,8 @@ final class City {
                     l[4], l[8], l[5], l[6]);
             int k = l[6];
             if (k == OFFICE || k == HOUSE || k == WAREHOUSE || k == SHOP || k == CHURCH || k == SCHOOL || k == MARKET
-                    || k == KIOSK) placeDoor(b, l);
+                    || k == KIOSK || k == APARTMENT || k == GARAGE || k == PHARMACY) placeDoor(b, l);
+            if (k == APARTMENT) b.capacity = Math.max(8, Math.min(30, l[2] * l[3]));
             // Bigger and taller buildings take more to bring down.
             b.maxHp = b.hp = 150 + l[2] * l[3] * 22 + l[7] * 60;
             Random nr = new Random(l[5]);
@@ -204,6 +214,9 @@ final class City {
             else if (k == MARKET) {
                 b.name = MARKETS[nr.nextInt(MARKETS.length)];
                 b.stock = 240;
+            } else if (k == PHARMACY) {
+                b.name = PHARMACIES[nr.nextInt(PHARMACIES.length)];
+                b.stock = 60;
             }
             for (int j = l[1]; j < l[1] + l[3]; j++)
                 for (int i = l[0]; i < l[0] + l[2]; i++) buildingAt[j * w + i] = buildings.size();
@@ -215,8 +228,10 @@ final class City {
             f.field = new int[w * h];
             fieldFromPoints(f.field, new float[]{f.x}, new float[]{f.y}, 1);
         }
-        bitmap = Bitmap.createBitmap(w * T, h * T, Bitmap.Config.ARGB_8888);
-        render(new Canvas(bitmap));
+        bitmap = Bitmap.createBitmap((int) (w * T * detail), (int) (h * T * detail), Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bitmap);
+        if (detail != 1f) canvas.scale(detail, detail);
+        render(canvas);
     }
 
     /** Puts the door in the middle of the first side that opens onto walkable ground. */
@@ -429,6 +444,10 @@ final class City {
                 if (roadCol[x] == roadRow[y]) continue;
                 if (rnd.nextFloat() > carChance) continue;
                 if (hasNeighbor(x, y, CAR)) continue;
+                // Parked against the kerb, never in the middle lanes.
+                boolean vertical = roadCol[x];
+                boolean kerb = vertical ? !isRoad(x - 1, y) || !isRoad(x + 1, y) : !isRoad(x, y - 1) || !isRoad(x, y + 1);
+                if (!kerb) continue;
                 tiles[y * w + x] = CAR;
             }
         }
@@ -640,7 +659,11 @@ final class City {
                 else style = CityConfig.STYLE_WAREHOUSES;
             }
             if (rnd.nextInt(100) < cfg.shopShare() && bw >= 5 && bh >= 5 && style != CityConfig.STYLE_WAREHOUSES) shops(x, y, bw, bh);
-            else if (style == CityConfig.STYLE_HOUSES) houses(x, y, bw, bh);
+            else if (style == CityConfig.STYLE_HOUSES && rnd.nextInt(100) < cfg.buildingMix()[0] / 2 && bw >= 5 && bh >= 5) {
+                // An apartment block on the edge of the suburbs.
+                fill(x, y, bw, bh, GRASS);
+                addLot(x + 1, y + 1, bw - 2, bh - 2, APARTMENT);
+            } else if (style == CityConfig.STYLE_HOUSES) houses(x, y, bw, bh);
             else if (style == CityConfig.STYLE_WAREHOUSES) warehouses(x, y, bw, bh);
             else if (cfg.density() == 0 && bw >= 5 && bh >= 5) {
                 fill(x, y, bw, bh, GRASS);
@@ -649,6 +672,10 @@ final class City {
                 lots(x, y, bw, bh, 0);
             }
         }
+    }
+
+    private boolean isRoad(int x, int y) {
+        return x >= 0 && y >= 0 && x < w && y < h && tiles[y * w + x] == ROAD;
     }
 
     private boolean hasNeighbor(int x, int y, byte type) {
@@ -681,7 +708,17 @@ final class City {
             return;
         }
         if (lw < 2 || lh < 2) return;
-        addLot(x, y, lw, lh, OFFICE);
+        addLot(x, y, lw, lh, officeKind(lw, lh));
+    }
+
+    /** Most lots are offices; some maps mix in apartment blocks, parking garages and pharmacies. */
+    private int officeKind(int lw, int lh) {
+        int[] mix = cfg.buildingMix();
+        int r = rnd.nextInt(100);
+        if (r < mix[0] && lw >= 3 && lh >= 3) return APARTMENT;
+        if ((r -= mix[0]) < mix[1] && lw >= 4 && lh >= 4) return GARAGE;
+        if ((r -= mix[1]) < mix[2] && lw <= 4 && lh <= 4) return PHARMACY;
+        return OFFICE;
     }
 
     private void houses(int x, int y, int pw, int ph) {
@@ -731,6 +768,18 @@ final class City {
             floors = 1 + rnd.nextInt(2) + (height >= 2 ? 1 : 0);
             roof = WAREHOUSE_ROOFS[rnd.nextInt(WAREHOUSE_ROOFS.length)];
             wall = WAREHOUSE_WALLS[rnd.nextInt(WAREHOUSE_WALLS.length)];
+        } else if (kind == APARTMENT) {
+            floors = 3 + rnd.nextInt(4) + height * 2;
+            roof = darken(ROOFS[rnd.nextInt(ROOFS.length)], 0.9f);
+            wall = APARTMENT_WALLS[rnd.nextInt(APARTMENT_WALLS.length)];
+        } else if (kind == GARAGE) {
+            floors = 3 + rnd.nextInt(2);
+            roof = 0xFF6C6E70;
+            wall = 0xFFA8A8A2;
+        } else if (kind == PHARMACY) {
+            floors = 1 + rnd.nextInt(2);
+            roof = 0xFFE4E8E4;
+            wall = 0xFFF0F2EE;
         } else {
             // Downtown (the middle of the map) gets the tallest towers; small lots stay low.
             float cx = x + lw / 2f - w / 2f, cy = y + lh / 2f - h / 2f;
@@ -913,6 +962,20 @@ final class City {
         }
     }
 
+    /** The helipad nearest a point, or null if the city has none. */
+    float[] nearestHelipad(float x, float y) {
+        float[] best = null;
+        float bd = Float.MAX_VALUE;
+        for (float[] p : helipads) {
+            float d = (p[0] - x) * (p[0] - x) + (p[1] - y) * (p[1] - y);
+            if (d < bd) {
+                bd = d;
+                best = p;
+            }
+        }
+        return best;
+    }
+
     /** The building standing at a world position, or null. */
     Building buildingAt(float x, float y) {
         int tx = (int) Math.floor(x / T), ty = (int) Math.floor(y / T);
@@ -1050,6 +1113,12 @@ final class City {
                 byte t = tiles[y * w + x];
                 float fx = x * T, fy = y * T;
                 if (t == SIDEWALK) {
+                    // Paving slabs, a few of them newer or stained.
+                    float roll = rnd.nextFloat();
+                    if (roll < 0.08f) {
+                        p.setColor(roll < 0.04f ? 0xFF999791 : 0xFF84827C);
+                        c.drawRect(fx + (roll < 0.06f ? 0 : T / 2f), fy, fx + (roll < 0.06f ? T / 2f : T), fy + T, p);
+                    }
                     p.setColor(0xFF7E7C77);
                     c.drawLine(fx, fy, fx + T, fy, p);
                     c.drawLine(fx, fy, fx, fy + T, p);
@@ -1059,6 +1128,19 @@ final class City {
                         p.setColor(rnd.nextBoolean() ? 0xFF578A3F : 0xFF426B30);
                         c.drawCircle(fx + rnd.nextFloat() * T, fy + rnd.nextFloat() * T, 0.9f, p);
                     }
+                    // Tufts and the odd wildflower.
+                    if (rnd.nextFloat() < 0.35f) {
+                        p.setColor(0xFF3A6128);
+                        float gx = fx + rnd.nextFloat() * T, gy = fy + rnd.nextFloat() * T;
+                        c.drawLine(gx, gy, gx - 1, gy - 2, p);
+                        c.drawLine(gx, gy, gx + 1, gy - 2, p);
+                    }
+                    if (rnd.nextFloat() < 0.05f) {
+                        int[] flowers = {0xFFF2E86B, 0xFFF2F2F2, 0xFFE87BB0, 0xFFB08AE8};
+                        p.setColor(flowers[rnd.nextInt(flowers.length)]);
+                        for (int k = 0; k < 3; k++)
+                            c.drawCircle(fx + rnd.nextFloat() * T, fy + rnd.nextFloat() * T, 0.8f, p);
+                    }
                 } else if (t == PLAZA) {
                     p.setColor(0xFFA29376);
                     c.drawLine(fx, fy, fx + T, fy, p);
@@ -1067,6 +1149,31 @@ final class City {
                     if (rnd.nextFloat() < 0.25f) {
                         p.setColor(0x22000000);
                         c.drawCircle(fx + rnd.nextFloat() * T, fy + rnd.nextFloat() * T, 1 + rnd.nextFloat() * 3, p);
+                    }
+                    float roll = rnd.nextFloat();
+                    if (roll < 0.03f) {
+                        // Patched asphalt.
+                        p.setColor(0xFF33363B);
+                        float pw = 5 + rnd.nextFloat() * 8, ph = 4 + rnd.nextFloat() * 6;
+                        float px = fx + rnd.nextFloat() * (T - pw), py = fy + rnd.nextFloat() * (T - ph);
+                        c.drawRect(px, py, px + pw, py + ph, p);
+                    } else if (roll < 0.07f) {
+                        // Cracks.
+                        p.setColor(0xFF2A2C30);
+                        float cx0 = fx + rnd.nextFloat() * T, cy0 = fy + rnd.nextFloat() * T;
+                        float cx1 = cx0 + rnd.nextFloat() * 8 - 4, cy1 = cy0 + rnd.nextFloat() * 8 - 4;
+                        c.drawLine(cx0, cy0, cx1, cy1, p);
+                        c.drawLine(cx1, cy1, cx1 + rnd.nextFloat() * 6 - 3, cy1 + rnd.nextFloat() * 6 - 3, p);
+                    } else if (roll < 0.085f && t == ROAD) {
+                        // Manhole cover.
+                        float mx = fx + 4 + rnd.nextFloat() * (T - 8), my = fy + 4 + rnd.nextFloat() * (T - 8);
+                        p.setColor(0xFF26282B);
+                        c.drawCircle(mx, my, 2.6f, p);
+                        p.setColor(0xFF4A4C50);
+                        c.drawCircle(mx, my, 2f, p);
+                        p.setColor(0xFF34363A);
+                        c.drawLine(mx - 1.5f, my, mx + 1.5f, my, p);
+                        c.drawLine(mx, my - 1.5f, mx, my + 1.5f, p);
                     }
                 }
             }
@@ -1556,6 +1663,72 @@ final class City {
             float cxx = (x0 + x1) / 2, cyy = (y0 + y1) / 2;
             c.drawRect(cxx - 1, cyy - 5, cxx + 1, cyy + 5, p);
             c.drawRect(cxx - 3.5f, cyy - 2.5f, cxx + 3.5f, cyy - 0.8f, p);
+            return;
+        }
+        if (kind == APARTMENT) {
+            // Flat roof with a rooftop water tank, stairwell hut and washing lines.
+            p.setColor(darken(roof, 0.75f));
+            c.drawRect(x0, y0, x1, y1, p);
+            p.setColor(roof);
+            c.drawRect(x0 + 2, y0 + 2, x1 - 2, y1 - 2, p);
+            p.setColor(darken(roof, 0.85f));
+            for (float gy = y0 + 4; gy < y1 - 3; gy += 3) c.drawRect(x0 + 2, gy, x1 - 2, gy + 0.4f, p);
+            p.setColor(0xFF7A5A3C);
+            float tx = x0 + 5 + r.nextFloat() * Math.max(1, bw - 16);
+            c.drawCircle(tx + 3, y0 + 7, 3.2f, p);
+            p.setColor(0xFF9A7A58);
+            c.drawCircle(tx + 3, y0 + 7, 2.2f, p);
+            p.setColor(0xFFB8B4AC);
+            c.drawRect(x1 - 11, y1 - 11, x1 - 4, y1 - 5, p);
+            p.setColor(0xFF6A6A70);
+            c.drawRect(x1 - 9, y1 - 7, x1 - 6, y1 - 5, p);
+            p.setStrokeWidth(0.4f);
+            p.setColor(0xFFDADADA);
+            c.drawLine(x0 + 4, (y0 + y1) / 2, x0 + bw * 0.55f, (y0 + y1) / 2, p);
+            int[] cloth = {0xFFE05050, 0xFF5080E0, 0xFFF0F0F0, 0xFFE0C050};
+            for (int k = 0; k < 4; k++) {
+                p.setColor(cloth[k]);
+                float lx = x0 + 6 + k * (bw * 0.5f - 6) / 4;
+                c.drawRect(lx, (y0 + y1) / 2, lx + 2, (y0 + y1) / 2 + 2.5f, p);
+            }
+            return;
+        }
+        if (kind == GARAGE) {
+            // Parking garage: the top deck is a car park with a ramp.
+            p.setColor(0xFF8E8E88);
+            c.drawRect(x0, y0, x1, y1, p);
+            p.setColor(roof);
+            c.drawRect(x0 + 1.5f, y0 + 1.5f, x1 - 1.5f, y1 - 1.5f, p);
+            p.setColor(0xFFE8E8E0);
+            p.setStrokeWidth(0.6f);
+            for (float gx = x0 + 4; gx < x1 - 6; gx += 8) {
+                c.drawLine(gx, y0 + 2, gx, y0 + 12, p);
+                c.drawLine(gx, y1 - 12, gx, y1 - 2, p);
+            }
+            p.setColor(0xFF55575A);
+            c.drawRect(x1 - 10, y0 + 14, x1 - 2, y1 - 14, p);
+            p.setColor(0xFFE8C547);
+            for (float yy = y0 + 16; yy < y1 - 16; yy += 5) c.drawRect(x1 - 7, yy, x1 - 5, yy + 2, p);
+            for (float gx = x0 + 4; gx < x1 - 8; gx += 8) {
+                if (r.nextFloat() < 0.45f) continue;
+                p.setColor(CAR_COLORS[r.nextInt(CAR_COLORS.length)]);
+                c.drawRect(gx + 1.2f, y0 + 3, gx + 6.8f, y0 + 11, p);
+                if (r.nextFloat() < 0.5f) {
+                    p.setColor(CAR_COLORS[r.nextInt(CAR_COLORS.length)]);
+                    c.drawRect(gx + 1.2f, y1 - 11, gx + 6.8f, y1 - 3, p);
+                }
+            }
+            return;
+        }
+        if (kind == PHARMACY) {
+            p.setColor(0xFFB8BEB8);
+            c.drawRect(x0, y0, x1, y1, p);
+            p.setColor(roof);
+            c.drawRect(x0 + 1.5f, y0 + 1.5f, x1 - 1.5f, y1 - 1.5f, p);
+            float cxx = (x0 + x1) / 2, cyy = (y0 + y1) / 2, a = Math.min(bw, bh) * 0.22f;
+            p.setColor(0xFF2FA84F);
+            c.drawRect(cxx - a, cyy - a / 3, cxx + a, cyy + a / 3, p);
+            c.drawRect(cxx - a / 3, cyy - a, cxx + a / 3, cyy + a, p);
             return;
         }
         if (kind == SPIRE) {

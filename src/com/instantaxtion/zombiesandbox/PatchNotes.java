@@ -2,11 +2,26 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "2.2";
-    static final int VERSION_CODE = 10;
+    static final String VERSION = "2.3";
+    static final int VERSION_CODE = 11;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "2.3  -  Armor, ambulances and a new setup screen",
+                    "New Game screen redesigned: a live preview of the city, map cards with a description of each map, one-tap buttons for every option, and a New map button to reroll the city before you start.",
+                    "Two new maps: Metropolis (a huge dense skyline with three precincts and a base) and Village (cottages among fields, far from help).",
+                    "New buildings: apartment blocks (rooftop water tanks and washing lines, room for lots of people to hide), parking garages (cars parked on the top deck) and pharmacies (hurt people stop in to patch themselves up).",
+                    "New vehicles: tanks roll out of the base for big hordes, shelling crowds and machine-gunning stragglers, and ambulances drive out from the hospital to fetch the badly hurt.",
+                    "New military: a commander (beret, pistol and radio) whose soldiers shoot better when he's close and who calls in armor or air support, snipers with long-range scoped rifles, and machine gunners in every squad. Tap the Military button again to pick which one to spawn.",
+                    "The helicopter now starts up on the helipad, takes off, drops lower to give its gunner a shot, flies home and lands. It leans into turns and its shadow moves away as it climbs.",
+                    "Every vehicle shows what it's doing: responding, carrying a squad, fighting a fire, loading a patient, driving people to safety, broken down and so on.",
+                    "Fixed: people hiding in buildings walk around to the door instead of running into the wall.",
+                    "Fixed: parked cars stay against the kerb, and cars abandoned in traffic roll over to the side of the road.",
+                    "New effects: spent shell cases fly out of guns, muzzle flashes light the ground, explosions throw out debris, tyres leave skid marks, rotor wash kicks up dust, and fire hoses leave puddles.",
+                    "New textures: patched and cracked asphalt, manhole covers, worn paving slabs, grass tufts and wildflowers.",
+                    "Higher limits: up to 800 civilians, 60 cops, 40 soldiers and 200 zombies at the start, and a max population of up to 6000 in Settings.",
+            },
             {
                     "2.2  -  Wrecks, rubble and smarter survivors",
                     "Cars take damage: running over zombies, crashing into each other, gunfire, explosions and zombies clawing at them. Damaged cars smoke and slow down, then break down. Everyone inside gets out, and some wrecks catch fire.",

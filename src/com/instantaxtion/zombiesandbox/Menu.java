@@ -1,6 +1,8 @@
 package com.instantaxtion.zombiesandbox;
 
+import android.graphics.Bitmap;
 import android.graphics.Canvas;
+import android.graphics.Rect;
 import android.graphics.Paint;
 import android.graphics.RectF;
 import android.graphics.Typeface;
@@ -42,7 +44,7 @@ final class Menu {
 
     private static final int A_CONTINUE = 0, A_NEW = 1, A_SETTINGS = 2, A_NOTES = 3, A_QUIT = 4, A_RESUME = 5,
             A_MAIN_MENU = 6, A_BACK = 7, A_START = 8, A_RANDOM = 9, A_SAVE = 10, A_STATS = 11, A_HOW_TO = 12,
-            A_TUT_NEXT = 13, A_TUT_PREV = 14, A_TUT_DONE = 15, A_CODE = 16;
+            A_TUT_NEXT = 13, A_TUT_PREV = 14, A_TUT_DONE = 15, A_CODE = 16, A_REROLL = 17;
 
     private static final String[][] TUTORIAL_PAGES = {
             {"Welcome to Zombie City", "A sandbox: set up a city, start an outbreak and watch what happens. There are no missions. Play however you like."},
@@ -62,6 +64,20 @@ final class Menu {
         int action;
         boolean primary;
     }
+
+    /** One tappable choice on the New Game screen: an option set to a value. */
+    private static final class Seg {
+        final RectF r = new RectF();
+        int option, value;
+    }
+
+    private final ArrayList<Seg> segs = new ArrayList<Seg>();
+    private final ArrayList<Seg> segPool = new ArrayList<Seg>();
+    private final Paint bmpPaint = new Paint(Paint.FILTER_BITMAP_FLAG);
+    private final Rect bmpSrc = new Rect();
+    /** A small picture of the city about to be played, built in the background whenever it changes. */
+    private volatile Bitmap preview;
+    private volatile String previewKey, buildingKey;
 
     private static final class Row {
         final RectF r = new RectF(), prev = new RectF();
@@ -122,6 +138,7 @@ final class Menu {
         screen = s;
         scroll = 0;
         if (s == NOTES) settings.markNotesRead();
+        if (s == SETUP && !config.keepCity) config.newSeed(rnd);
         if (s == TUTORIAL) tutorialPage = 0;
     }
 
@@ -157,11 +174,13 @@ final class Menu {
         time += dt;
         for (Button b : buttons) pool.add(b);
         buttons.clear();
+        segPool.addAll(segs);
+        segs.clear();
         rows.clear();
         switch (screen) {
             case MAIN: drawMain(c, w, h); break;
             case PAUSE: drawPause(c, w, h); break;
-            case SETUP: drawOptions(c, w, h, "New Game", config, true); break;
+            case SETUP: drawSetup(c, w, h); break;
             case SETTINGS: drawOptions(c, w, h, "Settings", settings, false); break;
             case NOTES: drawNotes(c, w, h); break;
             case STATS: drawStats(c, w, h); break;
@@ -188,6 +207,8 @@ final class Menu {
         c.drawRoundRect(b.r, 12 * dp, 12 * dp, stroke);
         text.setTextAlign(Paint.Align.CENTER);
         text.setTextSize(Math.min(18 * dp, b.r.height() * 0.38f));
+        float fit = text.measureText(b.label);
+        if (fit > b.r.width() - 16 * dp) text.setTextSize(text.getTextSize() * (b.r.width() - 16 * dp) / fit);
         text.setColor(0xFFF4F4F4);
         c.drawText(b.label, b.r.centerX(), b.r.centerY() + text.getTextSize() * 0.36f, text);
     }
@@ -480,6 +501,196 @@ final class Menu {
         }
     }
 
+    // ------------------------------------------------------------------ New Game
+
+    private Seg seg(int option, int value, float l, float t, float r, float b) {
+        Seg sg = segPool.isEmpty() ? new Seg() : segPool.remove(segPool.size() - 1);
+        sg.option = option;
+        sg.value = value;
+        sg.r.set(l, t, r, b);
+        segs.add(sg);
+        return sg;
+    }
+
+    /** Starts building the preview picture if the city changed since the last one. */
+    private void updatePreview() {
+        final String key = config.code();
+        if (key.equals(previewKey) || key.equals(buildingKey)) return;
+        buildingKey = key;
+        final CityConfig copy = new CityConfig();
+        System.arraycopy(config.v, 0, copy.v, 0, copy.v.length);
+        copy.seed = config.seed;
+        Thread t = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    City city = new City(copy, 360f / (copy.tiles() * City.T));
+                    if (key.equals(buildingKey)) {
+                        preview = city.bitmap;
+                        previewKey = key;
+                    }
+                } catch (Throwable ignored) {
+                    // No preview; the game itself still works.
+                }
+            }
+        });
+        t.setPriority(Thread.MIN_PRIORITY);
+        t.start();
+    }
+
+    /** A row of equal buttons, one per value, with the chosen one lit up. */
+    private float segRow(Canvas c, int option, String label, float x, float y, float width) {
+        plain.setTextAlign(Paint.Align.LEFT);
+        plain.setTextSize(13 * dp);
+        plain.setColor(0xFFB8BDC4);
+        c.drawText(label, x + 2 * dp, y + 14 * dp, plain);
+        y += 22 * dp;
+        String[] values = config.values(option);
+        float gap = 4 * dp, bh = 36 * dp, bw = (width - gap * (values.length - 1)) / values.length;
+        for (int i = 0; i < values.length; i++) {
+            float l = x + i * (bw + gap);
+            Seg sg = seg(option, i, l, y, l + bw, y + bh);
+            boolean on = config.get(option) == i;
+            fill.setColor(on ? 0xFF3F8A3A : 0xFF23262C);
+            c.drawRoundRect(sg.r, 8 * dp, 8 * dp, fill);
+            if (on) {
+                stroke.setColor(0xFF9BE08A);
+                stroke.setStrokeWidth(1.5f * dp);
+                c.drawRoundRect(sg.r, 8 * dp, 8 * dp, stroke);
+            }
+            text.setTextAlign(Paint.Align.CENTER);
+            text.setTextSize(Math.min(14 * dp, bw / Math.max(3, values[i].length()) * 1.5f));
+            text.setColor(on ? 0xFFFFFFFF : 0xFFC8CCD2);
+            c.drawText(values[i], sg.r.centerX(), sg.r.centerY() + text.getTextSize() * 0.36f, text);
+        }
+        return y + bh + 14 * dp;
+    }
+
+    private void drawSetup(Canvas c, int w, int h) {
+        float top = header(c, w, h, "New Game");
+        updatePreview();
+        boolean landscape = w > h;
+        float footer = 72 * dp, side = 16 * dp;
+        // The city preview: left in landscape, on top in portrait.
+        float pv = landscape ? Math.min(h - top - footer - 72 * dp, w * 0.34f) : Math.min(w - side * 2, (h - top) * 0.3f);
+        float px = landscape ? side : (w - pv) / 2, py = top + 4 * dp;
+        tmp.set(px - 3 * dp, py - 3 * dp, px + pv + 3 * dp, py + pv + 3 * dp);
+        fill.setColor(0xFF2A2E34);
+        c.drawRoundRect(tmp, 10 * dp, 10 * dp, fill);
+        Bitmap bmp = preview;
+        boolean current = config.code().equals(previewKey);
+        if (bmp != null) {
+            bmpSrc.set(0, 0, bmp.getWidth(), bmp.getHeight());
+            tmp.set(px, py, px + pv, py + pv);
+            bmpPaint.setAlpha(current ? 255 : 110);
+            c.drawBitmap(bmp, bmpSrc, tmp, bmpPaint);
+        }
+        if (!current) {
+            text.setTextAlign(Paint.Align.CENTER);
+            text.setTextSize(14 * dp);
+            text.setColor(0xFFE6E6E6);
+            c.drawText("Building city...", px + pv / 2, py + pv / 2, text);
+        }
+        int preset = config.v[CityConfig.OPT_PRESET];
+        float infoY = py + pv + 20 * dp;
+        float infoW = landscape ? pv : w - side * 2, infoX = landscape ? px : side;
+        text.setTextAlign(Paint.Align.LEFT);
+        text.setTextSize(16 * dp);
+        text.setColor(0xFF8BD450);
+        c.drawText(CityConfig.PRESETS[preset], infoX, infoY, text);
+        plain.setTextAlign(Paint.Align.RIGHT);
+        plain.setTextSize(12 * dp);
+        plain.setColor(0xFF9AA0A8);
+        c.drawText("City " + config.code(), infoX + infoW, infoY, plain);
+        float ly = infoY + 10 * dp;
+        if (landscape) {
+            button("New map", A_REROLL, false, px, ly, px + pv, ly + 34 * dp);
+        } else {
+            ly = drawInfo(c, preset, infoX, infoY + 18 * dp, infoW);
+        }
+
+        // The options, scrolling if they don't fit.
+        float lx = landscape ? px + pv + 24 * dp : side, lw = w - lx - side;
+        float listTop = landscape ? top : ly + 2 * dp;
+        if (!landscape) {
+            button("New map", A_REROLL, false, w - side - 110 * dp, py + pv - 36 * dp, w - side - 6 * dp, py + pv - 6 * dp);
+        }
+        listArea.set(0, listTop, w, h - footer);
+        c.save();
+        c.clipRect(listArea);
+        float y = listTop + 4 * dp - scroll;
+        if (landscape) y = drawInfo(c, preset, lx, y + 14 * dp, lw) + 4 * dp;
+        // Map cards.
+        plain.setTextAlign(Paint.Align.LEFT);
+        plain.setTextSize(13 * dp);
+        plain.setColor(0xFFB8BDC4);
+        c.drawText("Map", lx + 2 * dp, y + 14 * dp, plain);
+        y += 22 * dp;
+        int perRow = lw > 520 * dp ? 5 : lw > 330 * dp ? 4 : 3;
+        float gap = 6 * dp, cw = (lw - gap * (perRow - 1)) / perRow, ch = 40 * dp;
+        for (int i = 0; i < CityConfig.PRESETS.length; i++) {
+            float l = lx + (i % perRow) * (cw + gap), t = y + (i / perRow) * (ch + gap);
+            Seg sg = seg(CityConfig.OPT_PRESET, i, l, t, l + cw, t + ch);
+            boolean on = preset == i;
+            fill.setColor(on ? 0xFF2F5E2B : 0xFF23262C);
+            c.drawRoundRect(sg.r, 9 * dp, 9 * dp, fill);
+            // A strip in the map's colour.
+            fill.setColor(MAP_COLORS[i]);
+            tmp.set(l, t, l + 5 * dp, t + ch);
+            c.drawRoundRect(tmp, 3 * dp, 3 * dp, fill);
+            if (on) {
+                stroke.setColor(0xFF9BE08A);
+                stroke.setStrokeWidth(1.5f * dp);
+                c.drawRoundRect(sg.r, 9 * dp, 9 * dp, stroke);
+            }
+            text.setTextAlign(Paint.Align.CENTER);
+            text.setTextSize(Math.min(13.5f * dp, cw / 7.5f));
+            text.setColor(on ? 0xFFFFFFFF : 0xFFC8CCD2);
+            c.drawText(CityConfig.PRESETS[i], l + cw / 2 + 2 * dp, t + ch / 2 + text.getTextSize() * 0.36f, text);
+        }
+        y += ((CityConfig.PRESETS.length + perRow - 1) / perRow) * (ch + gap) + 12 * dp;
+        y = segRow(c, CityConfig.OPT_SIZE, "Map size", lx, y, lw);
+        y = segRow(c, CityConfig.OPT_CIVILIANS, "Civilians", lx, y, lw);
+        y = segRow(c, CityConfig.OPT_COPS, "Cops", lx, y, lw);
+        y = segRow(c, CityConfig.OPT_MILITARY, "Military", lx, y, lw);
+        y = segRow(c, CityConfig.OPT_ZOMBIES, "Zombies", lx, y, lw);
+        y = segRow(c, CityConfig.OPT_RESERVES, "Reinforcements (backup, army squads, tanks and air support)", lx, y, lw);
+        c.restore();
+        contentHeight = y + scroll - listTop;
+        clampScroll();
+        drawScrollHint(c, w, landscape ? lx - 8 * dp : 0);
+
+        float bgap = 8 * dp, bw = Math.min(180 * dp, (w - 32 * dp - bgap * 2) / 3), bh = 50 * dp, by = h - footer + 11 * dp;
+        float x = (w - bw * 3 - bgap * 2) / 2;
+        button("Randomize", A_RANDOM, false, x, by, x + bw, by + bh);
+        button("City code", A_CODE, false, x + bw + bgap, by, x + bw * 2 + bgap, by + bh);
+        button("Start", A_START, true, x + bw * 2 + bgap * 2, by, x + bw * 3 + bgap * 2, by + bh);
+        if (noteTime > 0 && note != null) {
+            noteTime -= 1 / 60f;
+            fill.setColor(0xF0121418);
+            c.drawRect(0, by - 30 * dp, w, by - 4 * dp, fill);
+            text.setTextAlign(Paint.Align.CENTER);
+            text.setTextSize(13 * dp);
+            text.setColor(0xFFFFE27A);
+            c.drawText(note, w / 2f, by - 12 * dp, text);
+        }
+    }
+
+    /** The chosen map's description; returns the y below it. */
+    private float drawInfo(Canvas c, int preset, float x, float y, float width) {
+        plain.setTextAlign(Paint.Align.LEFT);
+        plain.setTextSize(12.5f * dp);
+        plain.setColor(0xFFC8CCD2);
+        for (String line : wrap(CityConfig.PRESET_INFO[preset], width, plain)) {
+            c.drawText(line, x, y, plain);
+            y += 16 * dp;
+        }
+        return y;
+    }
+
+    private static final int[] MAP_COLORS = {0xFF8BD450, 0xFF6F8EC8, 0xFFE0A050, 0xFF9A9A90, 0xFF4CAF50, 0xFFB07050,
+            0xFFD8C050, 0xFF50A0C0, 0xFFC050C0, 0xFF90B060};
+
     private void drawNotes(Canvas c, int w, int h) {
         float top = header(c, w, h, "Patch Notes");
         listArea.set(0, top, w, h - 12 * dp);
@@ -516,11 +727,15 @@ final class Menu {
 
     /** Shows a "more below" arrow when the list can scroll further down. */
     private void drawScrollHint(Canvas c, int w) {
+        drawScrollHint(c, w, 0);
+    }
+
+    private void drawScrollHint(Canvas c, int w, float left) {
         float max = contentHeight - listArea.height() + 12 * dp;
         if (scroll >= max - 2 * dp) return;
-        float cx = w / 2f, y = listArea.bottom - 8 * dp;
+        float cx = (left + w) / 2f, y = listArea.bottom - 8 * dp;
         fill.setColor(0xF2121418);
-        c.drawRect(0, y - 26 * dp, w, listArea.bottom, fill);
+        c.drawRect(left, y - 26 * dp, w, listArea.bottom, fill);
         text.setTextAlign(Paint.Align.CENTER);
         text.setTextSize(13 * dp);
         text.setColor(0xFF8BD450);
@@ -592,6 +807,19 @@ final class Menu {
             }
         }
         if (!listArea.contains(x, y)) return;
+        if (screen == SETUP) {
+            for (Seg sg : segs) {
+                if (!sg.r.contains(x, y)) continue;
+                if (config.get(sg.option) != sg.value) {
+                    config.set(sg.option, sg.value);
+                    // A different map or size is a different city.
+                    if (sg.option == CityConfig.OPT_PRESET || sg.option == CityConfig.OPT_SIZE) config.keepCity = false;
+                }
+                host.click();
+                return;
+            }
+            return;
+        }
         OptionSet opts = screen == SETUP ? config : screen == SETTINGS ? settings : null;
         if (opts == null) return;
         for (Row r : rows) {
@@ -631,12 +859,17 @@ final class Menu {
                 break;
             case A_RANDOM:
                 config.randomize(rnd);
+                config.newSeed(rnd);
+                break;
+            case A_REROLL:
+                config.newSeed(rnd);
+                config.keepCity = false;
                 break;
             case A_CODE:
                 host.askCityCode(config.code());
                 break;
             case A_START:
-                if (!config.keepCity) config.newSeed(rnd);
+                // The seed is the one in the preview.
                 config.keepCity = false;
                 host.startGame(config);
                 if (!settings.tutorialDone()) open(TUTORIAL);

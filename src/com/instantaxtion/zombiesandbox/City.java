@@ -17,9 +17,15 @@ final class City {
     static final int FAR = 1 << 20;
 
     static final byte ROAD = 0, SIDEWALK = 1, BUILDING = 2, GRASS = 3, TREE = 4, PLAZA = 5, CAR = 6,
-            STATUE = 7, LOT = 8, BASE = 9, FENCE = 10;
+            STATUE = 7, LOT = 8, BASE = 9, FENCE = 10, PUMP = 11;
 
-    static final int OFFICE = 0, HOUSE = 1, WAREHOUSE = 2, STATION = 3, BARRACKS = 4, TOWER = 5, HOSPITAL = 6;
+    static final int OFFICE = 0, HOUSE = 1, WAREHOUSE = 2, STATION = 3, BARRACKS = 4, TOWER = 5, HOSPITAL = 6,
+            SHOP = 7, CHURCH = 8, SCHOOL = 9, FIRE_STATION = 10, MARKET = 11, KIOSK = 12, SPIRE = 13, CRYPT = 14;
+    /** Ground decorations drawn into the map: {kind, x0, y0, x1, y1, variant} in world units. */
+    static final int D_COURT = 0, D_FIELD = 1, D_PLAYGROUND = 2, D_GARDEN = 3, D_GRAVE = 4, D_SKATE = 5,
+            D_CANOPY = 6;
+    private static final int[] SHOP_ROOFS = {0xFF8C5A4A, 0xFF5A6E8C, 0xFF7E7A5C, 0xFF6E5A7E, 0xFF8A6A3E, 0xFF4F6F66};
+    private static final int[] SHOP_WALLS = {0xFFE0C9A6, 0xFFB9C6D2, 0xFFD8B8A8, 0xFFC9D6B8, 0xFFE8DCC8, 0xFFB8A8C8};
     static final int FACILITY_POLICE = 0, FACILITY_BASE = 1, FACILITY_HOSPITAL = 2;
     private static final String[] BASE_NAMES = {"Fort Mercer", "Camp Redstone", "Fort Kessler", "Camp Hollow",
             "Fort Whitmore", "Camp Ironwood"};
@@ -108,6 +114,9 @@ final class City {
     private final List<float[]> tents = new ArrayList<float[]>();
     private final List<float[]> paths = new ArrayList<float[]>();
     final List<Facility> facilities = new ArrayList<Facility>();
+    final List<float[]> decor = new ArrayList<float[]>();
+    /** Gas pumps as {x, y, alive}: an explosion nearby sets them off. */
+    final List<float[]> pumps = new ArrayList<float[]>();
     /** Building lots: {x, y, w, h, roof, seed, kind, floors, wall} in tiles. */
     private final List<int[]> buildingLots = new ArrayList<int[]>();
     final List<Building> buildings = new ArrayList<Building>();
@@ -142,7 +151,7 @@ final class City {
         generate();
         for (int i = 0; i < tiles.length; i++) {
             byte t = tiles[i];
-            solid[i] = t == BUILDING || t == TREE || t == CAR || t == STATUE || t == FENCE;
+            solid[i] = t == BUILDING || t == TREE || t == CAR || t == STATUE || t == FENCE || t == PUMP;
             opaque[i] = t == BUILDING;
         }
         for (int[] l : buildingLots) {
@@ -150,7 +159,9 @@ final class City {
             maxHeight = Math.max(maxHeight, height);
             Building b = new Building(l[0] * T, l[1] * T, (l[0] + l[2]) * T, (l[1] + l[3]) * T, height,
                     l[4], l[8], l[5], l[6]);
-            if (l[6] == OFFICE || l[6] == HOUSE || l[6] == WAREHOUSE) placeDoor(b, l);
+            int k = l[6];
+            if (k == OFFICE || k == HOUSE || k == WAREHOUSE || k == SHOP || k == CHURCH || k == SCHOOL || k == MARKET
+                    || k == KIOSK) placeDoor(b, l);
             buildings.add(b);
         }
         Arrays.fill(humanDist, FAR);
@@ -326,6 +337,34 @@ final class City {
             serviceBuilding(b[0] + 1, b[1] + 1, b[2] - b[0] - 2, b[3] - b[1] - 2, HOSPITAL, 0);
         }
 
+        // Landmarks: churches, schools, fire stations, supermarkets, gas stations and cemeteries.
+        int[][] minSize = {{5, 5}, {8, 8}, {6, 6}, {8, 7}, {5, 5}, {7, 7}};
+        for (int kind = 0; kind < 6; kind++)
+            for (int n = 0; n < cfg.landmarks(kind); n++) {
+                List<Integer> options = new ArrayList<Integer>();
+                for (int k = 0; k < blocks.size(); k++) {
+                    int[] b = blocks.get(k);
+                    int iw = b[2] - b[0] - 2, ih = b[3] - b[1] - 2;
+                    if (!used[k] && ((iw >= minSize[kind][0] && ih >= minSize[kind][1])
+                            || (ih >= minSize[kind][0] && iw >= minSize[kind][1]))) options.add(k);
+                }
+                if (options.isEmpty()) break;
+                int k = options.get(rnd.nextInt(options.size()));
+                used[k] = true;
+                int[] b = blocks.get(k);
+                fill(b[0], b[1], b[2] - b[0], b[3] - b[1], SIDEWALK);
+                int ix = b[0] + 1, iy = b[1] + 1, iw = b[2] - b[0] - 2, ih = b[3] - b[1] - 2;
+                float ax = (ix + iw / 2f) * T, ay = (iy + ih / 2f) * T;
+                switch (kind) {
+                    case 0: church(ix, iy, iw, ih); break;
+                    case 1: school(ix, iy, iw, ih); openAreas.add(new float[]{ax, ay, 2}); break;
+                    case 2: serviceBuilding(ix, iy, iw, ih, FIRE_STATION, 0); break;
+                    case 3: market(ix, iy, iw, ih); openAreas.add(new float[]{ax, ay, 2}); break;
+                    case 4: gasStation(ix, iy, iw, ih); break;
+                    default: cemetery(ix, iy, iw, ih); break;
+                }
+            }
+
         for (int k = 0; k < blocks.size(); k++) {
             if (used[k]) continue;
             int[] b = blocks.get(k);
@@ -448,14 +487,14 @@ final class City {
         fill(x, y, bw, bh, LOT);
         boolean wide = bw >= bh;
         int sw = wide ? Math.max(3, bw / 2 - 1) : bw - 2, sh = wide ? bh - 2 : Math.max(3, bh / 2 - 1);
-        addFacilityLot(x + 1, y + 1, sw, sh, kind, kind == HOSPITAL ? 4 : 3);
+        addFacilityLot(x + 1, y + 1, sw, sh, kind, kind == HOSPITAL ? 4 : kind == FIRE_STATION ? 2 : 3);
         int lx = wide ? x + sw + 2 : x, ly = wide ? y : y + sh + 2;
         int lw = wide ? bw - sw - 2 : bw, lh = wide ? bh : bh - sh - 2;
         for (int j = ly + 1; j < ly + lh - 1; j += 3)
             for (int i = lx + 1; i < lx + lw - 1; i++)
-                if (rnd.nextFloat() < (kind == HOSPITAL ? 0.35f : 0.6f)) {
+                if (rnd.nextFloat() < (kind == HOSPITAL ? 0.35f : kind == FIRE_STATION ? 0.45f : 0.6f)) {
                     tiles[j * w + i] = CAR;
-                    carKind[j * w + i] = (byte) (kind == HOSPITAL ? 3 : 1);
+                    carKind[j * w + i] = (byte) (kind == HOSPITAL ? 3 : kind == FIRE_STATION ? 4 : 1);
                 }
         float cx = (lx + lw / 2f) * T, cy = (ly + lh / 2f) * T;
         float[] c = findWalkable(cx, cy);
@@ -464,6 +503,7 @@ final class City {
             facilities.add(new Facility(FACILITY_HOSPITAL, c[0], c[1], 64, c[0], c[1], "City Hospital"));
             return;
         }
+        if (kind == FIRE_STATION) return;
         Facility station = new Facility(FACILITY_POLICE, c[0], c[1], 64, c[0], c[1], "Precinct " + number);
         for (int k = -1; k <= 1; k += 2) {
             float[] p = findWalkable(c[0] + k * 18, c[1] + 10);
@@ -481,6 +521,27 @@ final class City {
         } else if (kind == HOSPITAL) {
             roof = 0xFFE9ECEF;
             wall = 0xFFE2E6EA;
+        } else if (kind == FIRE_STATION) {
+            roof = 0xFFA8322C;
+            wall = 0xFFB8574A;
+        } else if (kind == CHURCH || kind == SPIRE) {
+            roof = 0xFF4A4550;
+            wall = 0xFFB5AA98;
+        } else if (kind == CRYPT) {
+            roof = 0xFF8A8680;
+            wall = 0xFF9E9A92;
+        } else if (kind == SCHOOL) {
+            roof = 0xFF6E6A62;
+            wall = 0xFFA85A44;
+        } else if (kind == MARKET) {
+            roof = 0xFFB8BCC0;
+            wall = 0xFFDADDE0;
+        } else if (kind == KIOSK) {
+            roof = 0xFFE8E8E8;
+            wall = 0xFFD6DBE0;
+        } else if (kind == SHOP) {
+            roof = SHOP_ROOFS[rnd.nextInt(SHOP_ROOFS.length)];
+            wall = SHOP_WALLS[rnd.nextInt(SHOP_WALLS.length)];
         } else if (kind == TOWER) {
             roof = 0xFF4B5536;
             wall = 0xFF6B7350;
@@ -506,7 +567,7 @@ final class City {
         float roll = rnd.nextFloat();
         float ax = (x + bw / 2f) * T, ay = (y + bh / 2f) * T;
         if (roll < park) {
-            park(x, y, bw, bh);
+            parkVariant(x, y, bw, bh);
             openAreas.add(new float[]{ax, ay, 0});
         } else if ((roll -= park) < plaza) {
             plaza(x, y, bw, bh);
@@ -528,7 +589,8 @@ final class City {
                 else if (r < 0.8f) style = CityConfig.STYLE_HOUSES;
                 else style = CityConfig.STYLE_WAREHOUSES;
             }
-            if (style == CityConfig.STYLE_HOUSES) houses(x, y, bw, bh);
+            if (rnd.nextInt(100) < cfg.shopShare() && bw >= 5 && bh >= 5 && style != CityConfig.STYLE_WAREHOUSES) shops(x, y, bw, bh);
+            else if (style == CityConfig.STYLE_HOUSES) houses(x, y, bw, bh);
             else if (style == CityConfig.STYLE_WAREHOUSES) warehouses(x, y, bw, bh);
             else if (cfg.density() == 0 && bw >= 5 && bh >= 5) {
                 fill(x, y, bw, bh, GRASS);
@@ -641,6 +703,180 @@ final class City {
         buildingLots.add(new int[]{x, y, lw, lh, roof, rnd.nextInt(100000), kind, floors, wall});
     }
 
+    private void addDecor(int kind, float x0, float y0, float x1, float y1, int variant) {
+        decor.add(new float[]{kind, x0, y0, x1, y1, variant});
+    }
+
+    /** A row of small shops around the edge of the block with a service lot behind. */
+    private void shops(int x, int y, int bw, int bh) {
+        fill(x, y, bw, bh, LOT);
+        int depth = bh >= 8 ? 3 : 2;
+        for (int side = 0; side < 2; side++) {
+            int sy = side == 0 ? y : y + bh - depth;
+            int i = x;
+            while (i < x + bw) {
+                int uw = Math.min(2 + rnd.nextInt(2), x + bw - i);
+                if (uw >= 2) addFacilityLot(i, sy, uw, depth, SHOP, 1 + (rnd.nextFloat() < 0.3f ? 1 : 0));
+                i += uw;
+            }
+        }
+        for (int j = y + depth + 1; j < y + bh - depth - 1; j++)
+            for (int i = x + 1; i < x + bw - 1; i++)
+                if (rnd.nextFloat() < 0.12f && !hasNeighbor(i, j, CAR)) tiles[j * w + i] = CAR;
+    }
+
+    /** A church with a steeple, and a churchyard with graves. */
+    private void church(int x, int y, int bw, int bh) {
+        fill(x, y, bw, bh, GRASS);
+        boolean wide = bw >= bh;
+        int cw = wide ? Math.min(bw - 3, Math.max(4, bw / 2)) : Math.min(bw - 2, 4);
+        int ch = wide ? Math.min(bh - 2, 4) : Math.min(bh - 3, Math.max(4, bh / 2));
+        addFacilityLot(x + 1, y + 1, cw, ch, CHURCH, 2);
+        if (wide) addFacilityLot(x + 1 + cw, y + 1 + ch / 2, 1, 1, SPIRE, 6);
+        else addFacilityLot(x + 1 + cw / 2, y + 1 + ch, 1, 1, SPIRE, 6);
+        graves(x, y, bw, bh, 0.5f);
+    }
+
+    private void cemetery(int x, int y, int bw, int bh) {
+        fill(x, y, bw, bh, GRASS);
+        int cx = x + bw / 2, cy = y + bh / 2;
+        for (int i = x; i < x + bw; i++) tiles[cy * w + i] = PLAZA;
+        for (int j = y; j < y + bh; j++) tiles[j * w + cx] = PLAZA;
+        if (bw >= 7 && bh >= 7) addFacilityLot(cx + 1, cy + 1, 2, 2, CRYPT, 1);
+        graves(x, y, bw, bh, 0.8f);
+        for (int j = y; j < y + bh; j++)
+            for (int i = x; i < x + bw; i++)
+                if ((i == x || i == x + bw - 1 || j == y || j == y + bh - 1) && tiles[j * w + i] == GRASS
+                        && rnd.nextFloat() < 0.25f && !hasNeighbor(i, j, TREE)) tiles[j * w + i] = TREE;
+    }
+
+    /** Rows of headstones on the grass (they are decoration; people walk between them). */
+    private void graves(int x, int y, int bw, int bh, float density) {
+        for (int j = y + 1; j < y + bh - 1; j++)
+            for (int i = x + 1; i < x + bw - 1; i++) {
+                if (tiles[j * w + i] != GRASS || rnd.nextFloat() > density) continue;
+                for (int k = 0; k < 2; k++) {
+                    float gx = i * T + 4 + k * 8, gy = j * T + 5;
+                    addDecor(D_GRAVE, gx, gy, gx + 4, gy + 6, rnd.nextInt(3));
+                }
+            }
+    }
+
+    /** A school: the building, a basketball court on the tarmac and a sports field. */
+    private void school(int x, int y, int bw, int bh) {
+        fill(x, y, bw, bh, LOT);
+        boolean wide = bw >= bh;
+        int sw = wide ? Math.max(4, bw / 2 - 1) : bw - 2, sh = wide ? bh - 2 : Math.max(4, bh / 2 - 1);
+        addFacilityLot(x + 1, y + 1, sw, sh, SCHOOL, 2 + rnd.nextInt(2));
+        int rx = wide ? x + sw + 2 : x + 1, ry = wide ? y + 1 : y + sh + 2;
+        int rw = wide ? bw - sw - 3 : bw - 2, rh = wide ? bh - 2 : bh - sh - 3;
+        if (rw < 3 || rh < 3) return;
+        if (rw * rh >= 30) {
+            fill(rx, ry, rw, rh, GRASS);
+            addDecor(D_FIELD, rx * T + 3, ry * T + 3, (rx + rw) * T - 3, (ry + rh) * T - 3, 0);
+        } else {
+            addDecor(D_COURT, rx * T + 2, ry * T + 2, (rx + rw) * T - 2, (ry + rh) * T - 2, 0);
+        }
+    }
+
+    /** A supermarket and its big car park. */
+    private void market(int x, int y, int bw, int bh) {
+        fill(x, y, bw, bh, LOT);
+        boolean wide = bw >= bh;
+        int mw = wide ? bw - 2 : Math.max(4, bw / 2), mh = wide ? Math.max(4, bh / 2) : bh - 2;
+        addFacilityLot(x + 1, y + 1, mw, mh, MARKET, 1);
+        int px = wide ? x : x + mw + 2, py = wide ? y + mh + 2 : y;
+        int pw = wide ? bw : bw - mw - 2, ph = wide ? bh - mh - 2 : bh;
+        for (int j = py; j < py + ph; j++) {
+            if ((j - py) % 3 != 1) continue;
+            for (int i = px + 1; i < px + pw - 1; i++) if (rnd.nextFloat() < 0.5f) tiles[j * w + i] = CAR;
+        }
+    }
+
+    /** A gas station: canopy over the pumps and a little shop. */
+    private void gasStation(int x, int y, int bw, int bh) {
+        fill(x, y, bw, bh, LOT);
+        addFacilityLot(x + bw - 3, y + 1, 2, 2, KIOSK, 1);
+        int cx0 = x + 1, cy0 = y + 1, cx1 = x + bw - 4, cy1 = y + bh - 1;
+        if (cx1 - cx0 < 2) {
+            int j = y + bh / 2;
+            tiles[j * w + x + 1] = PUMP;
+            pumps.add(new float[]{(x + 1) * T + T / 2f, j * T + T / 2f, 1});
+            return;
+        }
+        addDecor(D_CANOPY, cx0 * T + 2, cy0 * T + 2, cx1 * T - 2, cy1 * T - 2, 0);
+        // Two islands of pumps under the canopy, well spaced (at least one).
+        int placed = 0;
+        for (int j = cy0 + 1; j < cy1 - 1 && placed < 4; j += 3)
+            for (int i = cx0 + 1; i < cx1 - 1 && placed < 4; i += 3) {
+                tiles[j * w + i] = PUMP;
+                pumps.add(new float[]{i * T + T / 2f, j * T + T / 2f, 1});
+                placed++;
+            }
+        if (placed == 0) {
+            int i = (cx0 + cx1) / 2, j = (cy0 + cy1) / 2;
+            tiles[j * w + i] = PUMP;
+            pumps.add(new float[]{i * T + T / 2f, j * T + T / 2f, 1});
+        }
+    }
+
+    /** Picks a kind of park by the map's taste. */
+    private void parkVariant(int x, int y, int bw, int bh) {
+        int[] mix = cfg.parkMix();
+        int total = 0;
+        for (int m : mix) total += m;
+        int r = rnd.nextInt(Math.max(1, total)), kind = 0;
+        while (kind < mix.length - 1 && r >= mix[kind]) r -= mix[kind++];
+        if (kind == 2 && (bw < 7 || bh < 6)) kind = 0;
+        switch (kind) {
+            case 1:
+                park(x, y, bw, bh);
+                // A playground in one corner, clear of the paths.
+                int qw = Math.max(2, bw / 2 - 1), qh = Math.max(2, bh / 2 - 1);
+                for (int j = y; j < y + qh; j++) for (int i = x; i < x + qw; i++) if (tiles[j * w + i] == TREE) tiles[j * w + i] = GRASS;
+                addDecor(D_PLAYGROUND, x * T + 3, y * T + 3, (x + qw) * T - 2, (y + qh) * T - 2, 0);
+                break;
+            case 2:
+                fill(x, y, bw, bh, GRASS);
+                addDecor(D_FIELD, x * T + 4, y * T + 4, (x + bw) * T - 4, (y + bh) * T - 4, 0);
+                break;
+            case 3:
+                fill(x, y, bw, bh, LOT);
+                int courtsX = bw >= 9 ? 2 : 1, courtsY = bh >= 9 ? 2 : 1;
+                float cw = bw * T / (float) courtsX, chh = bh * T / (float) courtsY;
+                for (int a = 0; a < courtsX; a++)
+                    for (int b = 0; b < courtsY; b++)
+                        addDecor(D_COURT, x * T + a * cw + 4, y * T + b * chh + 4, x * T + (a + 1) * cw - 4,
+                                y * T + (b + 1) * chh - 4, rnd.nextInt(2));
+                break;
+            case 4:
+                fill(x, y, bw, bh, GRASS);
+                addDecor(D_GARDEN, x * T + 4, y * T + 4, (x + bw) * T - 4, (y + bh) * T - 4, rnd.nextInt(3));
+                break;
+            case 5:
+                fill(x, y, bw, bh, PLAZA);
+                addDecor(D_SKATE, x * T + 6, y * T + 6, (x + bw) * T - 6, (y + bh) * T - 6, 0);
+                break;
+            default:
+                park(x, y, bw, bh);
+                break;
+        }
+    }
+
+    /** Scorches a burnt-out car into the map. */
+    void charTile(int tx, int ty) {
+        Canvas c = new Canvas(bitmap);
+        Paint p = new Paint();
+        p.setAntiAlias(true);
+        float cx = tx * T + T / 2f, cy = ty * T + T / 2f;
+        p.setColor(0xB0101010);
+        c.drawCircle(cx, cy, 11, p);
+        p.setColor(0xFF2A2522);
+        c.drawRect(cx - 7, cy - 4, cx + 7, cy + 4, p);
+        p.setColor(0xFF4A2F22);
+        c.drawRect(cx - 5, cy - 2.5f, cx + 5, cy + 2.5f, p);
+    }
+
     private void park(int x, int y, int pw, int ph) {
         fill(x, y, pw, ph, GRASS);
         int cx = x + pw / 2, cy = y + ph / 2;
@@ -751,6 +987,8 @@ final class City {
         }
         p.setStyle(Paint.Style.FILL);
 
+        for (float[] d : decor) drawDecor(c, p, d);
+
         // Building shadows (longer for taller buildings), then roofs. The roof art is drawn at the
         // footprint and GameView lifts it to the building's height.
         p.setColor(0x50000000);
@@ -787,6 +1025,30 @@ final class City {
         for (int y = 0; y < h; y++)
             for (int x = 0; x < w; x++)
                 if (tiles[y * w + x] == CAR) drawCar(c, p, x, y);
+
+        for (float[] pu : pumps) {
+            p.setColor(0x50000000);
+            c.drawRect(pu[0] - 2.5f, pu[1] - 3, pu[0] + 4.5f, pu[1] + 5, p);
+            p.setColor(0xFFD83A3A);
+            c.drawRect(pu[0] - 3.5f, pu[1] - 4.5f, pu[0] + 3.5f, pu[1] + 4.5f, p);
+            p.setColor(0xFFEEEEEE);
+            c.drawRect(pu[0] - 2.5f, pu[1] - 3.5f, pu[0] + 2.5f, pu[1] - 0.5f, p);
+            p.setColor(0xFF222222);
+            c.drawRect(pu[0] + 3.5f, pu[1] - 1, pu[0] + 5, pu[1] + 3, p);
+        }
+        // Gas station canopies are drawn over the pumps, see-through so the pumps show.
+        for (float[] d : decor) {
+            if (d[0] != D_CANOPY) continue;
+            p.setColor(0x50000000);
+            c.drawRect(d[1] + 4, d[2] + 5, d[3] + 4, d[4] + 5, p);
+            p.setColor(0x70F2F2F2);
+            c.drawRect(d[1], d[2], d[3], d[4], p);
+            p.setColor(0xFFD83A3A);
+            c.drawRect(d[1], d[2], d[3], d[2] + 3, p);
+            c.drawRect(d[1], d[4] - 3, d[3], d[4], p);
+            c.drawRect(d[1], d[2], d[1] + 3, d[4], p);
+            c.drawRect(d[3] - 3, d[2], d[3], d[4], p);
+        }
 
         for (float[] l : lamps) {
             p.setColor(0x50000000);
@@ -884,6 +1146,145 @@ final class City {
             c.drawRect(t[0] - 10, t[1] - 7, t[0] + 10, t[1] - 0.5f, p);
             p.setColor(0xFF465030);
             c.drawRect(t[0] - 10, t[1] - 0.6f, t[0] + 10, t[1] + 0.6f, p);
+        }
+    }
+
+    /** Courts, sports fields, playgrounds, gardens, graves and skateparks. */
+    private void drawDecor(Canvas c, Paint p, float[] d) {
+        int kind = (int) d[0], variant = (int) d[5];
+        float x0 = d[1], y0 = d[2], x1 = d[3], y1 = d[4], cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+        float dw = x1 - x0, dh = y1 - y0;
+        boolean wide = dw >= dh;
+        p.setStyle(Paint.Style.FILL);
+        switch (kind) {
+            case D_COURT: {
+                p.setColor(variant == 0 ? 0xFFB0663A : 0xFF3F7F5A);
+                c.drawRect(x0, y0, x1, y1, p);
+                p.setColor(variant == 0 ? 0xFFC47A4A : 0xFF4E946A);
+                c.drawRect(x0 + 4, y0 + 4, x1 - 4, y1 - 4, p);
+                p.setStyle(Paint.Style.STROKE);
+                p.setStrokeWidth(1.2f);
+                p.setColor(0xDDFFFFFF);
+                c.drawRect(x0 + 4, y0 + 4, x1 - 4, y1 - 4, p);
+                if (wide) c.drawLine(cx, y0 + 4, cx, y1 - 4, p);
+                else c.drawLine(x0 + 4, cy, x1 - 4, cy, p);
+                if (variant == 0) {
+                    c.drawCircle(cx, cy, Math.min(dw, dh) * 0.15f, p);
+                    float r = Math.min(dw, dh) * 0.25f;
+                    if (wide) {
+                        c.drawCircle(x0 + 4, cy, r, p);
+                        c.drawCircle(x1 - 4, cy, r, p);
+                    } else {
+                        c.drawCircle(cx, y0 + 4, r, p);
+                        c.drawCircle(cx, y1 - 4, r, p);
+                    }
+                } else {
+                    p.setStrokeWidth(2f);
+                    p.setColor(0xFF2A2A2A);
+                    if (wide) c.drawLine(cx, y0 + 1, cx, y1 - 1, p);
+                    else c.drawLine(x0 + 1, cy, x1 - 1, cy, p);
+                }
+                p.setStyle(Paint.Style.FILL);
+                break;
+            }
+            case D_FIELD: {
+                int stripes = 8;
+                for (int i = 0; i < stripes; i++) {
+                    p.setColor(i % 2 == 0 ? 0xFF4F8A3A : 0xFF5A9644);
+                    if (wide) c.drawRect(x0 + dw * i / stripes, y0, x0 + dw * (i + 1) / stripes, y1, p);
+                    else c.drawRect(x0, y0 + dh * i / stripes, x1, y0 + dh * (i + 1) / stripes, p);
+                }
+                p.setStyle(Paint.Style.STROKE);
+                p.setStrokeWidth(1.4f);
+                p.setColor(0xEEFFFFFF);
+                c.drawRect(x0 + 3, y0 + 3, x1 - 3, y1 - 3, p);
+                c.drawCircle(cx, cy, Math.min(dw, dh) * 0.14f, p);
+                float gb = Math.min(dw, dh) * 0.3f, gd = Math.max(dw, dh) * 0.12f;
+                if (wide) {
+                    c.drawLine(cx, y0 + 3, cx, y1 - 3, p);
+                    c.drawRect(x0 + 3, cy - gb, x0 + 3 + gd, cy + gb, p);
+                    c.drawRect(x1 - 3 - gd, cy - gb, x1 - 3, cy + gb, p);
+                } else {
+                    c.drawLine(x0 + 3, cy, x1 - 3, cy, p);
+                    c.drawRect(cx - gb, y0 + 3, cx + gb, y0 + 3 + gd, p);
+                    c.drawRect(cx - gb, y1 - 3 - gd, cx + gb, y1 - 3, p);
+                }
+                p.setStyle(Paint.Style.FILL);
+                break;
+            }
+            case D_PLAYGROUND: {
+                p.setColor(0xFFD9C38E);
+                c.drawRoundRect(new RectF(x0, y0, x1, y1), 6, 6, p);
+                p.setColor(0x40000000);
+                c.drawRect(x0 + dw * 0.15f + 1.5f, y0 + dh * 0.2f + 1.5f, x0 + dw * 0.35f + 1.5f, y0 + dh * 0.7f + 1.5f, p);
+                p.setColor(0xFFE0483A);
+                c.drawRect(x0 + dw * 0.15f, y0 + dh * 0.2f, x0 + dw * 0.35f, y0 + dh * 0.7f, p);
+                p.setColor(0xFFE8C53A);
+                c.drawRect(x0 + dw * 0.18f, y0 + dh * 0.55f, x0 + dw * 0.32f, y0 + dh * 0.85f, p);
+                p.setStyle(Paint.Style.STROKE);
+                p.setStrokeWidth(1.5f);
+                p.setColor(0xFF3A6FB0);
+                c.drawLine(x0 + dw * 0.5f, y0 + dh * 0.25f, x0 + dw * 0.85f, y0 + dh * 0.25f, p);
+                p.setColor(0xFF555555);
+                c.drawLine(x0 + dw * 0.6f, y0 + dh * 0.25f, x0 + dw * 0.6f, y0 + dh * 0.45f, p);
+                c.drawLine(x0 + dw * 0.75f, y0 + dh * 0.25f, x0 + dw * 0.75f, y0 + dh * 0.45f, p);
+                p.setStyle(Paint.Style.FILL);
+                int[] cols = {0xFF4FB06A, 0xFFE0483A, 0xFF3A6FB0, 0xFFE8C53A};
+                for (int i = 0; i < 4; i++) {
+                    p.setColor(cols[i]);
+                    c.drawCircle(x0 + dw * (0.55f + 0.1f * i), y0 + dh * 0.72f, 2.2f, p);
+                }
+                break;
+            }
+            case D_GARDEN: {
+                int rows = (int) ((wide ? dh : dw) / 6);
+                for (int i = 0; i < rows; i++) {
+                    float a = (wide ? y0 : x0) + i * 6;
+                    p.setColor(0xFF6B4A30);
+                    if (wide) c.drawRect(x0, a, x1, a + 4, p);
+                    else c.drawRect(a, y0, a + 4, y1, p);
+                    int crop = (i + variant) % 3;
+                    p.setColor(crop == 0 ? 0xFF6FB04A : crop == 1 ? 0xFF3E8A34 : 0xFFB0A03A);
+                    float len = wide ? dw : dh;
+                    for (float t = 2; t < len - 2; t += 4) {
+                        if (wide) c.drawCircle(x0 + t, a + 2, 1.5f, p);
+                        else c.drawCircle(a + 2, y0 + t, 1.5f, p);
+                    }
+                }
+                break;
+            }
+            case D_GRAVE: {
+                p.setColor(0x50000000);
+                c.drawRect(x0 + 1, y0 + 1.5f, x1 + 1, y1 + 1.5f, p);
+                p.setColor(variant == 0 ? 0xFFA8A49C : variant == 1 ? 0xFF8E8A84 : 0xFFBDB8AE);
+                c.drawRect(x0, y0, x1, y1, p);
+                if (variant == 2) {
+                    p.setColor(0xFF7A766E);
+                    c.drawRect(cx - 0.5f, y0 + 0.5f, cx + 0.5f, y1 - 1, p);
+                    c.drawRect(x0 + 0.5f, y0 + 2, x1 - 0.5f, y0 + 3, p);
+                }
+                break;
+            }
+            case D_SKATE: {
+                p.setColor(0xFFBDB6A4);
+                c.drawRect(x0, y0, x1, y1, p);
+                RectF bowl = new RectF(x0 + dw * 0.1f, y0 + dh * 0.15f, x0 + dw * 0.5f, y0 + dh * 0.75f);
+                p.setColor(0xFF8E887A);
+                c.drawRoundRect(bowl, 12, 12, p);
+                bowl.inset(4, 4);
+                p.setColor(0xFF77715F);
+                c.drawRoundRect(bowl, 10, 10, p);
+                p.setColor(0xFF9A9384);
+                c.drawRect(x0 + dw * 0.6f, y0 + dh * 0.2f, x0 + dw * 0.9f, y0 + dh * 0.4f, p);
+                p.setColor(0xFFA9A293);
+                c.drawRect(x0 + dw * 0.6f, y0 + dh * 0.2f, x0 + dw * 0.9f, y0 + dh * 0.26f, p);
+                p.setStrokeWidth(1.4f);
+                p.setColor(0xFF555555);
+                c.drawLine(x0 + dw * 0.6f, y0 + dh * 0.65f, x0 + dw * 0.9f, y0 + dh * 0.65f, p);
+                break;
+            }
+            default:
+                break;
         }
     }
 
@@ -1019,6 +1420,66 @@ final class City {
             c.drawCircle((x0 + x1) / 2, y0 + Math.min(bh * 0.25f, 12), 3.2f, p);
             return;
         }
+        if (kind == FIRE_STATION || kind == MARKET || kind == SCHOOL || kind == KIOSK) {
+            p.setColor(darken(roof, 0.7f));
+            c.drawRect(x0, y0, x1, y1, p);
+            p.setColor(roof);
+            c.drawRect(x0 + 2, y0 + 2, x1 - 2, y1 - 2, p);
+            if (kind == MARKET || kind == SCHOOL) {
+                p.setColor(0xCC9CC3D9);
+                for (float sx = x0 + 10; sx < x1 - 10; sx += 18)
+                    for (float sy = y0 + 10; sy < y1 - 10; sy += 18) c.drawRect(sx - 3, sy - 2, sx + 3, sy + 2, p);
+            }
+            String label = kind == FIRE_STATION ? "FIRE" : kind == MARKET ? "MARKET" : kind == SCHOOL ? "SCHOOL" : "GAS";
+            p.setColor(kind == FIRE_STATION ? 0xFFFFFFFF : kind == KIOSK ? 0xFFD83A3A : 0xFF3A3A3A);
+            p.setTextAlign(Paint.Align.CENTER);
+            p.setTextSize(Math.min(10f, bw / (label.length() * 0.75f)));
+            p.setFakeBoldText(true);
+            c.drawText(label, (x0 + x1) / 2, (y0 + y1) / 2 + 3.5f, p);
+            p.setFakeBoldText(false);
+            return;
+        }
+        if (kind == CHURCH || kind == CRYPT) {
+            // Pitched roof with a cross.
+            p.setColor(darken(roof, 0.7f));
+            c.drawRect(x0, y0, x1, y1, p);
+            boolean alongX = bw >= bh;
+            p.setColor(lighten(roof, 0.1f));
+            if (alongX) c.drawRect(x0 + 1, y0 + 1, x1 - 1, (y0 + y1) / 2, p);
+            else c.drawRect(x0 + 1, y0 + 1, (x0 + x1) / 2, y1 - 1, p);
+            p.setColor(roof);
+            if (alongX) c.drawRect(x0 + 1, (y0 + y1) / 2, x1 - 1, y1 - 1, p);
+            else c.drawRect((x0 + x1) / 2, y0 + 1, x1 - 1, y1 - 1, p);
+            p.setColor(0xFFE8D24A);
+            float cxx = (x0 + x1) / 2, cyy = (y0 + y1) / 2;
+            c.drawRect(cxx - 1, cyy - 5, cxx + 1, cyy + 5, p);
+            c.drawRect(cxx - 3.5f, cyy - 2.5f, cxx + 3.5f, cyy - 0.8f, p);
+            return;
+        }
+        if (kind == SPIRE) {
+            p.setColor(0xFF3A3640);
+            c.drawRect(x0, y0, x1, y1, p);
+            p.setColor(0xFF524C58);
+            Path spire = new Path();
+            spire.moveTo((x0 + x1) / 2, y0 + 1);
+            spire.lineTo(x1 - 1, (y0 + y1) / 2);
+            spire.lineTo((x0 + x1) / 2, y1 - 1);
+            spire.lineTo(x0 + 1, (y0 + y1) / 2);
+            spire.close();
+            c.drawPath(spire, p);
+            return;
+        }
+        if (kind == SHOP) {
+            p.setColor(darken(roof, 0.7f));
+            c.drawRect(x0, y0, x1, y1, p);
+            p.setColor(roof);
+            c.drawRect(x0 + 1.5f, y0 + 1.5f, x1 - 1.5f, y1 - 1.5f, p);
+            Random rr = new Random(b[5]);
+            p.setColor(0xFFA7ABAF);
+            float ux = x0 + 4 + rr.nextFloat() * Math.max(1, bw - 12);
+            c.drawRect(ux, y0 + 4, ux + 5, y0 + 8, p);
+            return;
+        }
         if (kind == HOSPITAL) {
             p.setColor(0xFFBFC5CB);
             c.drawRect(x0, y0, x1, y1, p);
@@ -1101,7 +1562,8 @@ final class City {
         if (kind == 2) vertical = true;
         float hl = kind == 2 ? 7.8f : 7.5f, hw = kind == 2 ? 4.8f : 4.2f;
         RectF rect = vertical ? new RectF(cx - hw, cy - hl, cx + hw, cy + hl) : new RectF(cx - hl, cy - hw, cx + hl, cy + hw);
-        int color = kind == 1 ? 0xFF1C1D22 : kind == 2 ? 0xFF4F5A33 : kind == 3 ? 0xFFF2F2F2
+        if (kind == 4) vertical = true;
+        int color = kind == 4 ? 0xFFC8302A : kind == 1 ? 0xFF1C1D22 : kind == 2 ? 0xFF4F5A33 : kind == 3 ? 0xFFF2F2F2
                 : CAR_COLORS[rnd.nextInt(CAR_COLORS.length)];
         p.setColor(0x55000000);
         rect.offset(1.5f, 1.5f);
@@ -1136,6 +1598,12 @@ final class City {
             p.setColor(0xFF2F6BFF);
             if (vertical) c.drawRect(cx, cy - 0.8f, cx + hw - 1, cy + 0.6f, p);
             else c.drawRect(cx - 0.8f, cy, cx + 0.6f, cy + hw - 1, p);
+        } else if (kind == 4) {
+            // Fire truck: ladder along the top.
+            p.setColor(0xFFD8D8D8);
+            c.drawRect(cx - 1.5f, cy - hl + 2, cx - 0.7f, cy + hl - 1, p);
+            c.drawRect(cx + 0.7f, cy - hl + 2, cx + 1.5f, cy + hl - 1, p);
+            for (float yy = cy - hl + 3; yy < cy + hl - 1; yy += 2.5f) c.drawRect(cx - 1.5f, yy, cx + 1.5f, yy + 0.5f, p);
         } else if (kind == 3) {
             // Ambulance: red stripe and cross.
             p.setColor(0xFFD83A3A);

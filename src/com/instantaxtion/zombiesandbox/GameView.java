@@ -27,6 +27,7 @@ final class GameView extends View implements Menu.Host {
     private static final int BTN_PAUSE = 0, BTN_SPEED = 1, BTN_BRUSH = 2, BTN_CLEAR = 3, BTN_MENU = 4;
     private static final int[] SPEEDS = {1, 2, 4};
     private static final int[] BRUSHES = {1, 5, 10};
+    private static final int[] SHOP_AWNINGS = {0xFFD83A3A, 0xFF2E7D4F, 0xFF2E5FB0, 0xFFE8A21C, 0xFF8A2E6B};
     private static final int[] ROW_COLORS = {0xFFF0AD4E, 0xFF4F7BE0, 0xFF8FA05A, 0xFFF2F2F2, 0xFF7CC24E};
     private static final String[] ROW_LABELS = {"Civilians", "Cops", "Military", "Medics", "Zombies"};
 
@@ -443,6 +444,21 @@ final class GameView extends View implements Menu.Host {
             c.drawLine(p.x - 3, p.y, p.x + 3.5f, p.y - 1, stroke);
             c.drawLine(p.x - 2.5f, p.y, p.x - 3, p.y + 2.2f, stroke);
         }
+        for (int i = 0, n = world.birds.size(); i < n; i++) {
+            World.Bird b = world.birds.get(i);
+            if (b.flying || b.x < vx0 || b.x > vx1 || b.y < vy0 || b.y > vy1) continue;
+            fill.setColor(0xFF7D8088);
+            c.drawCircle(b.x, b.y, 1.5f, fill);
+            fill.setColor(0xFF4C5058);
+            c.drawCircle(b.x + (float) Math.cos(b.flap) * 1.2f, b.y + (float) Math.sin(b.flap) * 0.6f, 0.8f, fill);
+        }
+        for (int i = 0, n = world.fires.size(); i < n; i++) {
+            World.Fire f = world.fires.get(i);
+            if (f.x < vx0 || f.x > vx1 || f.y < vy0 || f.y > vy1) continue;
+            float flicker = 0.7f + 0.3f * (float) Math.sin(world.time * 17 + i);
+            fill.setColor(alpha(0xFFFF8A20, 0.25f * flicker * Math.min(1, f.life / 10)));
+            c.drawCircle(f.x, f.y, 16, fill);
+        }
         for (int i = 0, n = world.city.buildings.size(); i < n; i++) {
             City.Building b = world.city.buildings.get(i);
             if (b.occupants.isEmpty() || b.doorX < vx0 || b.doorX > vx1 || b.doorY < vy0 || b.doorY > vy1) continue;
@@ -551,6 +567,17 @@ final class GameView extends View implements Menu.Host {
         for (int i = 0, n = world.fleet.vehicles.size(); i < n; i++) {
             Fleet.Vehicle v = world.fleet.vehicles.get(i);
             if (v.type == Fleet.HELI) drawHeli(c, v);
+        }
+        for (int i = 0, n = world.birds.size(); i < n; i++) {
+            World.Bird b = world.birds.get(i);
+            if (!b.flying || b.x < vx0 || b.x > vx1 || b.y < vy0 || b.y > vy1) continue;
+            float wing = (float) Math.sin(b.flap) * 2.2f;
+            fill.setColor(0x30000000);
+            c.drawCircle(b.x + 10, b.y + 14, 1.4f, fill);
+            stroke.setColor(0xFF6E717A);
+            stroke.setStrokeWidth(0.9f);
+            c.drawLine(b.x - 2.5f, b.y - wing, b.x, b.y, stroke);
+            c.drawLine(b.x, b.y, b.x + 2.5f, b.y - wing, stroke);
         }
 
         for (int i = 0, n = world.dispatch.incidents.size(); i < n; i++) {
@@ -695,7 +722,37 @@ final class GameView extends View implements Menu.Host {
                     int hsh = (b.seed * 73856093) ^ (side * 19349663) ^ (k * 83492791) ^ (i * 26544357);
                     boolean lit = ((hsh >>> 9) & litMask) == 0;
                     int litColor = 0xFFF0D98C;
-                    if (b.kind == City.WAREHOUSE) {
+                    if (b.kind == City.SHOP && k == 0) {
+                        // Shopfront: big window under a striped awning.
+                        fill.setColor(City.darken(0xFF6F8EA6, glass));
+                        c.drawRect(u0 + 1.5f, 0.5f, u0 + cw - 1.5f, 7, fill);
+                        int awn = SHOP_AWNINGS[(b.seed + i) % SHOP_AWNINGS.length];
+                        for (int st = 0; st < 4; st++) {
+                            fill.setColor(City.darken(st % 2 == 0 ? awn : 0xFFF2F2F2, glass));
+                            c.drawRect(u0 + cw * st / 4f, 7.5f, u0 + cw * (st + 1) / 4f, 10.5f, fill);
+                        }
+                    } else if (b.kind == City.CHURCH || b.kind == City.SPIRE) {
+                        // Tall stained-glass windows spanning the floors.
+                        if (k == 0 && i % 2 == 1) {
+                            fill.setColor(City.darken(i % 4 == 1 ? 0xFF6A4E9A : 0xFF3F7AA8, glass));
+                            c.drawRect(u0 + cw * 0.35f, 2, u0 + cw * 0.65f, Math.min(hgt - 4, City.FLOOR * floors - 3), fill);
+                        }
+                    } else if (b.kind == City.FIRE_STATION && k == 0) {
+                        fill.setColor(City.darken(0xFFC8302A, glass));
+                        c.drawRect(u0 + 1.5f, 0, u0 + cw - 1.5f, 9.5f, fill);
+                        fill.setColor(City.darken(0xFFE8E8E8, glass));
+                        for (float v = 2; v < 9; v += 2.5f) c.drawRect(u0 + 1.5f, v, u0 + cw - 1.5f, v + 0.5f, fill);
+                    } else if ((b.kind == City.MARKET || b.kind == City.KIOSK) && k == 0) {
+                        fill.setColor(City.darken(0xFF7FA6C0, glass));
+                        c.drawRect(u0, 0.5f, u0 + cw, 8.5f, fill);
+                        fill.setColor(City.darken(b.kind == City.KIOSK ? 0xFFD83A3A : 0xFF3E8A4A, glass));
+                        c.drawRect(u0, 8.5f, u0 + cw, 11, fill);
+                    } else if (b.kind == City.CRYPT) {
+                        if (k == 0 && i == cols / 2) {
+                            fill.setColor(City.darken(0xFF3A3632, glass));
+                            c.drawRect(u0 + cw * 0.3f, 0, u0 + cw * 0.7f, 8, fill);
+                        }
+                    } else if (b.kind == City.WAREHOUSE) {
                         if (k == 0 && i % 2 == 0) {
                             fill.setColor(City.darken(0xFFA4A8AC, glass));
                             c.drawRect(u0 + 2, 0, u0 + cw - 2, 9, fill);
@@ -741,10 +798,22 @@ final class GameView extends View implements Menu.Host {
         fill.setColor(0x55000000);
         oval.set(-hl + 1.5f, -hw + 1.5f, hl + 1.5f, hw + 1.5f);
         c.drawRoundRect(oval, 2.5f, 2.5f, fill);
-        fill.setColor(truck ? 0xFF4F5A33 : 0xFF1C1D22);
+        boolean civ = v.type == Fleet.CAR;
+        fill.setColor(civ ? v.color : truck ? 0xFF4F5A33 : 0xFF1C1D22);
         oval.set(-hl, -hw, hl, hw);
         c.drawRoundRect(oval, 2.5f, 2.5f, fill);
-        if (truck) {
+        if (civ) {
+            fill.setColor(0xFF1E2A33);
+            c.drawRect(1.5f, -hw + 1, 4.5f, hw - 1, fill);
+            c.drawRect(-5f, -hw + 1, -3f, hw - 1, fill);
+            fill.setColor(City.lighten(v.color, 0.15f));
+            c.drawRect(-2.5f, -hw + 1.5f, 1f, hw - 1.5f, fill);
+            if (!v.parked) {
+                fill.setColor(0xFFFFF4C0);
+                c.drawCircle(hl - 0.8f, -hw + 1.3f, 0.8f, fill);
+                c.drawCircle(hl - 0.8f, hw - 1.3f, 0.8f, fill);
+            }
+        } else if (truck) {
             fill.setColor(0xFF5F6B40);
             c.drawRect(-hl + 0.8f, -hw + 0.8f, hl * 0.3f, hw - 0.8f, fill);
             fill.setColor(0xFF1E2A33);

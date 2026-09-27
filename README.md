@@ -10,7 +10,7 @@ away from the middle of the screen as you pan, and the game plays in both portra
 ## Main menu
 
 - **New Game** opens the city setup, which has 7 options: the map (Classic, Downtown, Suburbs,
-  Industrial or Parkland), map size, how many civilians, cops, military and zombies there are at the
+  Industrial, Parkland, Old Town, Small Town or Campus), map size, how many civilians, cops, military and zombies there are at the
   start, and how many reinforcements can be called in (Off, Low, Medium or High). Each map decides its
   own buildings, layout, parks, police stations and military base. **Randomize** rolls a random setup.
 - **Settings**: music and sound volume, 3D buildings, blood, health bars, screen shake, FPS counter
@@ -34,6 +34,11 @@ on the phone, so the APK contains no audio files.
 - **Save/load**, a **Stats** screen (people vs zombies over time) and a **How to Play** tutorial.
 
 ## City layout
+
+Besides homes, offices and warehouses, cities have shops, gas stations, churches, schools, fire
+stations, supermarkets, a hospital, police stations and (on some maps) a military base. Parks come as
+classic parks, playgrounds, soccer fields, courts, community gardens, skateparks and cemeteries.
+Traffic drives the streets, pigeons flock in the parks, and explosions leave burning wrecks.
 
 Varied and Organic layouts merge some blocks into superblocks (so streets have T-junctions), add
 tree-lined boulevards, and give parks curved paths. It is always daytime, and there is no water on

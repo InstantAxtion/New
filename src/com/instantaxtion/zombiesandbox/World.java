@@ -29,6 +29,17 @@ final class World {
         float x, y, r, life, max;
     }
 
+    /** A burning car or gas pump. */
+    static final class Fire {
+        float x, y, life;
+    }
+
+    /** A pigeon: pecks around on the ground and flies off when startled. */
+    static final class Bird {
+        float x, y, tx, ty, flap, timer;
+        boolean flying;
+    }
+
     /** A gun dropped by a fallen cop or soldier. */
     static final class Pickup {
         float x, y, age;
@@ -44,6 +55,11 @@ final class World {
     final ArrayList<Grenade> grenades = new ArrayList<Grenade>();
     final ArrayList<Explosion> explosions = new ArrayList<Explosion>();
     final ArrayList<Pickup> pickups = new ArrayList<Pickup>();
+    final ArrayList<Fire> fires = new ArrayList<Fire>();
+    final ArrayList<Bird> birds = new ArrayList<Bird>();
+    /** Explosions waiting to go off (gas pumps catching): {x, y, radius, damage, delay}. */
+    private final ArrayList<float[]> pendingBlasts = new ArrayList<float[]>();
+    private boolean[] burned;
     final Fleet fleet;
     /** Rings drawn where a screamer screamed: {x, y, age}. */
     final ArrayList<float[]> screams = new ArrayList<float[]>();
@@ -105,6 +121,7 @@ final class World {
         city = new City(cfg);
         dispatch = new Dispatch(this, cfg.reinforcements());
         fleet = new Fleet(this);
+        burned = new boolean[city.w * city.h];
         gw = (int) Math.ceil(city.worldW() / CELL);
         gh = (int) Math.ceil(city.worldH() / CELL);
         cellStart = new int[gw * gh + 1];
@@ -162,6 +179,9 @@ final class World {
                 best.postY = post[1];
             }
         }
+        spawnBirds();
+        fleet.trafficTarget = new int[]{0, 8, 16}[cfg.traffic()] * city.w / 96;
+        fleet.spawnTraffic(fleet.trafficTarget);
         // Zombies start in a few small outbreaks rather than spread evenly.
         int left = cfg.zombies();
         while (left > 0) {
@@ -172,6 +192,148 @@ final class World {
             left -= group;
         }
         recount();
+    }
+
+    /** Flocks of pigeons in parks and plazas. */
+    void spawnBirds() {
+        int flocks = Math.min(10, city.openAreas.size() + 3);
+        for (int f = 0; f < flocks; f++) {
+            float[] c;
+            if (f < city.openAreas.size()) c = city.findWalkable(city.openAreas.get(f)[0], city.openAreas.get(f)[1]);
+            else c = city.randomWalkable(rnd);
+            if (c == null) continue;
+            int n = 4 + rnd.nextInt(5);
+            for (int i = 0; i < n; i++) {
+                Bird b = new Bird();
+                b.x = c[0] + rnd.nextFloat() * 30 - 15;
+                b.y = c[1] + rnd.nextFloat() * 30 - 15;
+                b.flap = rnd.nextFloat() * 6;
+                birds.add(b);
+            }
+        }
+    }
+
+    /** Startles pigeons near a point into the air. */
+    private void scareBirds(float x, float y, float radius) {
+        for (int i = 0, n = birds.size(); i < n; i++) {
+            Bird b = birds.get(i);
+            if (b.flying) continue;
+            float ddx = b.x - x, ddy = b.y - y;
+            if (ddx * ddx + ddy * ddy > radius * radius) continue;
+            b.flying = true;
+            float[] land = city.randomWalkable(rnd);
+            float a = (float) Math.atan2(ddy, ddx) + (rnd.nextFloat() - 0.5f);
+            // Fly away from the scare, landing somewhere open a few hundred units off.
+            b.tx = Math.max(0, Math.min(city.worldW(), b.x + (float) Math.cos(a) * (200 + rnd.nextFloat() * 250)));
+            b.ty = Math.max(0, Math.min(city.worldH(), b.y + (float) Math.sin(a) * (200 + rnd.nextFloat() * 250)));
+            float[] p = city.findWalkable(b.tx, b.ty);
+            if (p == null) p = land;
+            b.tx = p[0] + rnd.nextFloat() * 20 - 10;
+            b.ty = p[1] + rnd.nextFloat() * 20 - 10;
+        }
+    }
+
+    private void updateBirds(float dt) {
+        for (int i = 0, n = birds.size(); i < n; i++) {
+            Bird b = birds.get(i);
+            b.flap += dt * (b.flying ? 18 : 2);
+            if (b.flying) {
+                float ddx = b.tx - b.x, ddy = b.ty - b.y;
+                float d = (float) Math.sqrt(ddx * ddx + ddy * ddy);
+                if (d < 3) {
+                    b.flying = false;
+                } else {
+                    float sp = Math.min(d, 90 * dt);
+                    b.x += ddx / d * sp;
+                    b.y += ddy / d * sp;
+                }
+                continue;
+            }
+            // Peck about, and take off if anyone comes close.
+            b.timer -= dt;
+            if (b.timer <= 0) {
+                b.timer = 0.3f + rnd.nextFloat() * 0.6f;
+                if (rnd.nextFloat() < 0.3f) {
+                    float nx = b.x + rnd.nextFloat() * 6 - 3, ny = b.y + rnd.nextFloat() * 6 - 3;
+                    if (!city.solidAt(nx, ny)) {
+                        b.x = nx;
+                        b.y = ny;
+                    }
+                }
+                int cx = Math.max(0, Math.min(gw - 1, (int) (b.x / CELL))), cy = Math.max(0, Math.min(gh - 1, (int) (b.y / CELL)));
+                int c = cy * gw + cx;
+                for (int k = cellStart[c], end = cellStart[c] + cellCount[c]; k < end; k++) {
+                    Entity o = sorted[k];
+                    float ddx = o.x - b.x, ddy = o.y - b.y;
+                    if (ddx * ddx + ddy * ddy < 20 * 20) {
+                        scareBirds(b.x, b.y, 40);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    /** Burning wrecks: flames and smoke, and they hurt anyone standing in them. */
+    private void updateFires(float dt) {
+        for (int i = fires.size() - 1; i >= 0; i--) {
+            Fire f = fires.get(i);
+            f.life -= dt;
+            if (f.life <= 0) {
+                fires.remove(i);
+                continue;
+            }
+            float strength = Math.min(1, f.life / 10);
+            if (rnd.nextFloat() < dt * 25 * strength)
+                particle(f.x + rnd.nextFloat() * 10 - 5, f.y + rnd.nextFloat() * 8 - 4, rnd.nextFloat() * 10 - 5,
+                        -8 - rnd.nextFloat() * 10, 0.4f + rnd.nextFloat() * 0.3f, 1.5f + rnd.nextFloat() * 2,
+                        rnd.nextBoolean() ? 0xFFFFB030 : 0xFFFF6A1A, P_FIRE);
+            if (rnd.nextFloat() < dt * 6)
+                particle(f.x, f.y - 4, 6 + rnd.nextFloat() * 6, -10 - rnd.nextFloat() * 8, 2.5f + rnd.nextFloat() * 2,
+                        3 + rnd.nextFloat() * 3, 0xFF2E2E2E, P_SMOKE);
+            for (int k = 0, n = entities.size(); k < n; k++) {
+                Entity o = entities.get(k);
+                float ddx = o.x - f.x, ddy = o.y - f.y;
+                if (ddx * ddx + ddy * ddy < 10 * 10) {
+                    o.hp -= 12 * dt;
+                    o.hurt = Math.max(o.hurt, 0.3f);
+                    if (!o.isZombie()) {
+                        o.fleeTimer = 2;
+                        o.threatX = f.x;
+                        o.threatY = f.y;
+                    }
+                }
+            }
+        }
+        for (int i = pendingBlasts.size() - 1; i >= 0; i--) {
+            float[] b = pendingBlasts.get(i);
+            b[4] -= dt;
+            if (b[4] <= 0) {
+                pendingBlasts.remove(i);
+                explode(b[0], b[1], b[2], b[3]);
+            }
+        }
+    }
+
+    private void ignite(float x, float y, float life) {
+        Fire f = new Fire();
+        f.x = x;
+        f.y = y;
+        f.life = life;
+        fires.add(f);
+        if (fires.size() > 40) fires.remove(0);
+    }
+
+    /** Anyone standing just ahead of a car (so drivers can brake). */
+    boolean personAhead(float x, float y, float angle) {
+        float ax = x + (float) Math.cos(angle) * 16, ay = y + (float) Math.sin(angle) * 16;
+        for (int i = 0, n = entities.size(); i < n; i++) {
+            Entity o = entities.get(i);
+            if (o.isZombie()) continue;
+            float ddx = o.x - ax, ddy = o.y - ay;
+            if (ddx * ddx + ddy * ddy < 11 * 11) return true;
+        }
+        return false;
     }
 
     void armCivilian(Entity e, int rounds) {
@@ -328,6 +490,9 @@ final class World {
     /** Recomputes counts and paths after a save has been loaded. */
     void afterLoad() {
         fieldTimer = 0;
+        spawnBirds();
+        fleet.trafficTarget = new int[]{0, 8, 16}[city.cfg.traffic()] * city.w / 96;
+        fleet.spawnTraffic(fleet.trafficTarget);
         buildHash();
         city.computeFields(entities);
         recount();
@@ -366,6 +531,8 @@ final class World {
         grenades.clear();
         explosions.clear();
         pickups.clear();
+        fires.clear();
+        pendingBlasts.clear();
         fleet.clear();
         for (City.Building b : city.buildings) {
             b.occupants.clear();
@@ -403,6 +570,8 @@ final class World {
         }
         separate();
         fleet.update(dt);
+        updateFires(dt);
+        updateBirds(dt);
         updateGrenades(dt);
         cleanup();
         updateCorpses(dt);
@@ -565,6 +734,7 @@ final class World {
 
     /** Makes zombies within a radius head for a noise (gunfire, explosions, a screamer). */
     void noise(float x, float y, float radius) {
+        scareBirds(x, y, radius);
         int cx0 = Math.max(0, (int) ((x - radius) / CELL)), cx1 = Math.min(gw - 1, (int) ((x + radius) / CELL));
         int cy0 = Math.max(0, (int) ((y - radius) / CELL)), cy1 = Math.min(gh - 1, (int) ((y + radius) / CELL));
         for (int cy = cy0; cy <= cy1; cy++)
@@ -1587,6 +1757,23 @@ final class World {
         ex.life = ex.max = 0.45f;
         explosions.add(ex);
         emit(Sfx.EXPLOSION, x, y);
+        // Parked cars in the blast catch fire; gas pumps go up a moment later.
+        int tx0 = Math.max(0, (int) ((x - radius) / City.T)), tx1 = Math.min(city.w - 1, (int) ((x + radius) / City.T));
+        int ty0 = Math.max(0, (int) ((y - radius) / City.T)), ty1 = Math.min(city.h - 1, (int) ((y + radius) / City.T));
+        for (int ty = ty0; ty <= ty1; ty++)
+            for (int tx = tx0; tx <= tx1; tx++) {
+                int i = ty * city.w + tx;
+                byte t = city.tiles[i];
+                if ((t != City.CAR && t != City.PUMP) || burned[i]) continue;
+                float cx = tx * City.T + City.T / 2f, cy = ty * City.T + City.T / 2f;
+                if ((cx - x) * (cx - x) + (cy - y) * (cy - y) > radius * radius * 0.8f) continue;
+                if (t == City.CAR && rnd.nextFloat() > 0.6f) continue;
+                burned[i] = true;
+                city.charTile(tx, ty);
+                ignite(cx, cy, t == City.PUMP ? 90 : 40 + rnd.nextFloat() * 30);
+                if (t == City.PUMP) pendingBlasts.add(new float[]{cx, cy, 90, 380, 0.3f + rnd.nextFloat() * 0.5f});
+                else if (rnd.nextFloat() < 0.25f) pendingBlasts.add(new float[]{cx, cy, 45, 150, 1.5f + rnd.nextFloat() * 3});
+            }
         noise(x, y, 450);
         for (int i = 0; i < 40; i++) {
             float a = rnd.nextFloat() * TAU, s = 30 + rnd.nextFloat() * radius * 2.2f;

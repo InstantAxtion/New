@@ -2,11 +2,20 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "2.0";
-    static final int VERSION_CODE = 8;
+    static final String VERSION = "2.1";
+    static final int VERSION_CODE = 9;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "2.1  -  A living city",
+                    "New buildings: rows of shops with striped awnings, gas stations, churches with steeples and churchyards, schools, fire stations with fire trucks, and supermarkets with big car parks. People can hide in the shops, churches, schools and supermarkets.",
+                    "New parks: playgrounds, soccer fields, basketball and tennis courts, community gardens, skateparks and cemeteries.",
+                    "New maps: Old Town (narrow streets, shops and churches), Small Town and Campus (schools and sports fields). Every map has its own mix of landmarks and parks.",
+                    "Traffic: cars drive around town, brake for pedestrians, plough through zombies, and get abandoned when the driver is surrounded.",
+                    "Pigeons in the parks and plazas scatter at gunfire, explosions or anyone walking up, and land somewhere else.",
+                    "Fires: explosions set parked cars burning, sometimes blowing up a moment later. Gas pumps go up in a big secondary blast. Wrecks stay charred, and fire hurts anyone standing in it.",
+            },
             {
                     "2.0  -  The city fights back",
                     "Police cruisers drive backup officers to incidents and army trucks carry reserve squads out of the base, running over zombies on the way.",

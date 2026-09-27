@@ -1,5 +1,6 @@
 package com.instantaxtion.zombiesandbox;
 
+import android.app.Activity;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Matrix;
@@ -13,14 +14,14 @@ import android.view.View;
 import java.util.Random;
 
 /** Renders the world, runs the game loop and handles all touch input and on-screen buttons. */
-final class GameView extends View {
+final class GameView extends View implements Menu.Host {
     private static final int TOOL_PAN = 0, TOOL_BOMB = 7, TOOL_ERASE = 8;
     // Tool index -> entity type spawned (or -1).
     private static final int[] TOOL_TYPE = {-1, Entity.CIVILIAN, Entity.COP, Entity.SOLDIER, Entity.ZOMBIE,
             Entity.RUNNER, Entity.BRUTE, -1, -1};
     private static final String[] TOOL_NAMES = {"Move", "Civilian", "Cop", "Military", "Zombie", "Runner",
             "Brute", "Bomb", "Erase"};
-    private static final int BTN_PAUSE = 0, BTN_SPEED = 1, BTN_BRUSH = 2, BTN_CLEAR = 3, BTN_NEW = 4;
+    private static final int BTN_PAUSE = 0, BTN_SPEED = 1, BTN_BRUSH = 2, BTN_CLEAR = 3, BTN_MENU = 4;
     private static final int[] SPEEDS = {1, 2, 4};
     private static final int[] BRUSHES = {1, 5, 10};
     private static final int[] TYPE_COLORS = {0xFFF0AD4E, 0xFF4F7BE0, 0xFF8FA05A, 0xFF7CC24E, 0xFFD6E05A, 0xFFB36BD6};
@@ -28,6 +29,13 @@ final class GameView extends View {
     private World world;
     private final Random rnd = new Random();
     private final float dp;
+    private final Settings settings;
+    private final Sound sound;
+    private final Menu menu;
+    private boolean hasGame;
+    private float menuTime, savedCamX, savedCamY, savedScale;
+    private float fps, fpsTimer;
+    private int fpsFrames;
 
     private float camX, camY, scale = 2f;
     private boolean running, simPaused;
@@ -74,7 +82,18 @@ final class GameView extends View {
         for (int i = 0; i < 9; i++) toolRects[i] = new RectF();
         for (int i = 0; i < 5; i++) topRects[i] = new RectF();
         buildIcons();
-        newCity();
+        settings = new Settings(context);
+        sound = new Sound(context);
+        menu = new Menu(this, settings, dp);
+        // The main menu shows a live demo city in the background.
+        CityConfig demo = new CityConfig();
+        demo.applyPreset(rnd.nextInt(CityConfig.CUSTOM));
+        demo.v[9] = 3;
+        demo.v[10] = 1;
+        demo.v[11] = 1;
+        demo.v[12] = 2;
+        loadWorld(demo);
+        applySettings();
     }
 
     private void buildIcons() {
@@ -95,11 +114,82 @@ final class GameView extends View {
         }
     }
 
-    private void newCity() {
-        world = new World(System.nanoTime());
-        world.populate(140, 8);
+    private void loadWorld(CityConfig cfg) {
+        world = new World(cfg);
+        world.maxEntities = settings.maxPopulation();
+        world.gore = settings.gore();
+        world.populate(cfg);
         follow = null;
         if (getWidth() > 0) centerCamera();
+    }
+
+    private void applySettings() {
+        world.maxEntities = settings.maxPopulation();
+        world.gore = settings.gore();
+        sound.setVolumes(settings.music(), settings.sfx());
+    }
+
+    // ------------------------------------------------------------------ Menu.Host
+
+    @Override
+    public boolean hasGame() {
+        return hasGame;
+    }
+
+    @Override
+    public void continueGame() {
+        if (menu.screen == Menu.MAIN) {
+            camX = savedCamX;
+            camY = savedCamY;
+            scale = savedScale;
+        }
+        menu.screen = Menu.NONE;
+    }
+
+    @Override
+    public void startGame(CityConfig cfg) {
+        loadWorld(cfg);
+        applySettings();
+        hasGame = true;
+        simPaused = false;
+        speedIdx = 0;
+        tool = Entity.ZOMBIE + 1;
+        hintTime = 14f;
+        menu.screen = Menu.NONE;
+    }
+
+    @Override
+    public void toMainMenu() {
+        savedCamX = camX;
+        savedCamY = camY;
+        savedScale = scale;
+        menu.open(Menu.MAIN);
+    }
+
+    @Override
+    public void quit() {
+        if (getContext() instanceof Activity) ((Activity) getContext()).finish();
+    }
+
+    @Override
+    public void settingsChanged() {
+        applySettings();
+    }
+
+    @Override
+    public void click() {
+        sound.play(Sfx.CLICK, 0.8f, 0);
+    }
+
+    /** System back button. Returns false when the app should close. */
+    boolean onBack() {
+        boolean handled = menu.back();
+        if (handled) click();
+        return handled;
+    }
+
+    void release() {
+        sound.release();
     }
 
     private void centerCamera() {
@@ -109,12 +199,14 @@ final class GameView extends View {
     }
 
     void resume() {
+        sound.resume();
         running = true;
         lastFrame = System.nanoTime();
         postInvalidateOnAnimation();
     }
 
     void pause() {
+        sound.pause();
         running = false;
     }
 
@@ -171,16 +263,28 @@ final class GameView extends View {
     @Override
     protected void onDraw(Canvas c) {
         long now = System.nanoTime();
-        float dt = Math.min(0.05f, (now - lastFrame) / 1e9f);
+        float rawDt = (now - lastFrame) / 1e9f;
+        float dt = Math.min(0.05f, rawDt);
         lastFrame = now;
-        if (!simPaused) {
-            float total = dt * SPEEDS[speedIdx];
+        fpsFrames++;
+        fpsTimer += rawDt;
+        if (fpsTimer >= 0.5f) {
+            fps = fpsFrames / fpsTimer;
+            fpsFrames = 0;
+            fpsTimer = 0;
+        }
+
+        boolean inGame = !menu.isOpen();
+        boolean simulate = inGame ? !simPaused : menu.liveBackground();
+        if (simulate) {
+            float total = dt * (inGame ? SPEEDS[speedIdx] : 1);
             int steps = Math.max(1, (int) Math.ceil(total / 0.034f));
             float step = total / steps;
             for (int i = 0; i < steps; i++) world.update(step);
         }
-        if (hintTime > 0) hintTime -= dt;
-        if (follow != null) {
+        if (inGame && hintTime > 0) hintTime -= dt;
+        if (menu.liveBackground()) driftCamera(dt);
+        else if (follow != null) {
             if (follow.dead) follow = null;
             else {
                 float tx = follow.x - getWidth() / scale / 2, ty = follow.y - (barTop / 2) / scale;
@@ -189,9 +293,47 @@ final class GameView extends View {
                 camY += (ty - camY) * k;
             }
         }
+        sound.playTrack(inGame || menu.screen == Menu.PAUSE ? Synth.TRACK_GAME : Synth.TRACK_MENU);
+        playSounds(inGame ? 1f : 0.35f);
+
         drawWorld(c);
-        drawUi(c);
+        if (menu.isOpen()) menu.draw(c, getWidth(), getHeight(), dt);
+        else drawUi(c);
+        if (settings.showFps()) {
+            text.setTextSize(12 * dp);
+            text.setTextAlign(Paint.Align.RIGHT);
+            text.setColor(0xFFFFFF66);
+            c.drawText((int) (fps + 0.5f) + " FPS", getWidth() - 8 * dp,
+                    menu.isOpen() ? getHeight() - 30 * dp : barTop - 8 * dp, text);
+        }
         if (running) postInvalidateOnAnimation();
+    }
+
+    /** Slowly glides the camera over the city behind the main menu. */
+    private void driftCamera(float dt) {
+        menuTime += dt;
+        scale = Math.max(getWidth(), getHeight()) / (30f * City.T);
+        float ww = world.city.worldW(), wh = world.city.worldH();
+        float tx = ww / 2 + ww * 0.3f * (float) Math.sin(menuTime * 0.021f);
+        float ty = wh / 2 + wh * 0.3f * (float) Math.sin(menuTime * 0.029f + 1);
+        camX = tx - getWidth() / scale / 2;
+        camY = ty - getHeight() / scale / 2;
+    }
+
+    /** Plays the simulation's sound events that happened on (or near) the screen. */
+    private void playSounds(float master) {
+        float vw = getWidth() / scale, vh = getHeight() / scale;
+        float cx = camX + vw / 2, cy = camY + vh / 2, reach = Math.max(vw, vh) * 0.75f;
+        for (int i = 0; i < world.evCount; i++) {
+            float ddx = world.evX[i] - cx, ddy = world.evY[i] - cy;
+            float d = (float) Math.sqrt(ddx * ddx + ddy * ddy);
+            if (d > reach) continue;
+            float vol = master * (1 - 0.7f * d / reach);
+            int type = world.evType[i];
+            if (type == Sfx.GROAN || type == Sfx.GROAN_DEEP || type == Sfx.SCREAM) vol *= 0.6f;
+            sound.play(type, vol, Math.max(-1, Math.min(1, ddx / (vw / 2))) * 0.8f);
+        }
+        world.evCount = 0;
     }
 
     // ------------------------------------------------------------------ world rendering
@@ -199,7 +341,9 @@ final class GameView extends View {
     private void drawWorld(Canvas c) {
         c.drawColor(0xFF1B1C1F);
         c.save();
-        if (world.shake > 0) {
+        int timeOfDay = world.city.cfg.time();
+        boolean night = timeOfDay == CityConfig.TIME_NIGHT;
+        if (world.shake > 0 && settings.shake()) {
             float s = world.shake * 5 * dp;
             c.translate((rnd.nextFloat() - 0.5f) * s, (rnd.nextFloat() - 0.5f) * s);
         }
@@ -228,7 +372,7 @@ final class GameView extends View {
         for (int i = 0, n = world.entities.size(); i < n; i++) {
             Entity e = world.entities.get(i);
             if (e.x < vx0 || e.x > vx1 || e.y < vy0 || e.y > vy1) continue;
-            if (detailed) drawEntity(c, e, true);
+            if (detailed) drawEntity(c, e, settings.healthBars());
             else {
                 fill.setColor(e.isZombie() ? 0xFF6FBF3F : e.body);
                 c.drawCircle(e.x, e.y, e.radius * 1.2f, fill);
@@ -244,6 +388,21 @@ final class GameView extends View {
             c.drawCircle(x, y, 1.6f, fill);
             fill.setColor(0xFF2F3A1E);
             c.drawCircle(x, y - hgt, 1.9f, fill);
+        }
+
+        if (night) {
+            fill.setColor(0xA0060A1C);
+            c.drawRect(vx0, vy0, vx1, vy1, fill);
+            for (int i = 0, n = world.city.lamps.size(); i < n; i++) {
+                float[] l = world.city.lamps.get(i);
+                if (l[0] < vx0 - 40 || l[0] > vx1 + 40 || l[1] < vy0 - 40 || l[1] > vy1 + 40) continue;
+                fill.setColor(0x26FFD890);
+                c.drawCircle(l[0], l[1], 34, fill);
+                fill.setColor(0x30FFE2A8);
+                c.drawCircle(l[0], l[1], 16, fill);
+                fill.setColor(0xFFFFF4C8);
+                c.drawCircle(l[0], l[1], 1.6f, fill);
+            }
         }
 
         for (int i = 0; i < World.MAXP; i++) {
@@ -263,6 +422,10 @@ final class GameView extends View {
                     size *= 0.4f + f * 0.6f;
                     break;
                 case World.P_FLASH:
+                    if (night) {
+                        fill.setColor(0x30FFD88A);
+                        c.drawCircle(x, y, size * 7, fill);
+                    }
                     fill.setColor(alpha(col, 0.9f));
                     break;
                 default:
@@ -280,7 +443,7 @@ final class GameView extends View {
             c.drawLine(world.tx0[i], world.ty0[i], world.tx1[i], world.ty1[i], stroke);
         }
 
-        drawBuildings(c, vx0, vy0, vx1, vy1, detailed);
+        drawBuildings(c, vx0, vy0, vx1, vy1, detailed, night);
 
         if (follow != null) {
             stroke.setColor(0xCCFFFFFF);
@@ -300,6 +463,10 @@ final class GameView extends View {
             stroke.setColor(alpha(0xFFFFFFFF, (1 - t) * 0.6f));
             c.drawCircle(ex.x, ex.y, ex.r * (0.5f + t), stroke);
         }
+        if (timeOfDay == CityConfig.TIME_SUNSET) {
+            fill.setColor(0x30FF7A2A);
+            c.drawRect(vx0, vy0, vx1, vy1, fill);
+        }
         c.restore();
     }
 
@@ -307,22 +474,38 @@ final class GameView extends View {
      * Draws trees and buildings standing up, GTA 2 style: a camera hangs above the middle of the screen,
      * so anything tall leans away from the centre and you see the walls that face the camera.
      */
-    private void drawBuildings(Canvas c, float vx0, float vy0, float vx1, float vy1, boolean detailed) {
+    private void drawBuildings(Canvas c, float vx0, float vy0, float vx1, float vy1, boolean detailed,
+                               boolean night) {
         float cx = camX + getWidth() / scale / 2, cy = camY + getHeight() / scale / 2;
         // Camera height grows with the visible area so the lean looks the same at every zoom level.
-        float camH = Math.max(Math.max(getWidth(), getHeight()) / scale * 0.9f, 260f);
+        float camH = Math.max(Math.max(getWidth(), getHeight()) / scale * 0.9f,
+                Math.max(260f, world.city.maxHeight * 1.7f));
+        boolean in3d = settings.buildings3d();
+        float dark = night ? 0.42f : 1f;
 
-        float ts = camH / (camH - City.TREE_HEIGHT);
+        float ts = in3d ? camH / (camH - City.TREE_HEIGHT) : 1f;
         for (int i = 0, n = world.city.trees.size(); i < n; i++) {
             float[] t = world.city.trees.get(i);
             float x = cx + (t[0] - cx) * ts, y = cy + (t[1] - cy) * ts, r = t[2] * ts;
             if (x + r < vx0 || x - r > vx1 || y + r < vy0 || y - r > vy1) continue;
-            fill.setColor(0xFF2C5A22);
+            fill.setColor(City.darken(0xFF2C5A22, dark));
             c.drawCircle(x, y, r, fill);
-            fill.setColor(0xFF3B742D);
+            fill.setColor(City.darken(0xFF3B742D, dark));
             c.drawCircle(x - 1.5f * ts, y - 1.5f * ts, r * 0.65f, fill);
-            fill.setColor(0xFF4C8A3A);
+            fill.setColor(City.darken(0xFF4C8A3A, dark));
             c.drawCircle(x - 2.5f * ts, y - 2.5f * ts, r * 0.3f, fill);
+        }
+        if (!in3d) {
+            // Flat roofs are already in the ground bitmap; only night needs darkening, done by the overlay.
+            if (night) {
+                fill.setColor(0xA0060A1C);
+                for (int i = 0, count = world.city.buildings.size(); i < count; i++) {
+                    City.Building b = world.city.buildings.get(i);
+                    if (b.x1 < vx0 || b.x0 > vx1 || b.y1 < vy0 || b.y0 > vy1) continue;
+                    c.drawRect(b.x0, b.y0, b.x1, b.y1, fill);
+                }
+            }
+            return;
         }
 
         int n = 0;
@@ -360,19 +543,23 @@ final class GameView extends View {
             float s = camH / (camH - b.height);
             float rx0 = cx + (b.x0 - cx) * s, rx1 = cx + (b.x1 - cx) * s;
             float ry0 = cy + (b.y0 - cy) * s, ry1 = cy + (b.y1 - cy) * s;
-            if (cy < b.y0) drawWall(c, b, b.x0, b.y0, b.x1, b.y0, rx0, ry0, rx1, ry0, 0.8f, windows, 0);
-            if (cy > b.y1) drawWall(c, b, b.x1, b.y1, b.x0, b.y1, rx1, ry1, rx0, ry1, 0.52f, windows, 1);
-            if (cx < b.x0) drawWall(c, b, b.x0, b.y1, b.x0, b.y0, rx0, ry1, rx0, ry0, 0.9f, windows, 2);
-            if (cx > b.x1) drawWall(c, b, b.x1, b.y0, b.x1, b.y1, rx1, ry0, rx1, ry1, 0.62f, windows, 3);
+            if (cy < b.y0) drawWall(c, b, b.x0, b.y0, b.x1, b.y0, rx0, ry0, rx1, ry0, 0.8f * dark, windows, 0, night);
+            if (cy > b.y1) drawWall(c, b, b.x1, b.y1, b.x0, b.y1, rx1, ry1, rx0, ry1, 0.52f * dark, windows, 1, night);
+            if (cx < b.x0) drawWall(c, b, b.x0, b.y1, b.x0, b.y0, rx0, ry1, rx0, ry0, 0.9f * dark, windows, 2, night);
+            if (cx > b.x1) drawWall(c, b, b.x1, b.y0, b.x1, b.y1, rx1, ry0, rx1, ry1, 0.62f * dark, windows, 3, night);
             roofSrc.set((int) b.x0, (int) b.y0, (int) b.x1, (int) b.y1);
             roofDst.set(rx0, ry0, rx1, ry1);
             c.drawBitmap(world.city.bitmap, roofSrc, roofDst, bmpPaint);
+            if (night) {
+                fill.setColor(0xA0060A1C);
+                c.drawRect(roofDst, fill);
+            }
         }
     }
 
-    /** Draws one wall from ground edge a-b up to roof edge ta-tb, with a grid of windows on it. */
-    private void drawWall(Canvas c, City.Building b, float ax, float ay, float bx, float by,
-                          float tax, float tay, float tbx, float tby, float shade, boolean windows, int side) {
+    /** Draws one wall from ground edge a-b up to roof edge ta-tb, with windows and doors on it. */
+    private void drawWall(Canvas c, City.Building b, float ax, float ay, float bx, float by, float tax, float tay,
+                          float tbx, float tby, float shade, boolean windows, int side, boolean night) {
         float len = Math.abs(bx - ax) + Math.abs(by - ay), hgt = b.height;
         wallSrc[0] = 0;
         wallSrc[1] = 0;
@@ -399,18 +586,41 @@ final class GameView extends View {
             int floors = (int) (hgt / City.FLOOR);
             int cols = Math.max(1, (int) (len / City.T));
             float cw = len / cols;
-            float glassShade = 0.55f + shade * 0.45f;
+            float glass = 0.55f + shade * 0.45f;
+            int litMask = night ? 1 : 7;
             for (int k = 0; k < floors; k++) {
                 float v0 = k * City.FLOOR;
                 for (int i = 0; i < cols; i++) {
                     float u0 = i * cw;
-                    if (k == 0) {
-                        fill.setColor(City.darken(0xFF5A7890, glassShade));
+                    int hsh = (b.seed * 73856093) ^ (side * 19349663) ^ (k * 83492791) ^ (i * 26544357);
+                    boolean lit = ((hsh >>> 9) & litMask) == 0;
+                    int litColor = night ? 0xFFFFE08A : 0xFFF0D98C;
+                    if (b.kind == City.WAREHOUSE) {
+                        if (k == 0 && i % 2 == 0) {
+                            fill.setColor(City.darken(0xFFA4A8AC, glass));
+                            c.drawRect(u0 + 2, 0, u0 + cw - 2, 9, fill);
+                            fill.setColor(City.darken(0xFF7E8286, glass));
+                            for (float v = 2; v < 9; v += 2.2f) c.drawRect(u0 + 2, v, u0 + cw - 2, v + 0.6f, fill);
+                        } else if (k == floors - 1) {
+                            fill.setColor(lit ? litColor : City.darken(0xFF3A4652, glass));
+                            c.drawRect(u0 + 1, v0 + 5, u0 + cw - 1, v0 + 8, fill);
+                        }
+                    } else if (b.kind == City.HOUSE) {
+                        boolean door = k == 0 && side == 1 && i == cols / 2;
+                        if (door) {
+                            fill.setColor(City.darken(0xFF5A3A28, glass));
+                            c.drawRect(u0 + cw * 0.35f, 0, u0 + cw * 0.65f, 8, fill);
+                        } else {
+                            fill.setColor(City.darken(0xFFEEEEEE, glass));
+                            c.drawRect(u0 + cw * 0.25f, v0 + 3.5f, u0 + cw * 0.75f, v0 + 9.5f, fill);
+                            fill.setColor(lit ? litColor : City.darken(0xFF34414E, glass));
+                            c.drawRect(u0 + cw * 0.25f + 1, v0 + 4.5f, u0 + cw * 0.75f - 1, v0 + 8.5f, fill);
+                        }
+                    } else if (k == 0) {
+                        fill.setColor(night ? 0xFFE8D9A0 : City.darken(0xFF5A7890, glass));
                         c.drawRect(u0 + 2, v0 + 1.5f, u0 + cw - 2, v0 + 8.5f, fill);
                     } else {
-                        int hsh = (b.seed * 73856093) ^ (side * 19349663) ^ (k * 83492791) ^ (i * 26544357);
-                        boolean lit = ((hsh >>> 9) & 7) == 0;
-                        fill.setColor(City.darken(lit ? 0xFFF0D98C : 0xFF27313B, glassShade));
+                        fill.setColor(lit ? litColor : City.darken(0xFF27313B, glass));
                         c.drawRect(u0 + 3, v0 + 3.5f, u0 + cw - 3, v0 + 9.5f, fill);
                     }
                 }
@@ -520,8 +730,10 @@ final class GameView extends View {
         float a = k.angle;
         if (k.rise > 0 && k.rise < 1.8f) a += (float) Math.sin(world.time * 30) * 0.12f;
         c.rotate((float) Math.toDegrees(a));
-        fill.setColor(0x886E0A0A);
-        c.drawCircle(r * 0.2f, 0, r * 1.5f, fill);
+        if (settings.gore()) {
+            fill.setColor(0x886E0A0A);
+            c.drawCircle(r * 0.2f, 0, r * 1.5f, fill);
+        }
         fill.setColor(City.darken(k.body, 0.75f));
         oval.set(-r * 1.2f, -r * 0.62f, r * 0.95f, r * 0.62f);
         c.drawOval(oval, fill);
@@ -571,7 +783,7 @@ final class GameView extends View {
 
         // Top buttons.
         String[] top = {simPaused ? "Play" : "Pause", "Speed " + SPEEDS[speedIdx] + "x",
-                "Brush " + BRUSHES[brushIdx], "Clear", "New City"};
+                "Brush " + BRUSHES[brushIdx], "Clear", "Menu"};
         text.setTextSize((portrait ? 12 : 13) * dp);
         text.setTextAlign(Paint.Align.CENTER);
         for (int i = 0; i < 5; i++) {
@@ -709,6 +921,10 @@ final class GameView extends View {
 
     @Override
     public boolean onTouchEvent(MotionEvent ev) {
+        if (menu.isOpen()) {
+            mode = MODE_NONE;
+            return menu.onTouch(ev);
+        }
         int action = ev.getActionMasked();
         switch (action) {
             case MotionEvent.ACTION_DOWN: {
@@ -756,6 +972,7 @@ final class GameView extends View {
         if (y >= barTop) {
             for (int i = 0; i < toolRects.length; i++) {
                 if (toolRects[i].contains(x, y)) {
+                    if (tool != i) click();
                     tool = i;
                     hintTime = Math.min(hintTime, 3);
                 }
@@ -773,6 +990,7 @@ final class GameView extends View {
     }
 
     private void pressTop(int i) {
+        click();
         switch (i) {
             case BTN_PAUSE:
                 simPaused = !simPaused;
@@ -787,8 +1005,8 @@ final class GameView extends View {
                 world.clearAll();
                 follow = null;
                 break;
-            case BTN_NEW:
-                newCity();
+            case BTN_MENU:
+                menu.open(Menu.PAUSE);
                 break;
         }
     }

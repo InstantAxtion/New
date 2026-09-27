@@ -6,7 +6,6 @@ import java.util.Random;
 
 /** The simulation: people, zombies, gunfire, explosions and all the visual effects they leave behind. */
 final class World {
-    static final int MAX_ENTITIES = 1600;
     private static final float TAU = (float) (Math.PI * 2);
 
     private static final int[] SHIRTS = {
@@ -65,6 +64,15 @@ final class World {
     int dcount;
     private int dnext;
 
+    /** Sound events for GameView to play: {@link Sfx} id plus position. */
+    static final int MAX_EVENTS = 128;
+    final int[] evType = new int[MAX_EVENTS];
+    final float[] evX = new float[MAX_EVENTS], evY = new float[MAX_EVENTS];
+    int evCount;
+
+    int maxEntities = 1600;
+    boolean gore = true;
+
     float time, shake;
     private float fieldTimer;
     final int[] counts = new int[Entity.TYPE_COUNT];
@@ -73,8 +81,8 @@ final class World {
     float messageTime;
     private boolean outbreak;
 
-    World(long seed) {
-        city = new City(96, 96, seed);
+    World(CityConfig cfg) {
+        city = new City(cfg);
         gw = (int) Math.ceil(city.worldW() / CELL);
         gh = (int) Math.ceil(city.worldH() / CELL);
         cellStart = new int[gw * gh + 1];
@@ -82,22 +90,41 @@ final class World {
         cellFill = new int[gw * gh];
     }
 
-    void populate(int civilians, int cops) {
-        for (int i = 0; i < civilians; i++) {
+    void populate(CityConfig cfg) {
+        spawnRandom(Entity.CIVILIAN, cfg.civilians());
+        spawnRandom(Entity.COP, cfg.cops());
+        spawnRandom(Entity.SOLDIER, cfg.soldiers());
+        // Zombies start in a few small outbreaks rather than spread evenly.
+        int left = cfg.zombies();
+        while (left > 0) {
             float[] p = city.randomWalkable(rnd);
-            spawn(Entity.CIVILIAN, p[0], p[1]);
-        }
-        for (int i = 0; i < cops; i++) {
-            float[] p = city.randomWalkable(rnd);
-            spawn(Entity.COP, p[0], p[1]);
+            int group = Math.min(left, 1 + rnd.nextInt(6));
+            for (int i = 0; i < group; i++)
+                spawn(Entity.ZOMBIE, p[0] + rnd.nextFloat() * 30 - 15, p[1] + rnd.nextFloat() * 30 - 15);
+            left -= group;
         }
         recount();
+    }
+
+    private void spawnRandom(int type, int n) {
+        for (int i = 0; i < n; i++) {
+            float[] p = city.randomWalkable(rnd);
+            spawn(type, p[0], p[1]);
+        }
+    }
+
+    void emit(int sound, float x, float y) {
+        if (evCount >= MAX_EVENTS) return;
+        evType[evCount] = sound;
+        evX[evCount] = x;
+        evY[evCount] = y;
+        evCount++;
     }
 
     // ------------------------------------------------------------------ creation
 
     Entity spawn(int type, float x, float y) {
-        if (entities.size() >= MAX_ENTITIES) return null;
+        if (entities.size() >= maxEntities) return null;
         float[] p = city.findWalkable(x, y);
         if (p == null) return null;
         Entity e = make(type, p[0], p[1], -1, 0);
@@ -357,6 +384,7 @@ final class World {
     }
 
     private void thinkZombie(Entity z, float dt) {
+        if (rnd.nextFloat() < dt * 0.03f) emit(z.type == Entity.BRUTE ? Sfx.GROAN_DEEP : Sfx.GROAN, z.x, z.y);
         Entity t = nearest(z, 110, false, true);
         if (t != null) {
             float ddx = t.x - z.x, ddy = t.y - z.y;
@@ -380,6 +408,7 @@ final class World {
         t.threatX = z.x;
         t.threatY = z.y;
         bloodBurst(t.x, t.y, 6, nx, ny);
+        emit(Sfx.BITE, t.x, t.y);
         if (!t.infected && rnd.nextFloat() < 0.4f) {
             t.infected = true;
             t.infectTimer = 12 + rnd.nextFloat() * 14;
@@ -391,6 +420,7 @@ final class World {
         Entity threat = nearest(e, 100, true, true);
         if (threat == null) threat = nearest(e, 26, true, false);
         if (threat != null) {
+            if (e.fleeTimer <= 0 && rnd.nextFloat() < 0.3f) emit(Sfx.SCREAM, e.x, e.y);
             e.fleeTimer = 2.5f;
             e.threatX = threat.x;
             e.threatY = threat.y;
@@ -476,6 +506,7 @@ final class World {
             tracer(mx, my, ex, ey);
         }
         particle(mx, my, 0, 0, 0.06f, soldier ? 3.2f : 2.6f, 0xFFFFE9A0, P_FLASH);
+        emit(soldier ? Sfx.RIFLE : Sfx.PISTOL, e.x, e.y);
     }
 
     private void throwGrenade(Entity e, float x, float y) {
@@ -649,7 +680,7 @@ final class World {
     }
 
     private void onDeath(Entity e) {
-        decal(e.x + rnd.nextFloat() * 4 - 2, e.y + rnd.nextFloat() * 4 - 2, e.radius * (1.4f + rnd.nextFloat()), 0x996E0A0A);
+        if (gore) decal(e.x + rnd.nextFloat() * 4 - 2, e.y + rnd.nextFloat() * 4 - 2, e.radius * (1.4f + rnd.nextFloat()), 0x996E0A0A);
         if (e.isZombie()) zombiesKilled++;
         Corpse c = new Corpse();
         c.x = e.x;
@@ -685,12 +716,13 @@ final class World {
                 c.rise -= dt;
                 if (c.rise <= 0) {
                     corpses.remove(i);
-                    if (entities.size() >= MAX_ENTITIES) continue;
+                    if (entities.size() >= maxEntities) continue;
                     Entity z = make(c.riseType, c.x, c.y, c.origin, c.body);
                     z.angle = c.angle;
                     entities.add(z);
                     turned++;
                     bloodBurst(c.x, c.y, 5, 0, 0);
+                    emit(Sfx.GROAN, c.x, c.y);
                 }
             } else if (c.age > 150) {
                 corpses.remove(i);
@@ -738,6 +770,7 @@ final class World {
         ex.r = radius;
         ex.life = ex.max = 0.45f;
         explosions.add(ex);
+        emit(Sfx.EXPLOSION, x, y);
         for (int i = 0; i < 40; i++) {
             float a = rnd.nextFloat() * TAU, s = 30 + rnd.nextFloat() * radius * 2.2f;
             particle(x, y, (float) Math.cos(a) * s, (float) Math.sin(a) * s, 0.3f + rnd.nextFloat() * 0.4f,
@@ -779,6 +812,7 @@ final class World {
     }
 
     private void bloodBurst(float x, float y, int n, float nx, float ny) {
+        if (!gore) return;
         for (int i = 0; i < n; i++) {
             float a = rnd.nextFloat() * TAU, s = 10 + rnd.nextFloat() * 40;
             particle(x, y, (float) Math.cos(a) * s + nx * 40, (float) Math.sin(a) * s + ny * 40,

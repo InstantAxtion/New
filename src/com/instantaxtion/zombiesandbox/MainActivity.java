@@ -30,6 +30,17 @@ public class MainActivity extends Activity {
     }
 
     @Override
+    public void onBackPressed() {
+        if (!game.onBack()) super.onBackPressed();
+    }
+
+    @Override
+    protected void onDestroy() {
+        game.release();
+        super.onDestroy();
+    }
+
+    @Override
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
         if (hasFocus) hideSystemUi();

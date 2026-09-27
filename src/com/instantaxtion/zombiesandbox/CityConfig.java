@@ -69,7 +69,44 @@ final class CityConfig implements OptionSet {
 
     /** Current index into VALUES for each option. */
     final int[] v = {0, 1, 3, 2, 1, 0, 2};
-    long seed = System.nanoTime();
+    long seed = new Random().nextInt(1000000);
+    /** Start the next game on the city from {@link #code()} instead of a new random one. */
+    boolean keepCity;
+
+    /**
+     * A short code that rebuilds this exact city: map preset and size, then the seed, e.g. "12-483920".
+     * Share it and anyone can play the same streets.
+     */
+    String code() {
+        return (v[OPT_PRESET] + 1) + "" + (v[OPT_SIZE] + 1) + "-" + seed;
+    }
+
+    /** Reads a city code. Returns false (changing nothing) if it isn't one. */
+    boolean applyCode(String text) {
+        if (text == null) return false;
+        String t = text.trim().replace(" ", "");
+        int dash = t.indexOf('-');
+        if (dash != 2 || t.length() < 4 || t.length() > 22) return false;
+        int preset = t.charAt(0) - '1', size = t.charAt(1) - '1';
+        if (preset < 0 || preset >= PRESETS.length || size < 0 || size >= SIZES.length) return false;
+        long s;
+        try {
+            s = Long.parseLong(t.substring(3));
+        } catch (NumberFormatException e) {
+            return false;
+        }
+        if (s < 0) return false;
+        v[OPT_PRESET] = preset;
+        v[OPT_SIZE] = size;
+        seed = s;
+        keepCity = true;
+        return true;
+    }
+
+    /** Picks a new random city (keeping the options). */
+    void newSeed(Random r) {
+        seed = r.nextInt(1000000);
+    }
 
     int tiles() { return SIZES[v[OPT_SIZE]]; }
     int civilians() { return CIVILIANS[v[OPT_CIVILIANS]]; }
@@ -106,6 +143,7 @@ final class CityConfig implements OptionSet {
         for (int i = 0; i < v.length; i++) v[i] = r.nextInt(VALUES[i].length);
         v[OPT_SIZE] = 1;
         if (v[OPT_CIVILIANS] == 0) v[OPT_CIVILIANS] = 3;
+        keepCity = false;
     }
 
     // ------------------------------------------------------------------ OptionSet

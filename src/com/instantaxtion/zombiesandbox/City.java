@@ -17,7 +17,7 @@ final class City {
     static final int FAR = 1 << 20;
 
     static final byte ROAD = 0, SIDEWALK = 1, BUILDING = 2, GRASS = 3, TREE = 4, PLAZA = 5, CAR = 6,
-            STATUE = 7, LOT = 8, BASE = 9, FENCE = 10, PUMP = 11;
+            STATUE = 7, LOT = 8, BASE = 9, FENCE = 10, PUMP = 11, RUBBLE = 12;
 
     static final int OFFICE = 0, HOUSE = 1, WAREHOUSE = 2, STATION = 3, BARRACKS = 4, TOWER = 5, HOSPITAL = 6,
             SHOP = 7, CHURCH = 8, SCHOOL = 9, FIRE_STATION = 10, MARKET = 11, KIOSK = 12, SPIRE = 13, CRYPT = 14;
@@ -26,7 +26,13 @@ final class City {
             D_CANOPY = 6;
     private static final int[] SHOP_ROOFS = {0xFF8C5A4A, 0xFF5A6E8C, 0xFF7E7A5C, 0xFF6E5A7E, 0xFF8A6A3E, 0xFF4F6F66};
     private static final int[] SHOP_WALLS = {0xFFE0C9A6, 0xFFB9C6D2, 0xFFD8B8A8, 0xFFC9D6B8, 0xFFE8DCC8, 0xFFB8A8C8};
-    static final int FACILITY_POLICE = 0, FACILITY_BASE = 1, FACILITY_HOSPITAL = 2;
+    static final int FACILITY_POLICE = 0, FACILITY_BASE = 1, FACILITY_HOSPITAL = 2, FACILITY_FIRE = 3;
+    private static final String[] SAINTS = {"St. Mary's", "St. Luke's", "St. Peter's", "Grace", "St. Anne's",
+            "Trinity", "St. Mark's", "Holy Cross"};
+    private static final String[] SCHOOLS = {"Lincoln High", "Westside Elementary", "Roosevelt Middle School",
+            "Jefferson High", "Oakwood Academy", "Hamilton Elementary"};
+    private static final String[] MARKETS = {"FreshMart", "ValueFoods", "Corner Grocer", "SuperSaver", "GreenBasket",
+            "MegaMart"};
     private static final String[] BASE_NAMES = {"Fort Mercer", "Camp Redstone", "Fort Kessler", "Camp Hollow",
             "Fort Whitmore", "Camp Ironwood"};
 
@@ -69,12 +75,35 @@ final class City {
 
     /** A building footprint (world units) with a height, drawn standing up by GameView. */
     static final class Building {
-        final float x0, y0, x1, y1, height;
+        final float x0, y0, x1, y1;
+        float height;
         final int roof, wall, seed, kind;
         /** Civilians can hide inside homes, offices and warehouses: the door, room and barricade. */
         float doorX, doorY, barricade = 100, calmTimer, releaseTimer;
         int capacity;
         final List<Entity> occupants = new ArrayList<Entity>();
+        /** Blast damage: a building knocked down to 0 collapses into rubble. */
+        float hp, maxHp;
+        boolean collapsed;
+        /** Churches, schools and supermarkets have names (they can become safe zones). */
+        String name;
+        /** Supermarkets: rounds of ammo left on the hunting shelf. */
+        int stock;
+        /** Path to the door (made when someone first needs it). */
+        int[] field;
+        /** Bullet holes and scorch marks on the walls: {side, along, up, size} each, in a ring buffer. */
+        final float[] marks = new float[MAX_MARKS * 4];
+        int markCount, markNext;
+
+        void mark(int side, float along, float up, float size) {
+            int i = markNext * 4;
+            marks[i] = side;
+            marks[i + 1] = along;
+            marks[i + 2] = up;
+            marks[i + 3] = size;
+            markNext = (markNext + 1) % MAX_MARKS;
+            if (markCount < MAX_MARKS) markCount++;
+        }
 
         Building(float x0, float y0, float x1, float y1, float height, int roof, int wall, int seed, int kind) {
             this.x0 = x0;
@@ -89,6 +118,7 @@ final class City {
         }
     }
 
+    static final int MAX_MARKS = 48;
     static final float FLOOR = 12f;
     static final float TREE_HEIGHT = 14f;
 
@@ -120,6 +150,8 @@ final class City {
     /** Building lots: {x, y, w, h, roof, seed, kind, floors, wall} in tiles. */
     private final List<int[]> buildingLots = new ArrayList<int[]>();
     final List<Building> buildings = new ArrayList<Building>();
+    /** Which building stands on each tile (index into buildings), or -1. */
+    final int[] buildingAt;
     /** Tree canopies as {x, y, radius}; drawn above the ground by GameView. */
     final List<float[]> trees = new ArrayList<float[]>();
     /** Street lamps as {x, y}. */
@@ -148,6 +180,8 @@ final class City {
         roadCol = new boolean[w];
         roadRow = new boolean[h];
         carKind = new byte[w * h];
+        buildingAt = new int[w * h];
+        Arrays.fill(buildingAt, -1);
         generate();
         for (int i = 0; i < tiles.length; i++) {
             byte t = tiles[i];
@@ -162,6 +196,17 @@ final class City {
             int k = l[6];
             if (k == OFFICE || k == HOUSE || k == WAREHOUSE || k == SHOP || k == CHURCH || k == SCHOOL || k == MARKET
                     || k == KIOSK) placeDoor(b, l);
+            // Bigger and taller buildings take more to bring down.
+            b.maxHp = b.hp = 150 + l[2] * l[3] * 22 + l[7] * 60;
+            Random nr = new Random(l[5]);
+            if (k == CHURCH) b.name = SAINTS[nr.nextInt(SAINTS.length)] + " Church";
+            else if (k == SCHOOL) b.name = SCHOOLS[nr.nextInt(SCHOOLS.length)];
+            else if (k == MARKET) {
+                b.name = MARKETS[nr.nextInt(MARKETS.length)];
+                b.stock = 240;
+            }
+            for (int j = l[1]; j < l[1] + l[3]; j++)
+                for (int i = l[0]; i < l[0] + l[2]; i++) buildingAt[j * w + i] = buildings.size();
             buildings.add(b);
         }
         Arrays.fill(humanDist, FAR);
@@ -503,7 +548,12 @@ final class City {
             facilities.add(new Facility(FACILITY_HOSPITAL, c[0], c[1], 64, c[0], c[1], "City Hospital"));
             return;
         }
-        if (kind == FIRE_STATION) return;
+        if (kind == FIRE_STATION) {
+            int n = 1;
+            for (Facility f : facilities) if (f.kind == FACILITY_FIRE) n++;
+            facilities.add(new Facility(FACILITY_FIRE, c[0], c[1], 48, c[0], c[1], "Fire Station " + n));
+            return;
+        }
         Facility station = new Facility(FACILITY_POLICE, c[0], c[1], 64, c[0], c[1], "Precinct " + number);
         for (int k = -1; k <= 1; k += 2) {
             float[] p = findWalkable(c[0] + k * 18, c[1] + 10);
@@ -861,6 +911,58 @@ final class City {
                 park(x, y, bw, bh);
                 break;
         }
+    }
+
+    /** The building standing at a world position, or null. */
+    Building buildingAt(float x, float y) {
+        int tx = (int) Math.floor(x / T), ty = (int) Math.floor(y / T);
+        if (tx < 0 || ty < 0 || tx >= w || ty >= h) return null;
+        int i = buildingAt[ty * w + tx];
+        return i < 0 || buildings.get(i).collapsed ? null : buildings.get(i);
+    }
+
+    /** Knocks a building down: its tiles become a walkable heap of rubble. */
+    void collapse(Building b) {
+        b.collapsed = true;
+        b.height = 0;
+        b.occupants.clear();
+        b.capacity = 0;
+        int tx0 = (int) (b.x0 / T), ty0 = (int) (b.y0 / T), tx1 = (int) (b.x1 / T), ty1 = (int) (b.y1 / T);
+        for (int j = ty0; j < ty1; j++)
+            for (int i = tx0; i < tx1; i++) {
+                int k = j * w + i;
+                if (tiles[k] != BUILDING) continue;
+                tiles[k] = RUBBLE;
+                solid[k] = false;
+                opaque[k] = false;
+            }
+        Canvas c = new Canvas(bitmap);
+        Paint p = new Paint();
+        p.setAntiAlias(true);
+        Random r = new Random(b.seed * 31L + 7);
+        p.setColor(0xFF6E6860);
+        c.drawRect(b.x0, b.y0, b.x1, b.y1, p);
+        // Broken slabs and bricks, with the old wall colour mixed in.
+        int n = (int) ((b.x1 - b.x0) * (b.y1 - b.y0) / 30);
+        for (int k = 0; k < n; k++) {
+            float x = b.x0 + r.nextFloat() * (b.x1 - b.x0), y = b.y0 + r.nextFloat() * (b.y1 - b.y0);
+            float s = 1 + r.nextFloat() * 3.5f;
+            int roll = r.nextInt(4);
+            p.setColor(roll == 0 ? darken(b.wall, 0.8f) : roll == 1 ? darken(b.roof, 0.7f) : roll == 2 ? 0xFF8C867C : 0xFF4E4A45);
+            c.drawRect(x - s, y - s * 0.6f, x + s, y + s * 0.6f, p);
+        }
+        p.setColor(0x60101010);
+        for (int k = 0; k < n / 6; k++)
+            c.drawCircle(b.x0 + r.nextFloat() * (b.x1 - b.x0), b.y0 + r.nextFloat() * (b.y1 - b.y0), 2 + r.nextFloat() * 4, p);
+        // Stumps of the outer walls.
+        p.setStyle(Paint.Style.STROKE);
+        p.setStrokeWidth(2f);
+        p.setColor(darken(b.wall, 0.6f));
+        c.drawLine(b.x0 + 1, b.y0 + 1, b.x0 + (b.x1 - b.x0) * (0.2f + r.nextFloat() * 0.3f), b.y0 + 1, p);
+        c.drawLine(b.x1 - 1, b.y1 - 1, b.x1 - (b.x1 - b.x0) * (0.2f + r.nextFloat() * 0.3f), b.y1 - 1, p);
+        c.drawLine(b.x0 + 1, b.y1 - 1, b.x0 + 1, b.y1 - (b.y1 - b.y0) * (0.2f + r.nextFloat() * 0.4f), p);
+        p.setStyle(Paint.Style.FILL);
+        for (Facility f : facilities) fieldFromPoints(f.field, new float[]{f.x}, new float[]{f.y}, 1);
     }
 
     /** Scorches a burnt-out car into the map. */

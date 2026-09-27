@@ -13,10 +13,11 @@ import java.util.ArrayList;
 /**
  * Saves and loads a game. The city itself is rebuilt from its settings and seed (generation is
  * deterministic); everything that changes while playing is written out: people, zombies, corpses, safe
- * zones, people hiding indoors, dropped guns, reserves and the stats history.
+ * zones, people hiding indoors, dropped guns, reserves, the stats history, families, burnt-out wrecks and
+ * damaged or collapsed buildings.
  */
 final class SaveGame {
-    private static final int VERSION = 1;
+    private static final int VERSION = 2;
 
     private SaveGame() {
     }
@@ -67,11 +68,18 @@ final class SaveGame {
             ArrayList<Entity> all = new ArrayList<Entity>();
             for (Entity e : w.entities) if (!e.dead) all.add(e);
             for (Fleet.Vehicle v : w.fleet.vehicles) {
-                if (v.type == Fleet.HELI || v.passengers <= 0 || v.state > 1) continue;
+                for (Entity e : v.riders) {
+                    e.x = v.x;
+                    e.y = v.y;
+                    all.add(e);
+                }
+                if (v.type == Fleet.HELI || v.passengers <= 0 || v.state > 1 || v.broken) continue;
                 for (int i = 0; i < v.passengers; i++) all.add(w.create(v.passengerType, v.x, v.y));
             }
             out.writeInt(all.size());
             for (Entity e : all) writeEntity(out, e, d);
+            // Families: who follows whom.
+            for (Entity e : all) out.writeInt(e.leader == null ? -1 : all.indexOf(e.leader));
 
             int occupied = 0;
             for (City.Building b : w.city.buildings) if (!b.occupants.isEmpty()) occupied++;
@@ -106,10 +114,40 @@ final class SaveGame {
                 out.writeInt(c.origin);
                 out.writeBoolean(c.zombie);
             }
+
+            // Damaged, looted and collapsed buildings.
+            int changed = 0;
+            for (City.Building b : w.city.buildings) if (changed(b)) changed++;
+            out.writeInt(changed);
+            for (int i = 0; i < w.city.buildings.size(); i++) {
+                City.Building b = w.city.buildings.get(i);
+                if (!changed(b)) continue;
+                out.writeInt(i);
+                out.writeFloat(b.hp);
+                out.writeBoolean(b.collapsed);
+                out.writeInt(b.stock);
+                out.writeInt(b.markCount);
+                out.writeInt(b.markNext);
+                for (int k = 0; k < b.markCount * 4; k++) out.writeFloat(b.marks[k]);
+            }
+            // Burnt-out cars and gas pumps.
+            int burned = 0;
+            for (boolean x : w.burned) if (x) burned++;
+            out.writeInt(burned);
+            for (int i = 0; i < w.burned.length; i++) if (w.burned[i]) out.writeInt(i);
         } finally {
             out.close();
         }
         if (!tmp.renameTo(file)) throw new IOException("Could not write " + file);
+    }
+
+    private static boolean changed(City.Building b) {
+        return b.collapsed || b.hp < b.maxHp || b.markCount > 0 || (b.kind == City.MARKET && b.stock < 240);
+    }
+
+    /** Version 1 saves came before dogs, which took entity type 4. */
+    private static int type(int t, int version) {
+        return version < 2 && t >= Entity.DOG ? t + 1 : t;
     }
 
     private static void writeEntity(DataOutputStream out, Entity e, Dispatch d) throws IOException {
@@ -153,7 +191,8 @@ final class SaveGame {
     static World load(File file) throws IOException {
         DataInputStream in = new DataInputStream(new BufferedInputStream(new FileInputStream(file)));
         try {
-            if (in.readInt() != VERSION) throw new IOException("Unsupported save version");
+            int version = in.readInt();
+            if (version < 1 || version > VERSION) throw new IOException("Unsupported save version");
             CityConfig cfg = new CityConfig();
             int n = in.readInt();
             for (int i = 0; i < n; i++) {
@@ -189,7 +228,12 @@ final class SaveGame {
                         in.readInt(), in.readInt());
 
             int count = in.readInt();
-            for (int i = 0; i < count; i++) w.entities.add(readEntity(in, w, d));
+            for (int i = 0; i < count; i++) w.entities.add(readEntity(in, w, d, version));
+            if (version >= 2)
+                for (int i = 0; i < count; i++) {
+                    int lead = in.readInt();
+                    if (lead >= 0 && lead < count) w.entities.get(i).leader = w.entities.get(lead);
+                }
 
             int occupied = in.readInt();
             for (int i = 0; i < occupied; i++) {
@@ -197,7 +241,7 @@ final class SaveGame {
                 b.barricade = in.readFloat();
                 int people = in.readInt();
                 for (int k = 0; k < people; k++) {
-                    Entity e = readEntity(in, w, d);
+                    Entity e = readEntity(in, w, d, version);
                     e.dead = true;
                     e.removed = true;
                     b.occupants.add(e);
@@ -224,10 +268,28 @@ final class SaveGame {
                 c.age = in.readFloat();
                 c.body = in.readInt();
                 c.head = in.readInt();
-                c.riseType = in.readInt();
-                c.origin = in.readInt();
+                c.riseType = type(in.readInt(), version);
+                c.origin = type(in.readInt(), version);
                 c.zombie = in.readBoolean();
                 w.corpses.add(c);
+            }
+            if (version >= 2) {
+                int changed = in.readInt();
+                for (int i = 0; i < changed; i++) {
+                    City.Building b = w.city.buildings.get(in.readInt());
+                    b.hp = in.readFloat();
+                    boolean collapsed = in.readBoolean();
+                    b.stock = in.readInt();
+                    b.markCount = in.readInt();
+                    b.markNext = in.readInt();
+                    for (int k = 0; k < b.markCount * 4; k++) b.marks[k] = in.readFloat();
+                    if (collapsed) w.city.collapse(b);
+                }
+                int burned = in.readInt();
+                for (int i = 0; i < burned; i++) {
+                    int t = in.readInt();
+                    if (t >= 0 && t < w.burned.length) w.burnTile(t);
+                }
             }
             d.copCount = copCount;
             d.soldierCount = soldierCount;
@@ -238,8 +300,8 @@ final class SaveGame {
         }
     }
 
-    private static Entity readEntity(DataInputStream in, World w, Dispatch d) throws IOException {
-        int type = in.readInt();
+    private static Entity readEntity(DataInputStream in, World w, Dispatch d, int version) throws IOException {
+        int type = type(in.readInt(), version);
         float x = in.readFloat(), y = in.readFloat();
         Entity e = w.create(type, x, y);
         e.angle = in.readFloat();
@@ -253,6 +315,7 @@ final class SaveGame {
         e.head = in.readInt();
         e.skin = in.readInt();
         e.origin = in.readInt();
+        if (e.origin >= 0) e.origin = type(e.origin, version);
         e.infected = in.readBoolean();
         e.infectTimer = in.readFloat();
         e.cureTried = in.readBoolean();

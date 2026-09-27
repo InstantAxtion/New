@@ -33,18 +33,21 @@ final class Menu {
         boolean saveGame();
 
         World world();
+
+        /** Asks the player to type a city code (shows the current one to copy or edit). */
+        void askCityCode(String current);
     }
 
     static final int NONE = 0, MAIN = 1, SETUP = 2, SETTINGS = 3, NOTES = 4, PAUSE = 5, STATS = 6, TUTORIAL = 7;
 
     private static final int A_CONTINUE = 0, A_NEW = 1, A_SETTINGS = 2, A_NOTES = 3, A_QUIT = 4, A_RESUME = 5,
             A_MAIN_MENU = 6, A_BACK = 7, A_START = 8, A_RANDOM = 9, A_SAVE = 10, A_STATS = 11, A_HOW_TO = 12,
-            A_TUT_NEXT = 13, A_TUT_PREV = 14, A_TUT_DONE = 15;
+            A_TUT_NEXT = 13, A_TUT_PREV = 14, A_TUT_DONE = 15, A_CODE = 16;
 
     private static final String[][] TUTORIAL_PAGES = {
             {"Welcome to Zombie City", "A sandbox: set up a city, start an outbreak and watch what happens. There are no missions. Play however you like."},
-            {"Spawning", "Pick a unit in the bottom bar and tap the city. Drag to paint a line of them, or use Brush (top) to spawn 5 or 10 at once. Tap the Zombie button again to switch between zombie types: zombie, runner, brute, crawler and screamer."},
-            {"Looking around", "Pinch to zoom and drag with two fingers. With Move selected you can drag with one finger, and tap anyone to follow them with the camera."},
+            {"Spawning", "Pick a unit in the bottom bar and tap the city. Drag to paint a line of them, or use Brush (top) to spawn 5 or 10 at once. Tap the Zombie button again to switch between zombie types, and the Civilian button again for dogs."},
+            {"Looking around", "Pinch to zoom and drag with two fingers. With Move selected you can drag with one finger, and tap anyone to follow them with the camera. Zoom right in to see through roofs. The View button switches between 3D and bird's-eye."},
             {"The city fights back", "Civilians call 911, the police respond by car, and the military is called in when it gets bad. The radio feed shows what they say. Tap a message to jump there."},
             {"Safe zones and hiding", "Police and soldiers set up guarded safe zones and civilians run to them. Others barricade themselves in buildings until zombies break the door down. Use the Safe Zone tool to order a zone yourself."},
             {"Giving orders", "Pick Orders, tap a cop or soldier (a soldier brings their whole squad), then tap where to send them. They hold that spot. Tap them again to send them back to normal duty."},
@@ -84,6 +87,9 @@ final class Menu {
     private final RectF listArea = new RectF();
     private final RectF tmp = new RectF();
     private float scroll, contentHeight;
+    /** A short line shown above the New Game buttons (city code accepted or not). */
+    private String note;
+    private float noteTime;
     private float time;
 
     private boolean dragging, pressed;
@@ -117,6 +123,14 @@ final class Menu {
         scroll = 0;
         if (s == NOTES) settings.markNotesRead();
         if (s == TUTORIAL) tutorialPage = 0;
+    }
+
+    /** A city code typed in by the player. */
+    void cityCodeEntered(String text) {
+        boolean ok = config.applyCode(text);
+        note = ok ? "City " + config.code() + " (" + CityConfig.PRESETS[config.v[CityConfig.OPT_PRESET]]
+                + "). Press Start to play it." : "That isn't a city code. Codes look like 12-483920.";
+        noteTime = 4;
     }
 
     /** Handles the system back button. Returns false when the app should close. */
@@ -254,7 +268,11 @@ final class Menu {
         text.setTextAlign(Paint.Align.CENTER);
         text.setTextSize(26 * dp);
         text.setColor(0xFF8BD450);
-        c.drawText("PAUSED", w / 2f, tmp.top + 46 * dp, text);
+        c.drawText("PAUSED", w / 2f, tmp.top + 38 * dp, text);
+        plain.setTextAlign(Paint.Align.CENTER);
+        plain.setTextSize(12 * dp);
+        plain.setColor(0xFF9AA0A8);
+        c.drawText("City code " + host.world().city.cfg.code(), w / 2f, tmp.top + 58 * dp, plain);
         float bx = tmp.left + 20 * dp, bw = pw - 40 * dp, by = tmp.top + 70 * dp;
         String[] labels = {"Resume", "Save Game", "Stats", "New Game", "Settings", "Main Menu"};
         int[] actions = {A_RESUME, A_SAVE, A_STATS, A_NEW, A_SETTINGS, A_MAIN_MENU};
@@ -326,7 +344,7 @@ final class Menu {
         int t = (int) world.time;
         String[][] totals = {
                 {"Time", String.format("%d:%02d", t / 60, t % 60)},
-                {"People now", String.valueOf(world.humanCount() + world.hiding)},
+                {"People now", String.valueOf(world.humanCount() + world.hiding + world.riding)},
                 {"Zombies now", String.valueOf(world.zombieCount())},
                 {"Most zombies at once", String.valueOf(world.peakZombies)},
                 {"Zombies killed", String.valueOf(world.zombiesKilled)},
@@ -335,6 +353,7 @@ final class Menu {
                 {"Infections cured", String.valueOf(world.cured)},
                 {"911 calls", String.valueOf(world.dispatch.calls)},
                 {"Shots fired", String.valueOf(world.shotsFired)},
+                {"City code", world.city.cfg.code()},
         };
         float tx0 = landscape ? chart.right + 24 * dp : side, tx1 = w - side;
         float ty = landscape ? top + 26 * dp : chart.bottom + 30 * dp, lh = Math.min(26 * dp, (h - ty - 10 * dp) / totals.length);
@@ -444,9 +463,20 @@ final class Menu {
         drawScrollHint(c, w);
 
         if (setup) {
-            float bw = Math.min(200 * dp, (w - 48 * dp) / 2), bh = 50 * dp, by = h - footer + 11 * dp;
-            button("Randomize", A_RANDOM, false, w / 2f - bw - 8 * dp, by, w / 2f - 8 * dp, by + bh);
-            button("Start", A_START, true, w / 2f + 8 * dp, by, w / 2f + 8 * dp + bw, by + bh);
+            float bgap = 8 * dp, bw = Math.min(180 * dp, (w - 32 * dp - bgap * 2) / 3), bh = 50 * dp, by = h - footer + 11 * dp;
+            float x = (w - bw * 3 - bgap * 2) / 2;
+            button("Randomize", A_RANDOM, false, x, by, x + bw, by + bh);
+            button(config.keepCity ? config.code() : "City code", A_CODE, false, x + bw + bgap, by, x + bw * 2 + bgap, by + bh);
+            button("Start", A_START, true, x + bw * 2 + bgap * 2, by, x + bw * 3 + bgap * 2, by + bh);
+            if (noteTime > 0 && note != null) {
+                noteTime -= 1 / 60f;
+                fill.setColor(0xF0121418);
+                c.drawRect(0, by - 30 * dp, w, by - 4 * dp, fill);
+                text.setTextAlign(Paint.Align.CENTER);
+                text.setTextSize(13 * dp);
+                text.setColor(0xFFFFE27A);
+                c.drawText(note, w / 2f, by - 12 * dp, text);
+            }
         }
     }
 
@@ -602,8 +632,12 @@ final class Menu {
             case A_RANDOM:
                 config.randomize(rnd);
                 break;
+            case A_CODE:
+                host.askCityCode(config.code());
+                break;
             case A_START:
-                config.seed = System.nanoTime();
+                if (!config.keepCity) config.newSeed(rnd);
+                config.keepCity = false;
                 host.startGame(config);
                 if (!settings.tutorialDone()) open(TUTORIAL);
                 break;

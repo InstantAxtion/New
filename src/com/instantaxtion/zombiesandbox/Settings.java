@@ -7,9 +7,9 @@ import android.content.SharedPreferences;
 final class Settings implements OptionSet {
     private static final String[] VOLUME = {"Off", "25%", "50%", "75%", "100%"};
     private static final String[] ON_OFF = {"Off", "On"};
-    private static final String[] LABELS = {"Music", "Sound effects", "3D buildings", "Blood", "Health bars",
+    private static final String[] LABELS = {"Music", "Sound effects", "View", "Blood", "Health bars",
             "Screen shake", "Show FPS", "Max population", "Radio messages"};
-    private static final String[][] VALUES = {VOLUME, VOLUME, ON_OFF, ON_OFF, ON_OFF, ON_OFF, ON_OFF,
+    private static final String[][] VALUES = {VOLUME, VOLUME, {"Bird's-eye", "3D"}, ON_OFF, ON_OFF, ON_OFF, ON_OFF,
             {"800", "1600", "2500"}, ON_OFF};
     private static final String[] KEYS = {"music", "sfx", "buildings3d", "gore", "healthBars", "shake", "fps",
             "maxPop", "radio"};
@@ -29,7 +29,9 @@ final class Settings implements OptionSet {
 
     float music() { return v[0] / 4f; }
     float sfx() { return v[1] / 4f; }
+    /** 3D (GTA 2 style, buildings lean) or bird's-eye (flat, straight down). */
     boolean buildings3d() { return v[2] == 1; }
+    void setBuildings3d(boolean on) { set(2, on ? 1 : 0); }
     boolean gore() { return v[3] == 1; }
     boolean healthBars() { return v[4] == 1; }
     boolean shake() { return v[5] == 1; }

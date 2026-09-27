@@ -1,7 +1,11 @@
 package com.instantaxtion.zombiesandbox;
 
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.DialogInterface;
 import android.os.Bundle;
+import android.text.InputType;
+import android.widget.EditText;
 import android.view.View;
 import android.view.WindowManager;
 
@@ -13,7 +17,39 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         game = new GameView(this);
+        game.codePrompt = new GameView.CodePrompt() {
+            @Override
+            public void ask(String current) {
+                askCode(current);
+            }
+        };
         setContentView(game);
+    }
+
+    /** A native text box for typing (or copying) a city code. */
+    private void askCode(String current) {
+        final EditText input = new EditText(this);
+        input.setInputType(InputType.TYPE_CLASS_PHONE);
+        input.setText(current);
+        input.setSelectAllOnFocus(true);
+        new AlertDialog.Builder(this)
+                .setTitle("City code")
+                .setMessage("Type a code to play that city, or share this one so friends can play it.")
+                .setView(input)
+                .setPositiveButton("Use code", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface d, int which) {
+                        game.cityCodeEntered(input.getText().toString());
+                        hideSystemUi();
+                    }
+                })
+                .setNegativeButton("Cancel", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface d, int which) {
+                        hideSystemUi();
+                    }
+                })
+                .show();
     }
 
     @Override

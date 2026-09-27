@@ -2,11 +2,31 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "2.1";
-    static final int VERSION_CODE = 9;
+    static final String VERSION = "2.2";
+    static final int VERSION_CODE = 10;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "2.2  -  Wrecks, rubble and smarter survivors",
+                    "Cars take damage: running over zombies, crashing into each other, gunfire, explosions and zombies clawing at them. Damaged cars smoke and slow down, then break down. Everyone inside gets out, and some wrecks catch fire.",
+                    "Fire engines: fire stations send an engine to burning cars and gas pumps. The crew hoses the fire down and pulls out if zombies close in.",
+                    "Destructible buildings: bombs, grenades and blasts crack and scorch buildings, and enough of them bring one down in a cloud of dust. Anyone inside or next to it gets hurt.",
+                    "Bullet holes and scorch marks build up on walls after a firefight.",
+                    "See-through roofs: zoom right in and roofs and walls fade so you can see the rooms, furniture and anyone hiding inside.",
+                    "Bird's-eye view: a new View button (and setting) switches between the leaning 3D buildings and a flat view straight down.",
+                    "Dogs: people walk their dogs, and dogs bark at zombies and go for them to protect their owner. Tap the Civilian button again to spawn dogs.",
+                    "Families and friends walk together, stay together when they run, hide in the same building and pull zombies off each other.",
+                    "Traffic: people running for their lives wave down passing cars and jump in. Drivers take them to a safe zone if there is one. Zombies chase cars and swarm the ones that stop.",
+                    "Zombie hordes: idle zombies gather behind a leader and roam the city, merging into bigger hordes. The radio warns when a big one is on the move.",
+                    "Smarter zombies spread out to surround people and stop to feed on the dead.",
+                    "Smarter police and soldiers: they shoot the zombie that is attacking someone (or a runner or screamer) first, hold fire when a person is in the way, don't throw grenades near people, fall back when swarmed or reloading, and soldiers keep their squad together.",
+                    "Smarter civilians: panic spreads through a crowd, people run towards nearby cops and soldiers, and armed civilians back off while they shoot.",
+                    "Churches, schools and supermarkets can become safe zones. Supermarkets also stock ammo, and armed civilians go there to restock.",
+                    "City codes: every city has a code (shown in the pause menu and stats). Use City code on the New Game screen to replay a city or play one a friend shared.",
+                    "Burnt-out wrecks, collapsed buildings, damage and families are now kept in saved games.",
+                    "Map labels no longer hide under the radio feed or the stats panel.",
+            },
             {
                     "2.1  -  A living city",
                     "New buildings: rows of shops with striped awnings, gas stations, churches with steeples and churchyards, schools, fire stations with fire trucks, and supermarkets with big car parks. People can hide in the shops, churches, schools and supermarkets.",

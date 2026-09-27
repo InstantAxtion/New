@@ -15,7 +15,7 @@ import java.util.Random;
 
 /** Renders the world, runs the game loop and handles all touch input and on-screen buttons. */
 final class GameView extends View implements Menu.Host {
-    private static final int TOOL_PAN = 0, TOOL_ORDER = 1, TOOL_ZOMBIE = 6, TOOL_ZONE = 7, TOOL_BOMB = 8,
+    private static final int TOOL_PAN = 0, TOOL_ORDER = 1, TOOL_CIV = 2, TOOL_ZOMBIE = 6, TOOL_ZONE = 7, TOOL_BOMB = 8,
             TOOL_ERASE = 9;
     // Tool index -> entity type spawned (or -1). The zombie tool spawns the selected zombie variant.
     private static final int[] TOOL_TYPE = {-1, -1, Entity.CIVILIAN, Entity.COP, Entity.SOLDIER, Entity.MEDIC,
@@ -24,7 +24,9 @@ final class GameView extends View implements Menu.Host {
             "Safe Zone", "Bomb", "Erase"};
     private static final int[] ZOMBIE_VARIANTS = {Entity.ZOMBIE, Entity.RUNNER, Entity.BRUTE, Entity.CRAWLER,
             Entity.SCREAMER};
-    private static final int BTN_PAUSE = 0, BTN_SPEED = 1, BTN_BRUSH = 2, BTN_CLEAR = 3, BTN_MENU = 4;
+    private static final int[] CIV_VARIANTS = {Entity.CIVILIAN, Entity.DOG};
+    private static final int BTN_PAUSE = 0, BTN_SPEED = 1, BTN_BRUSH = 2, BTN_VIEW = 3, BTN_CLEAR = 4, BTN_MENU = 5;
+    private static final int TOP_BUTTONS = 6;
     private static final int[] SPEEDS = {1, 2, 4};
     private static final int[] BRUSHES = {1, 5, 10};
     private static final int[] SHOP_AWNINGS = {0xFFD83A3A, 0xFF2E7D4F, 0xFF2E5FB0, 0xFFE8A21C, 0xFF8A2E6B};
@@ -52,7 +54,7 @@ final class GameView extends View implements Menu.Host {
     private long lastFrame;
     private int speedIdx, brushIdx;
     private int tool = TOOL_PAN;
-    private int zombieVariant;
+    private int zombieVariant, civVariant;
     private boolean statsCollapsed;
     /** Units picked with the Orders tool. */
     private final java.util.ArrayList<Entity> selection = new java.util.ArrayList<Entity>();
@@ -62,7 +64,10 @@ final class GameView extends View implements Menu.Host {
 
     // Layout.
     private final RectF[] toolRects = new RectF[TOOL_NAMES.length];
-    private final RectF[] topRects = new RectF[5];
+    private final RectF[] topRects = new RectF[TOP_BUTTONS];
+    /** The stats panel as drawn this frame (it shrinks when collapsed). */
+    private final RectF statsShown = new RectF();
+    private final RectF labelRect = new RectF();
     private final RectF statsRect = new RectF();
     private float barTop;
     private boolean portrait;
@@ -86,6 +91,8 @@ final class GameView extends View implements Menu.Host {
     private final Rect roofSrc = new Rect();
     private final RectF roofDst = new RectF();
     private City.Building[] visible = new City.Building[64];
+    /** Walls go partly see-through when zoomed right in. */
+    private float wallFade = 1;
     private float[] visibleKey = new float[64];
 
     GameView(Context context) {
@@ -95,7 +102,7 @@ final class GameView extends View implements Menu.Host {
         stroke.setStrokeCap(Paint.Cap.ROUND);
         text.setTypeface(Typeface.create(Typeface.DEFAULT, Typeface.BOLD));
         for (int i = 0; i < toolRects.length; i++) toolRects[i] = new RectF();
-        for (int i = 0; i < 5; i++) topRects[i] = new RectF();
+        for (int i = 0; i < TOP_BUTTONS; i++) topRects[i] = new RectF();
         buildIcons();
         settings = new Settings(context);
         sound = new Sound(context);
@@ -110,18 +117,18 @@ final class GameView extends View implements Menu.Host {
     }
 
     private void buildIcons() {
-        int[] bodies = {0xFFD9534F, 0xFF23408E, 0xFF55623A, 0xFFF2F2F2, 0xFF4E5A3E, 0xFF6B3A36, 0xFF4D3F4F, 0xFF4E5A3E,
-                0xFF6A6F60};
-        int[] heads = {0xFF4A2E1A, 0xFF141C38, 0xFF3C4628, 0xFF4A2E1A, 0xFF7C9A5E, 0xFF9DAA70, 0xFF6F8D55, 0xFF73905A,
-                0xFFC8D0B4};
-        float[] radii = {3.6f, 3.8f, 4f, 3.7f, 3.8f, 3.5f, 6.5f, 3.0f, 3.5f};
+        int[] bodies = {0xFFD9534F, 0xFF23408E, 0xFF55623A, 0xFFF2F2F2, 0xFFB07A3E, 0xFF4E5A3E, 0xFF6B3A36, 0xFF4D3F4F,
+                0xFF4E5A3E, 0xFF6A6F60};
+        int[] heads = {0xFF4A2E1A, 0xFF141C38, 0xFF3C4628, 0xFF4A2E1A, 0xFF8C6232, 0xFF7C9A5E, 0xFF9DAA70, 0xFF6F8D55,
+                0xFF73905A, 0xFFC8D0B4};
+        float[] radii = {3.6f, 3.8f, 4f, 3.7f, 2.8f, 3.8f, 3.5f, 6.5f, 3.0f, 3.5f};
         for (int t = 0; t < Entity.TYPE_COUNT; t++) {
             Entity e = new Entity();
             e.type = t;
             e.radius = radii[t];
             e.body = bodies[t];
             e.head = heads[t];
-            e.skin = t >= Entity.ZOMBIE ? heads[t] : 0xFFE0AC69;
+            e.skin = t >= Entity.ZOMBIE ? heads[t] : t == Entity.DOG ? bodies[t] : 0xFFE0AC69;
             e.angle = (float) (-Math.PI / 2);
             e.hp = e.maxHp = 1;
             e.phase = 1.2f;
@@ -174,6 +181,24 @@ final class GameView extends View implements Menu.Host {
     @Override
     public World world() {
         return world;
+    }
+
+    /** Shows a text box for typing a city code; set by the activity (which owns Android's dialogs). */
+    interface CodePrompt {
+        void ask(String current);
+    }
+
+    CodePrompt codePrompt;
+
+    @Override
+    public void askCityCode(String current) {
+        if (codePrompt != null) codePrompt.ask(current);
+    }
+
+    /** Called with whatever the player typed into the city code box. */
+    void cityCodeEntered(String code) {
+        menu.cityCodeEntered(code);
+        invalidate();
     }
 
     @Override
@@ -291,15 +316,16 @@ final class GameView extends View implements Menu.Host {
                 x += bw + gap;
             }
         }
-        float th = 38 * dp, tgap = 6 * dp, tw, tx;
+        float th = 38 * dp, tgap = (portrait ? 4 : 6) * dp, tw, tx;
+        int nb = TOP_BUTTONS;
         if (portrait) {
-            tw = (w - 20 * dp - tgap * 4) / 5;
-            tx = 10 * dp;
+            tw = (w - 16 * dp - tgap * (nb - 1)) / nb;
+            tx = 8 * dp;
         } else {
-            tw = Math.min(88 * dp, (w * 0.55f - tgap * 4) / 5);
-            tx = w - 10 * dp - tw * 5 - tgap * 4;
+            tw = Math.min(84 * dp, (w * 0.6f - tgap * (nb - 1)) / nb);
+            tx = w - 10 * dp - tw * nb - tgap * (nb - 1);
         }
-        for (int i = 0; i < 5; i++) {
+        for (int i = 0; i < nb; i++) {
             topRects[i].set(tx, 10 * dp, tx + tw, 10 * dp + th);
             tx += tw + tgap;
         }
@@ -621,27 +647,36 @@ final class GameView extends View implements Menu.Host {
         float camH = Math.max(Math.max(getWidth(), getHeight()) / scale * 0.9f,
                 Math.max(260f, world.city.maxHeight * 1.7f));
         boolean in3d = settings.buildings3d();
+        // Zoomed right in, roofs (and walls) turn see-through so you can look inside.
+        float see = Math.max(0, Math.min(1, (scale / dp - 2.2f) / 1.3f));
 
         float ts = in3d ? camH / (camH - City.TREE_HEIGHT) : 1f;
         for (int i = 0, n = world.city.trees.size(); i < n; i++) {
             float[] t = world.city.trees.get(i);
             float x = cx + (t[0] - cx) * ts, y = cy + (t[1] - cy) * ts, r = t[2] * ts;
             if (x + r < vx0 || x - r > vx1 || y + r < vy0 || y - r > vy1) continue;
-            fill.setColor(0xFF2C5A22);
+            fill.setColor(alpha(0xFF2C5A22, 1 - see * 0.5f));
             c.drawCircle(x, y, r, fill);
-            fill.setColor(0xFF3B742D);
+            fill.setColor(alpha(0xFF3B742D, 1 - see * 0.5f));
             c.drawCircle(x - 1.5f * ts, y - 1.5f * ts, r * 0.65f, fill);
-            fill.setColor(0xFF4C8A3A);
+            fill.setColor(alpha(0xFF4C8A3A, 1 - see * 0.5f));
             c.drawCircle(x - 2.5f * ts, y - 2.5f * ts, r * 0.3f, fill);
         }
         if (!in3d) {
-            // Flat roofs are already in the ground bitmap.
+            // Bird's-eye: the flat roofs are already in the ground bitmap.
+            for (int i = 0, count = world.city.buildings.size(); i < count; i++) {
+                City.Building b = world.city.buildings.get(i);
+                if (b.collapsed || b.x1 < vx0 || b.x0 > vx1 || b.y1 < vy0 || b.y0 > vy1) continue;
+                drawDamage(c, b, b.x0, b.y0, b.x1, b.y1, 1);
+                if (see > 0) drawInterior(c, b, see);
+            }
             return;
         }
 
         int n = 0;
         for (int i = 0, count = world.city.buildings.size(); i < count; i++) {
             City.Building b = world.city.buildings.get(i);
+            if (b.collapsed) continue;
             float s = camH / (camH - b.height);
             float rx0 = cx + (b.x0 - cx) * s, rx1 = cx + (b.x1 - cx) * s;
             float ry0 = cy + (b.y0 - cy) * s, ry1 = cy + (b.y1 - cy) * s;
@@ -669,18 +704,125 @@ final class GameView extends View implements Menu.Host {
         }
 
         boolean windows = detailed || scale > 0.8f;
+        wallFade = 1 - 0.55f * see;
         for (int i = 0; i < n; i++) {
             City.Building b = visible[i];
             float s = camH / (camH - b.height);
             float rx0 = cx + (b.x0 - cx) * s, rx1 = cx + (b.x1 - cx) * s;
             float ry0 = cy + (b.y0 - cy) * s, ry1 = cy + (b.y1 - cy) * s;
+            if (see > 0) drawInterior(c, b, 1);
             if (cy < b.y0) drawWall(c, b, b.x0, b.y0, b.x1, b.y0, rx0, ry0, rx1, ry0, 0.8f, windows, 0);
             if (cy > b.y1) drawWall(c, b, b.x1, b.y1, b.x0, b.y1, rx1, ry1, rx0, ry1, 0.52f, windows, 1);
             if (cx < b.x0) drawWall(c, b, b.x0, b.y1, b.x0, b.y0, rx0, ry1, rx0, ry0, 0.9f, windows, 2);
             if (cx > b.x1) drawWall(c, b, b.x1, b.y0, b.x1, b.y1, rx1, ry0, rx1, ry1, 0.62f, windows, 3);
             roofSrc.set((int) b.x0, (int) b.y0, (int) b.x1, (int) b.y1);
             roofDst.set(rx0, ry0, rx1, ry1);
+            float roofA = 1 - 0.82f * see;
+            bmpPaint.setAlpha((int) (255 * roofA));
             c.drawBitmap(world.city.bitmap, roofSrc, roofDst, bmpPaint);
+            bmpPaint.setAlpha(255);
+            drawDamage(c, b, rx0, ry0, rx1, ry1, roofA);
+        }
+        wallFade = 1;
+    }
+
+    /** Cracks and scorch marks on the roof of a building that has taken blast damage. */
+    private void drawDamage(Canvas c, City.Building b, float x0, float y0, float x1, float y1, float a) {
+        float dmg = 1 - b.hp / b.maxHp;
+        if (dmg < 0.12f || a <= 0.05f) return;
+        float w = x1 - x0, h = y1 - y0;
+        int n = 2 + (int) (dmg * 9);
+        int hsh = b.seed * 1103515245 + 12345;
+        for (int k = 0; k < n; k++) {
+            hsh = hsh * 1103515245 + 12345;
+            float u = ((hsh >>> 8) & 1023) / 1023f;
+            hsh = hsh * 1103515245 + 12345;
+            float v = ((hsh >>> 8) & 1023) / 1023f;
+            hsh = hsh * 1103515245 + 12345;
+            float r = 2 + ((hsh >>> 8) & 255) / 255f * 5 * dmg;
+            fill.setColor(alpha(0x80141210, a * Math.min(1, dmg * 1.6f)));
+            c.drawCircle(x0 + u * w, y0 + v * h, r, fill);
+            stroke.setColor(alpha(0xC0201C18, a));
+            stroke.setStrokeWidth(0.8f);
+            float ex = x0 + u * w + (((hsh >>> 4) & 15) - 7.5f) * 1.6f, ey = y0 + v * h + (((hsh >>> 12) & 15) - 7.5f) * 1.6f;
+            c.drawLine(x0 + u * w, y0 + v * h, Math.max(x0, Math.min(x1, ex)), Math.max(y0, Math.min(y1, ey)), stroke);
+        }
+        if (dmg > 0.6f && world.rnd.nextFloat() < 0.15f) {
+            // Still smouldering.
+            world.particle(x0 + world.rnd.nextFloat() * w, y0 + world.rnd.nextFloat() * h, 3, -8, 1.5f, 2.5f, 0xFF3A3A3A,
+                    World.P_SMOKE);
+        }
+    }
+
+    /** What you see through a see-through roof: the floor, rooms, furniture and anyone hiding inside. */
+    private void drawInterior(Canvas c, City.Building b, float a) {
+        float x0 = b.x0 + 1, y0 = b.y0 + 1, x1 = b.x1 - 1, y1 = b.y1 - 1, w = x1 - x0, h = y1 - y0;
+        int floorCol = b.kind == City.HOUSE ? 0xFFB8946A : b.kind == City.CHURCH || b.kind == City.SPIRE ? 0xFF9C8C76
+                : b.kind == City.MARKET || b.kind == City.KIOSK ? 0xFFD8D8D0 : b.kind == City.WAREHOUSE ? 0xFF8A8A84
+                : b.kind == City.BARRACKS || b.kind == City.TOWER ? 0xFF7E806E : 0xFFC4BFB4;
+        fill.setColor(alpha(floorCol, a));
+        c.drawRect(x0, y0, x1, y1, fill);
+        int hsh = b.seed * 69069 + 1;
+        int furn = City.darken(floorCol, 0.62f);
+        fill.setColor(alpha(furn, a));
+        if (b.kind == City.MARKET || b.kind == City.KIOSK) {
+            // Shelving aisles.
+            for (float yy = y0 + 6; yy < y1 - 6; yy += 9) c.drawRect(x0 + 5, yy, x1 - 5, yy + 2.5f, fill);
+        } else if (b.kind == City.CHURCH || b.kind == City.SPIRE) {
+            // Pews either side of the aisle.
+            boolean alongX = w >= h;
+            for (float t = 6; t < (alongX ? w : h) - 8; t += 5) {
+                if (alongX) {
+                    c.drawRect(x0 + t, y0 + 4, x0 + t + 2, y0 + h / 2 - 3, fill);
+                    c.drawRect(x0 + t, y0 + h / 2 + 3, x0 + t + 2, y1 - 4, fill);
+                } else {
+                    c.drawRect(x0 + 4, y0 + t, x0 + w / 2 - 3, y0 + t + 2, fill);
+                    c.drawRect(x0 + w / 2 + 3, y0 + t, x1 - 4, y0 + t + 2, fill);
+                }
+            }
+        } else if (b.kind == City.WAREHOUSE) {
+            for (int k = 0; k < 6; k++) {
+                hsh = hsh * 69069 + 1;
+                float u = ((hsh >>> 8) & 255) / 255f, v = ((hsh >>> 16) & 255) / 255f;
+                c.drawRect(x0 + 3 + u * (w - 12), y0 + 3 + v * (h - 12), x0 + 9 + u * (w - 12), y0 + 9 + v * (h - 12), fill);
+            }
+        } else {
+            // Desks, tables and beds scattered about.
+            for (float yy = y0 + 5; yy < y1 - 6; yy += 11)
+                for (float xx = x0 + 5; xx < x1 - 6; xx += 12) {
+                    hsh = hsh * 69069 + 1;
+                    if (((hsh >>> 10) & 3) == 0) continue;
+                    c.drawRect(xx, yy, xx + 5, yy + 3, fill);
+                }
+            // Inner walls split big floors into rooms.
+            stroke.setColor(alpha(City.darken(b.wall, 0.75f), a));
+            stroke.setStrokeWidth(1.2f);
+            if (w > 40) {
+                float sx = x0 + w * (0.4f + ((b.seed >>> 3) & 7) / 40f);
+                c.drawLine(sx, y0, sx, y0 + h * 0.4f, stroke);
+                c.drawLine(sx, y0 + h * 0.4f + 7, sx, y1, stroke);
+            }
+            if (h > 40) {
+                float sy = y0 + h * (0.4f + ((b.seed >>> 6) & 7) / 40f);
+                c.drawLine(x0, sy, x0 + w * 0.3f, sy, stroke);
+                c.drawLine(x0 + w * 0.3f + 7, sy, x1, sy, stroke);
+            }
+        }
+        stroke.setColor(alpha(City.darken(b.wall, 0.6f), a));
+        stroke.setStrokeWidth(2f);
+        oval.set(x0, y0, x1, y1);
+        c.drawRect(oval, stroke);
+        if (a < 0.5f) return;
+        // The people hiding here, huddled away from the door.
+        int cols = Math.max(1, (int) ((w - 8) / 9));
+        for (int i = 0, n = b.occupants.size(); i < n; i++) {
+            Entity o = b.occupants.get(i);
+            int row = i / cols;
+            o.x = x0 + 6 + (i % cols) * 9 + ((i * 7) % 3);
+            o.y = y0 + 6 + (row % Math.max(1, (int) ((h - 8) / 9))) * 9;
+            o.angle = (i * 1.7f + b.seed) % 6.28f;
+            o.aiming = false;
+            drawEntity(c, o, false);
         }
     }
 
@@ -707,7 +849,7 @@ final class GameView extends View implements Menu.Host {
         if (!wallMatrix.setPolyToPoly(wallSrc, 0, wallDst, 0, 4)) return;
         c.save();
         c.concat(wallMatrix);
-        fill.setColor(City.darken(b.wall, shade));
+        fill.setColor(fade(City.darken(b.wall, shade)));
         c.drawRect(0, 0, len, hgt, fill);
         if (windows) {
             int floors = (int) (hgt / City.FLOOR);
@@ -724,74 +866,103 @@ final class GameView extends View implements Menu.Host {
                     int litColor = 0xFFF0D98C;
                     if (b.kind == City.SHOP && k == 0) {
                         // Shopfront: big window under a striped awning.
-                        fill.setColor(City.darken(0xFF6F8EA6, glass));
+                        fill.setColor(fade(City.darken(0xFF6F8EA6, glass)));
                         c.drawRect(u0 + 1.5f, 0.5f, u0 + cw - 1.5f, 7, fill);
                         int awn = SHOP_AWNINGS[(b.seed + i) % SHOP_AWNINGS.length];
                         for (int st = 0; st < 4; st++) {
-                            fill.setColor(City.darken(st % 2 == 0 ? awn : 0xFFF2F2F2, glass));
+                            fill.setColor(fade(City.darken(st % 2 == 0 ? awn : 0xFFF2F2F2, glass)));
                             c.drawRect(u0 + cw * st / 4f, 7.5f, u0 + cw * (st + 1) / 4f, 10.5f, fill);
                         }
                     } else if (b.kind == City.CHURCH || b.kind == City.SPIRE) {
                         // Tall stained-glass windows spanning the floors.
                         if (k == 0 && i % 2 == 1) {
-                            fill.setColor(City.darken(i % 4 == 1 ? 0xFF6A4E9A : 0xFF3F7AA8, glass));
+                            fill.setColor(fade(City.darken(i % 4 == 1 ? 0xFF6A4E9A : 0xFF3F7AA8, glass)));
                             c.drawRect(u0 + cw * 0.35f, 2, u0 + cw * 0.65f, Math.min(hgt - 4, City.FLOOR * floors - 3), fill);
                         }
                     } else if (b.kind == City.FIRE_STATION && k == 0) {
-                        fill.setColor(City.darken(0xFFC8302A, glass));
+                        fill.setColor(fade(City.darken(0xFFC8302A, glass)));
                         c.drawRect(u0 + 1.5f, 0, u0 + cw - 1.5f, 9.5f, fill);
-                        fill.setColor(City.darken(0xFFE8E8E8, glass));
+                        fill.setColor(fade(City.darken(0xFFE8E8E8, glass)));
                         for (float v = 2; v < 9; v += 2.5f) c.drawRect(u0 + 1.5f, v, u0 + cw - 1.5f, v + 0.5f, fill);
                     } else if ((b.kind == City.MARKET || b.kind == City.KIOSK) && k == 0) {
-                        fill.setColor(City.darken(0xFF7FA6C0, glass));
+                        fill.setColor(fade(City.darken(0xFF7FA6C0, glass)));
                         c.drawRect(u0, 0.5f, u0 + cw, 8.5f, fill);
-                        fill.setColor(City.darken(b.kind == City.KIOSK ? 0xFFD83A3A : 0xFF3E8A4A, glass));
+                        fill.setColor(fade(City.darken(b.kind == City.KIOSK ? 0xFFD83A3A : 0xFF3E8A4A, glass)));
                         c.drawRect(u0, 8.5f, u0 + cw, 11, fill);
                     } else if (b.kind == City.CRYPT) {
                         if (k == 0 && i == cols / 2) {
-                            fill.setColor(City.darken(0xFF3A3632, glass));
+                            fill.setColor(fade(City.darken(0xFF3A3632, glass)));
                             c.drawRect(u0 + cw * 0.3f, 0, u0 + cw * 0.7f, 8, fill);
                         }
                     } else if (b.kind == City.WAREHOUSE) {
                         if (k == 0 && i % 2 == 0) {
-                            fill.setColor(City.darken(0xFFA4A8AC, glass));
+                            fill.setColor(fade(City.darken(0xFFA4A8AC, glass)));
                             c.drawRect(u0 + 2, 0, u0 + cw - 2, 9, fill);
-                            fill.setColor(City.darken(0xFF7E8286, glass));
+                            fill.setColor(fade(City.darken(0xFF7E8286, glass)));
                             for (float v = 2; v < 9; v += 2.2f) c.drawRect(u0 + 2, v, u0 + cw - 2, v + 0.6f, fill);
                         } else if (k == floors - 1) {
-                            fill.setColor(lit ? litColor : City.darken(0xFF3A4652, glass));
+                            fill.setColor(fade(lit ? litColor : City.darken(0xFF3A4652, glass)));
                             c.drawRect(u0 + 1, v0 + 5, u0 + cw - 1, v0 + 8, fill);
                         }
                     } else if (b.kind == City.HOUSE) {
                         boolean door = k == 0 && side == 1 && i == cols / 2;
                         if (door) {
-                            fill.setColor(City.darken(0xFF5A3A28, glass));
+                            fill.setColor(fade(City.darken(0xFF5A3A28, glass)));
                             c.drawRect(u0 + cw * 0.35f, 0, u0 + cw * 0.65f, 8, fill);
                         } else {
-                            fill.setColor(City.darken(0xFFEEEEEE, glass));
+                            fill.setColor(fade(City.darken(0xFFEEEEEE, glass)));
                             c.drawRect(u0 + cw * 0.25f, v0 + 3.5f, u0 + cw * 0.75f, v0 + 9.5f, fill);
-                            fill.setColor(lit ? litColor : City.darken(0xFF34414E, glass));
+                            fill.setColor(fade(lit ? litColor : City.darken(0xFF34414E, glass)));
                             c.drawRect(u0 + cw * 0.25f + 1, v0 + 4.5f, u0 + cw * 0.75f - 1, v0 + 8.5f, fill);
                         }
                     } else if (k == 0) {
-                        fill.setColor(City.darken(0xFF5A7890, glass));
+                        fill.setColor(fade(City.darken(0xFF5A7890, glass)));
                         c.drawRect(u0 + 2, v0 + 1.5f, u0 + cw - 2, v0 + 8.5f, fill);
                     } else {
-                        fill.setColor(lit ? litColor : City.darken(0xFF27313B, glass));
+                        fill.setColor(fade(lit ? litColor : City.darken(0xFF27313B, glass)));
                         c.drawRect(u0 + 3, v0 + 3.5f, u0 + cw - 3, v0 + 9.5f, fill);
                     }
                 }
             }
-            fill.setColor(City.darken(b.wall, shade * 0.8f));
+            fill.setColor(fade(City.darken(b.wall, shade * 0.8f)));
             c.drawRect(0, hgt - 2.5f, len, hgt, fill);
+        }
+        // Bullet holes and scorch marks from the fighting.
+        for (int m = 0; m < b.markCount; m++) {
+            int k = m * 4;
+            if ((int) b.marks[k] != side) continue;
+            float u = b.marks[k + 1], v = b.marks[k + 2], sz = b.marks[k + 3];
+            if (u > len || v > hgt) continue;
+            if (sz > 2) {
+                fill.setColor(fade(0x66141210));
+                c.drawRect(u - sz, Math.max(0, v - sz * 0.6f), u + sz, Math.min(hgt, v + sz * 1.6f), fill);
+                fill.setColor(fade(0x88141210));
+                c.drawRect(u - sz * 0.5f, Math.max(0, v - sz * 0.2f), u + sz * 0.5f, Math.min(hgt, v + sz), fill);
+            } else {
+                fill.setColor(fade(0xFF2A2622));
+                c.drawRect(u - sz, v - sz, u + sz, v + sz, fill);
+            }
         }
         c.restore();
     }
 
-    /** A police cruiser or army truck driving along the road. */
+    /** A car, police cruiser, army truck or fire engine, with its damage showing. */
     private void drawVehicle(Canvas c, Fleet.Vehicle v) {
-        boolean truck = v.type == Fleet.TRUCK;
-        float hl = truck ? 9.5f : 8f, hw = truck ? 5.2f : 4.4f;
+        boolean truck = v.type == Fleet.TRUCK, engine = v.type == Fleet.FIRE_ENGINE;
+        float hl = truck || engine ? 9.5f : 8f, hw = truck ? 5.2f : engine ? 4.9f : 4.4f;
+        if (v.spraying) {
+            // The hose: an arc of water from the engine to the fire.
+            stroke.setColor(0x99A8D8FF);
+            stroke.setStrokeWidth(1.6f);
+            float px = v.x, py = v.y;
+            for (int k = 1; k <= 8; k++) {
+                float t = k / 8f;
+                float x = v.x + (v.sprayX - v.x) * t, y = v.y + (v.sprayY - v.y) * t - (float) Math.sin(t * Math.PI) * 8;
+                c.drawLine(px, py, x, y, stroke);
+                px = x;
+                py = y;
+            }
+        }
         c.save();
         c.translate(v.x, v.y);
         c.rotate((float) Math.toDegrees(v.angle));
@@ -799,36 +970,82 @@ final class GameView extends View implements Menu.Host {
         oval.set(-hl + 1.5f, -hw + 1.5f, hl + 1.5f, hw + 1.5f);
         c.drawRoundRect(oval, 2.5f, 2.5f, fill);
         boolean civ = v.type == Fleet.CAR;
-        fill.setColor(civ ? v.color : truck ? 0xFF4F5A33 : 0xFF1C1D22);
+        int body = civ ? v.color : truck ? 0xFF4F5A33 : engine ? 0xFFC8302A : 0xFF1C1D22;
+        if (v.burnt) body = 0xFF2B2623;
+        else if (v.broken) body = City.darken(body, 0.65f);
+        fill.setColor(body);
         oval.set(-hl, -hw, hl, hw);
         c.drawRoundRect(oval, 2.5f, 2.5f, fill);
+        if (v.burnt) {
+            // A burnt-out shell.
+            fill.setColor(0xFF4A2F22);
+            c.drawRect(-hl + 2, -hw + 1.2f, hl - 2, hw - 1.2f, fill);
+            fill.setColor(0xFF151312);
+            c.drawRect(-2, -hw + 1.5f, 3, hw - 1.5f, fill);
+            c.restore();
+            return;
+        }
         if (civ) {
             fill.setColor(0xFF1E2A33);
             c.drawRect(1.5f, -hw + 1, 4.5f, hw - 1, fill);
             c.drawRect(-5f, -hw + 1, -3f, hw - 1, fill);
-            fill.setColor(City.lighten(v.color, 0.15f));
+            fill.setColor(City.lighten(body, 0.15f));
             c.drawRect(-2.5f, -hw + 1.5f, 1f, hw - 1.5f, fill);
             if (!v.parked) {
                 fill.setColor(0xFFFFF4C0);
                 c.drawCircle(hl - 0.8f, -hw + 1.3f, 0.8f, fill);
                 c.drawCircle(hl - 0.8f, hw - 1.3f, 0.8f, fill);
             }
+            if (!v.riders.isEmpty()) {
+                // Heads of the people riding along.
+                fill.setColor(0xFF4A2E1A);
+                for (int k = 0; k < Math.min(3, v.riders.size()); k++)
+                    c.drawCircle(-1.8f + (k == 2 ? -2.5f : 0), k % 2 == 0 ? -1.6f : 1.6f, 1.1f, fill);
+            }
         } else if (truck) {
-            fill.setColor(0xFF5F6B40);
+            fill.setColor(v.broken ? 0xFF3C4428 : 0xFF5F6B40);
             c.drawRect(-hl + 0.8f, -hw + 0.8f, hl * 0.3f, hw - 0.8f, fill);
             fill.setColor(0xFF1E2A33);
             c.drawRect(hl * 0.45f, -hw + 1, hl * 0.7f, hw - 1, fill);
+        } else if (engine) {
+            fill.setColor(0xFF1E2A33);
+            c.drawRect(hl * 0.5f, -hw + 1, hl * 0.75f, hw - 1, fill);
+            // Ladder along the top.
+            fill.setColor(0xFFD8D8D8);
+            c.drawRect(-hl + 1.5f, -1.6f, hl * 0.4f, -0.9f, fill);
+            c.drawRect(-hl + 1.5f, 0.9f, hl * 0.4f, 1.6f, fill);
+            for (float x = -hl + 2.5f; x < hl * 0.4f; x += 2.2f) c.drawRect(x, -1.6f, x + 0.5f, 1.6f, fill);
+            if (!v.broken) {
+                boolean blink = ((int) (v.anim * 8)) % 2 == 0;
+                fill.setColor(blink ? 0xFFFF3A30 : 0xFFFFD27A);
+                c.drawRect(hl * 0.42f, -hw + 1, hl * 0.5f, hw - 1, fill);
+            }
         } else {
-            fill.setColor(0xFFEDEDED);
+            fill.setColor(v.broken ? 0xFFA0A0A0 : 0xFFEDEDED);
             c.drawRect(-3f, -hw, 2f, -hw + 1.3f, fill);
             c.drawRect(-3f, hw - 1.3f, 2f, hw, fill);
             fill.setColor(0xFF1E2A33);
             c.drawRect(2.5f, -hw + 1, 5f, hw - 1, fill);
-            boolean blink = ((int) (v.anim * 8)) % 2 == 0;
-            fill.setColor(blink ? 0xFFFF3A30 : 0xFF5A1A18);
-            c.drawRect(-1f, -hw + 1, 0.5f, 0, fill);
-            fill.setColor(blink ? 0xFF3A5AA0 : 0xFF3A7BFF);
-            c.drawRect(-1f, 0, 0.5f, hw - 1, fill);
+            if (!v.broken) {
+                boolean blink = ((int) (v.anim * 8)) % 2 == 0;
+                fill.setColor(blink ? 0xFFFF3A30 : 0xFF5A1A18);
+                c.drawRect(-1f, -hw + 1, 0.5f, 0, fill);
+                fill.setColor(blink ? 0xFF3A5AA0 : 0xFF3A7BFF);
+                c.drawRect(-1f, 0, 0.5f, hw - 1, fill);
+            }
+        }
+        float dmg = 1 - Math.max(0, v.hp) / v.maxHp;
+        if (dmg > 0.3f) {
+            // Dents, scrapes and a cracked windscreen.
+            stroke.setColor(0xAAD8D8D8);
+            stroke.setStrokeWidth(0.5f);
+            c.drawLine(hl * 0.3f, -hw * 0.6f, hl * 0.55f, hw * 0.2f, stroke);
+            fill.setColor(0x66000000);
+            c.drawCircle(hl - 2, -hw + 1.5f, 1.3f, fill);
+            if (dmg > 0.6f) {
+                c.drawCircle(-hl + 2.5f, hw - 1.5f, 1.6f, fill);
+                c.drawLine(-hl * 0.2f, hw * 0.7f, hl * 0.1f, -hw * 0.3f, stroke);
+            }
         }
         c.restore();
     }
@@ -919,6 +1136,18 @@ final class GameView extends View implements Menu.Host {
     }
 
     /** Names over safe zones and 911 markers, drawn at screen size so they stay readable. */
+    /** True if a label would sit under the stats panel, the radio feed or the top buttons. */
+    private boolean uiCovers(RectF r) {
+        if (overlaps(r, statsShown)) return true;
+        for (int i = 0; i < feedCount; i++) if (overlaps(r, feedLines[i])) return true;
+        for (RectF t : topRects) if (overlaps(r, t)) return true;
+        return r.bottom > barTop;
+    }
+
+    private static boolean overlaps(RectF a, RectF b) {
+        return a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+    }
+
     private void drawMapLabels(Canvas c) {
         text.setTextAlign(Paint.Align.CENTER);
         text.setTextSize(11.5f * dp);
@@ -936,7 +1165,9 @@ final class GameView extends View implements Menu.Host {
             String label = f.name.toUpperCase();
             float tw = text.measureText(label);
             oval.set(sx - tw / 2 - 7 * dp, sy - 13 * dp, sx + tw / 2 + 7 * dp, sy + 5 * dp);
-            fill.setColor(f.kind == City.FACILITY_BASE ? 0xB0303A1E : 0xB01E2E50);
+            if (uiCovers(oval)) continue;
+            fill.setColor(f.kind == City.FACILITY_BASE ? 0xB0303A1E : f.kind == City.FACILITY_FIRE ? 0xB0802018
+                    : f.kind == City.FACILITY_HOSPITAL ? 0xB0703030 : 0xB01E2E50);
             c.drawRoundRect(oval, 7 * dp, 7 * dp, fill);
             text.setColor(0xFFE6E6E6);
             c.drawText(label, sx, sy, text);
@@ -950,6 +1181,7 @@ final class GameView extends View implements Menu.Host {
             String label = b.occupants.size() + " hiding";
             float tw = text.measureText(label);
             oval.set(sx - tw / 2 - 6 * dp, sy - 12 * dp, sx + tw / 2 + 6 * dp, sy + 7 * dp);
+            if (uiCovers(oval)) continue;
             fill.setColor(0xC0302418);
             c.drawRoundRect(oval, 6 * dp, 6 * dp, fill);
             text.setColor(0xFFFFFFFF);
@@ -968,6 +1200,7 @@ final class GameView extends View implements Menu.Host {
                     + (z.full ? "  FULL" : "");
             float tw = text.measureText(label);
             oval.set(sx - tw / 2 - 8 * dp, sy - 14 * dp, sx + tw / 2 + 8 * dp, sy + 5 * dp);
+            if (uiCovers(oval)) continue;
             fill.setColor(z.military ? 0xD0304A20 : 0xD0203A66);
             c.drawRoundRect(oval, 8 * dp, 8 * dp, fill);
             text.setColor(0xFFFFFFFF);
@@ -980,6 +1213,7 @@ final class GameView extends View implements Menu.Host {
             String label = "911  " + inc.zombiesNear + (inc.cops + inc.soldiers > 0 ? "  -  " + (inc.cops + inc.soldiers) + " responding" : "");
             float tw = text.measureText(label);
             oval.set(sx - tw / 2 - 7 * dp, sy - 13 * dp, sx + tw / 2 + 7 * dp, sy + 5 * dp);
+            if (uiCovers(oval)) continue;
             fill.setColor(0xD8A01E16);
             c.drawRoundRect(oval, 7 * dp, 7 * dp, fill);
             text.setColor(0xFFFFFFFF);
@@ -1027,13 +1261,66 @@ final class GameView extends View implements Menu.Host {
         }
     }
 
+    private int fade(int color) {
+        return wallFade >= 1 ? color : alpha(color, wallFade);
+    }
+
     private static int alpha(int color, float a) {
         int base = (color >>> 24) & 0xFF;
         int na = (int) (base * Math.max(0, Math.min(1, a)));
         return (na << 24) | (color & 0xFFFFFF);
     }
 
+    private void drawDog(Canvas c, Entity e, boolean healthBar) {
+        float r = e.radius;
+        c.save();
+        c.translate(e.x, e.y);
+        c.rotate((float) Math.toDegrees(e.angle));
+        fill.setColor(0x44000000);
+        oval.set(-r * 1.1f + 0.8f, -r * 0.6f + 0.8f, r * 1.2f + 0.8f, r * 0.6f + 0.8f);
+        c.drawOval(oval, fill);
+        float sw = (float) Math.sin(e.phase * 1.6f) * r * 0.4f;
+        stroke.setColor(City.darken(e.body, 0.7f));
+        stroke.setStrokeWidth(r * 0.3f);
+        c.drawLine(r * 0.55f, -r * 0.4f, r * 0.55f + sw, -r * 0.72f, stroke);
+        c.drawLine(r * 0.55f, r * 0.4f, r * 0.55f - sw, r * 0.72f, stroke);
+        c.drawLine(-r * 0.6f, -r * 0.4f, -r * 0.6f - sw, -r * 0.72f, stroke);
+        c.drawLine(-r * 0.6f, r * 0.4f, -r * 0.6f + sw, r * 0.72f, stroke);
+        // Wagging tail.
+        stroke.setColor(e.body);
+        stroke.setStrokeWidth(r * 0.25f);
+        float wag = (float) Math.sin(world.time * (e.fleeTimer > 0 ? 6 : 14) + e.phase) * r * 0.45f;
+        c.drawLine(-r * 0.9f, 0, -r * 1.6f, wag, stroke);
+        fill.setColor(e.body);
+        oval.set(-r * 1.05f, -r * 0.5f, r * 0.85f, r * 0.5f);
+        c.drawOval(oval, fill);
+        fill.setColor(e.head);
+        c.drawCircle(r * 1.05f, 0, r * 0.48f, fill);
+        fill.setColor(City.darken(e.head, 0.7f));
+        c.drawCircle(r * 0.9f, -r * 0.38f, r * 0.2f, fill);
+        c.drawCircle(r * 0.9f, r * 0.38f, r * 0.2f, fill);
+        fill.setColor(0xFF1A1A1A);
+        c.drawCircle(r * 1.5f, 0, r * 0.14f, fill);
+        if (e.hurt > 0) {
+            fill.setColor(alpha(0xFFFFFFFF, e.hurt * 0.7f));
+            c.drawCircle(0, 0, r * 1.1f, fill);
+        }
+        c.restore();
+        if (healthBar && e.hp < e.maxHp && e.hp > 0) {
+            float bw = 8, bx = e.x - bw / 2, by = e.y - r - 3.5f;
+            fill.setColor(0xAA000000);
+            c.drawRect(bx - 0.4f, by - 0.4f, bx + bw + 0.4f, by + 1.9f, fill);
+            float f = e.hp / e.maxHp;
+            fill.setColor(f > 0.5f ? 0xFF4CD964 : f > 0.25f ? 0xFFFFCC00 : 0xFFFF3B30);
+            c.drawRect(bx, by, bx + bw * f, by + 1.5f, fill);
+        }
+    }
+
     private void drawEntity(Canvas c, Entity e, boolean healthBar) {
+        if (e.type == Entity.DOG) {
+            drawDog(c, e, healthBar);
+            return;
+        }
         float r = e.radius;
         c.save();
         c.translate(e.x, e.y);
@@ -1197,15 +1484,18 @@ final class GameView extends View implements Menu.Host {
                 world.counts[Entity.MEDIC], world.zombieCount()};
         text.setTextSize(12.5f * dp);
         if (statsCollapsed) {
-            String line = "People " + (world.humanCount() + world.hiding) + "   Zombies " + world.zombieCount() + "   (tap for more)";
+            String line = "People " + (world.humanCount() + world.hiding + world.riding) + "   Zombies " + world.zombieCount()
+                    + "   (tap for more)";
             float tw = text.measureText(line);
             oval.set(statsRect.left, statsRect.top, statsRect.left + tw + 24 * dp, statsRect.top + 28 * dp);
+            statsShown.set(oval);
             fill.setColor(0xB0101114);
             c.drawRoundRect(oval, 10 * dp, 10 * dp, fill);
             text.setTextAlign(Paint.Align.LEFT);
             text.setColor(0xFFE6E6E6);
             c.drawText(line, statsRect.left + 12 * dp, statsRect.top + 19 * dp, text);
         } else {
+            statsShown.set(statsRect);
             fill.setColor(0xB0101114);
             c.drawRoundRect(statsRect, 10 * dp, 10 * dp, fill);
             int perCol = portrait ? 3 : rows.length;
@@ -1230,7 +1520,8 @@ final class GameView extends View implements Menu.Host {
             y += lh;
             c.drawText("911 calls " + d.calls + "   Safe zones " + d.zones.size(), pad + 12 * dp, y, text);
             y += lh;
-            c.drawText("Sheltered " + d.sheltered + "   Hiding " + world.hiding, pad + 12 * dp, y, text);
+            c.drawText("Sheltered " + d.sheltered + "   Hiding " + world.hiding + "   In cars " + world.riding,
+                    pad + 12 * dp, y, text);
             y += lh;
             c.drawText("Reserves: " + d.policeReserve + " police, " + d.squadReserve + " army, " + d.airSorties + " air",
                     pad + 12 * dp, y, text);
@@ -1239,15 +1530,16 @@ final class GameView extends View implements Menu.Host {
             c.drawText(String.format("Time %d:%02d", secs / 60, secs % 60), pad + 12 * dp, y, text);
         }
 
-        drawMapLabels(c);
+        // The feed goes first so map labels can keep out of its way.
         drawFeed(c);
+        drawMapLabels(c);
 
         // Top buttons.
         String[] top = {simPaused ? "Play" : "Pause", "Speed " + SPEEDS[speedIdx] + "x",
-                "Brush " + BRUSHES[brushIdx], "Clear", "Menu"};
-        text.setTextSize((portrait ? 12 : 13) * dp);
+                "Brush " + BRUSHES[brushIdx], settings.buildings3d() ? "View 3D" : "View Top", "Clear", "Menu"};
+        text.setTextSize((portrait ? 11 : 13) * dp);
         text.setTextAlign(Paint.Align.CENTER);
-        for (int i = 0; i < 5; i++) {
+        for (int i = 0; i < TOP_BUTTONS; i++) {
             RectF r = topRects[i];
             boolean hot = i == BTN_PAUSE && simPaused;
             fill.setColor(hot ? 0xE0D9534F : 0xC0202227);
@@ -1276,9 +1568,10 @@ final class GameView extends View implements Menu.Host {
             float cx = r.centerX(), cy = r.top + r.height() * 0.4f;
             drawToolIcon(c, i, cx, cy, r.height() * 0.26f);
             text.setColor(sel ? 0xFFFFFFFF : 0xFFC8CCD2);
-            String name = i == TOOL_ZOMBIE ? Entity.NAMES[ZOMBIE_VARIANTS[zombieVariant]] : TOOL_NAMES[i];
+            String name = i == TOOL_ZOMBIE ? Entity.NAMES[ZOMBIE_VARIANTS[zombieVariant]]
+                    : i == TOOL_CIV ? Entity.NAMES[CIV_VARIANTS[civVariant]] : TOOL_NAMES[i];
             c.drawText(name, cx, r.bottom - 7 * dp, text);
-            if (i == TOOL_ZOMBIE && sel) {
+            if ((i == TOOL_ZOMBIE || i == TOOL_CIV) && sel) {
                 text.setTextSize(9 * dp);
                 c.drawText("tap to change", cx, r.top + 10 * dp, text);
                 text.setTextSize(11.5f * dp);
@@ -1340,11 +1633,12 @@ final class GameView extends View implements Menu.Host {
     }
 
     private void drawToolIcon(Canvas c, int t, float cx, float cy, float size) {
-        int type = t == TOOL_ZOMBIE ? ZOMBIE_VARIANTS[zombieVariant] : TOOL_TYPE[t];
+        int type = t == TOOL_ZOMBIE ? ZOMBIE_VARIANTS[zombieVariant] : t == TOOL_CIV ? CIV_VARIANTS[civVariant] : TOOL_TYPE[t];
         if (type >= 0) {
             Entity e = icons[type];
             float s = size / 5.2f;
             if (type == Entity.BRUTE) s *= 0.62f;
+            if (type == Entity.DOG) s *= 1.3f;
             float forward = e.isArmed() ? 1.1f : e.isZombie() ? 0.6f : 0f;
             c.save();
             c.translate(cx, cy + e.radius * s * forward);
@@ -1467,6 +1761,7 @@ final class GameView extends View implements Menu.Host {
                 if (toolRects[i].contains(x, y)) {
                     click();
                     if (tool == i && i == TOOL_ZOMBIE) zombieVariant = (zombieVariant + 1) % ZOMBIE_VARIANTS.length;
+                    if (tool == i && i == TOOL_CIV) civVariant = (civVariant + 1) % CIV_VARIANTS.length;
                     if (i != TOOL_ORDER) selection.clear();
                     tool = i;
                     hintTime = Math.min(hintTime, 3);
@@ -1512,6 +1807,10 @@ final class GameView extends View implements Menu.Host {
                 break;
             case BTN_BRUSH:
                 brushIdx = (brushIdx + 1) % BRUSHES.length;
+                break;
+            case BTN_VIEW:
+                settings.setBuildings3d(!settings.buildings3d());
+                world.say(settings.buildings3d() ? "3D view" : "Bird's-eye view");
                 break;
             case BTN_CLEAR:
                 world.clearAll();
@@ -1633,7 +1932,7 @@ final class GameView extends View implements Menu.Host {
     }
 
     private void spawnBrush(float wx, float wy) {
-        int type = tool == TOOL_ZOMBIE ? ZOMBIE_VARIANTS[zombieVariant] : TOOL_TYPE[tool];
+        int type = tool == TOOL_ZOMBIE ? ZOMBIE_VARIANTS[zombieVariant] : tool == TOOL_CIV ? CIV_VARIANTS[civVariant] : TOOL_TYPE[tool];
         int n = BRUSHES[brushIdx];
         for (int i = 0; i < n; i++) {
             float ox = 0, oy = 0;

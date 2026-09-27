@@ -10,9 +10,9 @@ import java.util.Random;
  */
 final class Dispatch {
     static final int T_NONE = 0, T_RESPOND = 1, T_GUARD = 2, T_SEEK = 3, T_SHELTER = 4, T_POST = 5, T_MOVE = 6,
-            T_HOLD = 7, T_HIDE = 8, T_PICKUP = 9, T_RESUPPLY = 10, T_HEAL = 11;
-    static final int WHO_911 = 0, WHO_POLICE = 1, WHO_MILITARY = 2, WHO_INFO = 3;
-    static final int[] WHO_COLORS = {0xFFFFA64D, 0xFF7FB0FF, 0xFFA6DC72, 0xFFBDBDBD};
+            T_HOLD = 7, T_HIDE = 8, T_PICKUP = 9, T_RESUPPLY = 10, T_HEAL = 11, T_RIDE = 12;
+    static final int WHO_911 = 0, WHO_POLICE = 1, WHO_MILITARY = 2, WHO_INFO = 3, WHO_FIRE = 4;
+    static final int[] WHO_COLORS = {0xFFFFA64D, 0xFF7FB0FF, 0xFFA6DC72, 0xFFBDBDBD, 0xFFFF7A5C};
     static final String[] SQUADS = {"Alpha", "Bravo", "Charlie", "Delta", "Echo", "Foxtrot", "Golf", "Hotel"};
 
     private static final String[] CALLS = {
@@ -99,7 +99,8 @@ final class Dispatch {
     }
 
     void say(int who, Entity speaker, String text, float x, float y) {
-        String label = who == WHO_911 ? "911" : who == WHO_POLICE ? "Police" : who == WHO_MILITARY ? "Military" : "Info";
+        String label = who == WHO_911 ? "911" : who == WHO_POLICE ? "Police" : who == WHO_MILITARY ? "Military"
+                : who == WHO_FIRE ? "Fire Dept" : "Info";
         if (speaker != null) {
             label = name(speaker);
             speaker.talkTimer = 2.5f;
@@ -610,7 +611,7 @@ final class Dispatch {
     /** A police station or military base that doesn't have a zone yet and isn't swarmed. */
     private City.Facility freeFacility(boolean military) {
         for (City.Facility f : city.facilities) {
-            if ((f.kind == City.FACILITY_BASE) != military) continue;
+            if (f.kind != (military ? City.FACILITY_BASE : City.FACILITY_POLICE)) continue;
             boolean taken = false;
             for (int i = 0; i < zones.size(); i++)
                 if (Math.hypot(zones.get(i).x - f.x, zones.get(i).y - f.y) < 150) taken = true;
@@ -619,16 +620,57 @@ final class Dispatch {
         return null;
     }
 
+    /**
+     * A church, school or supermarket to shelter people at: big buildings with open ground outside.
+     * Soldiers only use schools and supermarkets.
+     */
+    private City.Building freeLandmark(boolean military, float[] out) {
+        City.Building best = null;
+        float bestScore = -Float.MAX_VALUE;
+        for (int i = 0, n = city.buildings.size(); i < n; i++) {
+            City.Building b = city.buildings.get(i);
+            if (b.collapsed || b.name == null || (military && b.kind == City.CHURCH)) continue;
+            boolean taken = false;
+            for (int k = 0; k < zones.size(); k++)
+                if (Math.hypot(zones.get(k).x - b.doorX, zones.get(k).y - b.doorY) < 150) taken = true;
+            if (taken) continue;
+            int d = Math.min(30, city.fieldAt(city.zombieDist, b.doorX, b.doorY));
+            if (d < 4) continue;
+            // Somewhere quiet, but not miles from the people who need it.
+            float score = d - Math.min(40, city.fieldAt(city.humanDist, b.doorX, b.doorY)) * 0.3f + (b.kind == City.SCHOOL ? 2 : 0);
+            if (score > bestScore) {
+                bestScore = score;
+                best = b;
+            }
+        }
+        if (best == null) return null;
+        // The zone sits in front of the door.
+        float cx = (best.x0 + best.x1) / 2, cy = (best.y0 + best.y1) / 2;
+        float dx = best.doorX - cx, dy = best.doorY - cy, d = (float) Math.sqrt(dx * dx + dy * dy) + 0.001f;
+        float[] p = city.findWalkable(best.doorX + dx / d * 20, best.doorY + dy / d * 20);
+        if (p == null) return null;
+        out[0] = p[0];
+        out[1] = p[1];
+        return best;
+    }
+
     private SafeZone establish(boolean military, float[] at) {
         String place;
         float x, y;
         float radius = military ? 80 : 60;
         City.Facility facility = at == null ? freeFacility(military) : null;
+        float[] spot = new float[2];
+        City.Building landmark = at == null && facility == null ? freeLandmark(military, spot) : null;
         if (facility != null) {
             x = facility.x;
             y = facility.y;
             place = facility.name;
             radius = Math.max(radius, facility.r);
+        } else if (landmark != null) {
+            x = spot[0];
+            y = spot[1];
+            place = landmark.name;
+            radius = 64;
         } else if (at == null) {
             float[] area = chooseSite();
             if (area == null) return null;
@@ -648,7 +690,8 @@ final class Dispatch {
         z.military = military;
         z.r = radius;
         // Bases and stations hold more people than a zone thrown up in a park.
-        z.capacity = military ? (facility != null ? 60 : 40) : (facility != null ? 35 : 25);
+        z.capacity = military ? (facility != null ? 60 : landmark != null ? 50 : 40)
+                : (facility != null ? 35 : landmark != null ? 32 : 25);
         z.wantGuards = military ? 6 : 4;
         z.place = place;
         int got = assignGuards(z, z.wantGuards, Float.MAX_VALUE, military ? Entity.SOLDIER : Entity.COP);

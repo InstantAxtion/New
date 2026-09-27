@@ -1,12 +1,12 @@
 package com.instantaxtion.zombiesandbox;
 
-/** A person walking around the city: a civilian, a cop, a soldier, a medic or one of the zombie kinds. */
+/** Someone in the city: a civilian, a cop, a soldier, a medic, a dog or one of the zombie kinds. */
 final class Entity {
-    static final int CIVILIAN = 0, COP = 1, SOLDIER = 2, MEDIC = 3, ZOMBIE = 4, RUNNER = 5, BRUTE = 6,
-            CRAWLER = 7, SCREAMER = 8;
-    static final int TYPE_COUNT = 9;
-    static final String[] NAMES = {"Civilian", "Cop", "Soldier", "Medic", "Zombie", "Runner", "Brute", "Crawler",
-            "Screamer"};
+    static final int CIVILIAN = 0, COP = 1, SOLDIER = 2, MEDIC = 3, DOG = 4, ZOMBIE = 5, RUNNER = 6, BRUTE = 7,
+            CRAWLER = 8, SCREAMER = 9;
+    static final int TYPE_COUNT = 10;
+    static final String[] NAMES = {"Civilian", "Cop", "Soldier", "Medic", "Dog", "Zombie", "Runner", "Brute",
+            "Crawler", "Screamer"};
 
     int type;
     float x, y, vx, vy, angle;
@@ -48,6 +48,21 @@ final class Entity {
     City.Building building;
     /** A dropped gun a civilian is going to pick up. */
     World.Pickup pickup;
+
+    /** Family: followers stay with their leader. A dog's owner is its leader too. */
+    Entity leader;
+    /** Zombie hordes: members follow a leader who roams the city. */
+    Entity hordeLeader;
+    boolean leadsHorde;
+    float roamX, roamY, feedTimer;
+    int hordeSize;
+    boolean hordeAnnounced;
+    /** Zombies approach from their own angle so a crowd surrounds its prey. */
+    float flank;
+    /** Civilians: a cop or soldier nearby to run towards. */
+    Entity protector;
+    /** A car this civilian has flagged down and is running to. */
+    Fleet.Vehicle ride;
 
     boolean isZombie() {
         return type >= ZOMBIE;

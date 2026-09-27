@@ -38,6 +38,7 @@ final class Synth {
             case Sfx.THUD: out = thud(r); break;
             case Sfx.SIREN: out = siren(); break;
             case Sfx.ROTOR: out = rotor(r); break;
+            case Sfx.BARK: out = bark(r); break;
             default: out = click(); break;
         }
         return toPcm(out, id == Sfx.CLICK ? 0.5f : 0.92f);
@@ -189,6 +190,27 @@ final class Synth {
             float t = i / (float) RATE;
             lp += (r.nextFloat() * 2 - 1 - lp) * 0.08f;
             o[i] = ((float) Math.sin(TAU * (95 - 160 * t) * t) * 0.9f + lp * 2) * (float) Math.exp(-t * 22);
+        }
+        return o;
+    }
+
+    /** A dog: two quick barks. */
+    private static float[] bark(Random r) {
+        float dur = 0.42f;
+        int n = (int) (dur * RATE);
+        float[] o = new float[n];
+        float phase = 0, lp = 0;
+        for (int i = 0; i < n; i++) {
+            float t = i / (float) RATE;
+            float u = t < 0.2f ? t : t - 0.22f;
+            if (u < 0 || u > 0.14f) continue;
+            float f = 520 - 1500 * u;
+            phase += f / RATE;
+            phase -= (int) phase;
+            lp += (r.nextFloat() * 2 - 1 - lp) * 0.35f;
+            float tone = (float) Math.sin(TAU * phase) + 0.5f * (float) Math.sin(TAU * phase * 2) + 0.3f * (phase < 0.5f ? 1 : -1);
+            float env = smooth(Math.min(1, u / 0.012f)) * (float) Math.exp(-u * 18);
+            o[i] = (tone * 0.55f + lp * 0.6f) * env;
         }
         return o;
     }

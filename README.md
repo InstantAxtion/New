@@ -13,7 +13,9 @@ away from the middle of the screen as you pan, and the game plays in both portra
   Industrial, Parkland, Old Town, Small Town or Campus), map size, how many civilians, cops, military and zombies there are at the
   start, and how many reinforcements can be called in (Off, Low, Medium or High). Each map decides its
   own buildings, layout, parks, police stations and military base. **Randomize** rolls a random setup.
-- **Settings**: music and sound volume, 3D buildings, blood, health bars, screen shake, FPS counter
+  **City code** replays a city: every city has a code like `12-483920` (shown in the pause menu and
+  stats), so you can play the same streets again or share them with a friend.
+- **Settings**: music and sound volume, view (3D or bird's-eye), blood, health bars, screen shake, FPS counter
   and max population. Saved between sessions.
 - **Patch Notes**: what changed in each version.
 - In game, the **Menu** button (or the phone's back button) pauses and opens the pause menu.
@@ -24,7 +26,20 @@ on the phone, so the APK contains no audio files.
 ## What happens in the city
 
 - **Vehicles**: cruisers bring backup officers, army trucks bring reserve squads, and a helicopter
-  gives limited air support. Vehicles drive on the roads and run over zombies.
+  gives limited air support. Vehicles drive on the roads and run over zombies. Cars take damage from
+  zombies, crashes, gunfire and blasts, smoke when damaged and break down (sometimes burning) at zero.
+- **Traffic**: people fleeing wave down passing cars and get driven to a safe zone. Zombies chase cars.
+- **Fire engines** drive out from fire stations and hose down burning cars and gas pumps.
+- **Destructible buildings**: blasts crack, scorch and eventually collapse buildings. Walls collect
+  bullet holes and scorch marks.
+- **Families and dogs**: families stay and hide together; dogs follow their owners and fight zombies.
+- **Hordes**: idle zombies gather behind a leader and roam the city. Zombies surround their prey and
+  feed on the dead.
+- **Smarter units**: police and soldiers pick the most dangerous target, don't shoot through people or
+  grenade near them, fall back when swarmed and keep squads together. Civilians spread the alarm and
+  run towards armed units.
+- **Safe zones** can be set up at police stations, the base, churches, schools and supermarkets.
+  Supermarkets also stock ammo for armed civilians.
 - **Hiding**: civilians barricade themselves in buildings; zombies batter the doors down.
 - **Weapons and ammo**: some civilians are armed, dropped guns can be picked up, and ammo runs out
   (units resupply at the station or base). Anyone can shove a zombie away.
@@ -82,7 +97,9 @@ military safe zone.
   - **Move**: drag to pan. Tap someone to follow them with the camera.
 - **Pinch** to zoom and **drag with two fingers** to pan, whichever tool is selected.
 - Top buttons: **Pause/Play**, **Speed** (1x/2x/4x), **Brush** (spawn 1/5/10 at a time),
-  **Clear** (remove everyone), **Menu**.
+  **View** (3D or bird's-eye), **Clear** (remove everyone), **Menu**.
+- Zoom right in and roofs turn see-through, so you can see who is hiding inside.
+- Tap the **Civilian** button again to spawn dogs, and the **Zombie** button again for other zombie types.
 
 A person killed by a zombie gets up again as a zombie a few seconds later. Bites can also infect: an
 infected person glows green and turns within about 12–26 seconds, even if they escape.
@@ -106,7 +123,7 @@ Code layout (`src/com/instantaxtion/zombiesandbox/`):
 - `City.java`: city generation (building styles and heights, layouts, stations and bases), the pre-rendered map, line of sight and BFS flow fields.
 - `World.java`: simulation (AI, shooting, infection, explosions, particles).
 - `Dispatch.java`: 911 calls, incidents, police/military radio, reinforcements, orders and safe zones.
-- `Fleet.java`: cruisers, army trucks and the helicopter.
+- `Fleet.java`: cruisers, army trucks, fire engines, traffic, vehicle damage and the helicopter.
 - `SaveGame.java`: saving and loading.
 - `GameView.java`: rendering (including the leaning 3D buildings), camera, touch input and UI.
 - `Entity.java`: data for a single person or zombie.

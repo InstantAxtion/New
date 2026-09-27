@@ -2,11 +2,25 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "1.3";
-    static final int VERSION_CODE = 4;
+    static final String VERSION = "1.4";
+    static final int VERSION_CODE = 5;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "1.4  -  Less grid, more city",
+                    "New Street layout option: Grid, Varied or Organic.",
+                    "Varied and Organic cities merge some blocks into superblocks, so streets have T-junctions and blocks come in different sizes.",
+                    "Boulevards: wide avenues with a tree-lined median.",
+                    "Rivers now wind across the map instead of running straight. Roads cross on bridges, and riverside buildings make way for parks.",
+                    "Islands have a rounded, irregular coastline with beaches. Roads end at the sand.",
+                    "Parks can have ponds and curved footpaths.",
+                    "Rounded curbs at block corners.",
+                    "Police stations: a precinct with parked cruisers. Some cops start there, backup officers leave from there, and police set up their safe zone there first.",
+                    "Military bases: a fenced compound with gates, barracks, a helipad, tents, a watchtower and army trucks. Soldiers start on base, squads deploy from its gate, and the base becomes the military safe zone.",
+                    "Idle soldiers return to base when there's nothing to fight.",
+                    "New Game options for the number of police stations (0-3) and a military base.",
+            },
             {
                     "1.3  -  911, radio and safe zones",
                     "911 calls: civilians who spot zombies call it in. Dispatch opens an incident at the nearest street corner and sends the closest free cops.",

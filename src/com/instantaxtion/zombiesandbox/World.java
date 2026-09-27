@@ -94,8 +94,24 @@ final class World {
 
     void populate(CityConfig cfg) {
         spawnRandom(Entity.CIVILIAN, cfg.civilians());
-        spawnRandom(Entity.COP, cfg.cops());
-        spawnRandom(Entity.SOLDIER, cfg.soldiers());
+        // Half the cops start at their precinct, the rest on patrol; soldiers start on base.
+        City.Facility base = city.nearestFacility(City.FACILITY_BASE, 0, 0);
+        int stations = 0;
+        for (City.Facility f : city.facilities) if (f.kind == City.FACILITY_POLICE) stations++;
+        int copsAtStations = stations > 0 ? cfg.cops() / 2 : 0;
+        int k = 0;
+        for (City.Facility f : city.facilities) {
+            if (f.kind != City.FACILITY_POLICE) continue;
+            int n = copsAtStations / stations + (k++ < copsAtStations % stations ? 1 : 0);
+            for (int i = 0; i < n; i++) spawn(Entity.COP, f.x + rnd.nextFloat() * 40 - 20, f.y + rnd.nextFloat() * 40 - 20);
+        }
+        spawnRandom(Entity.COP, cfg.cops() - copsAtStations);
+        if (base != null) {
+            for (int i = 0; i < cfg.soldiers(); i++)
+                spawn(Entity.SOLDIER, base.x + rnd.nextFloat() * base.r - base.r / 2, base.y + rnd.nextFloat() * base.r - base.r / 2);
+        } else {
+            spawnRandom(Entity.SOLDIER, cfg.soldiers());
+        }
         // Zombies start in a few small outbreaks rather than spread evenly.
         int left = cfg.zombies();
         while (left > 0) {
@@ -537,6 +553,14 @@ final class World {
         int dist = city.fieldAt(city.zombieDist, e.x, e.y);
         int hunt = soldier ? 200 : 40;
         if (dist < hunt && followField(e, city.zombieDist, e.speed * 1.3f)) return;
+        if (soldier) {
+            // With nothing to fight, soldiers drift back to base.
+            City.Facility base = city.nearestFacility(City.FACILITY_BASE, e.x, e.y);
+            if (base != null) {
+                float bx = base.x - e.x, by = base.y - e.y;
+                if (bx * bx + by * by > base.r * base.r * 2.2f && followField(e, base.field, e.speed * 0.8f)) return;
+            }
+        }
         wander(e, e.speed * 0.6f);
     }
 

@@ -372,7 +372,9 @@ final class Dispatch {
             a.y = y;
             a.place = place;
             arrivals.add(a);
-            say(WHO_MILITARY, null, "Military: Copy. Reinforcements inbound to " + place + ", ETA 8 seconds.", x, y);
+            City.Facility base = origin(Entity.SOLDIER, x, y);
+            say(WHO_MILITARY, null, "Military: Copy. " + (base != null ? "Deploying a squad from " + base.name
+                    : "Reinforcements inbound") + " to " + place + ", ETA 8 seconds.", x, y);
         } else {
             say(WHO_MILITARY, null, "Military: Negative, no units available. Hold them off, Police.", x, y);
         }
@@ -391,13 +393,20 @@ final class Dispatch {
         a.y = inc.y;
         a.place = inc.place;
         arrivals.add(a);
-        say(WHO_POLICE, null, "Dispatch: All units busy. Sending backup from the precinct to " + inc.place + ".",
-                inc.x, inc.y);
+        City.Facility station = origin(Entity.COP, inc.x, inc.y);
+        say(WHO_POLICE, null, "Dispatch: All units busy. Sending backup from " + (station != null ? station.name
+                : "the precinct") + " to " + inc.place + ".", inc.x, inc.y);
         return true;
     }
 
+    /** Where reinforcements come from: the base or nearest precinct, or else the edge of the map. */
+    private City.Facility origin(int type, float x, float y) {
+        return city.nearestFacility(type == Entity.SOLDIER ? City.FACILITY_BASE : City.FACILITY_POLICE, x, y);
+    }
+
     private void arrive(Arrival a) {
-        float[] p = city.edgeSpawn(a.x, a.y);
+        City.Facility from = origin(a.type, a.x, a.y);
+        float[] p = from != null ? new float[]{from.gateX, from.gateY} : city.edgeSpawn(a.x, a.y);
         if (p == null) return;
         if (a.type == Entity.SOLDIER) soldierCount = (soldierCount + 3) / 4 * 4;
         Entity first = null;
@@ -415,9 +424,10 @@ final class Dispatch {
         }
         if (first == null) return;
         if (a.type == Entity.SOLDIER)
-            say(WHO_MILITARY, first, SQUADS[first.squad % SQUADS.length] + " squad on the ground. Moving to "
-                    + a.place + ".", p[0], p[1]);
-        else say(WHO_POLICE, first, "Backup has arrived. Heading to " + a.place + ".", p[0], p[1]);
+            say(WHO_MILITARY, first, SQUADS[first.squad % SQUADS.length] + " squad "
+                    + (from != null ? "rolling out of " + from.name : "on the ground") + ". Moving to " + a.place + ".", p[0], p[1]);
+        else say(WHO_POLICE, first, (from != null ? "Leaving " + from.name : "Backup has arrived") + ". Heading to "
+                + a.place + ".", p[0], p[1]);
     }
 
     // ------------------------------------------------------------------ safe zones
@@ -465,7 +475,7 @@ final class Dispatch {
             policeZoneCd = 45;
             establish(false, null);
         }
-        if (militaryZoneCd <= 0 && countZones(true) < 2 && zombies >= 10 && freeSoldiers >= 4) {
+        if (militaryZoneCd <= 0 && countZones(true) < 2 && zombies >= 10 && freeSoldiers >= 3) {
             militaryZoneCd = 40;
             establish(true, null);
         }
@@ -517,10 +527,29 @@ final class Dispatch {
         return best;
     }
 
+    /** A police station or military base that doesn't have a zone yet and isn't swarmed. */
+    private City.Facility freeFacility(boolean military) {
+        for (City.Facility f : city.facilities) {
+            if ((f.kind == City.FACILITY_BASE) != military) continue;
+            boolean taken = false;
+            for (int i = 0; i < zones.size(); i++)
+                if (Math.hypot(zones.get(i).x - f.x, zones.get(i).y - f.y) < 150) taken = true;
+            if (!taken && city.fieldAt(city.zombieDist, f.x, f.y) >= 3) return f;
+        }
+        return null;
+    }
+
     private SafeZone establish(boolean military, float[] at) {
         String place;
         float x, y;
-        if (at == null) {
+        float radius = military ? 80 : 60;
+        City.Facility facility = at == null ? freeFacility(military) : null;
+        if (facility != null) {
+            x = facility.x;
+            y = facility.y;
+            place = facility.name;
+            radius = Math.max(radius, facility.r);
+        } else if (at == null) {
             float[] area = chooseSite();
             if (area == null) return null;
             float[] p = city.findWalkable(area[0], area[1]);
@@ -537,7 +566,7 @@ final class Dispatch {
         z.x = x;
         z.y = y;
         z.military = military;
-        z.r = military ? 80 : 60;
+        z.r = radius;
         z.wantGuards = military ? 6 : 4;
         z.place = place;
         int got = assignGuards(z, z.wantGuards, Float.MAX_VALUE, military ? Entity.SOLDIER : Entity.COP);

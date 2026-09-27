@@ -13,7 +13,7 @@ final class CityConfig implements OptionSet {
     static final int TIME_DAY = 0, TIME_SUNSET = 1, TIME_NIGHT = 2;
 
     private static final String[] LABELS = {"Preset", "Map size", "Buildings", "Density", "Height", "Parks",
-            "Water", "Traffic", "Time of day", "Civilians", "Cops", "Military", "Zombies", "Reinforcements"};
+            "Water", "Traffic", "Time of day", "Civilians", "Cops", "Military", "Zombies", "Reinforcements", "Street layout", "Police stations", "Military base"};
     private static final String[][] VALUES = {
             PRESETS,
             {"Small", "Medium", "Large"},
@@ -29,6 +29,9 @@ final class CityConfig implements OptionSet {
             {"0", "5", "10", "20"},
             {"0", "1", "5", "20", "50"},
             {"Off", "On"},
+            {"Grid", "Varied", "Organic"},
+            {"0", "1", "2", "3"},
+            {"None", "Yes"},
     };
     private static final int[] SIZES = {64, 96, 128};
     private static final int[] CIVILIANS = {0, 50, 100, 150, 250, 400};
@@ -58,6 +61,9 @@ final class CityConfig implements OptionSet {
     int soldiers() { return SOLDIERS[v[11]]; }
     int zombies() { return ZOMBIES[v[12]]; }
     boolean reinforcements() { return v[13] == 1; }
+    int layout() { return v[14]; }
+    int policeStations() { return v[15]; }
+    boolean militaryBase() { return v[16] == 1; }
 
     boolean river() { return water() == WATER_RIVER || water() == WATER_BOTH; }
     boolean island() { return water() == WATER_ISLAND || water() == WATER_BOTH; }
@@ -74,10 +80,22 @@ final class CityConfig implements OptionSet {
                 {1, 0, 0, 1, 3, 0, 1, 0, 3, 1, 0, 0}, // Parkland
                 {1, 1, 2, 2, 1, 1, 1, 2, 4, 3, 0, 1}, // Night City
         };
+        //              layout stations base
+        int[][] extras = {
+                {1, 1, 1}, // Classic
+                {0, 2, 0}, // Downtown
+                {2, 1, 0}, // Suburbs
+                {1, 1, 1}, // Industrial
+                {2, 1, 1}, // Riverside
+                {2, 1, 1}, // Island
+                {2, 1, 0}, // Parkland
+                {1, 2, 1}, // Night City
+        };
         v[0] = p;
         if (p >= presets.length) return;
         System.arraycopy(presets[p], 0, v, 1, presets[p].length);
         v[13] = 1;
+        System.arraycopy(extras[p], 0, v, 14, 3);
     }
 
     void randomize(Random r) {

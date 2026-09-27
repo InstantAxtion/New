@@ -724,6 +724,26 @@ final class GameView extends View implements Menu.Host {
     private void drawMapLabels(Canvas c) {
         text.setTextAlign(Paint.Align.CENTER);
         text.setTextSize(11.5f * dp);
+        text.setTextSize(10.5f * dp);
+        for (int i = 0, n = world.city.facilities.size(); i < n; i++) {
+            City.Facility f = world.city.facilities.get(i);
+            float sx = screenX(f.x), sy = screenY(f.y) + 26 * dp;
+            if (sx < -100 * dp || sx > getWidth() + 100 * dp || sy < 0 || sy > barTop) continue;
+            boolean zoned = false;
+            for (int k = 0; k < world.dispatch.zones.size(); k++) {
+                Dispatch.SafeZone z = world.dispatch.zones.get(k);
+                if (Math.hypot(z.x - f.x, z.y - f.y) < 150) zoned = true;
+            }
+            if (zoned) continue;
+            String label = f.name.toUpperCase();
+            float tw = text.measureText(label);
+            oval.set(sx - tw / 2 - 7 * dp, sy - 13 * dp, sx + tw / 2 + 7 * dp, sy + 5 * dp);
+            fill.setColor(f.kind == City.FACILITY_BASE ? 0xB0303A1E : 0xB01E2E50);
+            c.drawRoundRect(oval, 7 * dp, 7 * dp, fill);
+            text.setColor(0xFFE6E6E6);
+            c.drawText(label, sx, sy, text);
+        }
+        text.setTextSize(11.5f * dp);
         for (int i = 0, n = world.dispatch.zones.size(); i < n; i++) {
             Dispatch.SafeZone z = world.dispatch.zones.get(i);
             float sx = screenX(z.x), sy = screenY(z.y - z.r) - 10 * dp;

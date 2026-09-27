@@ -17,7 +17,7 @@ import java.util.ArrayList;
  * damaged or collapsed buildings.
  */
 final class SaveGame {
-    private static final int VERSION = 5;
+    private static final int VERSION = 6;
 
     private SaveGame() {
     }
@@ -212,8 +212,8 @@ final class SaveGame {
         DataInputStream in = new DataInputStream(new BufferedInputStream(new FileInputStream(file)));
         try {
             int version = in.readInt();
-            // Cities are generated differently since version 5, so older saves can't be rebuilt.
-            if (version < 5 || version > VERSION) throw new IOException("Unsupported save version");
+            // Cities are generated differently since version 6, so older saves can't be rebuilt.
+            if (version < 6 || version > VERSION) throw new IOException("Unsupported save version");
             CityConfig cfg = new CityConfig();
             int n = in.readInt();
             for (int i = 0; i < n; i++) {

@@ -2,11 +2,24 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "3.0";
-    static final int VERSION_CODE = 13;
+    static final String VERSION = "3.1";
+    static final int VERSION_CODE = 14;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "3.1  -  Streets, not grids",
+                    "Cities are laid out a new way: a few main roads, then each district is split up by its own streets. Streets rarely line up across a main road, so you get offset crossings, T-junctions and blocks of every size instead of a grid. Downtown blocks are small, the suburbs have long ones.",
+                    "Block corners are rounded off with wide kerbs, and every street has its own name (lanes, courts, drives and avenues), with a ring road around the edge of town.",
+                    "The railway only has level crossings where streets meet it from both sides.",
+                    "Fixed: the counts at the top go up straight away when you spawn someone, even while paused.",
+                    "Zombies claw at tanks and can knock them out (the crew bails out). Tanks no longer shoot through buildings.",
+                    "Fire stations and the hospital don't send anyone out while zombies are at their door.",
+                    "People remember where they saw a zombie: civilians keep away from that area for a while, and police and soldiers go and check it out.",
+                    "Army trucks and police cars stop short of a big crowd of zombies and let the troops out, instead of driving into it.",
+                    "Anyone who gets stuck (brutes at doorways especially) steps aside and tries another way.",
+                    "Safe zones stand down after a couple of quiet minutes, or when no one is left to guard them. New zones only open while there are live 911 calls.",
+            },
             {
                     "3.0  -  A bigger, truer city",
                     "Bigger maps: Small is now what Medium was, and Large is bigger than ever. (Games saved in older versions can't be loaded, because cities are built differently now.)",

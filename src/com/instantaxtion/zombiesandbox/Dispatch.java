@@ -33,7 +33,7 @@ final class Dispatch {
     }
 
     static final class SafeZone {
-        float x, y, r, age, attackCd, statusTimer;
+        float x, y, r, age, attackCd, statusTimer, quietTime;
         boolean military, removed, full, fullAnnounced;
         String place;
         int guards, sheltered, wantGuards, capacity;
@@ -294,7 +294,7 @@ final class Dispatch {
         if (ambulanceTimer > 0) return;
         ambulanceTimer = 4;
         City.Facility hospital = city.nearestFacility(City.FACILITY_HOSPITAL, 0, 0);
-        if (hospital == null || w.fleet.count(Fleet.AMBULANCE) >= 2) return;
+        if (hospital == null || w.fleet.count(Fleet.AMBULANCE) >= 2 || w.countZombiesNear(hospital.x, hospital.y, 160) > 0) return;
         Entity best = null;
         float worst = 1;
         for (int i = 0, n = w.entities.size(); i < n; i++) {
@@ -579,6 +579,13 @@ final class Dispatch {
                 removeZone(z, near > 0);
                 continue;
             }
+            // Nothing has come near for a couple of minutes: stand the zone down and send people home.
+            if (w.countZombiesNear(z.x, z.y, 700) == 0) z.quietTime += step;
+            else z.quietTime = 0;
+            if (z.quietTime > 120 && z.age > 150) {
+                closeZone(z);
+                continue;
+            }
             if (z.guards < z.wantGuards) assignGuards(z, z.wantGuards - z.guards, 900, z.military ? Entity.SOLDIER : Entity.COP);
             if (near >= 5 && z.attackCd <= 0) {
                 z.attackCd = 30;
@@ -609,6 +616,8 @@ final class Dispatch {
             }
         }
         int zombies = w.zombieCount();
+        // New zones only while there are live 911 incidents to shelter people from.
+        if (incidents.isEmpty()) return;
         if (policeZoneCd <= 0 && countZones(false) == 0 && zombies >= 4 && freeCops >= 3) {
             policeZoneCd = 45;
             establish(false, null);

@@ -137,9 +137,28 @@ final class City {
     final Bitmap bitmap;
     float maxHeight;
 
-    private final boolean[] roadCol, roadRow;
-    private final List<Integer> colStarts = new ArrayList<Integer>(), colWidths = new ArrayList<Integer>();
-    private final List<Integer> rowStarts = new ArrayList<Integer>(), rowWidths = new ArrayList<Integer>();
+    /** A street: a band of road tiles {x0, y0, x1, y1} (x1/y1 exclusive) running one way, with its name. */
+    static final class Street {
+        final int x0, y0, x1, y1, width;
+        final boolean vertical, main;
+        String name;
+
+        Street(int x0, int y0, int x1, int y1, boolean vertical, boolean main) {
+            this.x0 = x0;
+            this.y0 = y0;
+            this.x1 = x1;
+            this.y1 = y1;
+            this.vertical = vertical;
+            this.main = main;
+            width = vertical ? x1 - x0 : y1 - y0;
+        }
+    }
+
+    final List<Street> streets = new ArrayList<Street>();
+    /** Road direction per tile: 0 none, 1 north-south, 2 east-west, 3 junction. */
+    private final byte[] roadDir;
+    /** Tiles that are part of a main road. */
+    private final boolean[] mainRoad;
     /** Block rectangles (including their sidewalk ring) as {x0, y0, x1, y1}, x1/y1 exclusive. */
     private final List<int[]> blocks = new ArrayList<int[]>();
     /** 0 normal car, 1 police car, 2 army truck. */
@@ -163,13 +182,15 @@ final class City {
     private final List<int[]> statues = new ArrayList<int[]>();
     /** Open spaces where a safe zone can be set up, as {x, y, kind}: 0 park, 1 plaza, 2 parking lot. */
     final List<float[]> openAreas = new ArrayList<float[]>();
-    private final List<String> colNames = new ArrayList<String>();
-    private final List<String> rowNames = new ArrayList<String>();
     private int origin;
 
-    private static final String[] STREETS = {"Main St", "Oak St", "Pine St", "Elm St", "Maple St", "Cedar St",
-            "Lake St", "Hill St", "Park St", "Church St", "Market St", "Mill St", "King St", "Queen St",
-            "Walnut St", "Spruce St", "Birch St", "Chestnut St", "Harbor St", "Union St"};
+    private static final String[] STREETS = {"Main", "Oak", "Pine", "Elm", "Maple", "Cedar", "Lake", "Hill", "Park",
+            "Church", "Market", "Mill", "King", "Queen", "Walnut", "Spruce", "Birch", "Chestnut", "Harbor", "Union",
+            "Rose", "Ash", "Willow", "Station", "River", "Bridge", "High", "Garden", "Orchard", "Victoria", "Albert",
+            "Greene", "Water", "Grove", "Meadow", "Forest", "Bay", "Summit", "Liberty", "Franklin", "Madison",
+            "Jackson", "Lincoln", "Hawthorn", "Laurel", "Poplar", "Sycamore", "Holly", "Juniper", "Linden"};
+    private static final String[] MAIN_SUFFIX = {"Ave", "Blvd", "Rd", "Pkwy"};
+    private static final String[] LOCAL_SUFFIX = {"St", "St", "St", "Ln", "Way", "Pl", "Ct", "Dr"};
 
     City(CityConfig cfg) {
         this(cfg, 1f);
@@ -186,8 +207,8 @@ final class City {
         humanDist = new int[w * h];
         zombieDist = new int[w * h];
         queue = new int[w * h];
-        roadCol = new boolean[w];
-        roadRow = new boolean[h];
+        roadDir = new byte[w * h];
+        mainRoad = new boolean[w * h];
         carKind = new byte[w * h];
         buildingAt = new int[w * h];
         Arrays.fill(buildingAt, -1);
@@ -260,135 +281,140 @@ final class City {
 
     // ------------------------------------------------------------------ generation
 
-    /**
-     * Road bands along one axis as {start, width}: local streets are 3 tiles, main roads 5. Blocks are
-     * short downtown and get longer towards the edge of town; every few streets is a main road.
-     */
-    private List<int[]> separators(int size) {
-        List<int[]> out = new ArrayList<int[]>();
-        int p = origin;
-        out.add(new int[]{p, 3});
-        boolean rural = cfg.density() == 0 && cfg.style() == CityConfig.STYLE_HOUSES;
-        while (true) {
-            float fromCentre = Math.abs(p + 8 - size / 2f) / (size / 2f);
-            int spacing = fromCentre < 0.3f ? 8 + rnd.nextInt(4) : fromCentre < 0.65f ? 10 + rnd.nextInt(5) : 12 + rnd.nextInt(7);
-            if (rural) spacing += 5 + rnd.nextInt(5);
-            int next = p + 3 + spacing;
-            if (next + 3 > origin + size - 4) break;
-            out.add(new int[]{next, 3});
-            p = next;
-        }
-        if ((cfg.layout() > 0 || size >= 128) && !rural && out.size() >= 4) {
-            // Main roads: one every four or five streets, starting somewhere random.
-            int every = 4 + rnd.nextInt(2);
-            for (int i = 1 + rnd.nextInt(Math.min(every, out.size() - 2)); i < out.size() - 1; i += every) {
-                int[] b = out.get(i);
-                b[0] -= 1;
-                b[1] = 5;
-            }
-        }
-        return out;
-    }
-
-    /** The railway: tile rows it runs along (a former street band), or -1 if the map has none. */
+    /** The railway: tile rows it runs along, or -1 if the map has none. */
     int railY0 = -1, railRows;
-
-    /** True if the block's edge runs along a main road (where shops and businesses line up). */
-    private boolean onMainRoad(int x0, int y0, int x1, int y1) {
-        for (int i = 0; i < colStarts.size(); i++) {
-            if (colWidths.get(i) != 5) continue;
-            int s0 = colStarts.get(i), s1 = s0 + 5;
-            if (Math.abs(s1 - x0) <= 1 || Math.abs(s0 - x1) <= 1) return true;
-        }
-        for (int j = 0; j < rowStarts.size(); j++) {
-            if (rowWidths.get(j) != 5) continue;
-            int s0 = rowStarts.get(j), s1 = s0 + 5;
-            if (Math.abs(s1 - y0) <= 1 || Math.abs(s0 - y1) <= 1) return true;
-        }
-        return false;
-    }
 
     /** Where the industrial district is: an angle around the centre (maps with warehouses on the edge). */
     private float industryAngle;
 
+    /** True if any tile around the block's edge is part of a main road (shops and businesses line up there). */
+    private boolean onMainRoad(int x0, int y0, int x1, int y1) {
+        for (int x = x0 - 1; x <= x1; x++)
+            for (int k = 0; k < 2; k++) {
+                int y = k == 0 ? y0 - 1 : y1;
+                if (x >= 0 && y >= 0 && x < w && y < h && mainRoad[y * w + x]) return true;
+            }
+        for (int y = y0 - 1; y <= y1; y++)
+            for (int k = 0; k < 2; k++) {
+                int x = k == 0 ? x0 - 1 : x1;
+                if (x >= 0 && y >= 0 && x < w && y < h && mainRoad[y * w + x]) return true;
+            }
+        return false;
+    }
+
+    /** Lays road tiles for a street, marking junctions where it crosses another. */
+    private void carve(Street st) {
+        for (int y = st.y0; y < st.y1; y++)
+            for (int x = st.x0; x < st.x1; x++) {
+                if (x < 0 || y < 0 || x >= w || y >= h) continue;
+                int i = y * w + x;
+                roadDir[i] = roadDir[i] != 0 ? 3 : (byte) (st.vertical ? 1 : 2);
+                tiles[i] = ROAD;
+                if (st.main) mainRoad[i] = true;
+            }
+        streets.add(st);
+    }
+
+    /**
+     * Splits a rectangle of city with a street, then splits each side again, until the pieces are block
+     * sized. Big pieces get main roads; the two sides are split independently, so streets usually don't
+     * line up across a main road: offset crossings and T-junctions instead of a grid. A hint lets the
+     * second side sometimes continue a street from the first. Leaves become blocks.
+     */
+    private int split(int x0, int y0, int x1, int y1, int depth, int hintX, int hintY) {
+        int bw = x1 - x0, bh = y1 - y0;
+        float cx = (x0 + x1) / 2f - w / 2f, cy = (y0 + y1) / 2f - h / 2f;
+        float d = (float) Math.sqrt(cx * cx + cy * cy) / (w * 0.5f);
+        boolean rural = cfg.density() == 0 && cfg.style() == CityConfig.STYLE_HOUSES;
+        int maxLeaf = d < 0.3f ? 11 + rnd.nextInt(4) : d < 0.65f ? 13 + rnd.nextInt(5) : 15 + rnd.nextInt(7);
+        if (rural) maxLeaf += 6;
+        if (cfg.density() == 2) maxLeaf -= 2;
+        if (bw <= maxLeaf && bh <= maxLeaf) {
+            blocks.add(new int[]{x0, y0, x1, y1});
+            return -1;
+        }
+        boolean big = Math.max(bw, bh) > (w > 110 ? 42 : 34) && depth < 3 && !rural;
+        int roadW = big ? 5 : 3, minSide = 6;
+        boolean vertical;
+        if (bw > bh * 1.3f) vertical = true;
+        else if (bh > bw * 1.3f) vertical = false;
+        else vertical = rnd.nextBoolean();
+        int len = vertical ? bw : bh;
+        if (len < minSide * 2 + roadW) {
+            vertical = !vertical;
+            len = vertical ? bw : bh;
+            if (len < minSide * 2 + roadW) {
+                blocks.add(new int[]{x0, y0, x1, y1});
+                return -1;
+            }
+        }
+        int lo = (vertical ? x0 : y0) + Math.max(minSide, (int) (len * 0.3f)), hi = (vertical ? x1 : y1) - roadW - Math.max(minSide, (int) (len * 0.3f));
+        if (hi < lo) hi = lo;
+        int at = lo + rnd.nextInt(hi - lo + 1);
+        // Carry on the neighbouring street now and then, so some roads run on straight.
+        float align = cfg.layout() == 0 ? 0.75f : cfg.layout() == 1 ? 0.45f : 0.2f;
+        int hint = vertical ? hintX : hintY;
+        if (hint >= lo && hint <= hi && rnd.nextFloat() < align) at = hint;
+        Street st = vertical ? new Street(at, y0, at + roadW, y1, true, big) : new Street(x0, at, x1, at + roadW, false, big);
+        carve(st);
+        int nextHint;
+        if (vertical) {
+            nextHint = split(x0, y0, at, y1, depth + 1, -1, hintY);
+            split(at + roadW, y0, x1, y1, depth + 1, -1, nextHint >= 0 ? nextHint : hintY);
+        } else {
+            nextHint = split(x0, y0, x1, at, depth + 1, hintX, -1);
+            split(x0, at + roadW, x1, y1, depth + 1, nextHint >= 0 ? nextHint : hintX, -1);
+        }
+        return at;
+    }
+
     private void generate() {
         origin = 0;
-        int inner = w;
-        List<int[]> cols = separators(inner);
-        List<int[]> rows = separators(inner);
-        for (int[] c : cols) {
-            colStarts.add(c[0]);
-            colWidths.add(c[1]);
-            for (int i = 0; i < c[1]; i++) roadCol[c[0] + i] = true;
-        }
-        for (int[] r : rows) {
-            rowStarts.add(r[0]);
-            rowWidths.add(r[1]);
-            for (int i = 0; i < r[1]; i++) roadRow[r[0] + i] = true;
-        }
-        Arrays.fill(tiles, ROAD);
+        Arrays.fill(tiles, SIDEWALK);
         industryAngle = rnd.nextFloat() * (float) Math.PI * 2;
-        // The railway takes over one of the streets in the middle third of the map.
-        if (cfg.hasRail() && rows.size() >= 5) {
-            int pick = -1;
-            for (int tries = 0; tries < 10 && pick < 0; tries++) {
-                int j = rows.size() / 3 + rnd.nextInt(Math.max(1, rows.size() / 3));
-                if (j > 0 && j < rows.size() - 1 && rows.get(j)[1] == 3) pick = j;
-            }
-            if (pick >= 0) {
-                railY0 = rows.get(pick)[0];
-                railRows = 3;
-                for (int y = railY0; y < railY0 + 3; y++) {
-                    roadRow[y] = false;
-                    for (int x = 0; x < w; x++) if (!roadCol[x]) tiles[y * w + x] = RAIL;
+        // A ring road around the edge of town.
+        carve(new Street(0, 0, w, 3, false, false));
+        carve(new Street(0, h - 3, w, h, false, false));
+        carve(new Street(0, 0, 3, h, true, false));
+        carve(new Street(w - 3, 0, w, h, true, false));
+        // The railway cuts straight across the middle third of the map; the streets are laid out on each side.
+        if (cfg.hasRail()) {
+            railY0 = h / 3 + rnd.nextInt(Math.max(1, h / 3));
+            railRows = 3;
+            split(3, 3, w - 3, railY0, 0, -1, -1);
+            split(3, railY0 + railRows, w - 3, h - 3, 0, -1, -1);
+            for (int y = railY0; y < railY0 + railRows; y++)
+                for (int x = 0; x < w; x++) {
+                    int i = y * w + x;
+                    // Streets that reach the line from both sides get a level crossing.
+                    boolean above = roadDir[(railY0 - 1) * w + x] == 1, below = roadDir[(railY0 + railRows) * w + x] == 1;
+                    if ((above && below) || x < 3 || x >= w - 3) {
+                        tiles[i] = ROAD;
+                        roadDir[i] = 1;
+                    } else {
+                        tiles[i] = RAIL;
+                        roadDir[i] = 0;
+                    }
                 }
-                rowStarts.remove(pick);
-                rowWidths.remove(pick);
-            }
+        } else {
+            split(3, 3, w - 3, h - 3, 0, -1, -1);
         }
-
-        // Blocks, with some neighbours merged into superblocks so the street grid has T-junctions.
-        int nc = cols.size(), nr = rows.size();
-        int[][] cell = new int[nc * nr][];
-        for (int i = 0; i < nc; i++)
-            for (int j = 0; j < nr; j++) {
-                int x0 = cols.get(i)[0] + cols.get(i)[1], x1 = i + 1 < nc ? cols.get(i + 1)[0] : origin + inner;
-                int y0 = rows.get(j)[0] + rows.get(j)[1], y1 = j + 1 < nr ? rows.get(j + 1)[0] : origin + inner;
-                cell[i * nr + j] = new int[]{x0, y0, x1, y1};
-            }
-        boolean[] merged = new boolean[nc * nr];
-        float mergeChance = cfg.layout() == 0 ? 0 : cfg.layout() == 1 ? 0.22f : 0.4f;
-        List<int[]> candidates = new ArrayList<int[]>();
-        for (int i = 0; i + 1 < nc; i++) for (int j = 0; j < nr; j++) candidates.add(new int[]{i, j, i + 1, j});
-        for (int i = 0; i < nc; i++) for (int j = 0; j + 1 < nr; j++) candidates.add(new int[]{i, j, i, j + 1});
-        java.util.Collections.shuffle(candidates, rnd);
-        for (int[] m : candidates) {
-            int a = m[0] * nr + m[1], b = m[2] * nr + m[3];
-            if (merged[a] || merged[b] || rnd.nextFloat() >= mergeChance) continue;
-            boolean horizontal = m[0] != m[2];
-            if ((horizontal ? cols.get(m[2])[1] : rows.get(m[3])[1]) != 3) continue; // keep boulevards whole
-            if (!horizontal && rows.get(m[3])[0] == railY0) continue; // and the railway
-            merged[a] = merged[b] = true;
-            int[] ca = cell[a], cb = cell[b];
-            blocks.add(new int[]{ca[0], ca[1], cb[2], cb[3]});
-        }
-        for (int k = 0; k < cell.length; k++) if (!merged[k]) blocks.add(cell[k]);
-
-        // Boulevard medians: grass with trees down the middle, open at intersections.
-        for (int k = 0; k < nc; k++) {
-            if (cols.get(k)[1] != 5) continue;
-            int mx = cols.get(k)[0] + 2;
-            for (int y = origin; y < origin + inner; y++) {
-                if (roadRow[y]) continue;
-                tiles[y * w + mx] = y % 2 == 0 ? TREE : GRASS;
-            }
-        }
-        for (int k = 0; k < nr; k++) {
-            if (rows.get(k)[1] != 5) continue;
-            int my = rows.get(k)[0] + 2;
-            for (int x = origin; x < origin + inner; x++) {
-                if (roadCol[x]) continue;
-                tiles[my * w + x] = x % 2 == 0 ? TREE : GRASS;
+        // Tree-lined medians down the main roads, open at the junctions.
+        for (Street st : streets) {
+            if (st.width != 5) continue;
+            if (rnd.nextFloat() < 0.35f) continue;
+            int n = st.vertical ? st.y1 - st.y0 : st.x1 - st.x0;
+            for (int k = 0; k < n; k++) {
+                boolean clear = true;
+                for (int a = 0; a < 5 && clear; a++) {
+                    for (int e = -1; e <= 1 && clear; e++) {
+                        int x = st.vertical ? st.x0 + a : st.x0 + k + e, y = st.vertical ? st.y0 + k + e : st.y0 + a;
+                        if (x < 0 || y < 0 || x >= w || y >= h || roadDir[y * w + x] != (st.vertical ? 1 : 2)) clear = false;
+                    }
+                }
+                if (!clear) continue;
+                int x = st.vertical ? st.x0 + 2 : st.x0 + k, y = st.vertical ? st.y0 + k : st.y0 + 2;
+                tiles[y * w + x] = k % 2 == 0 ? TREE : GRASS;
             }
         }
 
@@ -518,26 +544,30 @@ final class City {
         for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
                 if (tiles[y * w + x] != ROAD) continue;
-                if (roadCol[x] == roadRow[y]) continue;
+                int dir = roadDir[y * w + x];
+                if (dir == 0 || dir == 3 || hasNeighborDir(x, y)) continue;
                 if (railY0 >= 0 && y >= railY0 - 1 && y <= railY0 + railRows) continue;
                 if (rnd.nextFloat() > carChance) continue;
                 if (hasNeighbor(x, y, CAR)) continue;
                 // Parked against the kerb, never in the middle lanes.
-                boolean vertical = roadCol[x];
+                boolean vertical = dir == 1;
                 boolean kerb = vertical ? !isRoad(x - 1, y) || !isRoad(x + 1, y) : !isRoad(x, y - 1) || !isRoad(x, y + 1);
                 if (!kerb) continue;
                 tiles[y * w + x] = CAR;
             }
         }
 
-        // Street names: numbered avenues run north-south, named streets east-west.
-        for (int i = 0; i < colStarts.size(); i++) colNames.add(ordinal(i + 1) + " Ave");
+        // Street names: main roads get avenues and boulevards, the rest streets, lanes and courts.
         List<String> names = new ArrayList<String>(Arrays.asList(STREETS));
         java.util.Collections.shuffle(names, rnd);
-        for (int i = 0; i < rowStarts.size(); i++) rowNames.add(names.get(i % names.size()));
-        for (int i = 0; i < colStarts.size(); i++) if (colWidths.get(i) == 5) colNames.set(i, ordinal(i + 1) + " Blvd");
-        for (int i = 0; i < rowStarts.size(); i++)
-            if (rowWidths.get(i) == 5) rowNames.set(i, rowNames.get(i).replace(" St", " Blvd"));
+        int next = 0;
+        for (Street st : streets) {
+            String base = names.get(next++ % names.size());
+            int len = st.vertical ? st.y1 - st.y0 : st.x1 - st.x0;
+            if (st.x0 == 0 && st.y0 == 0 || st.x1 == w || st.y1 == h) st.name = "Ring Rd";
+            else if (st.main || len > 40) st.name = base + " " + MAIN_SUFFIX[rnd.nextInt(MAIN_SUFFIX.length)];
+            else st.name = base + " " + LOCAL_SUFFIX[rnd.nextInt(LOCAL_SUFFIX.length)];
+        }
         for (Facility f : facilities)
             if (f.kind == FACILITY_POLICE) {
                 String street = placeName(f.x, f.y);
@@ -545,16 +575,23 @@ final class City {
                 f.name = f.name + " (" + (amp > 0 ? street.substring(0, amp) : street) + ")";
             }
 
-        // Street lamps on the sidewalk corners of every intersection.
-        for (int i = 0; i < colStarts.size(); i++)
-            for (int j = 0; j < rowStarts.size(); j++) {
-                int cs = colStarts.get(i), rs = rowStarts.get(j), cw = colWidths.get(i), rw = rowWidths.get(j);
-                int[][] corners = {{cs - 1, rs - 1}, {cs + cw, rs - 1}, {cs - 1, rs + rw}, {cs + cw, rs + rw}};
-                for (int[] k : corners) {
-                    if (k[0] < 0 || k[1] < 0 || k[0] >= w || k[1] >= h) continue;
-                    if (tiles[k[1] * w + k[0]] == SIDEWALK) lamps.add(new float[]{k[0] * T + T / 2f, k[1] * T + T / 2f});
-                }
+        // Street lamps on the pavement corners at junctions.
+        for (int y = 1; y < h - 1; y++)
+            for (int x = 1; x < w - 1; x++) {
+                if (tiles[y * w + x] != SIDEWALK) continue;
+                boolean horiz = paved(x - 1, y) || paved(x + 1, y), vert = paved(x, y - 1) || paved(x, y + 1);
+                if (horiz && vert) lamps.add(new float[]{x * T + T / 2f, y * T + T / 2f});
             }
+    }
+
+    /** True if a neighbouring road tile is a junction (cars don't park there). */
+    private boolean hasNeighborDir(int x, int y) {
+        for (int dy = -2; dy <= 2; dy++)
+            for (int dx = -2; dx <= 2; dx++) {
+                int nx = x + dx, ny = y + dy;
+                if (nx >= 0 && ny >= 0 && nx < w && ny < h && roadDir[ny * w + nx] == 3) return true;
+            }
+        return false;
     }
 
     /** A fenced compound with gates, barracks, a helipad, tents, a watchtower and army trucks. */
@@ -1457,25 +1494,37 @@ final class City {
     }
 
     /** Rounds the outer corners of every block's sidewalk where two roads meet. */
+    /** Rounds off the block corners where two streets meet: wide kerbs on big blocks, tight on small ones. */
     private void roundCorners(Canvas c, Paint p) {
-        RectF clip = new RectF();
+        Path path = new Path();
         for (int[] b : blocks) {
-            int[][] corners = {{b[0], b[1], -1, -1}, {b[2] - 1, b[1], 1, -1}, {b[0], b[3] - 1, -1, 1}, {b[2] - 1, b[3] - 1, 1, 1}};
+            int bw = b[2] - b[0], bh = b[3] - b[1];
+            float r = Math.min(bw, bh) >= 8 ? T * 2.2f : T * 1.1f;
+            int[][] corners = {{b[0], b[1], 1, 1}, {b[2], b[1], -1, 1}, {b[0], b[3], 1, -1}, {b[2], b[3], -1, -1}};
             for (int[] k : corners) {
-                int x = k[0], y = k[1];
-                if (x < 0 || y < 0 || x >= w || y >= h || tiles[y * w + x] != SIDEWALK) continue;
-                if (!paved(x + k[2], y) || !paved(x, y + k[3])) continue;
-                clip.set(x * T, y * T, x * T + T, y * T + T);
-                c.save();
-                c.clipRect(clip);
+                // Only where roads meet on both sides of the corner.
+                int ox = k[2] > 0 ? k[0] - 1 : k[0], oy = k[3] > 0 ? k[1] - 1 : k[1];
+                int ix = k[2] > 0 ? k[0] : k[0] - 1, iy = k[3] > 0 ? k[1] : k[1] - 1;
+                if (!paved(ox, iy) || !paved(ix, oy)) continue;
+                if (ix < 0 || iy < 0 || ix >= w || iy >= h || tiles[iy * w + ix] != SIDEWALK) continue;
+                float cx = k[0] * T, cy = k[1] * T;
+                path.reset();
+                path.moveTo(cx, cy);
+                path.lineTo(cx + k[2] * r, cy);
+                path.quadTo(cx, cy, cx, cy + k[3] * r);
+                path.close();
+                p.setStyle(Paint.Style.FILL);
                 p.setColor(0xFF3A3D43);
-                c.drawRect(clip, p);
-                float cx = k[2] < 0 ? x * T + T : x * T, cy = k[3] < 0 ? y * T + T : y * T;
+                c.drawPath(path, p);
+                // The kerb.
+                path.reset();
+                path.moveTo(cx + k[2] * r, cy);
+                path.quadTo(cx, cy, cx, cy + k[3] * r);
+                p.setStyle(Paint.Style.STROKE);
+                p.setStrokeWidth(1.2f);
                 p.setColor(0xFF7E7C77);
-                c.drawCircle(cx, cy, T + 0.5f, p);
-                p.setColor(0xFF8F8D87);
-                c.drawCircle(cx, cy, T - 0.5f, p);
-                c.restore();
+                c.drawPath(path, p);
+                p.setStyle(Paint.Style.FILL);
             }
         }
     }
@@ -1692,7 +1741,7 @@ final class City {
         float y0 = railY0 * T, y1 = (railY0 + railRows) * T, cy = (y0 + y1) / 2;
         for (int x = 0; x < w; x++) {
             float fx = x * T;
-            boolean crossing = roadCol[x];
+            boolean crossing = tiles[railY0 * w + x] == ROAD;
             if (!crossing) {
                 p.setColor(0xFF6E665C);
                 c.drawRect(fx, y0 + 6, fx + T, y1 - 6, p);
@@ -1713,9 +1762,10 @@ final class City {
         c.drawRect(0, cy - 6, w * T, cy - 4.8f, p);
         c.drawRect(0, cy + 4.8f, w * T, cy + 6, p);
         // Crossing barriers (red and white poles) at each road.
-        for (int i = 0; i < colStarts.size(); i++) {
-            float x0 = colStarts.get(i) * T, x1 = (colStarts.get(i) + colWidths.get(i)) * T;
-            for (float bx = x0 + 2; bx < x1 - 2; bx += 4) {
+        for (int x = 0; x < w; x++) {
+            if (tiles[railY0 * w + x] != ROAD) continue;
+            float x0 = x * T, x1 = x0 + T;
+            for (float bx = x0; bx < x1; bx += 4) {
                 p.setColor(((int) (bx / 4)) % 2 == 0 ? 0xFFD83A3A : 0xFFF2F2F2);
                 c.drawRect(bx, y0 + 1, bx + 4, y0 + 2.5f, p);
                 c.drawRect(bx, y1 - 2.5f, bx + 4, y1 - 1, p);
@@ -1780,47 +1830,51 @@ final class City {
 
     private void drawRoadMarkings(Canvas c, Paint p) {
         p.setStrokeWidth(1.2f);
-        for (int i = 0; i < colStarts.size(); i++) {
-            int st = colStarts.get(i), cw = colWidths.get(i);
-            for (int y = 0; y < h; y++) {
-                if (roadRow[y] || !paved(st + (cw == 5 ? 0 : 1), y)) continue;
-                if (cw == 5) {
+        for (Street st : streets) {
+            int n = st.vertical ? st.y1 - st.y0 : st.x1 - st.x0;
+            int dir = st.vertical ? 1 : 2;
+            for (int k = 0; k < n; k++) {
+                int x = st.vertical ? st.x0 : st.x0 + k, y = st.vertical ? st.y0 + k : st.y0;
+                // Only between junctions.
+                int mx = st.vertical ? st.x0 + st.width / 2 : x, my = st.vertical ? y : st.y0 + st.width / 2;
+                if (mx >= w || my >= h || roadDir[my * w + mx] != dir || !paved(mx, my)) continue;
+                if (st.width == 5) {
                     p.setColor(0xCCE8E8E8);
-                    c.drawLine((st + 1) * T, y * T + 4, (st + 1) * T, y * T + 10, p);
-                    c.drawLine((st + 4) * T, y * T + 4, (st + 4) * T, y * T + 10, p);
-                } else {
+                    if (st.vertical) {
+                        c.drawLine((st.x0 + 1) * T, y * T + 4, (st.x0 + 1) * T, y * T + 10, p);
+                        c.drawLine((st.x0 + 4) * T, y * T + 4, (st.x0 + 4) * T, y * T + 10, p);
+                    } else {
+                        c.drawLine(x * T + 4, (st.y0 + 1) * T, x * T + 10, (st.y0 + 1) * T, p);
+                        c.drawLine(x * T + 4, (st.y0 + 4) * T, x * T + 10, (st.y0 + 4) * T, p);
+                    }
+                } else if (st.width == 3 && !"Ring Rd".equals(st.name)) {
                     p.setColor(0xFFD9B43A);
-                    c.drawLine((st + 1.5f) * T, y * T + 3, (st + 1.5f) * T, y * T + 11, p);
+                    if (st.vertical) c.drawLine((st.x0 + 1.5f) * T, y * T + 3, (st.x0 + 1.5f) * T, y * T + 11, p);
+                    else c.drawLine(x * T + 3, (st.y0 + 1.5f) * T, x * T + 11, (st.y0 + 1.5f) * T, p);
                 }
             }
-        }
-        for (int j = 0; j < rowStarts.size(); j++) {
-            int st = rowStarts.get(j), rw = rowWidths.get(j);
-            for (int x = 0; x < w; x++) {
-                if (roadCol[x] || !paved(x, st + (rw == 5 ? 0 : 1))) continue;
-                if (rw == 5) {
-                    p.setColor(0xCCE8E8E8);
-                    c.drawLine(x * T + 4, (st + 1) * T, x * T + 10, (st + 1) * T, p);
-                    c.drawLine(x * T + 4, (st + 4) * T, x * T + 10, (st + 4) * T, p);
-                } else {
-                    p.setColor(0xFFD9B43A);
-                    c.drawLine(x * T + 3, (st + 1.5f) * T, x * T + 11, (st + 1.5f) * T, p);
-                }
-            }
-        }
-        // Crosswalks on each side of every intersection.
-        p.setColor(0xCCE8E8E8);
-        for (int i = 0; i < colStarts.size(); i++) {
-            for (int j = 0; j < rowStarts.size(); j++) {
-                int cs = colStarts.get(i), rs = rowStarts.get(j), cw = colWidths.get(i), rw = rowWidths.get(j);
-                float x0 = cs * T, y0 = rs * T, sx = cw * T, sy = rw * T;
-                for (float o = 3; o + 3 <= sx - 2; o += 6) {
-                    if (paved(cs, rs - 1)) c.drawRect(x0 + o, y0 - 9, x0 + o + 3, y0 - 2, p);
-                    if (paved(cs, rs + rw)) c.drawRect(x0 + o, y0 + sy + 2, x0 + o + 3, y0 + sy + 9, p);
-                }
-                for (float o = 3; o + 3 <= sy - 2; o += 6) {
-                    if (paved(cs - 1, rs)) c.drawRect(x0 - 9, y0 + o, x0 - 2, y0 + o + 3, p);
-                    if (paved(cs + cw, rs)) c.drawRect(x0 + sx + 2, y0 + o, x0 + sx + 9, y0 + o + 3, p);
+            // Zebra crossings where the street meets a junction.
+            p.setColor(0xCCE8E8E8);
+            for (int k = 1; k < n; k++) {
+                int ax = st.vertical ? st.x0 : st.x0 + k - 1, ay = st.vertical ? st.y0 + k - 1 : st.y0;
+                int bx = st.vertical ? st.x0 : st.x0 + k, by = st.vertical ? st.y0 + k : st.y0;
+                boolean ja = roadDir[ay * w + ax] == 3, jb = roadDir[by * w + bx] == 3;
+                if (ja == jb) continue;
+                // The crossing sits on the non-junction tile, against the junction.
+                int cx = ja ? bx : ax, cy = ja ? by : ay;
+                if (!paved(cx, cy)) continue;
+                for (int o = 0; o < st.width; o++) {
+                    int tx = st.vertical ? st.x0 + o : cx, ty = st.vertical ? cy : st.y0 + o;
+                    if (!paved(tx, ty)) continue;
+                    for (float q = 2; q + 2 <= T - 1; q += 5) {
+                        if (st.vertical) {
+                            float yy = ja ? ty * T + 2 : ty * T + T - 9;
+                            c.drawRect(tx * T + q, yy, tx * T + q + 2.5f, yy + 7, p);
+                        } else {
+                            float xx = ja ? tx * T + 2 : tx * T + T - 9;
+                            c.drawRect(xx, ty * T + q, xx + 7, ty * T + q + 2.5f, p);
+                        }
+                    }
                 }
             }
         }
@@ -2114,7 +2168,7 @@ final class City {
     private void drawCar(Canvas c, Paint p, int x, int y) {
         boolean vertical;
         if (isLotCar(x, y)) vertical = true;
-        else vertical = roadCol[x] && !roadRow[y];
+        else vertical = roadDir[y * w + x] == 1;
         float cx = x * T + T / 2f, cy = y * T + T / 2f;
         byte kind = carKind[y * w + x];
         if (kind == 2) vertical = true;
@@ -2282,26 +2336,40 @@ final class City {
 
     /** A street corner name for a world position, like "Oak St & 3rd Ave". */
     String placeName(float x, float y) {
-        String col = null, row = null;
-        float best = Float.MAX_VALUE;
-        for (int i = 0; i < colStarts.size(); i++) {
-            float d = Math.abs(x - (colStarts.get(i) + colWidths.get(i) / 2f) * T);
-            if (d < best) {
-                best = d;
-                col = colNames.get(i);
+        // The nearest street each way, if the point is beside it.
+        Street across = null, along = null;
+        float bestV = 6 * T, bestH = 6 * T;
+        for (Street st : streets) {
+            if (st.vertical) {
+                if (y < st.y0 * T - T || y > st.y1 * T + T) continue;
+                float d = Math.abs(x - (st.x0 + st.x1) / 2f * T);
+                if (d < bestV) {
+                    bestV = d;
+                    across = st;
+                }
+            } else {
+                if (x < st.x0 * T - T || x > st.x1 * T + T) continue;
+                float d = Math.abs(y - (st.y0 + st.y1) / 2f * T);
+                if (d < bestH) {
+                    bestH = d;
+                    along = st;
+                }
             }
         }
-        best = Float.MAX_VALUE;
-        for (int i = 0; i < rowStarts.size(); i++) {
-            float d = Math.abs(y - (rowStarts.get(i) + rowWidths.get(i) / 2f) * T);
-            if (d < best) {
-                best = d;
-                row = rowNames.get(i);
+        if (across != null && along != null && !across.name.equals(along.name)) return along.name + " & " + across.name;
+        if (across != null || along != null) return (across != null && (along == null || bestV < bestH) ? across : along).name;
+        // Inside a big block: the nearest street at all.
+        Street best = null;
+        float bd = Float.MAX_VALUE;
+        for (Street st : streets) {
+            float nx = Math.max(st.x0 * T, Math.min(x, st.x1 * T)), ny = Math.max(st.y0 * T, Math.min(y, st.y1 * T));
+            float d = (nx - x) * (nx - x) + (ny - y) * (ny - y);
+            if (d < bd) {
+                bd = d;
+                best = st;
             }
         }
-        if (col == null) return row == null ? "downtown" : row;
-        if (row == null) return col;
-        return row + " & " + col;
+        return best != null ? best.name : "downtown";
     }
 
     /** A name for an open area, like "Pine St Park". */

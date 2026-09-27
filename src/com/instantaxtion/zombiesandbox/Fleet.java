@@ -15,7 +15,7 @@ final class Fleet {
             ABANDONED = 7, SPRAY = 8, SPOOL = 9, LAND = 10, ENGAGE = 11, LOAD = 12;
     private static final int[] CAR_COLORS = {0xFFB03A2E, 0xFF2E5FB0, 0xFFE0E0E0, 0xFF222428, 0xFFD4A21C, 0xFF3C8A4E,
             0xFF8A8F96, 0xFF6B2E8A, 0xFFE07A2E};
-    private static final float[] MAX_HP = {160, 260, 1, 100, 240, 1400, 160, 1};
+    private static final float[] MAX_HP = {160, 260, 1, 100, 240, 700, 160, 1};
     /** Most people a car will squeeze in. */
     static final int SEATS = 4;
 
@@ -518,6 +518,16 @@ final class Fleet {
         if (v.type == FIRE_ENGINE)
             w.dispatch.say(Dispatch.WHO_FIRE, null, "Fire Dept: Engine " + v.number + " is out of action on "
                     + city.placeName(v.x, v.y) + ".", v.x, v.y);
+        if (v.type == TANK) {
+            // The crew bails out.
+            w.dispatch.say(Dispatch.WHO_MILITARY, null, "Military: Our tank is knocked out on " + city.placeName(v.x, v.y)
+                    + "! Crew bailing out.", v.x, v.y);
+            for (int k = 0; k < 2; k++) {
+                Entity crew = w.spawn(Entity.SOLDIER, v.x + (float) Math.cos(v.angle + 1.57f) * (10 + k * 4),
+                        v.y + (float) Math.sin(v.angle + 1.57f) * (10 + k * 4));
+                if (crew != null) crew.hp *= 0.6f;
+            }
+        }
         if (blast || v.hp < -v.maxHp * 0.3f || w.rnd.nextFloat() < 0.3f) burn(v);
     }
 
@@ -639,6 +649,14 @@ final class Fleet {
             return false;
         }
         boolean arrived = !driveStep(v, dt, v.type == CRUISER ? 105 : 80, carAhead(v) ? 0.5f : 1f);
+        // Don't drive into a horde: stop short and let the troops out.
+        if (v.state == DRIVE && v.passengers > 0) {
+            float ax = v.x + (float) Math.cos(v.angle) * 60, ay = v.y + (float) Math.sin(v.angle) * 60;
+            if (w.countZombiesNear(ax, ay, 60) >= 4 || w.countZombiesNear(v.x, v.y, 40) >= 3) {
+                arrived = true;
+                v.speed *= 0.3f;
+            }
+        }
         // Give up and stop where we are if the car hasn't made progress for a while.
         if (v.stuckTimer > 4) arrived = true;
         if (arrived) {
@@ -1055,7 +1073,8 @@ final class Fleet {
             return false;
         }
         // The turret tracks the nearest zombie; the cannon fires at crowds, the coax gun at stragglers.
-        Entity z = w.nearestZombie(v.x, v.y, 260);
+        // Only what the crew can see: no shooting through buildings.
+        Entity z = w.nearestVisibleZombie(v.x, v.y, 260);
         float aim = z != null ? (float) Math.atan2(z.y - v.y, z.x - v.x) : v.angle;
         v.turret = turnTo(v.turret, aim, dt * 1.8f);
         if (z != null) {

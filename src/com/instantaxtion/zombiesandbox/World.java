@@ -440,6 +440,8 @@ final class World {
             float bd = Float.MAX_VALUE;
             for (City.Facility st : city.facilities) {
                 if (st.kind != City.FACILITY_FIRE || fleet.enginesOut(st) >= 2) continue;
+                // An overrun station can't send anyone.
+                if (countZombiesNear(st.x, st.y, 160) > 0) continue;
                 float d = (st.x - f.x) * (st.x - f.x) + (st.y - f.y) * (st.y - f.y);
                 if (d < bd) {
                     bd = d;
@@ -521,6 +523,8 @@ final class World {
         if (p == null) return null;
         Entity e = make(type, p[0], p[1], -1, 0);
         entities.add(e);
+        // Counted straight away, so the numbers go up even while the game is paused.
+        counts[type]++;
         fieldTimer = 0;
         return e;
     }
@@ -765,6 +769,7 @@ final class World {
             float ddx = c.x - x, ddy = c.y - y;
             if (ddx * ddx + ddy * ddy < r * r) corpses.remove(i);
         }
+        recountLive();
         for (int i = 0; i < dcount; i++) {
             float ddx = dx[i] - x, ddy = dy[i] - y;
             if (ddx * ddx + ddy * ddy < r * r) dr[i] = 0;
@@ -880,6 +885,15 @@ final class World {
         return false;
     }
 
+    /** Counts everyone right now (dead and removed people don't count), for when the game is paused. */
+    void recountLive() {
+        Arrays.fill(counts, 0);
+        for (int i = 0, n = entities.size(); i < n; i++) {
+            Entity e = entities.get(i);
+            if (!e.dead) counts[e.type]++;
+        }
+    }
+
     private void recount() {
         Arrays.fill(counts, 0);
         commanders.clear();
@@ -990,6 +1004,7 @@ final class World {
         e.wanderTimer -= dt;
         e.fleeTimer -= dt;
         e.taskTimer -= dt;
+        e.fear -= dt;
         if (e.infected) {
             e.infectTimer -= dt;
             if (e.infectTimer <= 0) {
@@ -1009,6 +1024,19 @@ final class World {
             e.stun -= dt;
             steer(e, 0, 0, 0);
             return;
+        }
+        // Stuck on a corner or in a doorway (big brutes especially): step aside and try another way.
+        if (e.unstick > 0) {
+            e.unstick -= dt;
+            steer(e, (float) Math.cos(e.unstickAngle), (float) Math.sin(e.unstickAngle), e.speed);
+            return;
+        }
+        if (e.stuckTime > 1.2f) {
+            e.stuckTime = 0;
+            float heading = (float) Math.atan2(e.my, e.mx);
+            e.unstickAngle = heading + (rnd.nextBoolean() ? 1 : -1) * (1.6f + rnd.nextFloat() * 1f);
+            e.unstick = 0.6f + rnd.nextFloat() * 0.6f;
+            e.blocked = false;
         }
         if (e.reload > 0) {
             e.reload -= dt;
@@ -1141,7 +1169,9 @@ final class World {
             if (d < car.length() * 0.7f + z.radius + 2) {
                 if (car.speed < 15) {
                     steer(z, 0, 0, 0);
-                    fleet.damage(car, (z.type == Entity.BRUTE ? 14 : 3) * dt, false);
+                    // Armour takes a lot of clawing; a car much less.
+                    float dps = car.type == Fleet.TANK ? (z.type == Entity.BRUTE ? 5 : 0.6f) : (z.type == Entity.BRUTE ? 16 : 4);
+                    fleet.damage(car, dps * dt, false);
                     if (rnd.nextFloat() < dt * 1.5f) emit(Sfx.THUD, car.x, car.y);
                 } else {
                     steer(z, ddx / d, ddy / d, z.runSpeed);
@@ -1288,7 +1318,8 @@ final class World {
         for (int i = 0, n = fleet.vehicles.size(); i < n; i++) {
             Fleet.Vehicle v = fleet.vehicles.get(i);
             if (v.type == Fleet.HELI || v.type == Fleet.TRAIN || (v.broken && v.riders.isEmpty())) continue;
-            if (v.speed < 5 && v.riders.isEmpty() && v.passengers == 0 && v.type != Fleet.FIRE_ENGINE && v.type != Fleet.CAR)
+            if (v.speed < 5 && v.riders.isEmpty() && v.passengers == 0 && v.type != Fleet.FIRE_ENGINE && v.type != Fleet.CAR
+                    && v.type != Fleet.TANK && v.type != Fleet.AMBULANCE)
                 continue;
             if (v.parked) continue;
             float d = (v.x - z.x) * (v.x - z.x) + (v.y - z.y) * (v.y - z.y);
@@ -1354,7 +1385,8 @@ final class World {
                 if (rnd.nextFloat() < 0.3f) emit(Sfx.SCREAM, e.x, e.y);
                 alarm(e, threat);
             }
-            e.fleeTimer = 2.5f;
+            e.fleeTimer = 4f;
+            e.fear = 40;
             e.threatX = threat.x;
             e.threatY = threat.y;
             float ddx = threat.x - e.x, ddy = threat.y - e.y;
@@ -2619,6 +2651,12 @@ final class World {
         }
 
         Entity t = e.ammo > 0 || e.reserve > 0 ? pickTarget(e, range) : null;
+        if (t != null && t.isZombie()) {
+            // Remember where it was, to go and look if it slips out of sight.
+            e.threatX = t.x;
+            e.threatY = t.y;
+            e.fear = 20;
+        }
         boolean stationary = e.task == Dispatch.T_POST || e.task == Dispatch.T_HOLD;
         if (t != null && e.task != Dispatch.T_MOVE) {
             float ddx = t.x - e.x, ddy = t.y - e.y;
@@ -2693,6 +2731,15 @@ final class World {
                     steer(e, lx / ld, ly / ld, e.runSpeed);
                     return;
                 }
+            }
+        }
+        // Go and check where the last one was seen.
+        if (e.task == Dispatch.T_NONE && e.fear > 0 && (e.ammo > 0 || e.reserve > 0)) {
+            float lx = e.threatX - e.x, ly = e.threatY - e.y, ld = (float) Math.sqrt(lx * lx + ly * ly) + 0.001f;
+            if (ld < 20) e.fear = 0;
+            else {
+                steer(e, lx / ld, ly / ld, e.speed * 1.2f);
+                return;
             }
         }
         int dist = city.fieldAt(city.zombieDist, e.x, e.y);
@@ -3115,6 +3162,12 @@ final class World {
             e.wanderTimer = 2 + rnd.nextFloat() * 4;
             e.paused = !e.isZombie() && rnd.nextFloat() < 0.2f;
             e.wanderAngle = rnd.nextInt(4) * TAU / 4 + (rnd.nextFloat() - 0.5f) * 0.4f;
+            // People who saw a zombie recently keep away from where it was.
+            if (e.fear > 0 && !e.isZombie() && !e.isArmed()) {
+                float tx = e.threatX - e.x, ty = e.threatY - e.y;
+                if (tx * (float) Math.cos(e.wanderAngle) + ty * (float) Math.sin(e.wanderAngle) > 0) e.wanderAngle += (float) Math.PI;
+                e.paused = false;
+            }
         }
         if (e.paused) steer(e, 0, 0, 0);
         else steer(e, (float) Math.cos(e.wanderAngle), (float) Math.sin(e.wanderAngle), speed);
@@ -3192,8 +3245,12 @@ final class World {
         e.vx += (e.mx * e.want - e.vx) * k;
         e.vy += (e.my * e.want - e.vy) * k;
         float sx = e.vx * dt, sy = e.vy * dt;
+        float bx = e.x, by = e.y;
         boolean moved = tryMove(e, sx, sy);
         if (!moved && e.want > 0) e.blocked = true;
+        float went = Math.abs(e.x - bx) + Math.abs(e.y - by);
+        if (e.want > 5 && went < e.want * dt * 0.2f) e.stuckTime += dt;
+        else e.stuckTime = Math.max(0, e.stuckTime - dt * 2);
         float sp = (float) Math.sqrt(e.vx * e.vx + e.vy * e.vy);
         if (sp > 2 && !e.aiming) e.angle = turn(e.angle, (float) Math.atan2(e.vy, e.vx), dt * 10);
         e.phase += sp * dt * 0.35f;
@@ -3473,6 +3530,22 @@ final class World {
         tracer(fx, fy, tx, ty);
         shotsFired++;
         explode(tx, ty, 50, 230);
+    }
+
+    /** The nearest zombie a gunner on the ground can actually see. */
+    Entity nearestVisibleZombie(float x, float y, float radius) {
+        Entity best = null;
+        float bd = radius * radius;
+        for (int i = 0, n = entities.size(); i < n; i++) {
+            Entity o = entities.get(i);
+            if (o.dead || !o.isZombie()) continue;
+            float d = (o.x - x) * (o.x - x) + (o.y - y) * (o.y - y);
+            if (d < bd && city.los(x, y, o.x, o.y)) {
+                bd = d;
+                best = o;
+            }
+        }
+        return best;
     }
 
     /** One burst from the helicopter's door gun. */

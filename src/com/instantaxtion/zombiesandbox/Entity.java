@@ -72,6 +72,10 @@ final class Entity {
     int kills;
     /** Newly turned zombies are quicker for a while. */
     float fresh;
+    /** How long someone remembers where they last saw a zombie (threatX/threatY). */
+    float fear;
+    /** Getting unstuck: how long they've been making no progress, and a sidestep in progress. */
+    float stuckTime, unstick, unstickAngle;
     /** Civilians: a cop or soldier nearby to run towards. */
     Entity protector;
     /** A car this civilian has flagged down and is running to. */

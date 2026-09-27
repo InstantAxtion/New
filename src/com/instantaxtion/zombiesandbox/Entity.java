@@ -2,11 +2,11 @@ package com.instantaxtion.zombiesandbox;
 
 /** Someone in the city: a civilian, a cop, a soldier, a medic, a dog or one of the zombie kinds. */
 final class Entity {
-    static final int CIVILIAN = 0, COP = 1, SOLDIER = 2, MEDIC = 3, DOG = 4, ZOMBIE = 5, RUNNER = 6, BRUTE = 7,
-            CRAWLER = 8, SCREAMER = 9;
-    static final int TYPE_COUNT = 10;
-    static final String[] NAMES = {"Civilian", "Cop", "Soldier", "Medic", "Dog", "Zombie", "Runner", "Brute",
-            "Crawler", "Screamer"};
+    static final int CIVILIAN = 0, COP = 1, SOLDIER = 2, MEDIC = 3, DOG = 4, RAIDER = 5, ZOMBIE = 6, RUNNER = 7,
+            BRUTE = 8, CRAWLER = 9, SCREAMER = 10, ZOMBIE_DOG = 11;
+    static final int TYPE_COUNT = 12;
+    static final String[] NAMES = {"Civilian", "Cop", "Soldier", "Medic", "Dog", "Raider", "Zombie", "Runner", "Brute",
+            "Crawler", "Screamer", "Zombie dog"};
 
     /** Soldiers' jobs: rifleman, the commander, snipers and machine gunners. */
     static final int ROLE_RIFLE = 0, ROLE_COMMANDER = 1, ROLE_SNIPER = 2, ROLE_GUNNER = 3;
@@ -66,6 +66,12 @@ final class Entity {
     City.Facility enlistAt;
     /** Zombies approach from their own angle so a crowd surrounds its prey. */
     float flank;
+    /** Picks this person's name (see {@link Names}). */
+    int nameSeed;
+    /** Zombies shot or run down by this person. */
+    int kills;
+    /** Newly turned zombies are quicker for a while. */
+    float fresh;
     /** Civilians: a cop or soldier nearby to run towards. */
     Entity protector;
     /** A car this civilian has flagged down and is running to. */

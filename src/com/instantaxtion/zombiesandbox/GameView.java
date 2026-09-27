@@ -15,16 +15,20 @@ import java.util.Random;
 
 /** Renders the world, runs the game loop and handles all touch input and on-screen buttons. */
 final class GameView extends View implements Menu.Host {
-    private static final int TOOL_PAN = 0, TOOL_ORDER = 1, TOOL_CIV = 2, TOOL_MIL = 4, TOOL_ZOMBIE = 6, TOOL_ZONE = 7, TOOL_BOMB = 8,
-            TOOL_ERASE = 9;
+    private static final int TOOL_PAN = 0, TOOL_ORDER = 1, TOOL_CIV = 2, TOOL_MIL = 4, TOOL_ZOMBIE = 6, TOOL_PLACE = 7,
+            TOOL_EVENT = 8, TOOL_ZONE = 9, TOOL_BOMB = 10, TOOL_ERASE = 11;
     // Tool index -> entity type spawned (or -1). The zombie tool spawns the selected zombie variant.
     private static final int[] TOOL_TYPE = {-1, -1, Entity.CIVILIAN, Entity.COP, Entity.SOLDIER, Entity.MEDIC,
-            Entity.ZOMBIE, -1, -1, -1};
+            Entity.ZOMBIE, -1, -1, -1, -1, -1};
     private static final String[] TOOL_NAMES = {"Move", "Orders", "Civilian", "Cop", "Military", "Medic", "Zombie",
-            "Safe Zone", "Bomb", "Erase"};
+            "Place", "Events", "Safe Zone", "Bomb", "Erase"};
+    private static final String[] PLACE_NAMES = {"Car", "Police car", "Tank", "Fire engine", "Barricade", "Crate", "Fire"};
+    private static final String[] EVENT_NAMES = {"Horde", "Panic", "Outbreak", "Supply drop", "Raiders"};
+    private static final String[] CLEAR_NAMES = {"Everyone", "Zombies only", "Bodies & blood", "Wrecks & fires",
+            "Barricades"};
     private static final int[] ZOMBIE_VARIANTS = {Entity.ZOMBIE, Entity.RUNNER, Entity.BRUTE, Entity.CRAWLER,
-            Entity.SCREAMER};
-    private static final int[] CIV_VARIANTS = {Entity.CIVILIAN, Entity.DOG};
+            Entity.SCREAMER, Entity.ZOMBIE_DOG};
+    private static final int[] CIV_VARIANTS = {Entity.CIVILIAN, Entity.DOG, Entity.RAIDER};
     private static final int BTN_PAUSE = 0, BTN_SPEED = 1, BTN_BRUSH = 2, BTN_VIEW = 3, BTN_CLEAR = 4, BTN_MENU = 5;
     private static final int TOP_BUTTONS = 6;
     private static final int[] SPEEDS = {1, 2, 4};
@@ -35,10 +39,14 @@ final class GameView extends View implements Menu.Host {
 
     private World world;
     private final Random rnd = new Random();
-    private final float dp;
+    private float dp;
+    private final float baseDp;
     private final Settings settings;
     private final Sound sound;
     private final Menu menu;
+    private final Records records;
+    private String achievement;
+    private float achievementTime, recordTimer;
     private boolean hasGame;
     private float menuTime, savedCamX, savedCamY, savedScale;
     private float fps, fpsTimer;
@@ -54,7 +62,14 @@ final class GameView extends View implements Menu.Host {
     private long lastFrame;
     private int speedIdx, brushIdx;
     private int tool = TOOL_PAN;
-    private int zombieVariant, civVariant, milVariant;
+    private int zombieVariant, civVariant, milVariant, placeVariant, eventVariant;
+    /** What the last tap (or drag) of a spawn or place tool created, so Undo can take it back. */
+    private final java.util.ArrayList<Object> lastAction = new java.util.ArrayList<Object>();
+    private final RectF undoRect = new RectF();
+    private boolean clearMenu;
+    /** Director cam: the camera goes wherever the action is. */
+    private boolean director;
+    private final RectF[] clearRects = new RectF[CLEAR_NAMES.length];
     private boolean statsCollapsed;
     /** Units picked with the Orders tool. */
     private final java.util.ArrayList<Entity> selection = new java.util.ArrayList<Entity>();
@@ -97,16 +112,19 @@ final class GameView extends View implements Menu.Host {
 
     GameView(Context context) {
         super(context);
-        dp = getResources().getDisplayMetrics().density;
+        dp = baseDp = getResources().getDisplayMetrics().density;
         stroke.setStyle(Paint.Style.STROKE);
         stroke.setStrokeCap(Paint.Cap.ROUND);
         text.setTypeface(Typeface.create(Typeface.DEFAULT, Typeface.BOLD));
         for (int i = 0; i < toolRects.length; i++) toolRects[i] = new RectF();
         for (int i = 0; i < TOP_BUTTONS; i++) topRects[i] = new RectF();
+        for (int i = 0; i < clearRects.length; i++) clearRects[i] = new RectF();
         buildIcons();
         settings = new Settings(context);
         sound = new Sound(context);
         menu = new Menu(this, settings, dp);
+        records = new Records(context);
+        menu.records = records;
         // The main menu shows a live demo city in the background.
         CityConfig demo = new CityConfig();
         demo.v[CityConfig.OPT_PRESET] = rnd.nextInt(CityConfig.PRESETS.length);
@@ -117,11 +135,11 @@ final class GameView extends View implements Menu.Host {
     }
 
     private void buildIcons() {
-        int[] bodies = {0xFFD9534F, 0xFF23408E, 0xFF55623A, 0xFFF2F2F2, 0xFFB07A3E, 0xFF4E5A3E, 0xFF6B3A36, 0xFF4D3F4F,
-                0xFF4E5A3E, 0xFF6A6F60};
-        int[] heads = {0xFF4A2E1A, 0xFF141C38, 0xFF3C4628, 0xFF4A2E1A, 0xFF8C6232, 0xFF7C9A5E, 0xFF9DAA70, 0xFF6F8D55,
-                0xFF73905A, 0xFFC8D0B4};
-        float[] radii = {3.6f, 3.8f, 4f, 3.7f, 2.8f, 3.8f, 3.5f, 6.5f, 3.0f, 3.5f};
+        int[] bodies = {0xFFD9534F, 0xFF23408E, 0xFF55623A, 0xFFF2F2F2, 0xFFB07A3E, 0xFF2E2622, 0xFF4E5A3E, 0xFF6B3A36,
+                0xFF4D3F4F, 0xFF4E5A3E, 0xFF6A6F60, 0xFF5E6444};
+        int[] heads = {0xFF4A2E1A, 0xFF141C38, 0xFF3C4628, 0xFF4A2E1A, 0xFF8C6232, 0xFF9E2A22, 0xFF7C9A5E, 0xFF9DAA70,
+                0xFF6F8D55, 0xFF73905A, 0xFFC8D0B4, 0xFF4E5438};
+        float[] radii = {3.6f, 3.8f, 4f, 3.7f, 2.8f, 3.7f, 3.8f, 3.5f, 6.5f, 3.0f, 3.5f, 2.8f};
         for (int t = 0; t < Entity.TYPE_COUNT; t++) {
             Entity e = new Entity();
             e.type = t;
@@ -129,6 +147,8 @@ final class GameView extends View implements Menu.Host {
             e.body = bodies[t];
             e.head = heads[t];
             e.skin = t >= Entity.ZOMBIE ? heads[t] : t == Entity.DOG ? bodies[t] : 0xFFE0AC69;
+            if (t == Entity.ZOMBIE_DOG) e.skin = 0xFF7A8058;
+            if (t == Entity.RAIDER) e.hasGun = true;
             e.angle = (float) (-Math.PI / 2);
             e.hp = e.maxHp = 1;
             e.phase = 1.2f;
@@ -146,6 +166,12 @@ final class GameView extends View implements Menu.Host {
     }
 
     private void applySettings() {
+        float want = baseDp * settings.uiScale();
+        if (want != dp) {
+            dp = want;
+            menu.setDp(dp);
+            if (getWidth() > 0) onSizeChanged(getWidth(), getHeight(), getWidth(), getHeight());
+        }
         world.maxEntities = settings.maxPopulation();
         world.gore = settings.gore();
         sound.setVolumes(settings.music(), settings.sfx());
@@ -231,6 +257,7 @@ final class GameView extends View implements Menu.Host {
 
     @Override
     public void startGame(CityConfig cfg) {
+        records.gameStarted();
         loadWorld(cfg);
         applySettings();
         hasGame = true;
@@ -302,7 +329,7 @@ final class GameView extends View implements Menu.Host {
         super.onSizeChanged(w, h, oldw, oldh);
         portrait = h > w;
         int n = toolRects.length;
-        int perRow = portrait ? 5 : n;
+        int perRow = portrait ? 6 : n;
         int rows = (n + perRow - 1) / perRow;
         float gap = 5 * dp, rowH = 62 * dp;
         barTop = h - rows * rowH - 8 * dp;
@@ -376,6 +403,7 @@ final class GameView extends View implements Menu.Host {
         if (orderMarker > 0) orderMarker -= dt;
         for (int i = selection.size() - 1; i >= 0; i--) if (selection.get(i).dead) selection.remove(i);
         if (menu.liveBackground()) driftCamera(dt);
+        else if (director && follow == null && inGame) directCamera(dt);
         else if (follow != null) {
             if (follow.dead) follow = null;
             else {
@@ -385,7 +413,21 @@ final class GameView extends View implements Menu.Host {
                 camY += (ty - camY) * k;
             }
         }
-        sound.playTrack(inGame || menu.screen == Menu.PAUSE ? Synth.TRACK_GAME : Synth.TRACK_MENU);
+        if (inGame) updateMood(dt);
+        if (hasGame && inGame) {
+            recordTimer -= dt;
+            if (recordTimer <= 0) {
+                recordTimer = 2;
+                String got = records.check(world);
+                if (got != null) {
+                    achievement = got;
+                    achievementTime = 5;
+                    sound.play(Sfx.RADIO, 0.8f, 0);
+                }
+            }
+        }
+        if (achievementTime > 0) achievementTime -= dt;
+        sound.playTrack(inGame || menu.screen == Menu.PAUSE ? mood : Synth.TRACK_MENU);
         playSounds(inGame ? 1f : 0.35f);
         if (world.dispatch.messageCount != lastMessageCount) {
             if (inGame && settings.radio()) sound.play(Sfx.RADIO, 0.5f, 0);
@@ -402,7 +444,229 @@ final class GameView extends View implements Menu.Host {
             c.drawText((int) (fps + 0.5f) + " FPS", getWidth() - 8 * dp,
                     menu.isOpen() ? getHeight() - 30 * dp : barTop - 8 * dp, text);
         }
-        if (running) postInvalidateOnAnimation();
+        if (running) {
+            if (!settings.batterySaver()) postInvalidateOnAnimation();
+            else postInvalidateDelayed(simPaused && !menu.isOpen() || menu.screen == Menu.PAUSE ? 100 : 33);
+        }
+    }
+
+    // ------------------------------------------------------------------ music, director cam, minimap
+
+    private int mood = Synth.TRACK_GAME, lastShots;
+    private float moodTimer, moodHold;
+
+    /** Music follows the action: calm when it's quiet, intense in a big fight. */
+    private void updateMood(float dt) {
+        moodTimer -= dt;
+        moodHold -= dt;
+        if (moodTimer > 0) return;
+        moodTimer = 1;
+        int shots = world.shotsFired - lastShots;
+        lastShots = world.shotsFired;
+        float vx0 = camX, vy0 = camY, vx1 = camX + getWidth() / scale, vy1 = camY + barTop / scale;
+        int onScreen = 0;
+        for (int i = 0, n = world.entities.size(); i < n; i++) {
+            Entity e = world.entities.get(i);
+            if (e.isZombie() && e.x > vx0 && e.x < vx1 && e.y > vy0 && e.y < vy1) onScreen++;
+        }
+        int want = world.zombieCount() == 0 ? Synth.TRACK_CALM
+                : shots >= 12 || onScreen >= 25 || !world.explosions.isEmpty() ? Synth.TRACK_ACTION : Synth.TRACK_GAME;
+        if (want == mood) {
+            if (want == Synth.TRACK_ACTION) moodHold = 15;
+            return;
+        }
+        if (moodHold > 0 && want != Synth.TRACK_ACTION) return;
+        mood = want;
+        moodHold = 20;
+    }
+
+    private float directorTimer, directorX, directorY, directorScale;
+
+    /** Director cam: every few seconds the camera moves to the most interesting thing going on. */
+    private void directCamera(float dt) {
+        directorTimer -= dt;
+        if (directorTimer <= 0) {
+            directorTimer = 7;
+            float best = 0, bx = camX + getWidth() / scale / 2, by = camY + barTop / scale / 2;
+            float wantScale = 2.2f * dp;
+            for (int i = 0; i < world.explosions.size(); i++) {
+                World.Explosion ex = world.explosions.get(i);
+                if (best < 50) {
+                    best = 50;
+                    bx = ex.x;
+                    by = ex.y;
+                }
+            }
+            for (int i = 0; i < world.dispatch.incidents.size(); i++) {
+                Dispatch.Incident inc = world.dispatch.incidents.get(i);
+                float sc = inc.zombiesNear * 2 + (inc.cops + inc.soldiers) * 3;
+                if (sc > best) {
+                    best = sc;
+                    bx = inc.x;
+                    by = inc.y;
+                }
+            }
+            for (int i = 0; i < world.fleet.vehicles.size(); i++) {
+                Fleet.Vehicle v = world.fleet.vehicles.get(i);
+                float sc = v.type == Fleet.HELI || v.type == Fleet.TANK ? 40 : v.type == Fleet.FIRE_ENGINE && v.spraying ? 30
+                        : v.type == Fleet.TRAIN ? 20 : 0;
+                if (sc > best) {
+                    best = sc;
+                    bx = v.x;
+                    by = v.y;
+                }
+            }
+            for (int i = 0; i < world.dispatch.zones.size(); i++) {
+                Dispatch.SafeZone z = world.dispatch.zones.get(i);
+                float sc = world.countZombiesNear(z.x, z.y, z.r * 2) * 3;
+                if (sc > best) {
+                    best = sc;
+                    bx = z.x;
+                    by = z.y;
+                }
+            }
+            if (best < 10 && !world.dispatch.log.isEmpty()) {
+                Dispatch.Message m = world.dispatch.log.get(world.dispatch.log.size() - 1);
+                if (m.age < 10 && (m.x != 0 || m.y != 0)) {
+                    bx = m.x;
+                    by = m.y;
+                }
+            }
+            // Fall back to a random person now and then.
+            if (best < 10 && !world.entities.isEmpty() && rnd.nextFloat() < 0.5f) {
+                Entity e = world.entities.get(rnd.nextInt(world.entities.size()));
+                bx = e.x;
+                by = e.y;
+                wantScale = 3.2f * dp;
+            }
+            directorX = bx;
+            directorY = by;
+            directorScale = Math.min(10f, wantScale);
+        }
+        float k = Math.min(1, dt * 1.2f);
+        scale += (directorScale - scale) * k;
+        float tx = directorX - getWidth() / scale / 2, ty = directorY - barTop / scale / 2;
+        camX += (tx - camX) * k;
+        camY += (ty - camY) * k;
+        clampCamera();
+    }
+
+    private final RectF miniRect = new RectF(), camChip = new RectF();
+    private android.graphics.Bitmap miniMap;
+    private World miniWorld;
+    private int miniCollapsed = -1;
+    private final Rect miniSrc = new Rect();
+
+    /** The minimap: the whole city small, with zombies, people, safe zones, vehicles and the camera view. */
+    private void drawMinimap(Canvas c) {
+        if (!settings.minimap()) {
+            miniRect.setEmpty();
+        } else {
+            float size = portrait ? Math.min(getWidth() - statsRect.right - 18 * dp, 120 * dp) : Math.min(130 * dp, getHeight() * 0.3f);
+            if (portrait && size < 70 * dp) size = 90 * dp;
+            if (portrait && size >= 70 * dp && getWidth() - statsRect.right - 18 * dp >= 70 * dp)
+                miniRect.set(getWidth() - 10 * dp - size, statsRect.top, getWidth() - 10 * dp, statsRect.top + size);
+            else
+                miniRect.set(getWidth() - 10 * dp - size, barTop - 10 * dp - size, getWidth() - 10 * dp, barTop - 10 * dp);
+            int collapsed = 0;
+            for (int i = 0; i < world.city.buildings.size(); i++) if (world.city.buildings.get(i).collapsed) collapsed++;
+            if (miniMap == null || miniWorld != world || miniCollapsed != collapsed) {
+                // Redrawn only when the city changes.
+                miniWorld = world;
+                miniCollapsed = collapsed;
+                miniMap = android.graphics.Bitmap.createBitmap(200, 200, android.graphics.Bitmap.Config.ARGB_8888);
+                Canvas mc = new Canvas(miniMap);
+                Paint p = new Paint(Paint.FILTER_BITMAP_FLAG);
+                miniSrc.set(0, 0, world.city.bitmap.getWidth(), world.city.bitmap.getHeight());
+                roofDst.set(0, 0, 200, 200);
+                mc.drawBitmap(world.city.bitmap, miniSrc, roofDst, p);
+            }
+            fill.setColor(0xE0101216);
+            oval.set(miniRect.left - 3 * dp, miniRect.top - 3 * dp, miniRect.right + 3 * dp, miniRect.bottom + 3 * dp);
+            c.drawRoundRect(oval, 8 * dp, 8 * dp, fill);
+            miniSrc.set(0, 0, 200, 200);
+            bmpPaint.setAlpha(230);
+            c.drawBitmap(miniMap, miniSrc, miniRect, bmpPaint);
+            bmpPaint.setAlpha(255);
+            float sx = miniRect.width() / world.city.worldW(), sy = miniRect.height() / world.city.worldH();
+            for (int i = 0, n = world.dispatch.zones.size(); i < n; i++) {
+                Dispatch.SafeZone z = world.dispatch.zones.get(i);
+                fill.setColor(z.military ? 0x886FBF3F : 0x884F8FE0);
+                c.drawCircle(miniRect.left + z.x * sx, miniRect.top + z.y * sy, Math.max(2.5f * dp, z.r * sx), fill);
+            }
+            float dot = Math.max(1.2f, dp * 0.9f);
+            for (int i = 0, n = world.entities.size(); i < n; i++) {
+                Entity e = world.entities.get(i);
+                int col;
+                if (e.isZombie()) col = 0xFF7CE04A;
+                else if (e.isArmed()) col = e.type == Entity.SOLDIER ? 0xFFB8E07A : 0xFF6FA8FF;
+                else if (e.type == Entity.RAIDER) col = 0xFFFF4A3A;
+                else if (i % 3 != 0) continue;
+                else col = 0xAAFFFFFF;
+                fill.setColor(col);
+                float x = miniRect.left + e.x * sx, y = miniRect.top + e.y * sy;
+                c.drawRect(x - dot / 2, y - dot / 2, x + dot / 2, y + dot / 2, fill);
+            }
+            for (int i = 0, n = world.fleet.vehicles.size(); i < n; i++) {
+                Fleet.Vehicle v = world.fleet.vehicles.get(i);
+                if (v.type == Fleet.CAR && v.parked) continue;
+                fill.setColor(v.type == Fleet.HELI || v.type == Fleet.TANK ? 0xFFFFE27A : v.type == Fleet.FIRE_ENGINE ? 0xFFFF6A4A : 0xFFE0E0E0);
+                c.drawCircle(miniRect.left + v.x * sx, miniRect.top + v.y * sy, dot * 1.3f, fill);
+            }
+            stroke.setColor(0xFFFFFFFF);
+            stroke.setStrokeWidth(1 * dp);
+            c.drawRect(miniRect.left + camX * sx, miniRect.top + camY * sy, miniRect.left + (camX + getWidth() / scale) * sx,
+                    miniRect.top + (camY + barTop / scale) * sy, stroke);
+        }
+        // The Auto cam switch sits with the minimap.
+        text.setTextSize(11.5f * dp);
+        text.setTextAlign(Paint.Align.CENTER);
+        String label = director ? "Auto cam: ON" : "Auto cam";
+        float tw = text.measureText(label) + 20 * dp;
+        float right = miniRect.isEmpty() ? getWidth() - 10 * dp : miniRect.right;
+        float top = miniRect.isEmpty() ? barTop - 40 * dp : portrait && miniRect.top < barTop / 2 ? miniRect.bottom + 8 * dp
+                : miniRect.top - 36 * dp;
+        camChip.set(right - tw, top, right, top + 28 * dp);
+        fill.setColor(director ? 0xE03A6EA5 : 0xE0202227);
+        c.drawRoundRect(camChip, 9 * dp, 9 * dp, fill);
+        text.setColor(0xFFF2F2F2);
+        c.drawText(label, camChip.centerX(), camChip.centerY() + 4 * dp, text);
+    }
+
+    /** Draws the city (no buttons) into a picture for sharing. */
+    private void screenshotNow() {
+        if (shareHandler == null) {
+            world.say("Screenshots aren't available here");
+            return;
+        }
+        try {
+            android.graphics.Bitmap b = android.graphics.Bitmap.createBitmap(getWidth(), getHeight(), android.graphics.Bitmap.Config.ARGB_8888);
+            Canvas bc = new Canvas(b);
+            drawWorld(bc);
+            text.setTextAlign(Paint.Align.RIGHT);
+            text.setTextSize(12 * dp);
+            text.setColor(0xCCFFFFFF);
+            bc.drawText("Zombie City Sandbox  -  city " + world.city.cfg.code(), getWidth() - 10 * dp, getHeight() - 10 * dp, text);
+            shareHandler.share(b);
+            if (records.unlock(Records.PHOTO)) {
+                achievement = Records.ACHIEVEMENTS[Records.PHOTO][0];
+                achievementTime = 5;
+            }
+        } catch (Throwable t) {
+            world.say("Couldn't take a screenshot");
+        }
+    }
+
+    /** Saves and shares a picture; set by the activity. */
+    interface ShareHandler {
+        void share(android.graphics.Bitmap picture);
+    }
+
+    ShareHandler shareHandler;
+
+    @Override
+    public void screenshot() {
+        screenshotNow();
     }
 
     /** Slowly glides the camera over the city behind the main menu. */
@@ -473,9 +737,48 @@ final class GameView extends View implements Menu.Host {
 
         for (int i = 0, n = world.dispatch.zones.size(); i < n; i++) drawZone(c, world.dispatch.zones.get(i));
 
+        for (int i = 0, n = world.barriers.size(); i < n; i++) {
+            float[] b = world.barriers.get(i);
+            if (b[0] < vx0 || b[0] > vx1 || b[1] < vy0 || b[1] > vy1) continue;
+            // Planks and sandbags; they splinter as they take hits.
+            fill.setColor(0x55000000);
+            c.drawRect(b[0] - 7, b[1] - 5, b[0] + 9, b[1] + 8, fill);
+            for (int k = 0; k < 3; k++) {
+                fill.setColor(k % 2 == 0 ? 0xFFA38D5E : 0xFF917C50);
+                c.drawCircle(b[0] - 5 + k * 5, b[1] + 3, 3, fill);
+            }
+            fill.setColor(0xFF8A6238);
+            c.drawRect(b[0] - 8, b[1] - 4, b[0] + 8, b[1] - 1.5f, fill);
+            if (b[2] > 110) c.drawRect(b[0] - 7, b[1] - 1, b[0] + 7, b[1] + 1.2f, fill);
+            fill.setColor(0xFFE8C547);
+            c.drawRect(b[0] - 6, b[1] - 4, b[0] - 3, b[1] - 1.5f, fill);
+            c.drawRect(b[0] + 2, b[1] - 4, b[0] + 5, b[1] - 1.5f, fill);
+        }
         for (int i = 0, n = world.pickups.size(); i < n; i++) {
             World.Pickup p = world.pickups.get(i);
             if (p.x < vx0 || p.x > vx1 || p.y < vy0 || p.y > vy1) continue;
+            if (p.uses > 0) {
+                // Supply crate (on a parachute while it drops).
+                float h = Math.max(0, p.drop) * 30;
+                fill.setColor(0x55000000);
+                c.drawRect(p.x - 5 + h * 0.3f, p.y - 4 + h * 0.4f, p.x + 6 + h * 0.3f, p.y + 5 + h * 0.4f, fill);
+                float cy = p.y - h;
+                if (p.drop > 0) {
+                    fill.setColor(0xE0E8E8E8);
+                    oval.set(p.x - 12, cy - 22, p.x + 12, cy - 8);
+                    c.drawOval(oval, fill);
+                    stroke.setColor(0xAA555555);
+                    stroke.setStrokeWidth(0.5f);
+                    c.drawLine(p.x - 11, cy - 14, p.x - 3, cy - 3, stroke);
+                    c.drawLine(p.x + 11, cy - 14, p.x + 3, cy - 3, stroke);
+                }
+                fill.setColor(0xFF4F5E36);
+                c.drawRect(p.x - 5, cy - 4, p.x + 5, cy + 4, fill);
+                fill.setColor(0xFFF2F2F2);
+                c.drawRect(p.x - 0.8f, cy - 3, p.x + 0.8f, cy + 3, fill);
+                c.drawRect(p.x - 3, cy - 0.8f, p.x + 3, cy + 0.8f, fill);
+                continue;
+            }
             // A dropped gun, gently pulsing so it can be spotted.
             fill.setColor(alpha(0xFFFFE27A, 0.25f + 0.15f * (float) Math.sin(world.time * 4)));
             c.drawCircle(p.x, p.y, 5, fill);
@@ -977,6 +1280,10 @@ final class GameView extends View implements Menu.Host {
             drawTank(c, v);
             return;
         }
+        if (v.type == Fleet.TRAIN) {
+            drawTrain(c, v);
+            return;
+        }
         boolean truck = v.type == Fleet.TRUCK, engine = v.type == Fleet.FIRE_ENGINE, amb = v.type == Fleet.AMBULANCE;
         float hl = truck || engine || amb ? 9.5f : 8f, hw = truck ? 5.2f : engine || amb ? 4.9f : 4.4f;
         if (v.spraying) {
@@ -1090,6 +1397,37 @@ final class GameView extends View implements Menu.Host {
             }
         }
         c.restore();
+    }
+
+    /** A passenger train: a locomotive pulling three carriages along the line. */
+    private void drawTrain(Canvas c, Fleet.Vehicle v) {
+        float dir = (float) Math.cos(v.angle);
+        for (int k = 0; k < 4; k++) {
+            float front = v.x - dir * k * 34, back = front - dir * 32;
+            float x0 = Math.min(front, back), x1 = Math.max(front, back);
+            fill.setColor(0x55000000);
+            c.drawRect(x0 + 2, v.y - 6, x1 + 2, v.y + 9, fill);
+            boolean loco = k == 0;
+            fill.setColor(loco ? 0xFFB8302A : 0xFF3A5A8A);
+            oval.set(x0, v.y - 7, x1, v.y + 7);
+            c.drawRoundRect(oval, 3, 3, fill);
+            fill.setColor(loco ? 0xFF8E2420 : 0xFF2E4A72);
+            c.drawRect(x0 + 1, v.y - 7, x1 - 1, v.y - 5.5f, fill);
+            if (loco) {
+                // Cab windows at the front.
+                fill.setColor(0xFF1E2A33);
+                float cab = front - dir * 6;
+                c.drawRect(Math.min(front, cab) + 0.5f, v.y - 5, Math.max(front, cab) - 0.5f, v.y + 5, fill);
+                fill.setColor(0xFFFFF4C0);
+                c.drawCircle(front - dir * 0.5f, v.y - 4, 0.9f, fill);
+                c.drawCircle(front - dir * 0.5f, v.y + 4, 0.9f, fill);
+            } else {
+                fill.setColor(0xFFCFE0EE);
+                for (float x = x0 + 3; x < x1 - 3; x += 5) c.drawRect(x, v.y - 5.5f, x + 3, v.y + 5.5f, fill);
+                fill.setColor(0xFF3A5A8A);
+                c.drawRect(x0 + 2, v.y - 4.5f, x1 - 2, v.y + 4.5f, fill);
+            }
+        }
     }
 
     /** A tank: tracks, hull and a turret that turns on its own. */
@@ -1232,6 +1570,7 @@ final class GameView extends View implements Menu.Host {
         if (overlaps(r, statsShown)) return true;
         for (int i = 0; i < feedCount; i++) if (overlaps(r, feedLines[i])) return true;
         for (RectF t : topRects) if (overlaps(r, t)) return true;
+        if (overlaps(r, miniRect) || overlaps(r, camChip)) return true;
         return r.bottom > barTop;
     }
 
@@ -1413,6 +1752,14 @@ final class GameView extends View implements Menu.Host {
         c.drawCircle(r * 0.9f, r * 0.38f, r * 0.2f, fill);
         fill.setColor(0xFF1A1A1A);
         c.drawCircle(r * 1.5f, 0, r * 0.14f, fill);
+        if (e.isZombie()) {
+            // Red eyes and a bloody muzzle.
+            fill.setColor(0xFFFF3B2F);
+            c.drawCircle(r * 1.2f, -r * 0.2f, r * 0.1f, fill);
+            c.drawCircle(r * 1.2f, r * 0.2f, r * 0.1f, fill);
+            fill.setColor(0xAA6E0A0A);
+            c.drawCircle(r * 1.45f, 0, r * 0.22f, fill);
+        }
         if (e.hurt > 0) {
             fill.setColor(alpha(0xFFFFFFFF, e.hurt * 0.7f));
             c.drawCircle(0, 0, r * 1.1f, fill);
@@ -1429,7 +1776,7 @@ final class GameView extends View implements Menu.Host {
     }
 
     private void drawEntity(Canvas c, Entity e, boolean healthBar) {
-        if (e.type == Entity.DOG) {
+        if (e.type == Entity.DOG || e.type == Entity.ZOMBIE_DOG) {
             drawDog(c, e, healthBar);
             return;
         }
@@ -1520,6 +1867,11 @@ final class GameView extends View implements Menu.Host {
         if (e.type == Entity.COP) {
             fill.setColor(0xFF0B1022);
             oval.set(r * 0.35f, -r * 0.45f, r * 0.85f, r * 0.45f);
+            c.drawOval(oval, fill);
+        } else if (e.type == Entity.RAIDER) {
+            // Bandana mask.
+            fill.setColor(0xFF1A1A1A);
+            oval.set(r * 0.2f, -r * 0.5f, r * 0.62f, r * 0.5f);
             c.drawOval(oval, fill);
         } else if (e.type == Entity.SOLDIER) {
             if (e.role == Entity.ROLE_COMMANDER) {
@@ -1673,7 +2025,25 @@ final class GameView extends View implements Menu.Host {
 
         // The feed goes first so map labels can keep out of its way.
         drawFeed(c);
+        drawMinimap(c);
         drawMapLabels(c);
+        drawPopups(c);
+        if (achievementTime > 0 && achievement != null) {
+            // Achievement unlocked banner.
+            float a = Math.min(1, achievementTime);
+            text.setTextSize(15 * dp);
+            text.setTextAlign(Paint.Align.CENTER);
+            String line = "Achievement unlocked: " + achievement;
+            float tw = text.measureText(line) + 40 * dp;
+            oval.set(w / 2f - tw / 2, barTop - 110 * dp, w / 2f + tw / 2, barTop - 72 * dp);
+            fill.setColor(alpha(0xF02F5E2B, a));
+            c.drawRoundRect(oval, 12 * dp, 12 * dp, fill);
+            stroke.setColor(alpha(0xFF9BE08A, a));
+            stroke.setStrokeWidth(1.5f * dp);
+            c.drawRoundRect(oval, 12 * dp, 12 * dp, stroke);
+            text.setColor(alpha(0xFFFFFFFF, a));
+            c.drawText(line, w / 2f, oval.centerY() + 5 * dp, text);
+        }
 
         // Top buttons.
         String[] top = {simPaused ? "Play" : "Pause", "Speed " + SPEEDS[speedIdx] + "x",
@@ -1689,7 +2059,10 @@ final class GameView extends View implements Menu.Host {
             stroke.setStrokeWidth(1 * dp);
             c.drawRoundRect(r, 9 * dp, 9 * dp, stroke);
             text.setColor(0xFFF2F2F2);
+            float base = text.getTextSize(), fit = text.measureText(top[i]);
+            if (fit > r.width() - 8 * dp) text.setTextSize(base * (r.width() - 8 * dp) / fit);
             c.drawText(top[i], r.centerX(), r.centerY() + 4.5f * dp, text);
+            text.setTextSize(base);
         }
 
         // Bottom tool bar.
@@ -1711,9 +2084,13 @@ final class GameView extends View implements Menu.Host {
             text.setColor(sel ? 0xFFFFFFFF : 0xFFC8CCD2);
             String name = i == TOOL_ZOMBIE ? Entity.NAMES[ZOMBIE_VARIANTS[zombieVariant]]
                     : i == TOOL_CIV ? Entity.NAMES[CIV_VARIANTS[civVariant]]
-                    : i == TOOL_MIL && milVariant > 0 ? Entity.ROLE_NAMES[milVariant] : TOOL_NAMES[i];
+                    : i == TOOL_MIL && milVariant > 0 ? Entity.ROLE_NAMES[milVariant]
+                    : i == TOOL_PLACE ? PLACE_NAMES[placeVariant] : i == TOOL_EVENT ? EVENT_NAMES[eventVariant] : TOOL_NAMES[i];
+            float fit = text.measureText(name);
+            if (fit > r.width() - 6 * dp) text.setTextSize(11.5f * dp * (r.width() - 6 * dp) / fit);
             c.drawText(name, cx, r.bottom - 7 * dp, text);
-            if ((i == TOOL_ZOMBIE || i == TOOL_CIV || i == TOOL_MIL) && sel) {
+            text.setTextSize(11.5f * dp);
+            if ((i == TOOL_ZOMBIE || i == TOOL_CIV || i == TOOL_MIL || i == TOOL_PLACE || i == TOOL_EVENT) && sel) {
                 text.setTextSize(9 * dp);
                 c.drawText("tap to change", cx, r.top + 10 * dp, text);
                 text.setTextSize(11.5f * dp);
@@ -1738,15 +2115,125 @@ final class GameView extends View implements Menu.Host {
                     : "Selected " + Dispatch.name(lead) + (selection.size() > 1 ? " and " + (selection.size() - 1) + " more" : "")
                     + ". Tap where to send them, or tap them again to release.", w / 2f, infoY);
         } else if (follow != null) {
-            String s = "Following " + Entity.NAMES[follow.type] + "  -  HP " + Math.max(0, (int) follow.hp) + "/"
-                    + (int) follow.maxHp + (follow.infected ? "  -  INFECTED" : "") + "   (drag to stop)";
-            drawBanner(c, s, w / 2f, infoY);
+            drawInspect(c, follow);
         } else if (hintTime > 0) {
             drawBanner(c, "Pick a unit or tool below, then tap the city.  Use Move to drag around, pinch to zoom.",
                     w / 2f, infoY);
         } else if (simPaused) {
             drawBanner(c, "PAUSED", w / 2f, infoY);
         }
+    }
+
+    /** The Clear menu under the Clear button, and the Undo button above the tool bar. */
+    private void drawPopups(Canvas c) {
+        if (!lastAction.isEmpty()) {
+            text.setTextSize(13 * dp);
+            text.setTextAlign(Paint.Align.CENTER);
+            undoRect.set(10 * dp, barTop - 44 * dp, 10 * dp + 84 * dp, barTop - 10 * dp);
+            fill.setColor(0xE0202227);
+            c.drawRoundRect(undoRect, 9 * dp, 9 * dp, fill);
+            stroke.setColor(0x60FFFFFF);
+            stroke.setStrokeWidth(1 * dp);
+            c.drawRoundRect(undoRect, 9 * dp, 9 * dp, stroke);
+            text.setColor(0xFFF2F2F2);
+            c.drawText("Undo", undoRect.centerX(), undoRect.centerY() + 4.5f * dp, text);
+        } else undoRect.setEmpty();
+        if (!clearMenu) return;
+        RectF b = topRects[BTN_CLEAR];
+        float mw = Math.max(b.width(), 150 * dp), ih = 40 * dp;
+        float left = Math.min(b.left, getWidth() - mw - 8 * dp);
+        text.setTextSize(13 * dp);
+        text.setTextAlign(Paint.Align.LEFT);
+        for (int i = 0; i < clearRects.length; i++) {
+            RectF r = clearRects[i];
+            r.set(left, b.bottom + 6 * dp + i * (ih + 4 * dp), left + mw, b.bottom + 6 * dp + i * (ih + 4 * dp) + ih);
+            fill.setColor(i == 0 ? 0xF0802020 : 0xF0202227);
+            c.drawRoundRect(r, 9 * dp, 9 * dp, fill);
+            text.setColor(0xFFF2F2F2);
+            c.drawText((i == 0 ? "Clear " : "") + CLEAR_NAMES[i], r.left + 12 * dp, r.centerY() + 4.5f * dp, text);
+        }
+    }
+
+    /** A card about the person being followed: who they are, what they're doing and what they carry. */
+    private void drawInspect(Canvas c, Entity e) {
+        java.util.ArrayList<String> lines = new java.util.ArrayList<String>();
+        String title;
+        if (e.type == Entity.DOG) title = Names.dog(e.nameSeed) + "  -  Dog";
+        else if (e.type == Entity.ZOMBIE_DOG) title = Names.dog(e.nameSeed) + "  -  Zombie dog";
+        else if (e.isZombie()) title = Entity.NAMES[e.type] + (e.origin >= 0 ? "  -  was " + Names.person(e.nameSeed) : "");
+        else if (e.type == Entity.COP) title = "Officer " + Names.person(e.nameSeed) + "  -  " + Dispatch.name(e);
+        else if (e.type == Entity.SOLDIER) title = Names.person(e.nameSeed) + "  -  " + Entity.ROLE_NAMES[e.role] + ", " + Dispatch.name(e);
+        else title = Names.person(e.nameSeed) + "  -  " + Entity.NAMES[e.type];
+        lines.add(doing(e));
+        String health = "Health " + Math.max(0, (int) e.hp) + "/" + (int) e.maxHp;
+        if (e.infected) health += "   BITTEN: turns in " + Math.max(0, (int) e.infectTimer) + "s";
+        if (e.fresh > 0) health += "   Freshly turned";
+        lines.add(health);
+        if (e.canShoot()) lines.add("Ammo " + e.ammo + " + " + e.reserve + (e.grenades > 0 ? "   Grenades " + e.grenades : "")
+                + (e.kills > 0 ? "   Kills " + e.kills : ""));
+        if (e.leader != null && !e.isZombie()) {
+            String who = e.leader.type == Entity.DOG ? Names.dog(e.leader.nameSeed) : Names.person(e.leader.nameSeed);
+            lines.add(e.type == Entity.DOG ? "Owner: " + who : e.type == Entity.SOLDIER ? "Sticking with " + who : "With " + who);
+        }
+        int followers = 0;
+        for (int i = 0, n = world.entities.size(); i < n; i++) if (world.entities.get(i).leader == e) followers++;
+        if (followers > 0 && !e.isArmed()) lines.add((e.task == Dispatch.T_PATROL ? "Leading a patrol of " : "Looking after ")
+                + followers + (followers == 1 ? " other" : " others"));
+        if (e.leadsHorde) lines.add("Leading a horde of about " + e.hordeSize);
+        text.setTextAlign(Paint.Align.LEFT);
+        text.setTextSize(14 * dp);
+        float lh = 18 * dp, cw = Math.min(getWidth() - 20 * dp, 420 * dp);
+        float ch = 30 * dp + lines.size() * lh + 8 * dp;
+        float left = (getWidth() - cw) / 2, top = barTop - ch - 8 * dp - (lastAction.isEmpty() ? 0 : 44 * dp);
+        oval.set(left, top, left + cw, top + ch);
+        fill.setColor(0xE8101216);
+        c.drawRoundRect(oval, 12 * dp, 12 * dp, fill);
+        fill.setColor(e.isZombie() ? 0xFF7CC24E : e.type == Entity.RAIDER ? 0xFFD83A3A : e.isArmed() ? 0xFF4F7BE0 : 0xFFF0AD4E);
+        c.drawRect(left, top + 10 * dp, left + 4 * dp, top + ch - 10 * dp, fill);
+        text.setColor(0xFFFFFFFF);
+        c.drawText(title, left + 14 * dp, top + 22 * dp, text);
+        text.setTextSize(12.5f * dp);
+        text.setColor(0xFFB8BDC4);
+        for (int i = 0; i < lines.size(); i++) c.drawText(lines.get(i), left + 14 * dp, top + 22 * dp + (i + 1) * lh, text);
+        text.setTextSize(11 * dp);
+        text.setTextAlign(Paint.Align.RIGHT);
+        text.setColor(0xFF8A9099);
+        c.drawText("drag to stop following", left + cw - 12 * dp, top + 22 * dp, text);
+    }
+
+    /** What someone is up to, in plain words. */
+    private String doing(Entity e) {
+        if (e.isZombie()) {
+            if (e.feedTimer > 0) return "Feeding";
+            if (e.hordeLeader != null) return "Shambling along with a horde";
+            if (e.noiseTimer > 0) return "Heading for a noise";
+            return "Hunting";
+        }
+        if (e.stun > 0) return "Dazed";
+        if (e.aiming) return "Shooting";
+        if (e.fleeTimer > 0 && !e.isArmed()) return "Running for their life";
+        switch (e.task) {
+            case Dispatch.T_RESPOND: return "Responding to a 911 call" + (e.incident != null ? " on " + e.incident.place : "");
+            case Dispatch.T_GUARD: return "Guarding the " + (e.zone != null ? e.zone.place + " " : "") + "safe zone";
+            case Dispatch.T_SEEK: return "Heading for a safe zone";
+            case Dispatch.T_SHELTER: return "Sheltering in a safe zone";
+            case Dispatch.T_POST: return "On guard duty";
+            case Dispatch.T_MOVE: return "Following orders";
+            case Dispatch.T_HOLD: return "Holding position";
+            case Dispatch.T_HIDE: return "Running to hide indoors";
+            case Dispatch.T_PICKUP: return "Grabbing a dropped gun";
+            case Dispatch.T_RESUPPLY: return "Going to restock ammo";
+            case Dispatch.T_HEAL: return "Going to get patched up";
+            case Dispatch.T_RIDE: return "Running for a car";
+            case Dispatch.T_ENLIST: return "Going to sign up";
+            case Dispatch.T_CLEANUP: return "Clearing away bodies";
+            case Dispatch.T_LOOT: return e.type == Entity.RAIDER ? "Looting a shop" : "On a supply run";
+            case Dispatch.T_PATROL: return "Leading an armed patrol";
+        }
+        if (e.type == Entity.RAIDER) return "Looking for trouble";
+        if (e.type == Entity.MEDIC) return "Looking for anyone hurt";
+        if (e.isArmed()) return "On patrol";
+        return e.leader != null ? "Staying close" : "Going about their day";
     }
 
     /** Draws text on a dark pill above the tool bar, wrapping onto more lines on narrow screens. */
@@ -1786,7 +2273,7 @@ final class GameView extends View implements Menu.Host {
             }
             float s = size / 5.2f;
             if (type == Entity.BRUTE) s *= 0.62f;
-            if (type == Entity.DOG) s *= 1.3f;
+            if (type == Entity.DOG || type == Entity.ZOMBIE_DOG) s *= 1.3f;
             float forward = e.isArmed() ? 1.1f : e.isZombie() ? 0.6f : 0f;
             c.save();
             c.translate(cx, cy + e.radius * s * forward);
@@ -1822,6 +2309,20 @@ final class GameView extends View implements Menu.Host {
             c.drawLine(cx, cy - a, cx + hd, cy - a + hd, stroke);
             c.drawLine(cx, cy + a, cx - hd, cy + a - hd, stroke);
             c.drawLine(cx, cy + a, cx + hd, cy + a - hd, stroke);
+        } else if (t == TOOL_PLACE) {
+            drawPlaceIcon(c, cx, cy, size);
+        } else if (t == TOOL_EVENT) {
+            // A warning triangle.
+            fill.setColor(0xFFFFC24A);
+            android.graphics.Path tri = new android.graphics.Path();
+            tri.moveTo(cx, cy - size * 0.85f);
+            tri.lineTo(cx + size * 0.9f, cy + size * 0.7f);
+            tri.lineTo(cx - size * 0.9f, cy + size * 0.7f);
+            tri.close();
+            c.drawPath(tri, fill);
+            fill.setColor(0xFF1A1A1A);
+            c.drawRect(cx - size * 0.09f, cy - size * 0.35f, cx + size * 0.09f, cy + size * 0.25f, fill);
+            c.drawCircle(cx, cy + size * 0.45f, size * 0.1f, fill);
         } else if (t == TOOL_ZONE) {
             stroke.setColor(0xFF9BD46A);
             stroke.setStrokeWidth(2 * dp);
@@ -1849,6 +2350,49 @@ final class GameView extends View implements Menu.Host {
             float a = size * 0.55f;
             c.drawLine(cx - a, cy - a, cx + a, cy + a, stroke);
             c.drawLine(cx - a, cy + a, cx + a, cy - a, stroke);
+        }
+    }
+
+    private void drawPlaceIcon(Canvas c, float cx, float cy, float size) {
+        switch (placeVariant) {
+            case 4:
+                // Barricade: planks on trestles.
+                fill.setColor(0xFF8A6238);
+                c.drawRect(cx - size, cy - size * 0.35f, cx + size, cy - size * 0.05f, fill);
+                c.drawRect(cx - size, cy + size * 0.15f, cx + size, cy + size * 0.45f, fill);
+                fill.setColor(0xFFE8C547);
+                c.drawRect(cx - size * 0.8f, cy - size * 0.35f, cx - size * 0.5f, cy - size * 0.05f, fill);
+                c.drawRect(cx + size * 0.2f, cy + size * 0.15f, cx + size * 0.5f, cy + size * 0.45f, fill);
+                break;
+            case 5:
+                fill.setColor(0xFF4F5E36);
+                c.drawRect(cx - size * 0.8f, cy - size * 0.6f, cx + size * 0.8f, cy + size * 0.6f, fill);
+                fill.setColor(0xFFF2F2F2);
+                c.drawRect(cx - size * 0.1f, cy - size * 0.45f, cx + size * 0.1f, cy + size * 0.45f, fill);
+                c.drawRect(cx - size * 0.45f, cy - size * 0.1f, cx + size * 0.45f, cy + size * 0.1f, fill);
+                break;
+            case 6:
+                fill.setColor(0xFFFF6A1A);
+                c.drawCircle(cx, cy + size * 0.2f, size * 0.55f, fill);
+                fill.setColor(0xFFFFC24A);
+                c.drawCircle(cx, cy + size * 0.3f, size * 0.3f, fill);
+                break;
+            default: {
+                int col = placeVariant == 0 ? 0xFF2E5FB0 : placeVariant == 1 ? 0xFF1C1D22 : placeVariant == 2 ? 0xFF55623A : 0xFFC8302A;
+                fill.setColor(col);
+                oval.set(cx - size, cy - size * 0.5f, cx + size, cy + size * 0.5f);
+                c.drawRoundRect(oval, size * 0.25f, size * 0.25f, fill);
+                fill.setColor(0xFF1E2A33);
+                c.drawRect(cx + size * 0.2f, cy - size * 0.4f, cx + size * 0.55f, cy + size * 0.4f, fill);
+                if (placeVariant == 2) {
+                    stroke.setColor(0xFF3A4228);
+                    stroke.setStrokeWidth(size * 0.2f);
+                    c.drawLine(cx, cy, cx + size * 1.3f, cy, stroke);
+                    fill.setColor(0xFF627042);
+                    c.drawCircle(cx, cy, size * 0.35f, fill);
+                }
+                break;
+            }
         }
     }
 
@@ -1911,6 +2455,8 @@ final class GameView extends View implements Menu.Host {
                     if (tool == i && i == TOOL_ZOMBIE) zombieVariant = (zombieVariant + 1) % ZOMBIE_VARIANTS.length;
                     if (tool == i && i == TOOL_CIV) civVariant = (civVariant + 1) % CIV_VARIANTS.length;
                     if (tool == i && i == TOOL_MIL) milVariant = (milVariant + 1) % Entity.ROLE_NAMES.length;
+                    if (tool == i && i == TOOL_PLACE) placeVariant = (placeVariant + 1) % PLACE_NAMES.length;
+                    if (tool == i && i == TOOL_EVENT) eventVariant = (eventVariant + 1) % EVENT_NAMES.length;
                     if (i != TOOL_ORDER) selection.clear();
                     tool = i;
                     hintTime = Math.min(hintTime, 3);
@@ -1929,12 +2475,55 @@ final class GameView extends View implements Menu.Host {
                 return true;
             }
         }
+        if (clearMenu) {
+            for (int i = 0; i < clearRects.length; i++)
+                if (clearRects[i].contains(x, y)) {
+                    click();
+                    clearMenu = false;
+                    switch (i) {
+                        case 0: world.clearAll(); follow = null; break;
+                        case 1: world.clearZombies(); break;
+                        case 2: world.clearBodies(); break;
+                        case 3: world.clearWrecks(); break;
+                        default: world.clearBarricades(); break;
+                    }
+                    return true;
+                }
+        }
+        if (camChip.contains(x, y)) {
+            click();
+            director = !director;
+            directorTimer = 0;
+            follow = null;
+            return true;
+        }
+        if (!miniRect.isEmpty() && miniRect.contains(x, y)) {
+            // Jump there.
+            follow = null;
+            director = false;
+            float wx = (x - miniRect.left) / miniRect.width() * world.city.worldW();
+            float wy = (y - miniRect.top) / miniRect.height() * world.city.worldH();
+            camX = wx - getWidth() / scale / 2;
+            camY = wy - barTop / scale / 2;
+            clampCamera();
+            click();
+            return true;
+        }
+        if (!lastAction.isEmpty() && undoRect.contains(x, y)) {
+            click();
+            undo();
+            return true;
+        }
         for (int i = 0; i < topRects.length; i++) {
             RectF r = topRects[i];
             if (x >= r.left - 4 * dp && x <= r.right + 4 * dp && y >= r.top - 6 * dp && y <= r.bottom + 6 * dp) {
                 pressTop(i);
                 return true;
             }
+        }
+        if (clearMenu) {
+            clearMenu = false;
+            return true;
         }
         if (statsCollapsed ? (x < statsRect.left + 300 * dp && y < statsRect.top + 30 * dp && x > statsRect.left
                 && y > statsRect.top) : statsRect.contains(x, y)) {
@@ -1962,8 +2551,7 @@ final class GameView extends View implements Menu.Host {
                 world.say(settings.buildings3d() ? "3D view" : "Bird's-eye view");
                 break;
             case BTN_CLEAR:
-                world.clearAll();
-                follow = null;
+                clearMenu = !clearMenu;
                 break;
             case BTN_MENU:
                 menu.open(Menu.PAUSE);
@@ -1981,9 +2569,15 @@ final class GameView extends View implements Menu.Host {
 
     private void worldDown(float x, float y) {
         float wx = worldX(x), wy = worldY(y);
+        director = false;
         if (tool == TOOL_PAN) return;
         follow = null;
-        if (tool == TOOL_ORDER) {
+        if (tool != TOOL_ORDER && tool != TOOL_BOMB && tool != TOOL_ERASE) lastAction.clear();
+        if (tool == TOOL_PLACE) {
+            place(wx, wy);
+        } else if (tool == TOOL_EVENT) {
+            event(wx, wy);
+        } else if (tool == TOOL_ORDER) {
             orderTap(wx, wy);
         } else if (tool == TOOL_BOMB) {
             world.explode(wx, wy, 70, 400);
@@ -2004,13 +2598,21 @@ final class GameView extends View implements Menu.Host {
         if (tool == TOOL_PAN) {
             if (dragged) {
                 follow = null;
+                director = false;
                 camX -= (x - lastX) / scale;
                 camY -= (y - lastY) / scale;
                 clampCamera();
             }
         } else if (tool == TOOL_ERASE) {
             world.erase(wx, wy, 22);
-        } else if (tool != TOOL_BOMB && tool != TOOL_ZONE && tool != TOOL_ORDER) {
+        } else if (tool == TOOL_PLACE) {
+            // Drag to build a line of barricades.
+            if (placeVariant == 4 && (Math.abs(wx - lastSpawnX) > City.T * 0.8f || Math.abs(wy - lastSpawnY) > City.T * 0.8f)) {
+                place(wx, wy);
+                lastSpawnX = wx;
+                lastSpawnY = wy;
+            }
+        } else if (tool != TOOL_BOMB && tool != TOOL_ZONE && tool != TOOL_ORDER && tool != TOOL_EVENT) {
             float ddx = wx - lastSpawnX, ddy = wy - lastSpawnY;
             float spacing = BRUSHES[brushIdx] > 1 ? 22 : 12;
             if (ddx * ddx + ddy * ddy > spacing * spacing) {
@@ -2092,12 +2694,62 @@ final class GameView extends View implements Menu.Host {
                 ox = (float) (Math.cos(a) * r);
                 oy = (float) (Math.sin(a) * r);
             }
-            if (tool == TOOL_MIL) world.spawnSoldier(milVariant, wx + ox, wy + oy);
-            else world.spawn(type, wx + ox, wy + oy);
+            Entity e = tool == TOOL_MIL ? world.spawnSoldier(milVariant, wx + ox, wy + oy) : world.spawn(type, wx + ox, wy + oy);
+            if (e != null) lastAction.add(e);
         }
     }
 
+    /** The Place tool: vehicles, barricades, supply crates and fires. */
+    private void place(float wx, float wy) {
+        Object made = null;
+        switch (placeVariant) {
+            case 0: made = world.fleet.placeCar(wx, wy); break;
+            case 1: made = world.fleet.placePolice(wx, wy); break;
+            case 2: made = world.fleet.placeTank(wx, wy); break;
+            case 3:
+                made = world.fleet.placeFireEngine(wx, wy);
+                if (made == null) world.say("Nothing is burning");
+                break;
+            case 4: made = world.placeBarricade(wx, wy); break;
+            case 5: made = world.placeCrate(wx, wy, 0); break;
+            default: world.ignite(wx, wy, 40); break;
+        }
+        if (made != null) lastAction.add(made);
+    }
+
+    /** The Events tool: things that happen to the city at the spot you tap. */
+    private void event(float wx, float wy) {
+        switch (eventVariant) {
+            case 0: lastAction.addAll(world.hordeEvent(wx, wy)); break;
+            case 1: world.panic(wx, wy); break;
+            case 2:
+                if (!world.indoorOutbreakAt(wx, wy)) world.say("Tap closer to a building");
+                break;
+            case 3: world.supplyDrop(wx, wy); break;
+            default: world.raiderGang(wx, wy, 4 + rnd.nextInt(3)); break;
+        }
+    }
+
+    /** Takes back whatever the last tap or drag created. */
+    private void undo() {
+        for (Object o : lastAction) {
+            if (o instanceof Entity) {
+                Entity e = (Entity) o;
+                e.dead = true;
+                e.removed = true;
+            } else if (o instanceof float[]) {
+                world.removeBarricade((float[]) o);
+            } else if (o instanceof World.Pickup) {
+                world.pickups.remove(o);
+            } else if (o instanceof Fleet.Vehicle) {
+                world.fleet.vehicles.remove(o);
+            }
+        }
+        lastAction.clear();
+    }
+
     private void startPinch(MotionEvent ev) {
+        director = false;
         startPinchExcluding(ev, -1);
     }
 

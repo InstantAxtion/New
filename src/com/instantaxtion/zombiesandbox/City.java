@@ -17,12 +17,12 @@ final class City {
     static final int FAR = 1 << 20;
 
     static final byte ROAD = 0, SIDEWALK = 1, BUILDING = 2, GRASS = 3, TREE = 4, PLAZA = 5, CAR = 6,
-            STATUE = 7, LOT = 8, BASE = 9, FENCE = 10, PUMP = 11, RUBBLE = 12;
+            STATUE = 7, LOT = 8, BASE = 9, FENCE = 10, PUMP = 11, RUBBLE = 12, RAIL = 13;
 
     static final int OFFICE = 0, HOUSE = 1, WAREHOUSE = 2, STATION = 3, BARRACKS = 4, TOWER = 5, HOSPITAL = 6,
             SHOP = 7, CHURCH = 8, SCHOOL = 9, FIRE_STATION = 10, MARKET = 11, KIOSK = 12, SPIRE = 13, CRYPT = 14,
-            APARTMENT = 15, GARAGE = 16, PHARMACY = 17;
-    static final int KIND_COUNT = 18;
+            APARTMENT = 15, GARAGE = 16, PHARMACY = 17, TRAIN_STATION = 18;
+    static final int KIND_COUNT = 19;
     private static final int[] APARTMENT_WALLS = {0xFFC9B8A0, 0xFFB5A08A, 0xFFD4C8B8, 0xFFA89484, 0xFFBFB0C0};
     private static final String[] PHARMACIES = {"CityCare Pharmacy", "Main Street Drugs", "HealthPlus", "Corner Pharmacy"};
     /** Ground decorations drawn into the map: {kind, x0, y0, x1, y1, variant} in world units. */
@@ -204,13 +204,14 @@ final class City {
                     l[4], l[8], l[5], l[6]);
             int k = l[6];
             if (k == OFFICE || k == HOUSE || k == WAREHOUSE || k == SHOP || k == CHURCH || k == SCHOOL || k == MARKET
-                    || k == KIOSK || k == APARTMENT || k == GARAGE || k == PHARMACY) placeDoor(b, l);
+                    || k == KIOSK || k == APARTMENT || k == GARAGE || k == PHARMACY || k == TRAIN_STATION) placeDoor(b, l);
             if (k == APARTMENT) b.capacity = Math.max(8, Math.min(30, l[2] * l[3]));
             // Bigger and taller buildings take more to bring down.
             b.maxHp = b.hp = 150 + l[2] * l[3] * 22 + l[7] * 60;
             Random nr = new Random(l[5]);
             if (k == CHURCH) b.name = SAINTS[nr.nextInt(SAINTS.length)] + " Church";
             else if (k == SCHOOL) b.name = SCHOOLS[nr.nextInt(SCHOOLS.length)];
+            else if (k == TRAIN_STATION) b.name = "Central Station";
             else if (k == MARKET) {
                 b.name = MARKETS[nr.nextInt(MARKETS.length)];
                 b.stock = 240;
@@ -228,7 +229,9 @@ final class City {
             f.field = new int[w * h];
             fieldFromPoints(f.field, new float[]{f.x}, new float[]{f.y}, 1);
         }
-        bitmap = Bitmap.createBitmap((int) (w * T * detail), (int) (h * T * detail), Bitmap.Config.ARGB_8888);
+        // The big map uses 16-bit colour to keep memory down.
+        bitmap = Bitmap.createBitmap((int) (w * T * detail), (int) (h * T * detail),
+                w * detail > 140 ? Bitmap.Config.RGB_565 : Bitmap.Config.ARGB_8888);
         Canvas canvas = new Canvas(bitmap);
         if (detail != 1f) canvas.scale(detail, detail);
         render(canvas);
@@ -257,24 +260,56 @@ final class City {
 
     // ------------------------------------------------------------------ generation
 
-    /** Road bands along one axis as {start, width}: normal roads are 3 tiles, boulevards 5. */
+    /**
+     * Road bands along one axis as {start, width}: local streets are 3 tiles, main roads 5. Blocks are
+     * short downtown and get longer towards the edge of town; every few streets is a main road.
+     */
     private List<int[]> separators(int size) {
         List<int[]> out = new ArrayList<int[]>();
         int p = origin;
         out.add(new int[]{p, 3});
+        boolean rural = cfg.density() == 0 && cfg.style() == CityConfig.STYLE_HOUSES;
         while (true) {
-            int next = p + 3 + 9 + rnd.nextInt(7);
+            float fromCentre = Math.abs(p + 8 - size / 2f) / (size / 2f);
+            int spacing = fromCentre < 0.3f ? 8 + rnd.nextInt(4) : fromCentre < 0.65f ? 10 + rnd.nextInt(5) : 12 + rnd.nextInt(7);
+            if (rural) spacing += 5 + rnd.nextInt(5);
+            int next = p + 3 + spacing;
             if (next + 3 > origin + size - 4) break;
             out.add(new int[]{next, 3});
             p = next;
         }
-        if (cfg.layout() > 0 && out.size() >= 4) {
-            int[] b = out.get(1 + rnd.nextInt(out.size() - 2));
-            b[0] -= 1;
-            b[1] = 5;
+        if ((cfg.layout() > 0 || size >= 128) && !rural && out.size() >= 4) {
+            // Main roads: one every four or five streets, starting somewhere random.
+            int every = 4 + rnd.nextInt(2);
+            for (int i = 1 + rnd.nextInt(Math.min(every, out.size() - 2)); i < out.size() - 1; i += every) {
+                int[] b = out.get(i);
+                b[0] -= 1;
+                b[1] = 5;
+            }
         }
         return out;
     }
+
+    /** The railway: tile rows it runs along (a former street band), or -1 if the map has none. */
+    int railY0 = -1, railRows;
+
+    /** True if the block's edge runs along a main road (where shops and businesses line up). */
+    private boolean onMainRoad(int x0, int y0, int x1, int y1) {
+        for (int i = 0; i < colStarts.size(); i++) {
+            if (colWidths.get(i) != 5) continue;
+            int s0 = colStarts.get(i), s1 = s0 + 5;
+            if (Math.abs(s1 - x0) <= 1 || Math.abs(s0 - x1) <= 1) return true;
+        }
+        for (int j = 0; j < rowStarts.size(); j++) {
+            if (rowWidths.get(j) != 5) continue;
+            int s0 = rowStarts.get(j), s1 = s0 + 5;
+            if (Math.abs(s1 - y0) <= 1 || Math.abs(s0 - y1) <= 1) return true;
+        }
+        return false;
+    }
+
+    /** Where the industrial district is: an angle around the centre (maps with warehouses on the edge). */
+    private float industryAngle;
 
     private void generate() {
         origin = 0;
@@ -292,6 +327,25 @@ final class City {
             for (int i = 0; i < r[1]; i++) roadRow[r[0] + i] = true;
         }
         Arrays.fill(tiles, ROAD);
+        industryAngle = rnd.nextFloat() * (float) Math.PI * 2;
+        // The railway takes over one of the streets in the middle third of the map.
+        if (cfg.hasRail() && rows.size() >= 5) {
+            int pick = -1;
+            for (int tries = 0; tries < 10 && pick < 0; tries++) {
+                int j = rows.size() / 3 + rnd.nextInt(Math.max(1, rows.size() / 3));
+                if (j > 0 && j < rows.size() - 1 && rows.get(j)[1] == 3) pick = j;
+            }
+            if (pick >= 0) {
+                railY0 = rows.get(pick)[0];
+                railRows = 3;
+                for (int y = railY0; y < railY0 + 3; y++) {
+                    roadRow[y] = false;
+                    for (int x = 0; x < w; x++) if (!roadCol[x]) tiles[y * w + x] = RAIL;
+                }
+                rowStarts.remove(pick);
+                rowWidths.remove(pick);
+            }
+        }
 
         // Blocks, with some neighbours merged into superblocks so the street grid has T-junctions.
         int nc = cols.size(), nr = rows.size();
@@ -313,6 +367,7 @@ final class City {
             if (merged[a] || merged[b] || rnd.nextFloat() >= mergeChance) continue;
             boolean horizontal = m[0] != m[2];
             if ((horizontal ? cols.get(m[2])[1] : rows.get(m[3])[1]) != 3) continue; // keep boulevards whole
+            if (!horizontal && rows.get(m[3])[0] == railY0) continue; // and the railway
             merged[a] = merged[b] = true;
             int[] ca = cell[a], cb = cell[b];
             blocks.add(new int[]{ca[0], ca[1], cb[2], cb[3]});
@@ -425,6 +480,28 @@ final class City {
                 }
             }
 
+        // The train station sits beside the railway.
+        if (railY0 >= 0) {
+            int best = -1;
+            float bestD = Float.MAX_VALUE;
+            for (int k = 0; k < blocks.size(); k++) {
+                int[] b = blocks.get(k);
+                if (used[k] || (b[3] != railY0 && b[1] != railY0 + railRows)) continue;
+                if (b[2] - b[0] - 2 < 6 || b[3] - b[1] - 2 < 4) continue;
+                float d = Math.abs((b[0] + b[2]) / 2f - w / 2f);
+                if (d < bestD) {
+                    bestD = d;
+                    best = k;
+                }
+            }
+            if (best >= 0) {
+                used[best] = true;
+                int[] b = blocks.get(best);
+                fill(b[0], b[1], b[2] - b[0], b[3] - b[1], SIDEWALK);
+                trainStation(b[0] + 1, b[1] + 1, b[2] - b[0] - 2, b[3] - b[1] - 2, b[3] == railY0);
+            }
+        }
+
         for (int k = 0; k < blocks.size(); k++) {
             if (used[k]) continue;
             int[] b = blocks.get(k);
@@ -442,6 +519,7 @@ final class City {
             for (int x = 0; x < w; x++) {
                 if (tiles[y * w + x] != ROAD) continue;
                 if (roadCol[x] == roadRow[y]) continue;
+                if (railY0 >= 0 && y >= railY0 - 1 && y <= railY0 + railRows) continue;
                 if (rnd.nextFloat() > carChance) continue;
                 if (hasNeighbor(x, y, CAR)) continue;
                 // Parked against the kerb, never in the middle lanes.
@@ -608,6 +686,9 @@ final class City {
         } else if (kind == KIOSK) {
             roof = 0xFFE8E8E8;
             wall = 0xFFD6DBE0;
+        } else if (kind == TRAIN_STATION) {
+            roof = 0xFF5E4A3A;
+            wall = 0xFFC4A882;
         } else if (kind == SHOP) {
             roof = SHOP_ROOFS[rnd.nextInt(SHOP_ROOFS.length)];
             wall = SHOP_WALLS[rnd.nextInt(SHOP_WALLS.length)];
@@ -650,15 +731,31 @@ final class City {
             else plaza(x, y, bw, bh);
             openAreas.add(new float[]{ax, ay, isPark ? 0 : 1});
         } else {
+            // Zoning: an office core, apartments around it, shops along the main roads, houses further
+            // out and an industrial district on one side of town.
+            float cx = x + bw / 2f - w / 2f, cy = y + bh / 2f - h / 2f;
+            float d = (float) Math.sqrt(cx * cx + cy * cy) / (w * 0.5f);
+            float ang = (float) Math.atan2(cy, cx) - industryAngle;
+            while (ang > Math.PI) ang -= Math.PI * 2;
+            while (ang < -Math.PI) ang += Math.PI * 2;
+            boolean industrialZone = d > 0.55f && Math.abs(ang) < 0.7f;
+            boolean mainRoad = onMainRoad(x - 1, y - 1, x + bw + 1, y + bh + 1);
+            float r = rnd.nextFloat();
             if (style == CityConfig.STYLE_MIXED) {
-                float cx = x + bw / 2f - w / 2f, cy = y + bh / 2f - h / 2f;
-                float d = (float) Math.sqrt(cx * cx + cy * cy) / (w * 0.5f);
-                float r = rnd.nextFloat();
-                if (d < 0.4f || r < 0.25f) style = CityConfig.STYLE_OFFICES;
-                else if (r < 0.8f) style = CityConfig.STYLE_HOUSES;
-                else style = CityConfig.STYLE_WAREHOUSES;
+                if (industrialZone && r < 0.8f) style = CityConfig.STYLE_WAREHOUSES;
+                else if (d < 0.32f) style = CityConfig.STYLE_OFFICES;
+                else if (d < 0.55f) style = r < 0.55f ? CityConfig.STYLE_OFFICES : CityConfig.STYLE_HOUSES;
+                else style = r < 0.12f ? CityConfig.STYLE_OFFICES : CityConfig.STYLE_HOUSES;
+            } else if (style == CityConfig.STYLE_HOUSES && d < 0.2f && cfg.density() > 0) {
+                // Even a town of houses has a little centre.
+                style = CityConfig.STYLE_OFFICES;
+            } else if (style == CityConfig.STYLE_OFFICES && industrialZone && r < 0.35f) {
+                style = CityConfig.STYLE_WAREHOUSES;
             }
-            if (rnd.nextInt(100) < cfg.shopShare() && bw >= 5 && bh >= 5 && style != CityConfig.STYLE_WAREHOUSES) shops(x, y, bw, bh);
+            // Shops line the main roads; side streets are mostly homes and offices.
+            int shopChance = mainRoad ? cfg.shopShare() + 20 : cfg.shopShare() / 3;
+            if (style == CityConfig.STYLE_HOUSES && !mainRoad) shopChance = cfg.shopShare() / 6;
+            if (rnd.nextInt(100) < shopChance && bw >= 5 && bh >= 5 && style != CityConfig.STYLE_WAREHOUSES) shops(x, y, bw, bh);
             else if (style == CityConfig.STYLE_HOUSES && rnd.nextInt(100) < cfg.buildingMix()[0] / 2 && bw >= 5 && bh >= 5) {
                 // An apartment block on the edge of the suburbs.
                 fill(x, y, bw, bh, GRASS);
@@ -722,6 +819,10 @@ final class City {
     }
 
     private void houses(int x, int y, int pw, int ph) {
+        if ((pw >= 11 || ph >= 11) && Math.min(pw, ph) >= 7 && rnd.nextFloat() < 0.7f) {
+            culDeSac(x, y, pw, ph);
+            return;
+        }
         fill(x, y, pw, ph, GRASS);
         for (int cy = y; cy + 2 <= y + ph; cy += 4)
             for (int cx = x; cx + 2 <= x + pw; cx += 4) {
@@ -734,6 +835,78 @@ final class City {
                 if (tiles[j * w + i] == GRASS && rnd.nextFloat() < 0.1f && !hasNeighbor(i, j, TREE)
                         && !hasNeighbor(i, j, BUILDING))
                     tiles[j * w + i] = TREE;
+    }
+
+    /**
+     * A big residential block with a dead-end lane running into it, a turning circle at the end and
+     * houses along both sides.
+     */
+    private void culDeSac(int x, int y, int pw, int ph) {
+        fill(x, y, pw, ph, GRASS);
+        boolean vertical = ph >= pw;
+        int len = (vertical ? ph : pw) * 2 / 3;
+        int mid = vertical ? x + pw / 2 - 1 : y + ph / 2 - 1;
+        boolean fromStart = rnd.nextBoolean();
+        // The lane (2 tiles wide), entering from one end of the block.
+        for (int k = 0; k < len; k++)
+            for (int t = 0; t < 2; t++) {
+                int along = fromStart ? k : (vertical ? ph : pw) - 1 - k;
+                int i = vertical ? mid + t : (x + along), j = vertical ? (y + along) : mid + t;
+                tiles[j * w + i] = ROAD;
+            }
+        // Where the lane meets the street, the pavement is dropped.
+        for (int t = 0; t < 2; t++) {
+            int i = vertical ? mid + t : (fromStart ? x - 1 : x + pw), j = vertical ? (fromStart ? y - 1 : y + ph) : mid + t;
+            if (i >= 0 && j >= 0 && i < w && j < h && tiles[j * w + i] == SIDEWALK) tiles[j * w + i] = ROAD;
+        }
+        // Turning circle.
+        int endAlong = fromStart ? len - 1 : (vertical ? ph : pw) - len;
+        for (int a = -1; a <= 1; a++)
+            for (int b = -1; b <= 2; b++) {
+                int i = vertical ? mid + b : x + endAlong + a, j = vertical ? y + endAlong + a : mid + b;
+                if (i >= x && j >= y && i < x + pw && j < y + ph) tiles[j * w + i] = ROAD;
+            }
+        // Houses facing the lane on both sides, then more filling the rest of the block.
+        for (int k = 1; k + 2 <= (vertical ? ph : pw) - 1; k += 3)
+            for (int side = 0; side < 2; side++) {
+                int hw = 2, hd = 2 + rnd.nextInt(2);
+                int along = (vertical ? y : x) + k;
+                int across = side == 0 ? mid - 1 - hd : mid + 3;
+                int lx = vertical ? across : along, ly = vertical ? along : across;
+                placeHouse(lx, ly, vertical ? hd : hw, vertical ? hw : hd, x, y, pw, ph);
+            }
+        for (int cy = y; cy + 2 <= y + ph; cy += 3)
+            for (int cx = x; cx + 2 <= x + pw; cx += 3) placeHouse(cx, cy, 2, 2, x, y, pw, ph);
+        for (int j = y; j < y + ph; j++)
+            for (int i = x; i < x + pw; i++)
+                if (tiles[j * w + i] == GRASS && rnd.nextFloat() < 0.1f && !hasNeighbor(i, j, TREE)
+                        && !hasNeighbor(i, j, BUILDING) && !hasNeighbor(i, j, ROAD))
+                    tiles[j * w + i] = TREE;
+    }
+
+    /** A house if the spot is inside the block, on grass, and has a garden's width from everything else. */
+    private void placeHouse(int lx, int ly, int lw, int lh, int x, int y, int pw, int ph) {
+        if (lx < x || ly < y || lx + lw > x + pw || ly + lh > y + ph) return;
+        for (int j = ly - 1; j <= ly + lh; j++)
+            for (int i = lx - 1; i <= lx + lw; i++) {
+                if (i < x || j < y || i >= x + pw || j >= y + ph) continue;
+                byte t = tiles[j * w + i];
+                boolean inside = i >= lx && j >= ly && i < lx + lw && j < ly + lh;
+                if (t == BUILDING || (inside && t != GRASS)) return;
+            }
+        if (rnd.nextFloat() > 0.06f) addLot(lx, ly, lw, lh, HOUSE);
+    }
+
+    /** A station building facing the street, a platform along the tracks and a small car park. */
+    private void trainStation(int x, int y, int bw, int bh, boolean railBelow) {
+        fill(x, y, bw, bh, PLAZA);
+        int sw = Math.min(bw - 2, Math.max(6, bw * 2 / 3)), sh = Math.max(2, Math.min(4, bh - 3));
+        int sx = x + (bw - sw) / 2, sy = railBelow ? y + 1 : y + bh - 1 - sh;
+        addFacilityLot(sx, sy, sw, sh, TRAIN_STATION, 2);
+        // Platform canopy along the tracks.
+        int py = railBelow ? y + bh - 1 : y;
+        addDecor(D_CANOPY, x * T + 4, py * T + 2, (x + bw) * T - 4, py * T + T - 2, 1);
+        openAreas.add(new float[]{(x + bw / 2f) * T, (y + bh / 2f) * T, 1});
     }
 
     private void warehouses(int x, int y, int pw, int ph) {
@@ -1180,6 +1353,8 @@ final class City {
         }
 
         drawRoadMarkings(c, p);
+        drawRail(c, p);
+        drawStreetFurniture(c, p);
         drawParkingLines(c, p);
         roundCorners(c, p);
         drawBaseDetails(c, p);
@@ -1511,6 +1686,98 @@ final class City {
                 || (y > 0 && tiles[(y - 1) * w + x] == LOT) || (y < h - 1 && tiles[(y + 1) * w + x] == LOT);
     }
 
+    /** Gravel, sleepers and rails, carried across the level crossings with barrier markings. */
+    private void drawRail(Canvas c, Paint p) {
+        if (railY0 < 0) return;
+        float y0 = railY0 * T, y1 = (railY0 + railRows) * T, cy = (y0 + y1) / 2;
+        for (int x = 0; x < w; x++) {
+            float fx = x * T;
+            boolean crossing = roadCol[x];
+            if (!crossing) {
+                p.setColor(0xFF6E665C);
+                c.drawRect(fx, y0 + 6, fx + T, y1 - 6, p);
+                for (int k = 0; k < 10; k++) {
+                    p.setColor(rnd.nextBoolean() ? 0xFF7E766A : 0xFF5E574E);
+                    c.drawCircle(fx + rnd.nextFloat() * T, y0 + 6 + rnd.nextFloat() * (y1 - y0 - 12), 0.8f, p);
+                }
+                p.setColor(0xFF4A3A2C);
+                for (float sx = fx + 1; sx < fx + T; sx += 4) c.drawRect(sx, cy - 8, sx + 2, cy + 8, p);
+            } else {
+                // Level crossing: yellow boxes and stop lines either side.
+                p.setColor(0x55E8C547);
+                c.drawRect(fx, y0 + 4, fx + T, y0 + 6, p);
+                c.drawRect(fx, y1 - 6, fx + T, y1 - 4, p);
+            }
+        }
+        p.setColor(0xFFB8BCC0);
+        c.drawRect(0, cy - 6, w * T, cy - 4.8f, p);
+        c.drawRect(0, cy + 4.8f, w * T, cy + 6, p);
+        // Crossing barriers (red and white poles) at each road.
+        for (int i = 0; i < colStarts.size(); i++) {
+            float x0 = colStarts.get(i) * T, x1 = (colStarts.get(i) + colWidths.get(i)) * T;
+            for (float bx = x0 + 2; bx < x1 - 2; bx += 4) {
+                p.setColor(((int) (bx / 4)) % 2 == 0 ? 0xFFD83A3A : 0xFFF2F2F2);
+                c.drawRect(bx, y0 + 1, bx + 4, y0 + 2.5f, p);
+                c.drawRect(bx, y1 - 2.5f, bx + 4, y1 - 1, p);
+            }
+        }
+    }
+
+    /** Benches, bins, fire hydrants, bus stops and traffic lights along the pavements. */
+    private void drawStreetFurniture(Canvas c, Paint p) {
+        for (int y = 1; y < h - 1; y++)
+            for (int x = 1; x < w - 1; x++) {
+                if (tiles[y * w + x] != SIDEWALK) continue;
+                // Which side faces the road?
+                int dx = 0, dy = 0;
+                if (paved(x - 1, y)) dx = -1;
+                else if (paved(x + 1, y)) dx = 1;
+                else if (paved(x, y - 1)) dy = -1;
+                else if (paved(x, y + 1)) dy = 1;
+                if (dx == 0 && dy == 0) continue;
+                boolean corner = (paved(x - 1, y) || paved(x + 1, y)) && (paved(x, y - 1) || paved(x, y + 1));
+                float cx = x * T + T / 2f + dx * 5, cy = y * T + T / 2f + dy * 5;
+                float roll = rnd.nextFloat();
+                if (corner) {
+                    if (roll < 0.35f && onMainRoad(x - 2, y - 2, x + 2, y + 2)) {
+                        // Traffic light.
+                        p.setColor(0xFF2A2C30);
+                        c.drawRect(cx - 1.5f, cy - 3, cx + 1.5f, cy + 3, p);
+                        p.setColor(0xFFE0302A);
+                        c.drawCircle(cx, cy - 1.8f, 0.8f, p);
+                        p.setColor(0xFF3AD06A);
+                        c.drawCircle(cx, cy + 1.8f, 0.8f, p);
+                    }
+                    continue;
+                }
+                if (roll < 0.035f) {
+                    // Bench, parallel to the kerb.
+                    p.setColor(0xFF7A5634);
+                    if (dx != 0) c.drawRect(cx - 1.2f, cy - 4, cx + 1.2f, cy + 4, p);
+                    else c.drawRect(cx - 4, cy - 1.2f, cx + 4, cy + 1.2f, p);
+                } else if (roll < 0.06f) {
+                    // Litter bin.
+                    p.setColor(0xFF3C4A3C);
+                    c.drawCircle(cx, cy, 1.6f, p);
+                    p.setColor(0xFF232A23);
+                    c.drawCircle(cx, cy, 0.9f, p);
+                } else if (roll < 0.075f) {
+                    // Fire hydrant.
+                    p.setColor(0xFFD8302A);
+                    c.drawCircle(cx, cy, 1.4f, p);
+                    p.setColor(0xFFF0C040);
+                    c.drawCircle(cx, cy, 0.6f, p);
+                } else if (roll < 0.085f && onMainRoad(x - 2, y - 2, x + 2, y + 2)) {
+                    // Bus stop shelter.
+                    p.setColor(0xAA9CC3D9);
+                    if (dx != 0) c.drawRect(cx - 2, cy - 6, cx + 2, cy + 6, p);
+                    else c.drawRect(cx - 6, cy - 2, cx + 6, cy + 2, p);
+                    p.setColor(0xFF3A5A8A);
+                    c.drawCircle(cx + dx * 3 + (dy != 0 ? 7 : 0), cy + dy * 3 + (dx != 0 ? 7 : 0), 1.2f, p);
+                }
+            }
+    }
+
     private void drawRoadMarkings(Canvas c, Paint p) {
         p.setStrokeWidth(1.2f);
         for (int i = 0; i < colStarts.size(); i++) {
@@ -1663,6 +1930,22 @@ final class City {
             float cxx = (x0 + x1) / 2, cyy = (y0 + y1) / 2;
             c.drawRect(cxx - 1, cyy - 5, cxx + 1, cyy + 5, p);
             c.drawRect(cxx - 3.5f, cyy - 2.5f, cxx + 3.5f, cyy - 0.8f, p);
+            return;
+        }
+        if (kind == TRAIN_STATION) {
+            // Long pitched roof with a clock.
+            p.setColor(darken(roof, 0.75f));
+            c.drawRect(x0, y0, x1, y1, p);
+            p.setColor(lighten(roof, 0.1f));
+            c.drawRect(x0 + 1, y0 + 1, x1 - 1, (y0 + y1) / 2, p);
+            p.setColor(roof);
+            c.drawRect(x0 + 1, (y0 + y1) / 2, x1 - 1, y1 - 1, p);
+            p.setColor(0xFFF2EEE0);
+            c.drawCircle((x0 + x1) / 2, (y0 + y1) / 2, 4, p);
+            p.setColor(0xFF2A2A2A);
+            p.setStrokeWidth(0.8f);
+            c.drawLine((x0 + x1) / 2, (y0 + y1) / 2, (x0 + x1) / 2, (y0 + y1) / 2 - 3, p);
+            c.drawLine((x0 + x1) / 2, (y0 + y1) / 2, (x0 + x1) / 2 + 2, (y0 + y1) / 2, p);
             return;
         }
         if (kind == APARTMENT) {

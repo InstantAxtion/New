@@ -2,11 +2,31 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "2.4";
-    static final int VERSION_CODE = 12;
+    static final String VERSION = "3.0";
+    static final int VERSION_CODE = 13;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "3.0  -  A bigger, truer city",
+                    "Bigger maps: Small is now what Medium was, and Large is bigger than ever. (Games saved in older versions can't be loaded, because cities are built differently now.)",
+                    "More realistic cities: short blocks downtown and long ones further out, main roads every few streets, an office core ringed by apartments, shops along the main roads, homes on the outskirts and an industrial district on one side of town.",
+                    "Suburban cul-de-sacs with houses round a turning circle, and street furniture: benches, bins, fire hydrants, bus stops and traffic lights.",
+                    "Railways: a line runs across most maps with level crossings, a station, and trains that pass through (traffic waits for them; anything left on the tracks gets hit).",
+                    "Tap anyone to see who they are: their name, job, what they're doing, health, ammo, kills, and who they're with.",
+                    "Place tool: drop in a car, a police car, a tank, a fire engine, barricades (drag to build a line; zombies batter them down), a supply crate or a fire.",
+                    "Events tool: send a horde in from the edge of town, start a panic, trigger an outbreak inside a building, call a supply drop or bring in a raider gang.",
+                    "Undo takes back your last placement or spawn. Clear now asks what to clear: everyone, zombies only, bodies and blood, wrecks and fires, or barricades.",
+                    "Raiders: armed gangs who shoot zombies and police, rob armed civilians of their guns and loot shops. Police treat them as a threat. Tap the Civilian button again to spawn them.",
+                    "Zombie dogs: dogs killed by zombies can come back as fast, vicious zombie dogs. Fresh zombies are quicker for their first minute, and during a long outbreak the infection evolves and new zombies get tougher.",
+                    "Survivors act on their own: families make supply runs to the shops, armed civilians form patrols, and people running for their lives jump into abandoned cars and drive off. Some outbreaks start inside buildings.",
+                    "Recovery: once the zombies are gone the city recovers. Volunteers clear away the bodies, buildings are repaired, wrecks are towed and the safe zones close.",
+                    "Music follows the action: calm when the streets are quiet, intense in a big fight. New sounds for trains, tanks, machine guns, snipers, collapses, crashes, fire hoses and ambulances.",
+                    "Minimap (tap it to jump there) and an Auto cam that follows the most interesting thing going on.",
+                    "Screenshots: save a picture of your city from the pause menu and share it.",
+                    "Records and achievements, kept across games, in the main menu.",
+                    "New settings: text and button size, battery saver and minimap. A new app icon.",
+            },
             {
                     "2.4  -  Volunteers",
                     "Recruitment: once the outbreak has cost the police or army people, they put a call out on the radio for volunteers to fill the gaps (only as many as they've lost, and only while the station or base is safe).",

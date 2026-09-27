@@ -8,12 +8,13 @@ final class Settings implements OptionSet {
     private static final String[] VOLUME = {"Off", "25%", "50%", "75%", "100%"};
     private static final String[] ON_OFF = {"Off", "On"};
     private static final String[] LABELS = {"Music", "Sound effects", "View", "Blood", "Health bars",
-            "Screen shake", "Show FPS", "Max population", "Radio messages"};
+            "Screen shake", "Show FPS", "Max population", "Radio messages", "Minimap",
+            "Text & buttons", "Battery saver"};
     private static final String[][] VALUES = {VOLUME, VOLUME, {"Bird's-eye", "3D"}, ON_OFF, ON_OFF, ON_OFF, ON_OFF,
-            {"800", "1600", "2500", "4000", "6000"}, ON_OFF};
+            {"800", "1600", "2500", "4000", "6000"}, ON_OFF, ON_OFF, {"Small", "Normal", "Large"}, ON_OFF};
     private static final String[] KEYS = {"music", "sfx", "buildings3d", "gore", "healthBars", "shake", "fps",
-            "maxPop", "radio"};
-    private static final int[] DEFAULTS = {2, 3, 1, 1, 1, 1, 0, 2, 1};
+            "maxPop", "radio", "minimap", "uiSize", "battery"};
+    private static final int[] DEFAULTS = {2, 3, 1, 1, 1, 1, 0, 2, 1, 1, 1, 0};
     private static final int[] MAX_POP = {800, 1600, 2500, 4000, 6000};
 
     private final SharedPreferences prefs;
@@ -38,6 +39,11 @@ final class Settings implements OptionSet {
     boolean showFps() { return v[6] == 1; }
     int maxPopulation() { return MAX_POP[v[7]]; }
     boolean radio() { return v[8] == 1; }
+    boolean minimap() { return v[9] == 1; }
+    /** How big the buttons and text are compared to normal. */
+    float uiScale() { return v[10] == 0 ? 0.85f : v[10] == 2 ? 1.2f : 1f; }
+    /** Battery saver: 30 frames a second, and fewer still while paused. */
+    boolean batterySaver() { return v[11] == 1; }
 
     /** True if the player has not opened the patch notes since this version was installed. */
     boolean hasUnreadNotes() {

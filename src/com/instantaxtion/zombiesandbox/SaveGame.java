@@ -17,7 +17,7 @@ import java.util.ArrayList;
  * damaged or collapsed buildings.
  */
 final class SaveGame {
-    private static final int VERSION = 4;
+    private static final int VERSION = 5;
 
     private SaveGame() {
     }
@@ -43,6 +43,8 @@ final class SaveGame {
             out.writeInt(w.peakSoldiers);
             out.writeInt(w.recruits);
             out.writeInt(w.refused);
+            out.writeInt(w.mutation);
+            out.writeFloat(w.outbreakTime);
             out.writeFloat(w.statStep);
             out.writeInt(w.histCount);
             for (int i = 0; i < w.histCount; i++) {
@@ -103,6 +105,13 @@ final class SaveGame {
                 out.writeFloat(p.x);
                 out.writeFloat(p.y);
                 out.writeInt(p.rounds);
+                out.writeInt(p.uses);
+            }
+            out.writeInt(w.barriers.size());
+            for (float[] b : w.barriers) {
+                out.writeFloat(b[0]);
+                out.writeFloat(b[1]);
+                out.writeFloat(b[2]);
             }
 
             out.writeInt(w.corpses.size());
@@ -194,13 +203,17 @@ final class SaveGame {
         out.writeInt(e.role);
         // Someone on their way to enlist is saved as not yet asked, so they can volunteer again.
         out.writeBoolean(e.asked && e.task != Dispatch.T_ENLIST);
+        out.writeInt(e.nameSeed);
+        out.writeInt(e.kills);
+        out.writeFloat(e.fresh);
     }
 
     static World load(File file) throws IOException {
         DataInputStream in = new DataInputStream(new BufferedInputStream(new FileInputStream(file)));
         try {
             int version = in.readInt();
-            if (version < 1 || version > VERSION) throw new IOException("Unsupported save version");
+            // Cities are generated differently since version 5, so older saves can't be rebuilt.
+            if (version < 5 || version > VERSION) throw new IOException("Unsupported save version");
             CityConfig cfg = new CityConfig();
             int n = in.readInt();
             for (int i = 0; i < n; i++) {
@@ -222,6 +235,10 @@ final class SaveGame {
                 w.peakSoldiers = in.readInt();
                 w.recruits = in.readInt();
                 w.refused = in.readInt();
+                if (version >= 5) {
+                    w.mutation = in.readInt();
+                    w.outbreakTime = in.readFloat();
+                }
             }
             w.statStep = in.readFloat();
             w.histCount = in.readInt();
@@ -269,7 +286,14 @@ final class SaveGame {
                 p.x = in.readFloat();
                 p.y = in.readFloat();
                 p.rounds = in.readInt();
+                p.uses = in.readInt();
                 w.pickups.add(p);
+            }
+            int barriers = in.readInt();
+            for (int i = 0; i < barriers; i++) {
+                float[] b = w.placeBarricade(in.readFloat(), in.readFloat());
+                float hp = in.readFloat();
+                if (b != null) b[2] = hp;
             }
 
             int corpses = in.readInt();
@@ -348,6 +372,11 @@ final class SaveGame {
         e.postY = in.readFloat();
         if (version >= 3) e.role = in.readInt();
         if (version >= 4) e.asked = in.readBoolean();
+        if (version >= 5) {
+            e.nameSeed = in.readInt();
+            e.kills = in.readInt();
+            e.fresh = in.readFloat();
+        }
         if (zone >= 0 && zone < d.zones.size()) e.zone = d.zones.get(zone);
         return e;
     }

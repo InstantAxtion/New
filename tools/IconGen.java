@@ -23,51 +23,59 @@ public class IconGen {
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
         g.scale(s / 96.0, s / 96.0);
         g.setClip(new RoundRectangle2D.Double(2, 2, 92, 92, 26, 26));
-        g.setColor(new Color(0x3A3D43));
+        // Sky: dark green-blue fading down.
+        g.setPaint(new GradientPaint(0, 0, new Color(0x1B2A33), 0, 96, new Color(0x2E4A3A)));
         g.fillRect(0, 0, 96, 96);
-        g.setColor(new Color(0x8F8D87));
-        g.fillRect(0, 0, 96, 20);
-        g.fillRect(0, 76, 96, 20);
-        g.setColor(new Color(0x6B6F78));
-        g.fillRect(6, 0, 30, 14);
-        g.setColor(new Color(0x7A6A5C));
-        g.fillRect(48, 0, 40, 14);
-        g.setColor(new Color(0xD9B43A));
-        for (int x = 4; x < 96; x += 16) g.fillRect(x, 47, 9, 2);
-        g.setColor(new Color(0x6E0A0A));
-        g.fill(new Ellipse2D.Double(40, 52, 20, 12));
-        person(g, 30, 50, 0, new Color(0x4E5A3E), new Color(0x7C9A5E), true);
-        person(g, 68, 44, Math.PI, new Color(0xD9534F), new Color(0x4A2E1A), false);
+        // Skyline with lit windows.
+        int[][] towers = {{4, 40, 14}, {18, 26, 12}, {30, 46, 10}, {40, 18, 16}, {56, 34, 12}, {68, 24, 14}, {82, 42, 12}};
+        for (int[] t : towers) {
+            g.setColor(new Color(0x10181D));
+            g.fillRect(t[0], t[1], t[2], 96 - t[1]);
+            g.setColor(new Color(0xF0D98C));
+            for (int y = t[1] + 4; y < 70; y += 6)
+                for (int x = t[0] + 2; x < t[0] + t[2] - 2; x += 4)
+                    if (((x * 7 + y * 13) % 5) == 0) g.fillRect(x, y, 2, 3);
+        }
+        // Street.
+        g.setColor(new Color(0x2A2D32));
+        g.fillRect(0, 74, 96, 22);
+        // The zombie rising in front: head, shoulders, reaching hands.
+        Color skin = new Color(0x7C9A5E), dark = new Color(0x4E6A3A);
+        g.setColor(new Color(0x3A4A2A));
+        g.fill(new Ellipse2D.Double(20, 66, 56, 40));
+        g.setColor(skin);
+        g.fill(new Ellipse2D.Double(31, 38, 34, 38));
+        g.setColor(dark);
+        g.fill(new Ellipse2D.Double(34, 38, 28, 12));
+        // Eyes and mouth.
+        g.setColor(new Color(0x1A0A0A));
+        g.fill(new Ellipse2D.Double(38, 52, 8, 7));
+        g.fill(new Ellipse2D.Double(50, 52, 8, 7));
+        g.setColor(new Color(0xFF3B2F));
+        g.fill(new Ellipse2D.Double(41, 54, 3, 3));
+        g.fill(new Ellipse2D.Double(53, 54, 3, 3));
+        g.setColor(new Color(0x5A1414));
+        g.fill(new RoundRectangle2D.Double(42, 64, 12, 6, 4, 4));
+        g.setColor(new Color(0xE8E0C8));
+        for (int x = 43; x < 53; x += 3) g.fillRect(x, 64, 2, 2);
+        hand(g, 14, 48, -0.4, skin);
+        hand(g, 82, 48, 0.4, skin);
+        // Blood drip.
+        g.setColor(new Color(0x8E1010));
+        g.fill(new Ellipse2D.Double(46, 69, 4, 7));
         g.setClip(null);
         g.dispose();
         return img;
     }
 
-    static void person(Graphics2D g, double x, double y, double ang, Color body, Color head, boolean zombie) {
+    static void hand(Graphics2D g, double x, double y, double ang, Color skin) {
         AffineTransform old = g.getTransform();
         g.translate(x, y);
         g.rotate(ang);
-        double r = 13;
-        g.setColor(new Color(0, 0, 0, 70));
-        g.fill(new Ellipse2D.Double(-r * 0.7 + 2, -r + 2, r * 1.4, r * 2));
-        if (zombie) {
-            g.setColor(head);
-            g.setStroke(new BasicStroke((float) (r * 0.42), BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-            g.draw(new Line2D.Double(r * 0.1, -r * 0.72, r * 1.6, -r * 0.5));
-            g.draw(new Line2D.Double(r * 0.1, r * 0.72, r * 1.6, r * 0.5));
-        } else {
-            g.setColor(new Color(0xE0AC69));
-            g.fill(new Ellipse2D.Double(-r * 0.3 - r * 0.28, -r * 0.95 - r * 0.28, r * 0.56, r * 0.56));
-            g.fill(new Ellipse2D.Double(r * 0.3 - r * 0.28, r * 0.95 - r * 0.28, r * 0.56, r * 0.56));
-        }
-        g.setColor(body);
-        g.fill(new Ellipse2D.Double(-r * 0.62, -r, r * 1.24, r * 2));
-        g.setColor(head);
-        g.fill(new Ellipse2D.Double(r * 0.08 - r * 0.56, -r * 0.56, r * 1.12, r * 1.12));
-        if (zombie) {
-            g.setColor(new Color(0x5A1414));
-            g.fill(new Ellipse2D.Double(-r * 0.3, r * 0.0, r * 0.4, r * 0.4));
-        }
+        g.setColor(skin);
+        g.fill(new RoundRectangle2D.Double(-5, 0, 10, 30, 6, 6));
+        g.fill(new Ellipse2D.Double(-7, -6, 14, 12));
+        for (int f = -1; f <= 1; f++) g.fill(new RoundRectangle2D.Double(-1.5 + f * 4.2, -14, 3.2, 11, 3, 3));
         g.setTransform(old);
     }
 }

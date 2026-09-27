@@ -36,15 +36,19 @@ final class Menu {
 
         World world();
 
+        /** Saves a picture of the city and offers to share it. */
+        void screenshot();
+
         /** Asks the player to type a city code (shows the current one to copy or edit). */
         void askCityCode(String current);
     }
 
-    static final int NONE = 0, MAIN = 1, SETUP = 2, SETTINGS = 3, NOTES = 4, PAUSE = 5, STATS = 6, TUTORIAL = 7;
+    static final int NONE = 0, MAIN = 1, SETUP = 2, SETTINGS = 3, NOTES = 4, PAUSE = 5, STATS = 6, TUTORIAL = 7, RECORDS = 8;
+    Records records;
 
     private static final int A_CONTINUE = 0, A_NEW = 1, A_SETTINGS = 2, A_NOTES = 3, A_QUIT = 4, A_RESUME = 5,
             A_MAIN_MENU = 6, A_BACK = 7, A_START = 8, A_RANDOM = 9, A_SAVE = 10, A_STATS = 11, A_HOW_TO = 12,
-            A_TUT_NEXT = 13, A_TUT_PREV = 14, A_TUT_DONE = 15, A_CODE = 16, A_REROLL = 17;
+            A_TUT_NEXT = 13, A_TUT_PREV = 14, A_TUT_DONE = 15, A_CODE = 16, A_REROLL = 17, A_SHOT = 18, A_RECORDS = 19;
 
     private static final String[][] TUTORIAL_PAGES = {
             {"Welcome to Zombie City", "A sandbox: set up a city, start an outbreak and watch what happens. There are no missions. Play however you like."},
@@ -90,7 +94,7 @@ final class Menu {
 
     private final Host host;
     private final Settings settings;
-    private final float dp;
+    private float dp;
     private final Random rnd = new Random();
     private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint stroke = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -120,6 +124,10 @@ final class Menu {
         plain.setTypeface(Typeface.DEFAULT);
     }
 
+    void setDp(float dp) {
+        this.dp = dp;
+    }
+
     boolean isOpen() {
         return screen != NONE;
     }
@@ -130,7 +138,7 @@ final class Menu {
     }
 
     void open(int s) {
-        if (s == SETUP || s == SETTINGS || s == NOTES || s == STATS || s == TUTORIAL) {
+        if (s == SETUP || s == SETTINGS || s == NOTES || s == STATS || s == TUTORIAL || s == RECORDS) {
             if (screen == MAIN || screen == PAUSE || screen == NONE) returnTo = screen;
         } else {
             returnTo = MAIN;
@@ -185,6 +193,7 @@ final class Menu {
             case NOTES: drawNotes(c, w, h); break;
             case STATS: drawStats(c, w, h); break;
             case TUTORIAL: drawTutorial(c, w, h); break;
+            case RECORDS: drawRecords(c, w, h); break;
         }
         for (Button b : buttons) drawButton(c, b);
     }
@@ -245,7 +254,7 @@ final class Menu {
         boolean landscape = w > h;
         float bw = Math.min(300 * dp, w - 60 * dp), bh = 52 * dp, gap = 12 * dp;
         boolean game = host.canContinue();
-        int n = game ? 6 : 5;
+        int n = game ? 7 : 6;
         float bx, by;
         if (landscape) {
             drawTitle(c, w * 0.29f, h * 0.45f, w * 0.44f);
@@ -268,6 +277,8 @@ final class Menu {
         by += bh + gap;
         button("Settings", A_SETTINGS, false, bx, by, bx + bw, by + bh);
         by += bh + gap;
+        button("Records & Achievements", A_RECORDS, false, bx, by, bx + bw, by + bh);
+        by += bh + gap;
         button(settings.hasUnreadNotes() ? "Patch Notes  (new!)" : "Patch Notes", A_NOTES, false, bx, by, bx + bw, by + bh);
         by += bh + gap;
         button("Quit", A_QUIT, false, bx, by, bx + bw, by + bh);
@@ -281,8 +292,8 @@ final class Menu {
     private void drawPause(Canvas c, int w, int h) {
         fill.setColor(0x99000000);
         c.drawRect(0, 0, w, h, fill);
-        float gap = 8 * dp, bh = Math.min(48 * dp, (h - 110 * dp - gap * 5) / 6);
-        float pw = Math.min(320 * dp, w - 40 * dp), ph = 70 * dp + bh * 6 + gap * 5 + 20 * dp;
+        float gap = 7 * dp, bh = Math.min(46 * dp, (h - 110 * dp - gap * 6) / 7);
+        float pw = Math.min(320 * dp, w - 40 * dp), ph = 70 * dp + bh * 7 + gap * 6 + 20 * dp;
         tmp.set((w - pw) / 2, (h - ph) / 2, (w + pw) / 2, (h + ph) / 2);
         fill.setColor(0xF0181A1E);
         c.drawRoundRect(tmp, 16 * dp, 16 * dp, fill);
@@ -295,8 +306,8 @@ final class Menu {
         plain.setColor(0xFF9AA0A8);
         c.drawText("City code " + host.world().city.cfg.code(), w / 2f, tmp.top + 58 * dp, plain);
         float bx = tmp.left + 20 * dp, bw = pw - 40 * dp, by = tmp.top + 70 * dp;
-        String[] labels = {"Resume", "Save Game", "Stats", "New Game", "Settings", "Main Menu"};
-        int[] actions = {A_RESUME, A_SAVE, A_STATS, A_NEW, A_SETTINGS, A_MAIN_MENU};
+        String[] labels = {"Resume", "Save Game", "Screenshot", "Stats", "New Game", "Settings", "Main Menu"};
+        int[] actions = {A_RESUME, A_SAVE, A_SHOT, A_STATS, A_NEW, A_SETTINGS, A_MAIN_MENU};
         for (int i = 0; i < labels.length; i++) {
             button(labels[i], actions[i], i == 0, bx, by, bx + bw, by + bh);
             by += bh + gap;
@@ -434,6 +445,9 @@ final class Menu {
         button("< Back", A_BACK, false, 12 * dp, top, 12 * dp + 96 * dp, top + hh);
         text.setTextAlign(Paint.Align.CENTER);
         text.setTextSize(22 * dp);
+        // Keep long titles clear of the Back button.
+        float room = w - 2 * (12 * dp + 96 * dp + 8 * dp), fit = text.measureText(title);
+        if (fit > room) text.setTextSize(22 * dp * room / fit);
         text.setColor(0xFF8BD450);
         c.drawText(title, w / 2f, top + hh / 2 + 8 * dp, text);
         return top + hh + 12 * dp;
@@ -500,6 +514,65 @@ final class Menu {
                 c.drawText(note, w / 2f, by - 12 * dp, text);
             }
         }
+    }
+
+    /** Best results across all games, and the achievements (locked ones greyed out). */
+    private void drawRecords(Canvas c, int w, int h) {
+        float top = header(c, w, h, "Records");
+        listArea.set(0, top, w, h - 12 * dp);
+        float side = 20 * dp, maxW = Math.min(w - side * 2, 640 * dp), x0 = (w - maxW) / 2;
+        c.save();
+        c.clipRect(listArea);
+        float y = top + 10 * dp - scroll;
+        text.setTextAlign(Paint.Align.LEFT);
+        text.setTextSize(17 * dp);
+        text.setColor(0xFF8BD450);
+        c.drawText("Records", x0, y + 18 * dp, text);
+        y += 34 * dp;
+        for (int i = 0; i < Records.RECORD_NAMES.length; i++) {
+            plain.setTextAlign(Paint.Align.LEFT);
+            plain.setTextSize(14.5f * dp);
+            plain.setColor(0xFFB8BDC4);
+            c.drawText(Records.RECORD_NAMES[i], x0, y + 14 * dp, plain);
+            text.setTextAlign(Paint.Align.RIGHT);
+            text.setTextSize(14.5f * dp);
+            text.setColor(0xFFFFFFFF);
+            c.drawText(records.recordText(i), x0 + maxW, y + 14 * dp, text);
+            y += 26 * dp;
+        }
+        y += 14 * dp;
+        text.setTextAlign(Paint.Align.LEFT);
+        text.setTextSize(17 * dp);
+        text.setColor(0xFF8BD450);
+        c.drawText("Achievements  (" + records.unlockedCount() + "/" + Records.ACHIEVEMENTS.length + ")", x0, y + 18 * dp, text);
+        y += 34 * dp;
+        for (int i = 0; i < Records.ACHIEVEMENTS.length; i++) {
+            boolean got = records.unlocked(i);
+            plain.setTextSize(12.5f * dp);
+            ArrayList<String> desc = wrap(Records.ACHIEVEMENTS[i][1], maxW - 56 * dp, plain);
+            float ih = 36 * dp + desc.size() * 16 * dp;
+            tmp.set(x0, y, x0 + maxW, y + ih);
+            fill.setColor(got ? 0xE0233322 : 0xE0202328);
+            c.drawRoundRect(tmp, 10 * dp, 10 * dp, fill);
+            fill.setColor(got ? 0xFF8BD450 : 0xFF4A4E56);
+            c.drawCircle(x0 + 24 * dp, y + ih / 2, 11 * dp, fill);
+            if (got) {
+                stroke.setColor(0xFF0F2A0C);
+                stroke.setStrokeWidth(2.5f * dp);
+                c.drawLine(x0 + 18 * dp, y + ih / 2, x0 + 23 * dp, y + ih / 2 + 5 * dp, stroke);
+                c.drawLine(x0 + 23 * dp, y + ih / 2 + 5 * dp, x0 + 31 * dp, y + ih / 2 - 5 * dp, stroke);
+            }
+            text.setTextSize(15 * dp);
+            text.setColor(got ? 0xFFFFFFFF : 0xFF9AA0A8);
+            c.drawText(Records.ACHIEVEMENTS[i][0], x0 + 46 * dp, y + 22 * dp, text);
+            plain.setColor(got ? 0xFFC8CCD2 : 0xFF7A8088);
+            for (int k = 0; k < desc.size(); k++) c.drawText(desc.get(k), x0 + 46 * dp, y + 41 * dp + k * 16 * dp, plain);
+            y += ih + 8 * dp;
+        }
+        c.restore();
+        contentHeight = y + scroll - top;
+        clampScroll();
+        drawScrollHint(c, w);
     }
 
     // ------------------------------------------------------------------ New Game
@@ -778,7 +851,7 @@ final class Menu {
                 break;
             case MotionEvent.ACTION_MOVE:
                 if (!dragging && Math.abs(y - downY) > 10 * dp && listArea.contains(downX, downY)
-                        && (screen == SETUP || screen == SETTINGS || screen == NOTES)) dragging = true;
+                        && (screen == SETUP || screen == SETTINGS || screen == NOTES || screen == RECORDS)) dragging = true;
                 if (dragging) {
                     scroll -= y - lastY;
                     clampScroll();
@@ -881,6 +954,13 @@ final class Menu {
                 break;
             case A_STATS:
                 open(STATS);
+                break;
+            case A_RECORDS:
+                open(RECORDS);
+                break;
+            case A_SHOT:
+                host.continueGame();
+                host.screenshot();
                 break;
             case A_HOW_TO:
                 open(TUTORIAL);

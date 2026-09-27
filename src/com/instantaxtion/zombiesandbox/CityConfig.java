@@ -38,7 +38,7 @@ final class CityConfig implements OptionSet {
             {"0", "1", "5", "20", "50", "100", "200"},
             {"Off", "Low", "Medium", "High"},
     };
-    private static final int[] SIZES = {64, 96, 128};
+    private static final int[] SIZES = {96, 128, 160};
     private static final int[] CIVILIANS = {0, 50, 100, 150, 250, 400, 600, 800};
     private static final int[] COPS = {0, 5, 10, 20, 40, 60};
     private static final int[] SOLDIERS = {0, 5, 10, 20, 40};
@@ -162,6 +162,11 @@ final class CityConfig implements OptionSet {
     }
 
     int shopShare() { return LANDMARKS[v[OPT_PRESET]][6]; }
+
+    // Which maps have a railway line (with a station and passing trains).
+    private static final boolean[] RAIL = {true, true, false, true, false, true, true, false, true, false};
+
+    boolean hasRail() { return RAIL[v[OPT_PRESET]]; }
 
     /** Percent of office lots that become apartments, garages and pharmacies. */
     int[] buildingMix() { return BUILDING_MIX[v[OPT_PRESET]]; }

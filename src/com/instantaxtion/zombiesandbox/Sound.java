@@ -26,7 +26,7 @@ final class Sound {
     private final int[] ids = new int[Sfx.COUNT];
     private final boolean[] loaded = new boolean[Sfx.COUNT];
     private final long[] lastPlay = new long[Sfx.COUNT];
-    private final String[] trackPaths = new String[2];
+    private final String[] trackPaths = new String[Synth.TRACKS];
     private final AudioAttributes musicAttrs;
 
     private MediaPlayer player;
@@ -79,7 +79,7 @@ final class Sound {
             });
         }
         // Menu music first: it is what the player hears first.
-        for (int track = 0; track < 2; track++) {
+        for (int track = 0; track < Synth.TRACKS; track++) {
             final int tr = track;
             final File f = new File(dir, "music" + AUDIO_VERSION + "_" + track + ".wav");
             try {

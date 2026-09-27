@@ -15,7 +15,8 @@ away from the middle of the screen as you pan, and the game plays in both portra
   own buildings, layout, parks, police stations and military base. **Randomize** rolls a random setup.
   **City code** replays a city: every city has a code like `12-483920` (shown in the pause menu and
   stats), so you can play the same streets again or share them with a friend.
-- **Settings**: music and sound volume, view (3D or bird's-eye), blood, health bars, screen shake, FPS counter
+- **Records & Achievements**: best results across games and 15 achievements.
+- **Settings**: music and sound volume, view (3D or bird's-eye), minimap, text and button size, battery saver, blood, health bars, screen shake, FPS counter
   and max population. Saved between sessions.
 - **Patch Notes**: what changed in each version.
 - In game, the **Menu** button (or the phone's back button) pauses and opens the pause menu.
@@ -32,6 +33,11 @@ on the phone, so the APK contains no audio files.
 - **Fire engines** drive out from fire stations and hose down burning cars and gas pumps.
 - **Tanks** roll out for big hordes; **ambulances** fetch badly hurt people to the hospital. The
   **helicopter** takes off from and lands on its helipad. Every vehicle shows a status label.
+- **Raiders, zombie dogs and evolution**: armed gangs rob and loot; dogs can rise as zombie dogs; a long
+  outbreak makes new zombies tougher.
+- **Survivors and recovery**: supply runs, armed patrols, people escaping in abandoned cars; after the
+  outbreak, bodies are cleared, buildings repaired and safe zones closed.
+- **Railways**: trains run through most cities, with level crossings and a station.
 - **Recruitment**: after heavy losses, police and the army ask civilians to volunteer. Only some agree
   (gun owners more often, people with family or injuries less); volunteers train at the precinct or base.
 - **Military roles**: riflemen, machine gunners, snipers and a commander who boosts nearby soldiers
@@ -104,13 +110,23 @@ military safe zone.
   - **Move**: drag to pan. Tap someone to follow them with the camera.
 - **Pinch** to zoom and **drag with two fingers** to pan, whichever tool is selected.
 - Top buttons: **Pause/Play**, **Speed** (1x/2x/4x), **Brush** (spawn 1/5/10 at a time),
-  **View** (3D or bird's-eye), **Clear** (remove everyone), **Menu**.
+  **View** (3D or bird's-eye), **Clear** (choose what to clear), **Menu**.
+- **Place** tool: cars, police cars, tanks, fire engines, barricades, supply crates and fires.
+  **Events** tool: hordes, panic, indoor outbreaks, supply drops and raider gangs. **Undo** takes back the last one.
+- Tap anyone with **Move** to follow them and see who they are. The **minimap** jumps the camera;
+  **Auto cam** follows the action. Take a **screenshot** from the pause menu.
 - Zoom right in and roofs turn see-through, so you can see who is hiding inside.
 - Tap the **Civilian** button again to spawn dogs, the **Military** button again for commanders,
   snipers and gunners, and the **Zombie** button again for other zombie types.
 
 A person killed by a zombie gets up again as a zombie a few seconds later. Bites can also infect: an
 infected person glows green and turns within about 12–26 seconds, even if they escape.
+
+## Testing
+
+`./test.sh` runs the game on a desktop JVM (with small stand-ins for Android's classes in `tests/stubs`):
+it generates every map, runs a two-minute outbreak, round-trips a save and draws every screen at phone
+and tablet sizes. The GitHub workflow runs it before building.
 
 ## Building
 

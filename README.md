@@ -1,7 +1,8 @@
 # Zombie City Sandbox
 
-A top-down sandbox for Android: drop zombies into a procedurally generated city and watch civilians,
-cops and the military try to survive.
+A top-down sandbox for Android in the style of GTA 2: drop zombies into a procedurally generated city
+and watch civilians, cops and the military try to survive. Buildings and trees have height and lean
+away from the middle of the screen as you pan, and the game plays in both portrait and landscape.
 
 **Download:** [`release/ZombieCitySandbox.apk`](release/ZombieCitySandbox.apk). To install it, allow
 "Install unknown apps" for your browser or file manager, then open the APK.
@@ -40,7 +41,7 @@ install as updates over older ones. GitHub Actions also builds the APK on every 
 
 Code layout (`src/com/instantaxtion/zombiesandbox/`):
 
-- `City.java`: city generation, the pre-rendered map, line of sight and BFS flow fields.
+- `City.java`: city generation (including building heights), the pre-rendered map, line of sight and BFS flow fields.
 - `World.java`: simulation (AI, shooting, infection, explosions, particles).
-- `GameView.java`: rendering, camera, touch input and UI.
+- `GameView.java`: rendering (including the leaning 3D buildings), camera, touch input and UI.
 - `Entity.java`: data for a single person or zombie.

@@ -3,6 +3,7 @@ package com.instantaxtion.zombiesandbox;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Paint;
+import android.graphics.Path;
 import android.graphics.RectF;
 
 import java.util.ArrayList;
@@ -26,6 +27,30 @@ final class City {
             0xFFB03A2E, 0xFF2E5FB0, 0xFFE0E0E0, 0xFF222428, 0xFFD4A21C, 0xFF3C8A4E, 0xFF8A8F96, 0xFF6B2E8A
     };
 
+    /** A building footprint (world units) with a height, drawn standing up by GameView. */
+    static final class Building {
+        final float x0, y0, x1, y1, height;
+        final int roof, wall, seed;
+
+        Building(float x0, float y0, float x1, float y1, float height, int roof, int wall, int seed) {
+            this.x0 = x0;
+            this.y0 = y0;
+            this.x1 = x1;
+            this.y1 = y1;
+            this.height = height;
+            this.roof = roof;
+            this.wall = wall;
+            this.seed = seed;
+        }
+    }
+
+    static final float FLOOR = 12f;
+    static final float TREE_HEIGHT = 14f;
+
+    private static final int[] WALLS = {
+            0xFF9A8F80, 0xFFA8746A, 0xFF8C959E, 0xFFB5A58A, 0xFF7E8A7A, 0xFF9B7E6B, 0xFFA0A4A8, 0xFF6F7B88
+    };
+
     final int w, h;
     final byte[] tiles;
     final boolean[] solid;
@@ -38,7 +63,10 @@ final class City {
     private final boolean[] roadCol, roadRow;
     private final List<Integer> colStarts = new ArrayList<Integer>();
     private final List<Integer> rowStarts = new ArrayList<Integer>();
-    private final List<int[]> buildings = new ArrayList<int[]>();
+    private final List<int[]> buildingLots = new ArrayList<int[]>();
+    final List<Building> buildings = new ArrayList<Building>();
+    /** Tree canopies as {x, y, radius}; drawn above the ground by GameView. */
+    final List<float[]> trees = new ArrayList<float[]>();
     private final List<int[]> fountains = new ArrayList<int[]>();
 
     City(int w, int h, long seed) {
@@ -152,7 +180,16 @@ final class City {
         }
         if (lw < 2 || lh < 2) return;
         fill(x, y, lw, lh, BUILDING);
-        buildings.add(new int[]{x, y, lw, lh, ROOFS[rnd.nextInt(ROOFS.length)], rnd.nextInt(1000)});
+        buildingLots.add(new int[]{x, y, lw, lh, ROOFS[rnd.nextInt(ROOFS.length)], rnd.nextInt(1000)});
+        // Downtown (the middle of the map) gets the tallest towers; small lots stay low.
+        float cx = x + lw / 2f - w / 2f, cy = y + lh / 2f - h / 2f;
+        float downtown = 1 - Math.min(1, (float) Math.sqrt(cx * cx + cy * cy) / (w * 0.55f));
+        int floors = 2 + rnd.nextInt(3) + (int) (downtown * downtown * rnd.nextFloat() * 9);
+        if (Math.min(lw, lh) <= 2) floors = Math.min(floors, 4);
+        else if (Math.min(lw, lh) <= 3) floors = Math.min(floors, 7);
+        int[] lot = buildingLots.get(buildingLots.size() - 1);
+        buildings.add(new Building(x * T, y * T, (x + lw) * T, (y + lh) * T, floors * FLOOR + 3, lot[4],
+                WALLS[rnd.nextInt(WALLS.length)], lot[5]));
     }
 
     private void park(int x, int y, int pw, int ph) {
@@ -243,11 +280,23 @@ final class City {
         drawRoadMarkings(c, p);
         drawParkingLines(c, p);
 
-        // Building shadows then roofs.
-        p.setColor(0x55000000);
-        for (int[] b : buildings)
-            c.drawRect(b[0] * T + 4, b[1] * T + 4, (b[0] + b[2]) * T + 4, (b[1] + b[3]) * T + 4, p);
-        for (int[] b : buildings) drawBuilding(c, p, b);
+        // Building shadows (longer for taller buildings), then roofs. The roof art is drawn at the
+        // footprint and GameView lifts it to the building's height.
+        p.setColor(0x50000000);
+        Path shadow = new Path();
+        for (Building b : buildings) {
+            float sx = b.height * 0.28f, sy = b.height * 0.38f;
+            shadow.reset();
+            shadow.moveTo(b.x0, b.y0);
+            shadow.lineTo(b.x1, b.y0);
+            shadow.lineTo(b.x1 + sx, b.y0 + sy);
+            shadow.lineTo(b.x1 + sx, b.y1 + sy);
+            shadow.lineTo(b.x0 + sx, b.y1 + sy);
+            shadow.lineTo(b.x0, b.y1);
+            shadow.close();
+            c.drawPath(shadow, p);
+        }
+        for (int[] b : buildingLots) drawBuilding(c, p, b);
 
         for (int[] f : fountains) {
             float cx = (f[0] + 1) * T, cy = (f[1] + 1) * T;
@@ -270,14 +319,11 @@ final class City {
                 if (tiles[y * w + x] == TREE) {
                     float cx = x * T + T / 2f, cy = y * T + T / 2f;
                     float r = 7.5f + rnd.nextFloat() * 2f;
-                    p.setColor(0x55000000);
-                    c.drawCircle(cx + 3, cy + 3, r, p);
-                    p.setColor(0xFF2C5A22);
-                    c.drawCircle(cx, cy, r, p);
-                    p.setColor(0xFF3B742D);
-                    c.drawCircle(cx - 1.5f, cy - 1.5f, r * 0.65f, p);
-                    p.setColor(0xFF4C8A3A);
-                    c.drawCircle(cx - 2.5f, cy - 2.5f, r * 0.3f, p);
+                    p.setColor(0x50000000);
+                    c.drawCircle(cx + TREE_HEIGHT * 0.28f, cy + TREE_HEIGHT * 0.38f, r, p);
+                    p.setColor(0xFF4A3524);
+                    c.drawCircle(cx, cy, 2f, p);
+                    trees.add(new float[]{cx, cy, r});
                 }
     }
 

@@ -2,7 +2,9 @@ package com.instantaxtion.zombiesandbox;
 
 import android.content.Context;
 import android.graphics.Canvas;
+import android.graphics.Matrix;
 import android.graphics.Paint;
+import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.Typeface;
 import android.view.MotionEvent;
@@ -40,6 +42,7 @@ final class GameView extends View {
     private final RectF[] topRects = new RectF[5];
     private final RectF statsRect = new RectF();
     private float barTop;
+    private boolean portrait;
 
     // Input.
     private static final int MODE_NONE = 0, MODE_UI = 1, MODE_WORLD = 2, MODE_GESTURE = 3;
@@ -55,6 +58,12 @@ final class GameView extends View {
     private final Paint bmpPaint = new Paint();
     private final RectF oval = new RectF();
     private final Entity[] icons = new Entity[Entity.TYPE_COUNT];
+    private final Matrix wallMatrix = new Matrix();
+    private final float[] wallSrc = new float[8], wallDst = new float[8];
+    private final Rect roofSrc = new Rect();
+    private final RectF roofDst = new RectF();
+    private City.Building[] visible = new City.Building[64];
+    private float[] visibleKey = new float[64];
 
     GameView(Context context) {
         super(context);
@@ -112,25 +121,49 @@ final class GameView extends View {
     @Override
     protected void onSizeChanged(int w, int h, int oldw, int oldh) {
         super.onSizeChanged(w, h, oldw, oldh);
-        float barH = 70 * dp;
-        barTop = h - barH;
+        portrait = h > w;
         int n = toolRects.length;
-        float gap = 5 * dp;
-        float bw = Math.min(96 * dp, (w - 16 * dp - gap * (n - 1)) / n);
-        float total = bw * n + gap * (n - 1);
-        float x = (w - total) / 2;
-        for (int i = 0; i < n; i++) {
-            toolRects[i].set(x, barTop + 6 * dp, x + bw, h - 6 * dp);
-            x += bw + gap;
+        int perRow = portrait ? 5 : n;
+        int rows = (n + perRow - 1) / perRow;
+        float gap = 5 * dp, rowH = 62 * dp;
+        barTop = h - rows * rowH - 8 * dp;
+        float bw = Math.min(96 * dp, (w - 16 * dp - gap * (perRow - 1)) / perRow);
+        for (int r = 0; r < rows; r++) {
+            int first = r * perRow, count = Math.min(perRow, n - first);
+            float x = (w - (bw * count + gap * (count - 1))) / 2;
+            float top = barTop + 6 * dp + r * rowH;
+            for (int i = first; i < first + count; i++) {
+                toolRects[i].set(x, top, x + bw, top + rowH - 6 * dp);
+                x += bw + gap;
+            }
         }
-        float tw = Math.min(88 * dp, (w * 0.55f - 4 * 6 * dp) / 5), th = 38 * dp;
-        float tx = w - 10 * dp - tw * 5 - 6 * dp * 4;
+        float th = 38 * dp, tgap = 6 * dp, tw, tx;
+        if (portrait) {
+            tw = (w - 20 * dp - tgap * 4) / 5;
+            tx = 10 * dp;
+        } else {
+            tw = Math.min(88 * dp, (w * 0.55f - tgap * 4) / 5);
+            tx = w - 10 * dp - tw * 5 - tgap * 4;
+        }
         for (int i = 0; i < 5; i++) {
             topRects[i].set(tx, 10 * dp, tx + tw, 10 * dp + th);
-            tx += tw + 6 * dp;
+            tx += tw + tgap;
         }
-        if (oldw == 0) centerCamera();
-        else clampCamera();
+        float lh = 17 * dp;
+        if (portrait) {
+            float top = 10 * dp + th + 8 * dp;
+            statsRect.set(10 * dp, top, 10 * dp + Math.min(260 * dp, w - 20 * dp), top + lh * 5 + 12 * dp);
+        } else {
+            statsRect.set(10 * dp, 10 * dp, 180 * dp, 10 * dp + lh * 8 + 12 * dp);
+        }
+        if (oldw == 0) {
+            centerCamera();
+        } else {
+            // Keep the same spot in the middle of the screen when the phone rotates.
+            camX += (oldw - w) / 2f / scale;
+            camY += (oldh - h) / 2f / scale;
+            clampCamera();
+        }
     }
 
     // ------------------------------------------------------------------ loop
@@ -201,11 +234,6 @@ final class GameView extends View {
                 c.drawCircle(e.x, e.y, e.radius * 1.2f, fill);
             }
         }
-        if (follow != null) {
-            stroke.setColor(0xCCFFFFFF);
-            stroke.setStrokeWidth(1f);
-            c.drawCircle(follow.x, follow.y, follow.radius + 4 + (float) Math.sin(world.time * 6), stroke);
-        }
 
         for (int i = 0, n = world.grenades.size(); i < n; i++) {
             World.Grenade g = world.grenades.get(i);
@@ -252,6 +280,14 @@ final class GameView extends View {
             c.drawLine(world.tx0[i], world.ty0[i], world.tx1[i], world.ty1[i], stroke);
         }
 
+        drawBuildings(c, vx0, vy0, vx1, vy1, detailed);
+
+        if (follow != null) {
+            stroke.setColor(0xCCFFFFFF);
+            stroke.setStrokeWidth(1f);
+            c.drawCircle(follow.x, follow.y, follow.radius + 4 + (float) Math.sin(world.time * 6), stroke);
+        }
+
         for (int i = 0, n = world.explosions.size(); i < n; i++) {
             World.Explosion ex = world.explosions.get(i);
             float t = 1 - ex.life / ex.max;
@@ -263,6 +299,124 @@ final class GameView extends View {
             stroke.setStrokeWidth(2f);
             stroke.setColor(alpha(0xFFFFFFFF, (1 - t) * 0.6f));
             c.drawCircle(ex.x, ex.y, ex.r * (0.5f + t), stroke);
+        }
+        c.restore();
+    }
+
+    /**
+     * Draws trees and buildings standing up, GTA 2 style: a camera hangs above the middle of the screen,
+     * so anything tall leans away from the centre and you see the walls that face the camera.
+     */
+    private void drawBuildings(Canvas c, float vx0, float vy0, float vx1, float vy1, boolean detailed) {
+        float cx = camX + getWidth() / scale / 2, cy = camY + getHeight() / scale / 2;
+        // Camera height grows with the visible area so the lean looks the same at every zoom level.
+        float camH = Math.max(Math.max(getWidth(), getHeight()) / scale * 0.9f, 260f);
+
+        float ts = camH / (camH - City.TREE_HEIGHT);
+        for (int i = 0, n = world.city.trees.size(); i < n; i++) {
+            float[] t = world.city.trees.get(i);
+            float x = cx + (t[0] - cx) * ts, y = cy + (t[1] - cy) * ts, r = t[2] * ts;
+            if (x + r < vx0 || x - r > vx1 || y + r < vy0 || y - r > vy1) continue;
+            fill.setColor(0xFF2C5A22);
+            c.drawCircle(x, y, r, fill);
+            fill.setColor(0xFF3B742D);
+            c.drawCircle(x - 1.5f * ts, y - 1.5f * ts, r * 0.65f, fill);
+            fill.setColor(0xFF4C8A3A);
+            c.drawCircle(x - 2.5f * ts, y - 2.5f * ts, r * 0.3f, fill);
+        }
+
+        int n = 0;
+        for (int i = 0, count = world.city.buildings.size(); i < count; i++) {
+            City.Building b = world.city.buildings.get(i);
+            float s = camH / (camH - b.height);
+            float rx0 = cx + (b.x0 - cx) * s, rx1 = cx + (b.x1 - cx) * s;
+            float ry0 = cy + (b.y0 - cy) * s, ry1 = cy + (b.y1 - cy) * s;
+            if (Math.max(b.x1, rx1) < vx0 || Math.min(b.x0, rx0) > vx1
+                    || Math.max(b.y1, ry1) < vy0 || Math.min(b.y0, ry0) > vy1) continue;
+            if (n == visible.length) {
+                City.Building[] nb = new City.Building[n * 2];
+                float[] nk = new float[n * 2];
+                System.arraycopy(visible, 0, nb, 0, n);
+                System.arraycopy(visibleKey, 0, nk, 0, n);
+                visible = nb;
+                visibleKey = nk;
+            }
+            float ddx = (b.x0 + b.x1) / 2 - cx, ddy = (b.y0 + b.y1) / 2 - cy;
+            // Short buildings first, then the far ones: tall and near buildings end up in front.
+            float key = b.height * 10000f - (float) Math.sqrt(ddx * ddx + ddy * ddy);
+            int j = n++;
+            while (j > 0 && visibleKey[j - 1] > key) {
+                visible[j] = visible[j - 1];
+                visibleKey[j] = visibleKey[j - 1];
+                j--;
+            }
+            visible[j] = b;
+            visibleKey[j] = key;
+        }
+
+        boolean windows = detailed || scale > 0.8f;
+        for (int i = 0; i < n; i++) {
+            City.Building b = visible[i];
+            float s = camH / (camH - b.height);
+            float rx0 = cx + (b.x0 - cx) * s, rx1 = cx + (b.x1 - cx) * s;
+            float ry0 = cy + (b.y0 - cy) * s, ry1 = cy + (b.y1 - cy) * s;
+            if (cy < b.y0) drawWall(c, b, b.x0, b.y0, b.x1, b.y0, rx0, ry0, rx1, ry0, 0.8f, windows, 0);
+            if (cy > b.y1) drawWall(c, b, b.x1, b.y1, b.x0, b.y1, rx1, ry1, rx0, ry1, 0.52f, windows, 1);
+            if (cx < b.x0) drawWall(c, b, b.x0, b.y1, b.x0, b.y0, rx0, ry1, rx0, ry0, 0.9f, windows, 2);
+            if (cx > b.x1) drawWall(c, b, b.x1, b.y0, b.x1, b.y1, rx1, ry0, rx1, ry1, 0.62f, windows, 3);
+            roofSrc.set((int) b.x0, (int) b.y0, (int) b.x1, (int) b.y1);
+            roofDst.set(rx0, ry0, rx1, ry1);
+            c.drawBitmap(world.city.bitmap, roofSrc, roofDst, bmpPaint);
+        }
+    }
+
+    /** Draws one wall from ground edge a-b up to roof edge ta-tb, with a grid of windows on it. */
+    private void drawWall(Canvas c, City.Building b, float ax, float ay, float bx, float by,
+                          float tax, float tay, float tbx, float tby, float shade, boolean windows, int side) {
+        float len = Math.abs(bx - ax) + Math.abs(by - ay), hgt = b.height;
+        wallSrc[0] = 0;
+        wallSrc[1] = 0;
+        wallSrc[2] = len;
+        wallSrc[3] = 0;
+        wallSrc[4] = len;
+        wallSrc[5] = hgt;
+        wallSrc[6] = 0;
+        wallSrc[7] = hgt;
+        wallDst[0] = ax;
+        wallDst[1] = ay;
+        wallDst[2] = bx;
+        wallDst[3] = by;
+        wallDst[4] = tbx;
+        wallDst[5] = tby;
+        wallDst[6] = tax;
+        wallDst[7] = tay;
+        if (!wallMatrix.setPolyToPoly(wallSrc, 0, wallDst, 0, 4)) return;
+        c.save();
+        c.concat(wallMatrix);
+        fill.setColor(City.darken(b.wall, shade));
+        c.drawRect(0, 0, len, hgt, fill);
+        if (windows) {
+            int floors = (int) (hgt / City.FLOOR);
+            int cols = Math.max(1, (int) (len / City.T));
+            float cw = len / cols;
+            float glassShade = 0.55f + shade * 0.45f;
+            for (int k = 0; k < floors; k++) {
+                float v0 = k * City.FLOOR;
+                for (int i = 0; i < cols; i++) {
+                    float u0 = i * cw;
+                    if (k == 0) {
+                        fill.setColor(City.darken(0xFF5A7890, glassShade));
+                        c.drawRect(u0 + 2, v0 + 1.5f, u0 + cw - 2, v0 + 8.5f, fill);
+                    } else {
+                        int hsh = (b.seed * 73856093) ^ (side * 19349663) ^ (k * 83492791) ^ (i * 26544357);
+                        boolean lit = ((hsh >>> 9) & 7) == 0;
+                        fill.setColor(City.darken(lit ? 0xFFF0D98C : 0xFF27313B, glassShade));
+                        c.drawRect(u0 + 3, v0 + 3.5f, u0 + cw - 3, v0 + 9.5f, fill);
+                    }
+                }
+            }
+            fill.setColor(City.darken(b.wall, shade * 0.8f));
+            c.drawRect(0, hgt - 2.5f, len, hgt, fill);
         }
         c.restore();
     }
@@ -385,25 +539,28 @@ final class GameView extends View {
     private void drawUi(Canvas c) {
         int w = getWidth(), h = getHeight();
 
-        // Stats panel.
-        float pad = 10 * dp, lh = 17 * dp;
-        statsRect.set(pad, pad, pad + 170 * dp, pad + lh * 8 + 12 * dp);
+        // Stats panel: one column in landscape, two in portrait.
+        float lh = 17 * dp;
         fill.setColor(0xB0101114);
         c.drawRoundRect(statsRect, 10 * dp, 10 * dp, fill);
         text.setTextSize(12.5f * dp);
-        text.setTextAlign(Paint.Align.LEFT);
-        float y = pad + 6 * dp + lh * 0.8f;
         String[] labels = {"Civilians", "Cops", "Military", "Zombies", "Runners", "Brutes"};
+        int perCol = portrait ? 3 : Entity.TYPE_COUNT;
+        float colW = portrait ? statsRect.width() / 2 : statsRect.width();
         for (int t = 0; t < Entity.TYPE_COUNT; t++) {
+            float x0 = statsRect.left + (t / perCol) * colW;
+            float ty = statsRect.top + 6 * dp + lh * 0.8f + (t % perCol) * lh;
             fill.setColor(TYPE_COLORS[t]);
-            c.drawCircle(pad + 14 * dp, y - 4.5f * dp, 4.5f * dp, fill);
+            c.drawCircle(x0 + 14 * dp, ty - 4.5f * dp, 4.5f * dp, fill);
             text.setColor(0xFFE6E6E6);
-            c.drawText(labels[t], pad + 26 * dp, y, text);
-            text.setTextAlign(Paint.Align.RIGHT);
-            c.drawText(String.valueOf(world.counts[t]), statsRect.right - 12 * dp, y, text);
             text.setTextAlign(Paint.Align.LEFT);
-            y += lh;
+            c.drawText(labels[t], x0 + 26 * dp, ty, text);
+            text.setTextAlign(Paint.Align.RIGHT);
+            c.drawText(String.valueOf(world.counts[t]), x0 + colW - 12 * dp, ty, text);
         }
+        text.setTextAlign(Paint.Align.LEFT);
+        float pad = statsRect.left;
+        float y = statsRect.top + 6 * dp + lh * 0.8f + perCol * lh;
         text.setColor(0xFFA0A4AA);
         text.setTextSize(11.5f * dp);
         c.drawText("Turned " + world.turned + "   Killed " + world.zombiesKilled, pad + 12 * dp, y, text);
@@ -415,7 +572,7 @@ final class GameView extends View {
         // Top buttons.
         String[] top = {simPaused ? "Play" : "Pause", "Speed " + SPEEDS[speedIdx] + "x",
                 "Brush " + BRUSHES[brushIdx], "Clear", "New City"};
-        text.setTextSize(13 * dp);
+        text.setTextSize((portrait ? 12 : 13) * dp);
         text.setTextAlign(Paint.Align.CENTER);
         for (int i = 0; i < 5; i++) {
             RectF r = topRects[i];
@@ -473,13 +630,29 @@ final class GameView extends View {
         }
     }
 
+    /** Draws text on a dark pill above the tool bar, wrapping onto more lines on narrow screens. */
     private void drawBanner(Canvas c, String s, float cx, float by) {
-        float tw = text.measureText(s);
-        oval.set(cx - tw / 2 - 12 * dp, by - 18 * dp, cx + tw / 2 + 12 * dp, by + 7 * dp);
+        float maxW = getWidth() - 48 * dp;
+        java.util.ArrayList<String> lines = new java.util.ArrayList<String>();
+        String line = "";
+        for (String word : s.split(" ")) {
+            String next = line.isEmpty() ? word : line + " " + word;
+            if (!line.isEmpty() && text.measureText(next) > maxW) {
+                lines.add(line.trim());
+                line = word;
+            } else {
+                line = next;
+            }
+        }
+        lines.add(line.trim());
+        float lineH = text.getTextSize() * 1.35f, widest = 0;
+        for (String l : lines) widest = Math.max(widest, text.measureText(l));
+        float top = by - lineH * (lines.size() - 1);
+        oval.set(cx - widest / 2 - 12 * dp, top - 18 * dp, cx + widest / 2 + 12 * dp, by + 7 * dp);
         fill.setColor(0xB0000000);
         c.drawRoundRect(oval, 8 * dp, 8 * dp, fill);
         text.setColor(0xFFFFFFFF);
-        c.drawText(s, cx, by, text);
+        for (int i = 0; i < lines.size(); i++) c.drawText(lines.get(i), cx, top + i * lineH, text);
     }
 
     private void drawToolIcon(Canvas c, int t, float cx, float cy, float size) {

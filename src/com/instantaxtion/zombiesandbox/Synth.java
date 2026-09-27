@@ -34,6 +34,10 @@ final class Synth {
             case Sfx.SCREAM: out = scream(r); break;
             case Sfx.RADIO: out = radio(r); break;
             case Sfx.PHONE: out = phone(); break;
+            case Sfx.SHRIEK: out = shriek(r); break;
+            case Sfx.THUD: out = thud(r); break;
+            case Sfx.SIREN: out = siren(); break;
+            case Sfx.ROTOR: out = rotor(r); break;
             default: out = click(); break;
         }
         return toPcm(out, id == Sfx.CLICK ? 0.5f : 0.92f);
@@ -153,6 +157,70 @@ final class Synth {
             float trill = (float) Math.sin(TAU * 20 * t) > 0 ? 1 : 0.35f;
             float v = (float) Math.sin(TAU * 1300 * t) + (float) Math.sin(TAU * 1700 * t);
             o[i] = on ? v * trill * 0.5f : 0;
+        }
+        return o;
+    }
+
+    /** The screamer: a harsh, rising shriek. */
+    private static float[] shriek(Random r) {
+        float dur = 1.1f;
+        int n = (int) (dur * RATE);
+        float[] o = new float[n];
+        float phase = 0, lp = 0;
+        for (int i = 0; i < n; i++) {
+            float t = i / (float) RATE, u = t / dur;
+            float f = 900 + 700 * u + 120 * (float) Math.sin(TAU * 13 * t);
+            phase += f / RATE;
+            phase -= (int) phase;
+            float v = (phase * 2 - 1) * 0.6f + (float) Math.sin(TAU * phase * 2) * 0.3f + (r.nextFloat() * 2 - 1) * 0.3f;
+            lp += (v - lp) * 0.6f;
+            float env = smooth(Math.min(1, t / 0.05f)) * (float) Math.pow(1 - u, 0.8f);
+            o[i] = lp * env;
+        }
+        return o;
+    }
+
+    /** A dull impact: a shove, a rifle butt, a car hitting something, a door being battered. */
+    private static float[] thud(Random r) {
+        int n = (int) (0.18f * RATE);
+        float[] o = new float[n];
+        float lp = 0;
+        for (int i = 0; i < n; i++) {
+            float t = i / (float) RATE;
+            lp += (r.nextFloat() * 2 - 1 - lp) * 0.08f;
+            o[i] = ((float) Math.sin(TAU * (95 - 160 * t) * t) * 0.9f + lp * 2) * (float) Math.exp(-t * 22);
+        }
+        return o;
+    }
+
+    /** A police siren: one rise-and-fall wail. */
+    private static float[] siren() {
+        float dur = 1.4f;
+        int n = (int) (dur * RATE);
+        float[] o = new float[n];
+        float phase = 0;
+        for (int i = 0; i < n; i++) {
+            float t = i / (float) RATE, u = t / dur;
+            float f = 650 + 450 * (float) Math.sin(Math.PI * u);
+            phase += f / RATE;
+            phase -= (int) phase;
+            float v = (float) Math.sin(TAU * phase) * 0.7f + (phase < 0.5f ? 0.25f : -0.25f);
+            o[i] = v * smooth(Math.min(1, t / 0.05f)) * smooth(Math.min(1, (dur - t) / 0.1f));
+        }
+        return o;
+    }
+
+    /** Helicopter rotor: a few low chops. */
+    private static float[] rotor(Random r) {
+        int n = (int) (0.6f * RATE);
+        float[] o = new float[n];
+        float lp = 0;
+        for (int i = 0; i < n; i++) {
+            float t = i / (float) RATE;
+            lp += (r.nextFloat() * 2 - 1 - lp) * 0.05f;
+            float chop = (float) Math.pow(Math.max(0, Math.sin(TAU * 11 * t)), 6);
+            o[i] = (lp * 4 * chop + (float) Math.sin(TAU * 55 * t) * 0.3f * chop) * smooth(Math.min(1, t / 0.05f))
+                    * smooth(Math.min(1, (0.6f - t) / 0.05f));
         }
         return o;
     }

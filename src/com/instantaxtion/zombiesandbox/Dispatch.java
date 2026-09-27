@@ -9,7 +9,8 @@ import java.util.Random;
  * Everything they say to each other goes into a radio log that GameView shows on screen.
  */
 final class Dispatch {
-    static final int T_NONE = 0, T_RESPOND = 1, T_GUARD = 2, T_SEEK = 3, T_SHELTER = 4;
+    static final int T_NONE = 0, T_RESPOND = 1, T_GUARD = 2, T_SEEK = 3, T_SHELTER = 4, T_POST = 5, T_MOVE = 6,
+            T_HOLD = 7, T_HIDE = 8, T_PICKUP = 9, T_RESUPPLY = 10, T_HEAL = 11;
     static final int WHO_911 = 0, WHO_POLICE = 1, WHO_MILITARY = 2, WHO_INFO = 3;
     static final int[] WHO_COLORS = {0xFFFFA64D, 0xFF7FB0FF, 0xFFA6DC72, 0xFFBDBDBD};
     static final String[] SQUADS = {"Alpha", "Bravo", "Charlie", "Delta", "Echo", "Foxtrot", "Golf", "Hotel"};
@@ -26,7 +27,7 @@ final class Dispatch {
         float x, y, age, clearTimer, sceneTime;
         String place;
         int reported, lastLogged, cops, soldiers, zombiesNear, officersDown;
-        boolean militaryRequested, onScene, resolved;
+        boolean militaryRequested, onScene, resolved, airRequested;
         int[] field;
     }
 
@@ -72,20 +73,21 @@ final class Dispatch {
     final int[] zoneField;
 
     /** Reserves left to call in: police backup waves and military squads (4 each). Never refilled. */
-    int policeReserve, squadReserve;
+    int policeReserve, squadReserve, airSorties;
     int calls, sheltered, messageCount;
     int copCount, soldierCount;
     private int freeCops, freeSoldiers;
     private float tick, zoneFieldTimer, policeZoneCd = 10, militaryZoneCd = 6, militaryCd, policeCd;
     private boolean zonesDirty = true;
 
-    private static final int[] POLICE_RESERVE = {0, 1, 2, 3}, SQUAD_RESERVE = {0, 1, 2, 3};
+    private static final int[] POLICE_RESERVE = {0, 1, 2, 3}, SQUAD_RESERVE = {0, 1, 2, 3}, AIR_SORTIES = {0, 1, 1, 2};
 
     Dispatch(World w, int reinforcementLevel) {
         this.w = w;
         this.city = w.city;
         policeReserve = POLICE_RESERVE[reinforcementLevel];
         squadReserve = SQUAD_RESERVE[reinforcementLevel];
+        airSorties = AIR_SORTIES[reinforcementLevel];
         zoneField = new int[city.w * city.h];
         java.util.Arrays.fill(zoneField, City.FAR);
     }
@@ -220,11 +222,66 @@ final class Dispatch {
         }
     }
 
+    /** Frees a unit from its job so it can go and resupply. */
+    void releaseForResupply(Entity e) {
+        release(e);
+    }
+
+    /** Player orders: sends the selected units to a spot, where they hold position until released. */
+    void order(java.util.List<Entity> units, float x, float y) {
+        float[] p = city.findWalkable(x, y);
+        if (p == null || units.isEmpty()) return;
+        int[] field = new int[city.w * city.h];
+        city.fieldFromPoints(field, new float[]{p[0]}, new float[]{p[1]}, 1);
+        for (int i = 0; i < units.size(); i++) {
+            Entity e = units.get(i);
+            release(e);
+            e.task = T_MOVE;
+            e.orderField = field;
+            double a = i * Math.PI * 2 / units.size();
+            float spread = units.size() > 1 ? 12 : 0;
+            float[] q = city.findWalkable(p[0] + (float) Math.cos(a) * spread, p[1] + (float) Math.sin(a) * spread);
+            e.postX = q != null ? q[0] : p[0];
+            e.postY = q != null ? q[1] : p[1];
+        }
+        Entity lead = units.get(0);
+        say(lead.type == Entity.SOLDIER ? WHO_MILITARY : WHO_POLICE, lead, "Copy, moving to " + city.placeName(p[0], p[1])
+                + (units.size() > 1 ? " with " + (units.size() - 1) + " more." : "."), lead.x, lead.y);
+    }
+
+    /** Player order: back to normal duties. */
+    void dismiss(java.util.List<Entity> units) {
+        for (Entity e : units) release(e);
+        if (!units.isEmpty())
+            say(units.get(0).type == Entity.SOLDIER ? WHO_MILITARY : WHO_POLICE, units.get(0), "Copy, resuming patrol.",
+                    units.get(0).x, units.get(0).y);
+    }
+
+    /** Calls the helicopter in, if a sortie is left and it isn't already flying. */
+    private void requestAir(float x, float y, String place) {
+        if (airSorties <= 0 || w.fleet.heliBusy()) return;
+        airSorties--;
+        float fx, fy;
+        City.Facility base = city.nearestFacility(City.FACILITY_BASE, x, y);
+        if (base != null) {
+            fx = base.x;
+            fy = base.y;
+        } else {
+            float[] edge = city.edgeSpawn(x, y);
+            fx = edge != null ? edge[0] : 0;
+            fy = edge != null ? edge[1] : 0;
+        }
+        w.fleet.sendHeli(fx, fy, x, y, place);
+        say(WHO_MILITARY, null, "Military: Air support inbound to " + place + ". Stay clear of the area!"
+                + (airSorties == 0 ? " That's our last sortie." : ""), x, y);
+    }
+
     private static void release(Entity e) {
         e.task = T_NONE;
         e.incident = null;
         e.zone = null;
         e.onScene = false;
+        e.orderField = null;
     }
 
     private void updateIncidents(float step) {
@@ -245,6 +302,10 @@ final class Dispatch {
             if (have < need) {
                 int got = assign(inc, Entity.COP, need - have);
                 if (got == 0 && have == 0) policeBackup(inc);
+            }
+            if (!inc.airRequested && inc.zombiesNear >= 12) {
+                inc.airRequested = true;
+                requestAir(inc.x, inc.y, inc.place);
             }
             if (!inc.militaryRequested && (inc.zombiesNear >= 8 || (inc.officersDown > 0 && inc.zombiesNear >= 3)
                     || (open >= 4 && inc.zombiesNear >= 4))) {
@@ -374,7 +435,7 @@ final class Dispatch {
         if (squadReserve <= 0) return false;
         squadReserve--;
         Arrival a = new Arrival();
-        a.time = 8;
+        a.time = 2;
         a.type = Entity.SOLDIER;
         a.count = 4;
         a.incident = inc;
@@ -385,7 +446,7 @@ final class Dispatch {
         arrivals.add(a);
         City.Facility base = origin(Entity.SOLDIER, x, y);
         say(WHO_MILITARY, null, "Military: Copy. " + (base != null ? "Deploying a reserve squad from " + base.name
-                : "Reserve squad inbound") + " to " + place + ", ETA 8 seconds."
+                : "Reserve squad inbound") + " to " + place + "."
                 + (squadReserve == 0 ? " That's our last one." : " " + squadReserve + " left in reserve."), x, y);
         return true;
     }
@@ -395,7 +456,7 @@ final class Dispatch {
         policeCd = 40;
         policeReserve--;
         Arrival a = new Arrival();
-        a.time = 6;
+        a.time = 2;
         a.type = Entity.COP;
         a.count = 4;
         a.incident = inc;
@@ -420,6 +481,13 @@ final class Dispatch {
         float[] p = from != null ? new float[]{from.gateX, from.gateY} : city.edgeSpawn(a.x, a.y);
         if (p == null) return;
         if (a.type == Entity.SOLDIER) soldierCount = (soldierCount + 3) / 4 * 4;
+        // Drive there if the roads allow it; otherwise they go on foot.
+        if (w.fleet.send(a.type, a.count, p[0], p[1], a.x, a.y, a.incident, a.zone, a.place)) {
+            say(a.type == Entity.SOLDIER ? WHO_MILITARY : WHO_POLICE, null, (a.type == Entity.SOLDIER
+                    ? "Military: Truck rolling out of " : "Dispatch: Cruisers leaving ")
+                    + (from != null ? from.name : "the city limits") + " for " + a.place + ".", p[0], p[1]);
+            return;
+        }
         Entity first = null;
         for (int i = 0; i < a.count; i++) {
             Entity e = w.spawn(a.type, p[0] + rnd.nextFloat() * 24 - 12, p[1] + rnd.nextFloat() * 24 - 12);
@@ -460,6 +528,7 @@ final class Dispatch {
                         + z.place + " safe zone is under attack! " + near + " hostiles at the perimeter!", z.x, z.y);
                 if (!z.military) requestMilitary(z.x, z.y, z.place, null, z);
                 else sendReserveSquad(z.x, z.y, z.place, null, z);
+                if (near >= 8) requestAir(z.x, z.y, z.place);
             }
             // Capacity: announce when a zone fills up, and stop sending people there.
             boolean full = z.sheltered >= z.capacity;
@@ -481,7 +550,7 @@ final class Dispatch {
                             + z.place + " safe zone is holding. " + z.sheltered + " civilians sheltered.", z.x, z.y);
             }
         }
-        int zombies = w.counts[Entity.ZOMBIE] + w.counts[Entity.RUNNER] + w.counts[Entity.BRUTE];
+        int zombies = w.zombieCount();
         if (policeZoneCd <= 0 && countZones(false) == 0 && zombies >= 4 && freeCops >= 3) {
             policeZoneCd = 45;
             establish(false, null);
@@ -676,6 +745,21 @@ final class Dispatch {
             }
         }
         return false;
+    }
+
+    /** Recreates a safe zone from a save. */
+    void restoreZone(float x, float y, float r, boolean military, String place, int capacity, int wantGuards) {
+        SafeZone z = new SafeZone();
+        z.x = x;
+        z.y = y;
+        z.r = r;
+        z.military = military;
+        z.place = place;
+        z.capacity = capacity;
+        z.wantGuards = wantGuards;
+        z.age = 20;
+        zones.add(z);
+        zonesDirty = true;
     }
 
     /** True if some safe zone still has room. */

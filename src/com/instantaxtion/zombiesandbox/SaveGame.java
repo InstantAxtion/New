@@ -1,0 +1,274 @@
+package com.instantaxtion.zombiesandbox;
+
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.util.ArrayList;
+
+/**
+ * Saves and loads a game. The city itself is rebuilt from its settings and seed (generation is
+ * deterministic); everything that changes while playing is written out: people, zombies, corpses, safe
+ * zones, people hiding indoors, dropped guns, reserves and the stats history.
+ */
+final class SaveGame {
+    private static final int VERSION = 1;
+
+    private SaveGame() {
+    }
+
+    static void save(World w, File file) throws IOException {
+        File tmp = new File(file.getPath() + ".tmp");
+        DataOutputStream out = new DataOutputStream(new BufferedOutputStream(new FileOutputStream(tmp)));
+        try {
+            out.writeInt(VERSION);
+            CityConfig cfg = w.city.cfg;
+            out.writeInt(cfg.v.length);
+            for (int v : cfg.v) out.writeInt(v);
+            out.writeLong(cfg.seed);
+
+            out.writeFloat(w.time);
+            out.writeInt(w.turned);
+            out.writeInt(w.zombiesKilled);
+            out.writeInt(w.civiliansLost);
+            out.writeInt(w.shotsFired);
+            out.writeInt(w.cured);
+            out.writeInt(w.peakZombies);
+            out.writeFloat(w.statStep);
+            out.writeInt(w.histCount);
+            for (int i = 0; i < w.histCount; i++) {
+                out.writeInt(w.histHumans[i]);
+                out.writeInt(w.histZombies[i]);
+            }
+
+            Dispatch d = w.dispatch;
+            out.writeInt(d.calls);
+            out.writeInt(d.policeReserve);
+            out.writeInt(d.squadReserve);
+            out.writeInt(d.airSorties);
+            out.writeInt(d.copCount);
+            out.writeInt(d.soldierCount);
+            out.writeInt(d.zones.size());
+            for (Dispatch.SafeZone z : d.zones) {
+                out.writeFloat(z.x);
+                out.writeFloat(z.y);
+                out.writeFloat(z.r);
+                out.writeBoolean(z.military);
+                out.writeUTF(z.place);
+                out.writeInt(z.capacity);
+                out.writeInt(z.wantGuards);
+            }
+
+            // People in vehicles are saved as if they had just got out.
+            ArrayList<Entity> all = new ArrayList<Entity>();
+            for (Entity e : w.entities) if (!e.dead) all.add(e);
+            for (Fleet.Vehicle v : w.fleet.vehicles) {
+                if (v.type == Fleet.HELI || v.passengers <= 0 || v.state > 1) continue;
+                for (int i = 0; i < v.passengers; i++) all.add(w.create(v.passengerType, v.x, v.y));
+            }
+            out.writeInt(all.size());
+            for (Entity e : all) writeEntity(out, e, d);
+
+            int occupied = 0;
+            for (City.Building b : w.city.buildings) if (!b.occupants.isEmpty()) occupied++;
+            out.writeInt(occupied);
+            for (int i = 0; i < w.city.buildings.size(); i++) {
+                City.Building b = w.city.buildings.get(i);
+                if (b.occupants.isEmpty()) continue;
+                out.writeInt(i);
+                out.writeFloat(b.barricade);
+                out.writeInt(b.occupants.size());
+                for (Entity e : b.occupants) writeEntity(out, e, d);
+            }
+
+            out.writeInt(w.pickups.size());
+            for (World.Pickup p : w.pickups) {
+                out.writeFloat(p.x);
+                out.writeFloat(p.y);
+                out.writeInt(p.rounds);
+            }
+
+            out.writeInt(w.corpses.size());
+            for (World.Corpse c : w.corpses) {
+                out.writeFloat(c.x);
+                out.writeFloat(c.y);
+                out.writeFloat(c.angle);
+                out.writeFloat(c.radius);
+                out.writeFloat(c.rise);
+                out.writeFloat(c.age);
+                out.writeInt(c.body);
+                out.writeInt(c.head);
+                out.writeInt(c.riseType);
+                out.writeInt(c.origin);
+                out.writeBoolean(c.zombie);
+            }
+        } finally {
+            out.close();
+        }
+        if (!tmp.renameTo(file)) throw new IOException("Could not write " + file);
+    }
+
+    private static void writeEntity(DataOutputStream out, Entity e, Dispatch d) throws IOException {
+        out.writeInt(e.type);
+        out.writeFloat(e.x);
+        out.writeFloat(e.y);
+        out.writeFloat(e.angle);
+        out.writeFloat(e.hp);
+        out.writeFloat(e.maxHp);
+        out.writeFloat(e.radius);
+        out.writeFloat(e.speed);
+        out.writeFloat(e.runSpeed);
+        out.writeFloat(e.mass);
+        out.writeInt(e.body);
+        out.writeInt(e.head);
+        out.writeInt(e.skin);
+        out.writeInt(e.origin);
+        out.writeBoolean(e.infected);
+        out.writeFloat(e.infectTimer);
+        out.writeBoolean(e.cureTried);
+        out.writeInt(e.ammo);
+        out.writeInt(e.magSize);
+        out.writeInt(e.reserve);
+        out.writeInt(e.grenades);
+        out.writeBoolean(e.hasGun);
+        out.writeInt(e.callsign);
+        out.writeInt(e.squad);
+        out.writeInt(e.member);
+        // Only jobs that make sense after a reload are kept.
+        int task = e.task;
+        int zone = e.zone != null ? d.zones.indexOf(e.zone) : -1;
+        if ((task == Dispatch.T_GUARD || task == Dispatch.T_SHELTER) && zone < 0) task = Dispatch.T_NONE;
+        if (task != Dispatch.T_GUARD && task != Dispatch.T_SHELTER && task != Dispatch.T_POST && task != Dispatch.T_HOLD)
+            task = Dispatch.T_NONE;
+        out.writeInt(task);
+        out.writeInt(zone);
+        out.writeFloat(e.postX);
+        out.writeFloat(e.postY);
+    }
+
+    static World load(File file) throws IOException {
+        DataInputStream in = new DataInputStream(new BufferedInputStream(new FileInputStream(file)));
+        try {
+            if (in.readInt() != VERSION) throw new IOException("Unsupported save version");
+            CityConfig cfg = new CityConfig();
+            int n = in.readInt();
+            for (int i = 0; i < n; i++) {
+                int v = in.readInt();
+                if (i < cfg.v.length) cfg.v[i] = v;
+            }
+            cfg.seed = in.readLong();
+            World w = new World(cfg);
+
+            w.time = in.readFloat();
+            w.turned = in.readInt();
+            w.zombiesKilled = in.readInt();
+            w.civiliansLost = in.readInt();
+            w.shotsFired = in.readInt();
+            w.cured = in.readInt();
+            w.peakZombies = in.readInt();
+            w.statStep = in.readFloat();
+            w.histCount = in.readInt();
+            for (int i = 0; i < w.histCount; i++) {
+                w.histHumans[i] = in.readInt();
+                w.histZombies[i] = in.readInt();
+            }
+
+            Dispatch d = w.dispatch;
+            d.calls = in.readInt();
+            d.policeReserve = in.readInt();
+            d.squadReserve = in.readInt();
+            d.airSorties = in.readInt();
+            int copCount = in.readInt(), soldierCount = in.readInt();
+            int zones = in.readInt();
+            for (int i = 0; i < zones; i++)
+                d.restoreZone(in.readFloat(), in.readFloat(), in.readFloat(), in.readBoolean(), in.readUTF(),
+                        in.readInt(), in.readInt());
+
+            int count = in.readInt();
+            for (int i = 0; i < count; i++) w.entities.add(readEntity(in, w, d));
+
+            int occupied = in.readInt();
+            for (int i = 0; i < occupied; i++) {
+                City.Building b = w.city.buildings.get(in.readInt());
+                b.barricade = in.readFloat();
+                int people = in.readInt();
+                for (int k = 0; k < people; k++) {
+                    Entity e = readEntity(in, w, d);
+                    e.dead = true;
+                    e.removed = true;
+                    b.occupants.add(e);
+                }
+            }
+
+            int pickups = in.readInt();
+            for (int i = 0; i < pickups; i++) {
+                World.Pickup p = new World.Pickup();
+                p.x = in.readFloat();
+                p.y = in.readFloat();
+                p.rounds = in.readInt();
+                w.pickups.add(p);
+            }
+
+            int corpses = in.readInt();
+            for (int i = 0; i < corpses; i++) {
+                World.Corpse c = new World.Corpse();
+                c.x = in.readFloat();
+                c.y = in.readFloat();
+                c.angle = in.readFloat();
+                c.radius = in.readFloat();
+                c.rise = in.readFloat();
+                c.age = in.readFloat();
+                c.body = in.readInt();
+                c.head = in.readInt();
+                c.riseType = in.readInt();
+                c.origin = in.readInt();
+                c.zombie = in.readBoolean();
+                w.corpses.add(c);
+            }
+            d.copCount = copCount;
+            d.soldierCount = soldierCount;
+            w.afterLoad();
+            return w;
+        } finally {
+            in.close();
+        }
+    }
+
+    private static Entity readEntity(DataInputStream in, World w, Dispatch d) throws IOException {
+        int type = in.readInt();
+        float x = in.readFloat(), y = in.readFloat();
+        Entity e = w.create(type, x, y);
+        e.angle = in.readFloat();
+        e.hp = in.readFloat();
+        e.maxHp = in.readFloat();
+        e.radius = in.readFloat();
+        e.speed = in.readFloat();
+        e.runSpeed = in.readFloat();
+        e.mass = in.readFloat();
+        e.body = in.readInt();
+        e.head = in.readInt();
+        e.skin = in.readInt();
+        e.origin = in.readInt();
+        e.infected = in.readBoolean();
+        e.infectTimer = in.readFloat();
+        e.cureTried = in.readBoolean();
+        e.ammo = in.readInt();
+        e.magSize = in.readInt();
+        e.reserve = in.readInt();
+        e.grenades = in.readInt();
+        e.hasGun = in.readBoolean();
+        e.callsign = in.readInt();
+        e.squad = in.readInt();
+        e.member = in.readInt();
+        e.task = in.readInt();
+        int zone = in.readInt();
+        e.postX = in.readFloat();
+        e.postY = in.readFloat();
+        if (zone >= 0 && zone < d.zones.size()) e.zone = d.zones.get(zone);
+        return e;
+    }
+}

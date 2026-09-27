@@ -40,7 +40,7 @@ final class CityConfig implements OptionSet {
     };
 
     /** Current index into VALUES for each option. */
-    final int[] v = {0, 1, 3, 2, 0, 0, 2};
+    final int[] v = {0, 1, 3, 2, 1, 0, 2};
     long seed = System.nanoTime();
 
     int tiles() { return SIZES[v[OPT_SIZE]]; }

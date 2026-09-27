@@ -42,6 +42,14 @@ final class Settings implements OptionSet {
         return prefs.getInt("notesSeen", 0) < PatchNotes.VERSION_CODE;
     }
 
+    boolean tutorialDone() {
+        return prefs.getInt("tutorialDone", 0) == 1;
+    }
+
+    void markTutorialDone() {
+        prefs.edit().putInt("tutorialDone", 1).apply();
+    }
+
     void markNotesRead() {
         prefs.edit().putInt("notesSeen", PatchNotes.VERSION_CODE).apply();
     }

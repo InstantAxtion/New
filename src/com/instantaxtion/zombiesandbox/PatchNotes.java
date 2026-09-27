@@ -2,11 +2,29 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "1.6";
-    static final int VERSION_CODE = 7;
+    static final String VERSION = "2.0";
+    static final int VERSION_CODE = 8;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "2.0  -  The city fights back",
+                    "Police cruisers drive backup officers to incidents and army trucks carry reserve squads out of the base, running over zombies on the way.",
+                    "Air support: a helicopter flies from the base helipad and circles the fight with a door gunner. Sorties are limited.",
+                    "Civilians barricade themselves in homes, offices and warehouses. Zombies batter the doors down, and people come out once the street is quiet. If someone infected turns inside, the building is lost.",
+                    "Guards stand at the police station doors and the base gates.",
+                    "Some civilians own a gun, and anyone can pick up a weapon dropped by a fallen cop or soldier.",
+                    "Ammo is limited. Units out of ammo radio in and head back to the station or base to resupply.",
+                    "Hand-to-hand: anyone can shove a zombie away and stun it, and cops and soldiers hit back with their weapon.",
+                    "Medics and a hospital: medics heal the hurt and can cure fresh bites. Badly hurt people walk to the hospital.",
+                    "Zombies are drawn to gunfire and explosions. New types: crawlers (hard to hit, and what's left after a blast) and screamers (their shriek calls every zombie nearby).",
+                    "Orders tool: tap a cop or soldier (soldiers bring their whole squad), then tap where to send them. Tap them again to release them.",
+                    "Save and load: save from the pause menu. The game also saves itself when you leave, and Continue picks it up.",
+                    "Stats screen: people vs zombies over time, plus totals.",
+                    "How to Play: a short tutorial on the first game, and in the main menu any time.",
+                    "The stats panel collapses with a tap, the radio feed is shorter on phones, and people are easier to tell apart when zoomed out.",
+                    "The Zombie button covers all zombie types: tap it again to switch.",
+            },
             {
                     "1.6  -  Simpler cities",
                     "Water is gone: no more rivers, islands, ponds or fountains. Plazas have statues instead.",

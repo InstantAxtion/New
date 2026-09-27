@@ -29,6 +29,13 @@ final class World {
         float x, y, r, life, max;
     }
 
+    /** A gun dropped by a fallen cop or soldier. */
+    static final class Pickup {
+        float x, y, age;
+        int rounds;
+        boolean claimed;
+    }
+
     final City city;
     final Dispatch dispatch;
     final Random rnd = new Random();
@@ -36,6 +43,18 @@ final class World {
     final ArrayList<Corpse> corpses = new ArrayList<Corpse>();
     final ArrayList<Grenade> grenades = new ArrayList<Grenade>();
     final ArrayList<Explosion> explosions = new ArrayList<Explosion>();
+    final ArrayList<Pickup> pickups = new ArrayList<Pickup>();
+    final Fleet fleet;
+    /** Rings drawn where a screamer screamed: {x, y, age}. */
+    final ArrayList<float[]> screams = new ArrayList<float[]>();
+
+    // History for the stats screen: humans and zombies sampled every statStep seconds.
+    static final int HISTORY = 240;
+    final int[] histHumans = new int[HISTORY], histZombies = new int[HISTORY];
+    int histCount;
+    float statStep = 2f;
+    private float statTimer;
+    int shotsFired, cured, peakZombies, hiding;
 
     // Spatial hash (counting sort into cells).
     private static final int CELL = 32;
@@ -77,7 +96,7 @@ final class World {
     float time, shake;
     private float fieldTimer;
     final int[] counts = new int[Entity.TYPE_COUNT];
-    int humans, zombies, turned, zombiesKilled;
+    int humans, zombies, turned, zombiesKilled, civiliansLost;
     String message;
     float messageTime;
     private boolean outbreak;
@@ -85,6 +104,7 @@ final class World {
     World(CityConfig cfg) {
         city = new City(cfg);
         dispatch = new Dispatch(this, cfg.reinforcements());
+        fleet = new Fleet(this);
         gw = (int) Math.ceil(city.worldW() / CELL);
         gh = (int) Math.ceil(city.worldH() / CELL);
         cellStart = new int[gw * gh + 1];
@@ -94,6 +114,14 @@ final class World {
 
     void populate(CityConfig cfg) {
         spawnRandom(Entity.CIVILIAN, cfg.civilians());
+        // A few civilians own a gun.
+        for (int i = 0, n = entities.size(); i < n; i++) {
+            Entity e = entities.get(i);
+            if (e.type == Entity.CIVILIAN && rnd.nextFloat() < 0.07f) armCivilian(e, 12 + rnd.nextInt(3) * 6);
+        }
+        City.Facility hospital = city.nearestFacility(City.FACILITY_HOSPITAL, 0, 0);
+        if (hospital != null)
+            for (int i = 0; i < 3; i++) spawn(Entity.MEDIC, hospital.x + rnd.nextFloat() * 40 - 20, hospital.y + rnd.nextFloat() * 40 - 20);
         // Half the cops start at their precinct, the rest on patrol; soldiers start on base.
         City.Facility base = city.nearestFacility(City.FACILITY_BASE, 0, 0);
         int stations = 0;
@@ -112,6 +140,28 @@ final class World {
         } else {
             spawnRandom(Entity.SOLDIER, cfg.soldiers());
         }
+        // Guards on the precinct doors and the base gates.
+        for (City.Facility f : city.facilities) {
+            int type = f.kind == City.FACILITY_POLICE ? Entity.COP : f.kind == City.FACILITY_BASE ? Entity.SOLDIER : -1;
+            if (type < 0) continue;
+            for (float[] post : f.posts) {
+                Entity best = null;
+                float bd = Float.MAX_VALUE;
+                for (int i = 0, n = entities.size(); i < n; i++) {
+                    Entity e = entities.get(i);
+                    if (e.type != type || e.task != Dispatch.T_NONE) continue;
+                    float d = (e.x - post[0]) * (e.x - post[0]) + (e.y - post[1]) * (e.y - post[1]);
+                    if (d < bd && d < 400 * 400) {
+                        bd = d;
+                        best = e;
+                    }
+                }
+                if (best == null) break;
+                best.task = Dispatch.T_POST;
+                best.postX = post[0];
+                best.postY = post[1];
+            }
+        }
         // Zombies start in a few small outbreaks rather than spread evenly.
         int left = cfg.zombies();
         while (left > 0) {
@@ -122,6 +172,22 @@ final class World {
             left -= group;
         }
         recount();
+    }
+
+    void armCivilian(Entity e, int rounds) {
+        e.hasGun = true;
+        e.magSize = 6;
+        e.ammo = Math.min(6, rounds);
+        e.reserve = rounds - e.ammo;
+    }
+
+    int zombieCount() {
+        return counts[Entity.ZOMBIE] + counts[Entity.RUNNER] + counts[Entity.BRUTE] + counts[Entity.CRAWLER]
+                + counts[Entity.SCREAMER];
+    }
+
+    int humanCount() {
+        return counts[Entity.CIVILIAN] + counts[Entity.COP] + counts[Entity.SOLDIER] + counts[Entity.MEDIC];
     }
 
     private void spawnRandom(int type, int n) {
@@ -182,6 +248,7 @@ final class World {
                 e.speed = 22;
                 e.runSpeed = 40;
                 e.magSize = 12;
+                e.reserve = 48;
                 e.body = 0xFF23408E;
                 e.head = 0xFF141C38;
                 break;
@@ -191,10 +258,33 @@ final class World {
                 e.speed = 24;
                 e.runSpeed = 40;
                 e.magSize = 30;
+                e.reserve = 150;
                 e.grenades = 3;
                 e.body = 0xFF55623A;
                 e.head = 0xFF3C4628;
                 e.mass = 1.3f;
+                break;
+            case Entity.MEDIC:
+                e.hp = 40;
+                e.radius = 3.7f;
+                e.speed = 20;
+                e.runSpeed = 40;
+                e.body = 0xFFF2F2F2;
+                e.head = HAIR[rnd.nextInt(HAIR.length)];
+                break;
+            case Entity.CRAWLER:
+                e.hp = 35;
+                e.radius = 3.0f;
+                e.speed = 7 + rnd.nextFloat() * 3;
+                e.runSpeed = 11;
+                e.skin = 0xFF73905A;
+                break;
+            case Entity.SCREAMER:
+                e.hp = 30;
+                e.radius = 3.5f;
+                e.speed = 20;
+                e.runSpeed = 30;
+                e.skin = 0xFFC8D0B4;
                 break;
             case Entity.ZOMBIE:
                 e.hp = 60;
@@ -230,6 +320,19 @@ final class World {
         return e;
     }
 
+    /** Makes a person or zombie without adding it to the city (used when loading a save). */
+    Entity create(int type, float x, float y) {
+        return make(type, x, y, -1, 0);
+    }
+
+    /** Recomputes counts and paths after a save has been loaded. */
+    void afterLoad() {
+        fieldTimer = 0;
+        buildHash();
+        city.computeFields(entities);
+        recount();
+    }
+
     static int mix(int a, int b, float t) {
         int ar = (a >> 16) & 0xFF, ag = (a >> 8) & 0xFF, ab = a & 0xFF;
         int br = (b >> 16) & 0xFF, bg = (b >> 8) & 0xFF, bb = b & 0xFF;
@@ -262,6 +365,12 @@ final class World {
         corpses.clear();
         grenades.clear();
         explosions.clear();
+        pickups.clear();
+        fleet.clear();
+        for (City.Building b : city.buildings) {
+            b.occupants.clear();
+            b.barricade = 100;
+        }
         Arrays.fill(plife, 0);
         Arrays.fill(tlife, 0);
         dcount = 0;
@@ -293,18 +402,44 @@ final class World {
             if (!e.dead) move(e, dt);
         }
         separate();
+        fleet.update(dt);
         updateGrenades(dt);
         cleanup();
         updateCorpses(dt);
+        updateBuildings(dt);
+        updatePickups(dt);
         updateEffects(dt);
         recount();
+        statTimer += dt;
+        if (statTimer >= statStep) {
+            statTimer = 0;
+            sampleStats();
+        }
+    }
+
+    /** Records humans vs zombies; when the history fills, halves its resolution to keep going. */
+    private void sampleStats() {
+        if (histCount == HISTORY) {
+            for (int i = 0; i < HISTORY / 2; i++) {
+                histHumans[i] = (histHumans[i * 2] + histHumans[i * 2 + 1]) / 2;
+                histZombies[i] = (histZombies[i * 2] + histZombies[i * 2 + 1]) / 2;
+            }
+            histCount = HISTORY / 2;
+            statStep *= 2;
+        }
+        histHumans[histCount] = humans;
+        histZombies[histCount] = zombies;
+        histCount++;
     }
 
     private void recount() {
         Arrays.fill(counts, 0);
         for (int i = 0, n = entities.size(); i < n; i++) counts[entities.get(i).type]++;
-        int h = counts[Entity.CIVILIAN] + counts[Entity.COP] + counts[Entity.SOLDIER];
-        int z = counts[Entity.ZOMBIE] + counts[Entity.RUNNER] + counts[Entity.BRUTE];
+        hiding = 0;
+        for (int i = 0, n = city.buildings.size(); i < n; i++) hiding += city.buildings.get(i).occupants.size();
+        int h = humanCount() + hiding;
+        int z = zombieCount();
+        peakZombies = Math.max(peakZombies, z);
         int rising = 0;
         for (int i = 0, n = corpses.size(); i < n; i++) if (corpses.get(i).rise > 0) rising++;
         if (z > 0 && h > 0) outbreak = true;
@@ -397,8 +532,10 @@ final class World {
         e.cooldown -= dt;
         e.biteCd -= dt;
         e.grenadeCd -= dt;
+        e.meleeCd -= dt;
         e.wanderTimer -= dt;
         e.fleeTimer -= dt;
+        e.taskTimer -= dt;
         if (e.infected) {
             e.infectTimer -= dt;
             if (e.infectTimer <= 0) {
@@ -407,20 +544,102 @@ final class World {
                 return;
             }
         }
+        if (e.stun > 0) {
+            e.stun -= dt;
+            steer(e, 0, 0, 0);
+            return;
+        }
+        if (e.reload > 0) {
+            e.reload -= dt;
+            if (e.reload <= 0) {
+                int take = Math.min(e.magSize - e.ammo, e.reserve);
+                e.ammo += take;
+                e.reserve -= take;
+            }
+        }
         if (e.isZombie()) thinkZombie(e, dt);
         else if (e.isArmed()) thinkArmed(e, dt);
+        else if (e.type == Entity.MEDIC) thinkMedic(e, dt);
         else thinkCivilian(e, dt);
     }
 
+    /** Makes zombies within a radius head for a noise (gunfire, explosions, a screamer). */
+    void noise(float x, float y, float radius) {
+        int cx0 = Math.max(0, (int) ((x - radius) / CELL)), cx1 = Math.min(gw - 1, (int) ((x + radius) / CELL));
+        int cy0 = Math.max(0, (int) ((y - radius) / CELL)), cy1 = Math.min(gh - 1, (int) ((y + radius) / CELL));
+        for (int cy = cy0; cy <= cy1; cy++)
+            for (int cx = cx0; cx <= cx1; cx++) {
+                int c = cy * gw + cx;
+                for (int k = cellStart[c], end = cellStart[c] + cellCount[c]; k < end; k++) {
+                    Entity o = sorted[k];
+                    if (o.dead || !o.isZombie()) continue;
+                    float ddx = o.x - x, ddy = o.y - y;
+                    if (ddx * ddx + ddy * ddy > radius * radius) continue;
+                    o.noiseX = x + rnd.nextFloat() * 30 - 15;
+                    o.noiseY = y + rnd.nextFloat() * 30 - 15;
+                    o.noiseTimer = 14;
+                }
+            }
+    }
+
     private void thinkZombie(Entity z, float dt) {
+        z.noiseTimer -= dt;
+        z.screamCd -= dt;
         if (rnd.nextFloat() < dt * 0.03f) emit(z.type == Entity.BRUTE ? Sfx.GROAN_DEEP : Sfx.GROAN, z.x, z.y);
         Entity t = nearest(z, 110, false, true);
         if (t != null) {
+            if (z.type == Entity.SCREAMER && z.screamCd <= 0) {
+                // A screamer calls every zombie around to its prey.
+                z.screamCd = 10;
+                noise(t.x, t.y, 380);
+                emit(Sfx.SHRIEK, z.x, z.y);
+                screams.add(new float[]{z.x, z.y, 0});
+            }
             float ddx = t.x - z.x, ddy = t.y - z.y;
             float d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
             steer(z, ddx / d, ddy / d, d < 45 ? z.runSpeed : z.speed);
             if (d < z.radius + t.radius + 2.5f && z.biteCd <= 0) bite(z, t, ddx / d, ddy / d);
             return;
+        }
+        // People barricaded indoors: batter the door down.
+        City.Building target = null;
+        float best = 150 * 150;
+        for (int i = 0, n = city.buildings.size(); i < n; i++) {
+            City.Building b = city.buildings.get(i);
+            if (b.occupants.isEmpty()) continue;
+            float ddx = b.doorX - z.x, ddy = b.doorY - z.y, d2 = ddx * ddx + ddy * ddy;
+            if (d2 < best) {
+                best = d2;
+                target = b;
+            }
+        }
+        if (target != null) {
+            float ddx = target.doorX - z.x, ddy = target.doorY - z.y;
+            float d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
+            if (d < 14) {
+                steer(z, 0, 0, 0);
+                float dps = z.type == Entity.BRUTE ? 22 : z.type == Entity.CRAWLER ? 3 : 7;
+                target.barricade -= dps * dt;
+                target.calmTimer = 0;
+                if (rnd.nextFloat() < dt * 1.2f) emit(Sfx.THUD, target.doorX, target.doorY);
+                return;
+            }
+            if (followField(z, city.humanDist, z.speed)) return;
+            steer(z, ddx / d, ddy / d, z.speed);
+            return;
+        }
+        if (z.noiseTimer > 0) {
+            float ddx = z.noiseX - z.x, ddy = z.noiseY - z.y;
+            float d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
+            if (d < 25) z.noiseTimer = 0;
+            else {
+                steer(z, ddx / d, ddy / d, z.speed * 1.2f);
+                if (z.blocked) {
+                    z.blocked = false;
+                    z.noiseTimer -= 2;
+                }
+                return;
+            }
         }
         int dist = city.fieldAt(city.humanDist, z.x, z.y);
         if (dist < 40 && followField(z, city.humanDist, z.speed)) return;
@@ -428,7 +647,7 @@ final class World {
     }
 
     private void bite(Entity z, Entity t, float nx, float ny) {
-        float dmg = z.type == Entity.BRUTE ? 30 : z.type == Entity.RUNNER ? 8 : 12;
+        float dmg = z.type == Entity.BRUTE ? 30 : z.type == Entity.RUNNER ? 8 : z.type == Entity.CRAWLER ? 10 : 12;
         z.biteCd = z.type == Entity.RUNNER ? 0.6f : 0.9f;
         t.hp -= dmg;
         t.hurt = 1;
@@ -441,8 +660,32 @@ final class World {
         if (!t.infected && rnd.nextFloat() < 0.4f) {
             t.infected = true;
             t.infectTimer = 12 + rnd.nextFloat() * 14;
+            t.cureTried = false;
         }
         if (z.type == Entity.BRUTE) tryMove(t, nx * 8, ny * 8);
+    }
+
+    /** Shoves a zombie back and stuns it; armed units also hit it with their weapon. */
+    private void shove(Entity e, Entity z, boolean strong) {
+        e.meleeCd = strong ? 1.2f : 2.2f;
+        float ddx = z.x - e.x, ddy = z.y - e.y;
+        float d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
+        float push = (strong ? 11 : 7) / z.mass;
+        tryMove(z, ddx / d * push, ddy / d * push);
+        z.stun = z.type == Entity.BRUTE ? 0.3f : strong ? 0.9f : 0.6f;
+        if (strong) {
+            z.hp -= 8;
+            z.hurt = 1;
+        }
+        e.angle = (float) Math.atan2(ddy, ddx);
+        emit(Sfx.THUD, z.x, z.y);
+    }
+
+    private Entity nearestInReach(Entity e) {
+        Entity z = nearest(e, e.radius + 9, true, false);
+        if (z == null) return null;
+        float ddx = z.x - e.x, ddy = z.y - e.y, reach = e.radius + z.radius + 3;
+        return ddx * ddx + ddy * ddy < reach * reach ? z : null;
     }
 
     private void thinkCivilian(Entity e, float dt) {
@@ -460,6 +703,88 @@ final class World {
             if (e.callCd <= 0 && threatDist > 20) {
                 e.callCd = 45;
                 if (rnd.nextFloat() < 0.35f) dispatch.call(e, threat);
+            }
+        }
+
+        // Anyone grabbed can try to shove the zombie off.
+        if (e.meleeCd <= 0) {
+            Entity z = nearestInReach(e);
+            if (z != null) {
+                if (rnd.nextFloat() < 0.4f) shove(e, z, false);
+                else e.meleeCd = 0.8f;
+            }
+        }
+
+        // Armed civilians stand and shoot if the zombie isn't on top of them.
+        if (e.hasGun && threat != null && threatDist > 22 && threatDist < 90 && (e.ammo > 0 || e.reserve > 0)
+                && e.task != Dispatch.T_SHELTER) {
+            aimAndFire(e, threat, threatDist, 120, dt);
+            steer(e, 0, 0, 0);
+            return;
+        }
+        e.aiming = false;
+
+        // Someone dropped a gun nearby and it's quiet: go get it.
+        if (!e.hasGun && e.task == Dispatch.T_NONE && threat == null && e.taskTimer <= 0) {
+            e.taskTimer = 1;
+            Pickup p = nearestPickup(e.x, e.y, 110);
+            if (p != null && countZombiesNear(p.x, p.y, 50) == 0) {
+                p.claimed = true;
+                e.pickup = p;
+                e.task = Dispatch.T_PICKUP;
+            }
+        }
+        if (e.task == Dispatch.T_PICKUP) {
+            Pickup p = e.pickup;
+            if (p == null || !pickups.contains(p) || threatDist < 40) {
+                if (p != null) p.claimed = false;
+                e.task = Dispatch.T_NONE;
+                e.pickup = null;
+            } else {
+                float ddx = p.x - e.x, ddy = p.y - e.y;
+                float d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
+                if (d < 6) {
+                    armCivilian(e, p.rounds);
+                    pickups.remove(p);
+                    e.task = Dispatch.T_NONE;
+                    e.pickup = null;
+                } else {
+                    steer(e, ddx / d, ddy / d, e.speed * 1.6f);
+                }
+                return;
+            }
+        }
+
+        // Badly hurt and it's quiet: walk to the hospital.
+        if (healSeeking(e, threat, dt)) return;
+
+        // Hide indoors: run to a nearby building with room if the zombie isn't too close.
+        if (e.task == Dispatch.T_NONE && threat != null && threatDist > 30 && !e.hasGun && e.taskTimer <= 0) {
+            e.taskTimer = 1.5f;
+            City.Building b = shelterNear(e);
+            if (b != null && rnd.nextFloat() < 0.6f) {
+                e.task = Dispatch.T_HIDE;
+                e.building = b;
+            }
+        }
+        if (e.task == Dispatch.T_HIDE) {
+            City.Building b = e.building;
+            if (b == null || b.occupants.size() >= b.capacity || b.barricade <= 0) {
+                e.task = Dispatch.T_NONE;
+                e.building = null;
+            } else {
+                float ddx = b.doorX - e.x, ddy = b.doorY - e.y;
+                float d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
+                if (d < 8) {
+                    enterBuilding(e, b);
+                } else {
+                    steer(e, ddx / d, ddy / d, e.runSpeed);
+                    if (e.blocked && rnd.nextFloat() < 0.2f) {
+                        e.task = Dispatch.T_NONE;
+                        e.building = null;
+                    }
+                }
+                return;
             }
         }
 
@@ -501,25 +826,163 @@ final class World {
         }
     }
 
+    /** Hurt people walk to the hospital when nothing is chasing them, and heal there. */
+    private boolean healSeeking(Entity e, Entity threat, float dt) {
+        City.Facility hospital = city.nearestFacility(City.FACILITY_HOSPITAL, e.x, e.y);
+        if (hospital == null) return false;
+        boolean needs = e.hp < e.maxHp * 0.45f || (e.infected && e.infectTimer > 6 && !e.cureTried);
+        if (e.task == Dispatch.T_NONE && needs && threat == null) e.task = Dispatch.T_HEAL;
+        if (e.task != Dispatch.T_HEAL) return false;
+        if (threat != null && e.fleeTimer > 0) {
+            e.task = Dispatch.T_NONE;
+            return false;
+        }
+        float ddx = hospital.x - e.x, ddy = hospital.y - e.y;
+        if (ddx * ddx + ddy * ddy < hospital.r * hospital.r) {
+            e.hp = Math.min(e.maxHp, e.hp + 8 * dt);
+            if (e.infected && !e.cureTried) tryCure(e, 0.5f);
+            if (e.hp >= e.maxHp && !e.infected) e.task = Dispatch.T_NONE;
+            wander(e, e.speed * 0.3f);
+            return true;
+        }
+        if (!followField(e, hospital.field, e.speed)) e.task = Dispatch.T_NONE;
+        return true;
+    }
+
+    private void tryCure(Entity e, float chance) {
+        e.cureTried = true;
+        if (e.infectTimer > 4 && rnd.nextFloat() < chance) {
+            e.infected = false;
+            cured++;
+        }
+    }
+
+    /** Medics run to the hurt and the infected, patch them up, and keep away from zombies. */
+    private void thinkMedic(Entity e, float dt) {
+        Entity threat = nearest(e, 60, true, true);
+        if (e.meleeCd <= 0) {
+            Entity z = nearestInReach(e);
+            if (z != null) shove(e, z, false);
+        }
+        if (threat != null) {
+            e.fleeTimer = 2;
+            e.threatX = threat.x;
+            e.threatY = threat.y;
+        }
+        if (e.fleeTimer > 0) {
+            float ax = e.x - e.threatX, ay = e.y - e.threatY;
+            float d = (float) Math.sqrt(ax * ax + ay * ay) + 0.001f;
+            flee(e, ax / d, ay / d, e.runSpeed);
+            return;
+        }
+        Entity patient = null;
+        float best = 320 * 320;
+        for (int i = 0, n = entities.size(); i < n; i++) {
+            Entity o = entities.get(i);
+            if (o == e || o.dead || o.isZombie()) continue;
+            boolean needs = o.hp < o.maxHp * 0.8f || (o.infected && !o.cureTried);
+            if (!needs) continue;
+            float ddx = o.x - e.x, ddy = o.y - e.y, d2 = ddx * ddx + ddy * ddy;
+            if (d2 < best) {
+                best = d2;
+                patient = o;
+            }
+        }
+        if (patient != null) {
+            float ddx = patient.x - e.x, ddy = patient.y - e.y;
+            float d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
+            if (d < e.radius + patient.radius + 6) {
+                steer(e, 0, 0, 0);
+                e.angle = (float) Math.atan2(ddy, ddx);
+                patient.hp = Math.min(patient.maxHp, patient.hp + 14 * dt);
+                if (patient.infected && !patient.cureTried) tryCure(patient, 0.6f);
+                if (rnd.nextFloat() < dt * 6)
+                    particle(patient.x + rnd.nextFloat() * 6 - 3, patient.y - 4, 0, -12, 0.6f, 1.2f, 0xFF63E06B, P_DOT);
+                return;
+            }
+            steer(e, ddx / d, ddy / d, e.runSpeed * 0.8f);
+            return;
+        }
+        City.Facility hospital = city.nearestFacility(City.FACILITY_HOSPITAL, e.x, e.y);
+        if (hospital != null) {
+            float ddx = hospital.x - e.x, ddy = hospital.y - e.y;
+            if (ddx * ddx + ddy * ddy > hospital.r * hospital.r * 4 && followField(e, hospital.field, e.speed)) return;
+        }
+        wander(e, e.speed * 0.6f);
+    }
+
     private void thinkArmed(Entity e, float dt) {
         boolean soldier = e.type == Entity.SOLDIER;
         float range = soldier ? 230 : 160;
-        if (e.reload > 0) {
-            e.reload -= dt;
-            if (e.reload <= 0) e.ammo = e.magSize;
+        if (e.meleeCd <= 0) {
+            Entity z = nearestInReach(e);
+            if (z != null) shove(e, z, true);
         }
-        Entity t = nearest(e, range, true, true);
-        if (t != null) {
+        boolean dry = e.ammo <= 0 && e.reserve <= 0 && e.reload <= 0;
+        // Out of ammo: head back to the precinct or base to resupply.
+        if (dry && e.task != Dispatch.T_RESUPPLY) {
+            City.Facility f = supplyPoint(e);
+            if (f != null && (f.x - e.x) * (f.x - e.x) + (f.y - e.y) * (f.y - e.y) < f.r * f.r * 2) {
+                // Already at the armoury (guards on a post): restock on the spot.
+                e.reserve = soldier ? 150 : 48;
+                e.reload = 2;
+                dry = false;
+            }
+        }
+        if (dry && e.task != Dispatch.T_RESUPPLY) {
+            City.Facility f = supplyPoint(e);
+            if (!e.outOfAmmoSaid) {
+                e.outOfAmmoSaid = true;
+                dispatch.say(soldier ? Dispatch.WHO_MILITARY : Dispatch.WHO_POLICE, e, "I'm out of ammo!"
+                        + (f != null ? " Heading back to " + f.name + " to resupply." : " Nothing left but my hands."), e.x, e.y);
+            }
+            if (f != null) {
+                dispatch.releaseForResupply(e);
+                e.task = Dispatch.T_RESUPPLY;
+            }
+        }
+        if (e.task == Dispatch.T_RESUPPLY) {
+            City.Facility f = supplyPoint(e);
+            if (f == null) {
+                e.task = Dispatch.T_NONE;
+            } else {
+                float ddx = f.x - e.x, ddy = f.y - e.y;
+                if (ddx * ddx + ddy * ddy < f.r * f.r) {
+                    e.reserve = soldier ? 150 : 48;
+                    e.ammo = e.magSize;
+                    e.task = Dispatch.T_NONE;
+                    e.outOfAmmoSaid = false;
+                } else {
+                    Entity t = nearest(e, 50, true, false);
+                    if (t != null) {
+                        float tx = e.x - t.x, ty = e.y - t.y, d = (float) Math.sqrt(tx * tx + ty * ty) + 0.001f;
+                        flee(e, tx / d, ty / d, e.runSpeed);
+                    } else if (!followField(e, f.field, e.runSpeed)) {
+                        e.task = Dispatch.T_NONE;
+                    }
+                    return;
+                }
+            }
+        }
+        // Standing at a supply point quietly tops up spare ammo.
+        if (e.reserve < (soldier ? 150 : 48) && rnd.nextFloat() < dt) {
+            City.Facility f = supplyPoint(e);
+            if (f != null && (f.x - e.x) * (f.x - e.x) + (f.y - e.y) * (f.y - e.y) < f.r * f.r * 1.5f)
+                e.reserve = Math.min(soldier ? 150 : 48, e.reserve + e.magSize);
+        }
+
+        Entity t = e.ammo > 0 || e.reserve > 0 ? nearest(e, range, true, true) : null;
+        boolean stationary = e.task == Dispatch.T_POST || e.task == Dispatch.T_HOLD;
+        if (t != null && e.task != Dispatch.T_MOVE) {
             float ddx = t.x - e.x, ddy = t.y - e.y;
             float d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
-            e.aiming = true;
-            e.angle = turn(e.angle, (float) Math.atan2(ddy, ddx), dt * 14);
             float keep = soldier ? 40 : 50;
             Dispatch.SafeZone guarding = e.task == Dispatch.T_GUARD ? e.zone : null;
-            if (d < keep && (guarding == null || inside(e, guarding, 1f))) steer(e, -ddx / d, -ddy / d, e.runSpeed * 0.8f);
+            if (stationary) standAt(e, e.postX, e.postY, 0.5f);
+            else if (d < keep && (guarding == null || inside(e, guarding, 1f))) steer(e, -ddx / d, -ddy / d, e.runSpeed * 0.8f);
             else if (guarding != null) holdPost(e, guarding, 0.5f);
             else steer(e, 0, 0, 0);
-            if (e.reload <= 0 && e.cooldown <= 0) fire(e, t, d, range);
+            aimAndFire(e, t, d, range, dt);
             if (soldier && e.grenades > 0 && e.grenadeCd <= 0 && d > 70 && d < 200
                     && countZombiesNear(t.x, t.y, 40) >= 5) {
                 throwGrenade(e, t.x, t.y);
@@ -527,7 +990,22 @@ final class World {
             return;
         }
         e.aiming = false;
-        if (e.reload <= 0 && e.ammo < e.magSize / 2) e.reload = soldier ? 2.2f : 1.6f;
+        if (e.reload <= 0 && e.ammo < e.magSize / 2 && e.reserve > 0) e.reload = soldier ? 2.2f : 1.6f;
+        if (stationary) {
+            standAt(e, e.postX, e.postY, 1f);
+            return;
+        }
+        if (e.task == Dispatch.T_MOVE) {
+            float ddx = e.postX - e.x, ddy = e.postY - e.y;
+            float d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
+            if (d < 20) {
+                e.task = Dispatch.T_HOLD;
+                e.orderField = null;
+            } else if (e.orderField == null || !followField(e, e.orderField, e.runSpeed)) {
+                steer(e, ddx / d, ddy / d, e.runSpeed);
+            }
+            return;
+        }
         if (e.task == Dispatch.T_GUARD && e.zone != null) {
             holdPost(e, e.zone, 1f);
             return;
@@ -550,7 +1028,7 @@ final class World {
         }
         int dist = city.fieldAt(city.zombieDist, e.x, e.y);
         int hunt = soldier ? 200 : 40;
-        if (dist < hunt && followField(e, city.zombieDist, e.speed * 1.3f)) return;
+        if ((e.ammo > 0 || e.reserve > 0) && dist < hunt && followField(e, city.zombieDist, e.speed * 1.3f)) return;
         if (soldier) {
             // With nothing to fight, soldiers drift back to base.
             City.Facility base = city.nearestFacility(City.FACILITY_BASE, e.x, e.y);
@@ -562,23 +1040,51 @@ final class World {
         wander(e, e.speed * 0.6f);
     }
 
+    /** Where this unit can get more ammo: the base for soldiers, a precinct for cops (or either). */
+    private City.Facility supplyPoint(Entity e) {
+        City.Facility f = city.nearestFacility(e.type == Entity.SOLDIER ? City.FACILITY_BASE : City.FACILITY_POLICE, e.x, e.y);
+        if (f == null) f = city.nearestFacility(e.type == Entity.SOLDIER ? City.FACILITY_POLICE : City.FACILITY_BASE, e.x, e.y);
+        return f;
+    }
+
+    /** Stands on a spot (a guard post or an ordered position). */
+    private void standAt(Entity e, float x, float y, float speedFactor) {
+        float ddx = x - e.x, ddy = y - e.y;
+        float d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
+        if (d > 5) steer(e, ddx / d, ddy / d, (d > 30 ? e.runSpeed : e.speed) * speedFactor);
+        else steer(e, 0, 0, 0);
+    }
+
+    private void aimAndFire(Entity e, Entity t, float d, float range, float dt) {
+        e.aiming = true;
+        e.angle = turn(e.angle, (float) Math.atan2(t.y - e.y, t.x - e.x), dt * 14);
+        if (e.ammo <= 0) {
+            if (e.reload <= 0 && e.reserve > 0) e.reload = e.type == Entity.SOLDIER ? 2.2f : 1.6f;
+            return;
+        }
+        if (e.reload <= 0 && e.cooldown <= 0) fire(e, t, d, range);
+    }
+
     private void fire(Entity e, Entity t, float d, float range) {
         boolean soldier = e.type == Entity.SOLDIER;
         e.ammo--;
+        shotsFired++;
         float dmg;
         if (soldier) {
             e.burst++;
             e.cooldown = e.burst % 3 == 0 ? 0.45f : 0.1f;
             dmg = 16;
         } else {
-            e.cooldown = 0.55f;
+            e.cooldown = e.hasGun ? 0.8f : 0.55f;
             dmg = 10;
         }
-        if (e.ammo <= 0) e.reload = soldier ? 2.2f : 1.6f;
+        if (e.ammo <= 0 && e.reserve > 0) e.reload = soldier ? 2.2f : 1.6f;
+        if (rnd.nextFloat() < 0.25f) noise(e.x, e.y, 220);
         float ca = (float) Math.cos(e.angle), sa = (float) Math.sin(e.angle);
         float mx = e.x + ca * e.radius * (soldier ? 2.5f : 2f) - sa * e.radius * 0.3f;
         float my = e.y + sa * e.radius * (soldier ? 2.5f : 2f) + ca * e.radius * 0.3f;
-        float hit = 0.7f * (1 - 0.4f * d / range) + (t.type == Entity.BRUTE ? 0.1f : 0);
+        float hit = (e.hasGun ? 0.5f : 0.7f) * (1 - 0.4f * d / range) + (t.type == Entity.BRUTE ? 0.1f : 0);
+        if (t.type == Entity.CRAWLER) hit *= 0.6f;
         if (rnd.nextFloat() < hit) {
             t.hp -= dmg;
             t.hurt = 1;
@@ -603,6 +1109,123 @@ final class World {
         }
         particle(mx, my, 0, 0, 0.06f, soldier ? 3.2f : 2.6f, 0xFFFFE9A0, P_FLASH);
         emit(soldier ? Sfx.RIFLE : Sfx.PISTOL, e.x, e.y);
+    }
+
+    // ------------------------------------------------------------------ hiding indoors, pickups
+
+    /** A building with room whose door is close and not swarmed. */
+    private City.Building shelterNear(Entity e) {
+        City.Building best = null;
+        float bd = 80 * 80;
+        for (int i = 0, n = city.buildings.size(); i < n; i++) {
+            City.Building b = city.buildings.get(i);
+            if (b.capacity == 0 || b.occupants.size() >= b.capacity || b.barricade < 40) continue;
+            float ddx = b.doorX - e.x, ddy = b.doorY - e.y, d2 = ddx * ddx + ddy * ddy;
+            if (d2 < bd && countZombiesNear(b.doorX, b.doorY, 35) == 0) {
+                bd = d2;
+                best = b;
+            }
+        }
+        return best;
+    }
+
+    private void enterBuilding(Entity e, City.Building b) {
+        e.task = Dispatch.T_NONE;
+        e.building = null;
+        e.dead = true;
+        e.removed = true;
+        b.occupants.add(e);
+        b.calmTimer = 0;
+    }
+
+    /** Barricades wear down under attack; when they break everyone inside bolts. Calm lets people out. */
+    private void updateBuildings(float dt) {
+        for (int i = 0, n = city.buildings.size(); i < n; i++) {
+            City.Building b = city.buildings.get(i);
+            if (b.occupants.isEmpty()) {
+                b.barricade = Math.min(100, b.barricade + dt * 4);
+                continue;
+            }
+            // Someone infected turns inside: the building is lost.
+            boolean turnedInside = false;
+            for (int k = 0; k < b.occupants.size(); k++) {
+                Entity o = b.occupants.get(k);
+                if (o.infected) {
+                    o.infectTimer -= dt;
+                    if (o.infectTimer <= 0) turnedInside = true;
+                }
+            }
+            if (b.barricade <= 0 || turnedInside) {
+                if (turnedInside) spawn(Entity.ZOMBIE, b.doorX, b.doorY);
+                dispatch.say(Dispatch.WHO_INFO, null, "Zombies broke into a building on " + city.placeName(b.doorX, b.doorY)
+                        + "! " + b.occupants.size() + (b.occupants.size() == 1 ? " person" : " people") + " fleeing.", b.doorX, b.doorY);
+                while (!b.occupants.isEmpty()) {
+                    Entity o = b.occupants.remove(b.occupants.size() - 1);
+                    if (o.infected && o.infectTimer <= 0) continue;
+                    leaveBuilding(o, b, true);
+                }
+                b.barricade = 0;
+                continue;
+            }
+            if (countZombiesNear(b.doorX, b.doorY, 60) == 0) b.barricade = Math.min(100, b.barricade + dt * 2);
+            // Come out once the street has been quiet for a while.
+            b.calmTimer += dt;
+            if (countZombiesNear(b.doorX, b.doorY, 250) > 0) b.calmTimer = 0;
+            if (b.calmTimer > 25) {
+                b.releaseTimer -= dt;
+                if (b.releaseTimer <= 0) {
+                    b.releaseTimer = 1.5f;
+                    leaveBuilding(b.occupants.remove(b.occupants.size() - 1), b, false);
+                }
+            }
+        }
+    }
+
+    private void leaveBuilding(Entity o, City.Building b, boolean panic) {
+        if (entities.size() >= maxEntities) return;
+        float[] p = city.findWalkable(b.doorX + rnd.nextFloat() * 10 - 5, b.doorY + rnd.nextFloat() * 10 - 5);
+        if (p == null) return;
+        o.x = p[0];
+        o.y = p[1];
+        o.vx = o.vy = 0;
+        o.dead = false;
+        o.removed = false;
+        o.task = Dispatch.T_NONE;
+        o.taskTimer = 4;
+        if (panic) {
+            o.fleeTimer = 3;
+            o.threatX = b.doorX + (b.doorX - (b.x0 + b.x1) / 2);
+            o.threatY = b.doorY + (b.doorY - (b.y0 + b.y1) / 2);
+        }
+        entities.add(o);
+    }
+
+    Pickup nearestPickup(float x, float y, float radius) {
+        Pickup best = null;
+        float bd = radius * radius;
+        for (int i = 0, n = pickups.size(); i < n; i++) {
+            Pickup p = pickups.get(i);
+            if (p.claimed) continue;
+            float d = (p.x - x) * (p.x - x) + (p.y - y) * (p.y - y);
+            if (d < bd) {
+                bd = d;
+                best = p;
+            }
+        }
+        return best;
+    }
+
+    private void updatePickups(float dt) {
+        for (int i = pickups.size() - 1; i >= 0; i--) {
+            Pickup p = pickups.get(i);
+            p.age += dt;
+            if (p.age > 180) pickups.remove(i);
+        }
+        for (int i = screams.size() - 1; i >= 0; i--) {
+            float[] sc = screams.get(i);
+            sc[2] += dt;
+            if (sc[2] > 1.2f) screams.remove(i);
+        }
     }
 
     private static boolean inside(Entity e, Dispatch.SafeZone z, float margin) {
@@ -797,6 +1420,23 @@ final class World {
 
     private void onDeath(Entity e) {
         dispatch.onDeath(e);
+        if (e.type == Entity.CIVILIAN) civiliansLost++;
+        // Their gun stays where they fell for someone else to pick up.
+        if (e.canShoot() && e.ammo + e.reserve > 0) {
+            Pickup p = new Pickup();
+            p.x = e.x + rnd.nextFloat() * 6 - 3;
+            p.y = e.y + rnd.nextFloat() * 6 - 3;
+            p.rounds = Math.min(60, e.ammo + e.reserve);
+            pickups.add(p);
+            if (pickups.size() > 60) pickups.remove(0);
+        }
+        // Blown-apart zombies sometimes keep crawling.
+        if (e.isZombie() && e.gibbed && e.type != Entity.CRAWLER && e.type != Entity.BRUTE && rnd.nextFloat() < 0.35f
+                && entities.size() < maxEntities) {
+            Entity c = make(Entity.CRAWLER, e.x, e.y, e.origin, e.body);
+            c.angle = e.angle;
+            entities.add(c);
+        }
         if (gore) decal(e.x + rnd.nextFloat() * 4 - 2, e.y + rnd.nextFloat() * 4 - 2, e.radius * (1.4f + rnd.nextFloat()), 0x996E0A0A);
         if (e.isZombie()) zombiesKilled++;
         Corpse c = new Corpse();
@@ -810,7 +1450,8 @@ final class World {
         c.origin = e.type;
         boolean turns = !e.isZombie() && !e.gibbed && (e.killedByZombie || e.infected);
         c.rise = turns ? 2.5f + rnd.nextFloat() * 3f : -1;
-        c.riseType = rnd.nextFloat() < 0.15f ? Entity.RUNNER : Entity.ZOMBIE;
+        float roll = rnd.nextFloat();
+        c.riseType = roll < 0.14f ? Entity.RUNNER : roll < 0.18f ? Entity.SCREAMER : roll < 0.22f ? Entity.CRAWLER : Entity.ZOMBIE;
         if (e.gibbed) {
             bloodBurst(e.x, e.y, 14, 0, 0);
             if (rnd.nextBoolean()) return;
@@ -845,6 +1486,64 @@ final class World {
                 corpses.remove(i);
             }
         }
+    }
+
+    /** A moving vehicle hits zombies in its way and nudges people aside. */
+    void runOver(float x, float y, float r, float speed, float angle) {
+        if (speed < 20) return;
+        int cx0 = Math.max(0, (int) ((x - r - 8) / CELL)), cx1 = Math.min(gw - 1, (int) ((x + r + 8) / CELL));
+        int cy0 = Math.max(0, (int) ((y - r - 8) / CELL)), cy1 = Math.min(gh - 1, (int) ((y + r + 8) / CELL));
+        float fx = (float) Math.cos(angle), fy = (float) Math.sin(angle);
+        for (int cy = cy0; cy <= cy1; cy++)
+            for (int cx = cx0; cx <= cx1; cx++) {
+                int c = cy * gw + cx;
+                for (int k = cellStart[c], end = cellStart[c] + cellCount[c]; k < end; k++) {
+                    Entity o = sorted[k];
+                    if (o.dead) continue;
+                    float ddx = o.x - x, ddy = o.y - y, reach = r + o.radius;
+                    if (ddx * ddx + ddy * ddy > reach * reach) continue;
+                    // Push sideways out of the lane.
+                    float side = ddx * -fy + ddy * fx >= 0 ? 1 : -1;
+                    tryMove(o, -fy * side * 6 + fx * 3, fx * side * 6 + fy * 3);
+                    if (!o.isZombie() || o.stun > 0) continue;
+                    o.hp -= speed * (o.type == Entity.BRUTE ? 0.3f : 0.9f);
+                    o.hurt = 1;
+                    o.stun = 1f;
+                    o.killedByZombie = false;
+                    bloodBurst(o.x, o.y, 8, fx, fy);
+                    emit(Sfx.THUD, o.x, o.y);
+                }
+            }
+    }
+
+    /** The nearest zombie to a point, ignoring walls (for the helicopter gunner). */
+    Entity nearestZombie(float x, float y, float radius) {
+        Entity best = null;
+        float bd = radius * radius;
+        for (int i = 0, n = entities.size(); i < n; i++) {
+            Entity o = entities.get(i);
+            if (o.dead || !o.isZombie()) continue;
+            float d = (o.x - x) * (o.x - x) + (o.y - y) * (o.y - y);
+            if (d < bd) {
+                bd = d;
+                best = o;
+            }
+        }
+        return best;
+    }
+
+    /** One burst from the helicopter's door gun. */
+    void airShot(float fx, float fy, Entity t) {
+        shotsFired++;
+        if (rnd.nextFloat() < 0.75f) {
+            t.hp -= 22;
+            t.hurt = 1;
+            bloodBurst(t.x, t.y, 4, 0, 0);
+            tracer(fx, fy, t.x, t.y);
+        } else {
+            tracer(fx, fy, t.x + rnd.nextFloat() * 24 - 12, t.y + rnd.nextFloat() * 24 - 12);
+        }
+        emit(Sfx.RIFLE, fx, fy);
     }
 
     void explode(float x, float y, float radius, float damage) {
@@ -888,6 +1587,7 @@ final class World {
         ex.life = ex.max = 0.45f;
         explosions.add(ex);
         emit(Sfx.EXPLOSION, x, y);
+        noise(x, y, 450);
         for (int i = 0; i < 40; i++) {
             float a = rnd.nextFloat() * TAU, s = 30 + rnd.nextFloat() * radius * 2.2f;
             particle(x, y, (float) Math.cos(a) * s, (float) Math.sin(a) * s, 0.3f + rnd.nextFloat() * 0.4f,

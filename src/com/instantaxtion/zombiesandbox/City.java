@@ -19,8 +19,8 @@ final class City {
     static final byte ROAD = 0, SIDEWALK = 1, BUILDING = 2, GRASS = 3, TREE = 4, PLAZA = 5, CAR = 6,
             STATUE = 7, LOT = 8, BASE = 9, FENCE = 10;
 
-    static final int OFFICE = 0, HOUSE = 1, WAREHOUSE = 2, STATION = 3, BARRACKS = 4, TOWER = 5;
-    static final int FACILITY_POLICE = 0, FACILITY_BASE = 1;
+    static final int OFFICE = 0, HOUSE = 1, WAREHOUSE = 2, STATION = 3, BARRACKS = 4, TOWER = 5, HOSPITAL = 6;
+    static final int FACILITY_POLICE = 0, FACILITY_BASE = 1, FACILITY_HOSPITAL = 2;
     private static final String[] BASE_NAMES = {"Fort Mercer", "Camp Redstone", "Fort Kessler", "Camp Hollow",
             "Fort Whitmore", "Camp Ironwood"};
 
@@ -30,6 +30,8 @@ final class City {
         final float x, y, r, gateX, gateY;
         String name;
         int[] field;
+        /** Guard posts (station entrance, base gates) as {x, y}. */
+        final List<float[]> posts = new ArrayList<float[]>();
 
         Facility(int kind, float x, float y, float r, float gateX, float gateY, String name) {
             this.kind = kind;
@@ -63,6 +65,10 @@ final class City {
     static final class Building {
         final float x0, y0, x1, y1, height;
         final int roof, wall, seed, kind;
+        /** Civilians can hide inside homes, offices and warehouses: the door, room and barricade. */
+        float doorX, doorY, barricade = 100, calmTimer, releaseTimer;
+        int capacity;
+        final List<Entity> occupants = new ArrayList<Entity>();
 
         Building(float x0, float y0, float x1, float y1, float height, int roof, int wall, int seed, int kind) {
             this.x0 = x0;
@@ -142,8 +148,10 @@ final class City {
         for (int[] l : buildingLots) {
             float height = l[7] * FLOOR + 3;
             maxHeight = Math.max(maxHeight, height);
-            buildings.add(new Building(l[0] * T, l[1] * T, (l[0] + l[2]) * T, (l[1] + l[3]) * T, height,
-                    l[4], l[8], l[5], l[6]));
+            Building b = new Building(l[0] * T, l[1] * T, (l[0] + l[2]) * T, (l[1] + l[3]) * T, height,
+                    l[4], l[8], l[5], l[6]);
+            if (l[6] == OFFICE || l[6] == HOUSE || l[6] == WAREHOUSE) placeDoor(b, l);
+            buildings.add(b);
         }
         Arrays.fill(humanDist, FAR);
         Arrays.fill(zombieDist, FAR);
@@ -153,6 +161,19 @@ final class City {
         }
         bitmap = Bitmap.createBitmap(w * T, h * T, Bitmap.Config.ARGB_8888);
         render(new Canvas(bitmap));
+    }
+
+    /** Puts the door in the middle of the first side that opens onto walkable ground. */
+    private void placeDoor(Building b, int[] l) {
+        int x = l[0], y = l[1], lw = l[2], lh = l[3];
+        int[][] sides = {{x + lw / 2, y + lh}, {x + lw / 2, y - 1}, {x - 1, y + lh / 2}, {x + lw, y + lh / 2}};
+        for (int[] s : sides) {
+            if (solidTile(s[0], s[1])) continue;
+            b.doorX = s[0] * T + T / 2f;
+            b.doorY = s[1] * T + T / 2f;
+            b.capacity = Math.max(3, Math.min(15, lw * lh / 2));
+            return;
+        }
     }
 
     float worldW() {
@@ -281,7 +302,28 @@ final class City {
             used[k] = true;
             int[] b = blocks.get(k);
             fill(b[0], b[1], b[2] - b[0], b[3] - b[1], SIDEWALK);
-            policeStation(b[0] + 1, b[1] + 1, b[2] - b[0] - 2, b[3] - b[1] - 2, n + 1);
+            serviceBuilding(b[0] + 1, b[1] + 1, b[2] - b[0] - 2, b[3] - b[1] - 2, STATION, n + 1);
+        }
+
+        // One hospital, as far as it can be from the police stations.
+        int hospital = -1;
+        float far = -1;
+        for (int k = 0; k < blocks.size(); k++) {
+            int[] b = blocks.get(k);
+            if (used[k] || b[2] - b[0] - 2 < 6 || b[3] - b[1] - 2 < 6) continue;
+            float cx = (b[0] + b[2]) / 2f * T, cy = (b[1] + b[3]) / 2f * T, d = w * T;
+            for (Facility f : facilities) d = Math.min(d, (float) Math.hypot(f.x - cx, f.y - cy));
+            d += rnd.nextFloat() * T * 6;
+            if (d > far) {
+                far = d;
+                hospital = k;
+            }
+        }
+        if (hospital >= 0) {
+            used[hospital] = true;
+            int[] b = blocks.get(hospital);
+            fill(b[0], b[1], b[2] - b[0], b[3] - b[1], SIDEWALK);
+            serviceBuilding(b[0] + 1, b[1] + 1, b[2] - b[0] - 2, b[3] - b[1] - 2, HOSPITAL, 0);
         }
 
         for (int k = 0; k < blocks.size(); k++) {
@@ -386,28 +428,48 @@ final class City {
         float[] c = findWalkable(cx, cy);
         if (c == null) c = new float[]{cx, cy};
         float r = Math.min(110, Math.min(aw, ah) * T * 0.42f);
-        facilities.add(new Facility(FACILITY_BASE, c[0], c[1], r, (gx + 1.5f) * T, (y + bh - 2.5f) * T,
-                BASE_NAMES[rnd.nextInt(BASE_NAMES.length)]));
+        Facility base = new Facility(FACILITY_BASE, c[0], c[1], r, (gx + 1.5f) * T, (y + bh - 2.5f) * T,
+                BASE_NAMES[rnd.nextInt(BASE_NAMES.length)]);
+        // Two guards inside each gate.
+        float[][] gates = {{(gx + 1.5f) * T, (y + bh - 2.5f) * T}, {(gx + 1.5f) * T, (y + 1.5f) * T},
+                {(x + bw - 2.5f) * T, (gy + 1.5f) * T}};
+        for (int i = 0; i < gates.length; i++) {
+            boolean across = i < 2;
+            for (int k = -1; k <= 1; k += 2) {
+                float[] p = findWalkable(gates[i][0] + (across ? k * 14 : 0), gates[i][1] + (across ? 0 : k * 14));
+                if (p != null) base.posts.add(p);
+            }
+        }
+        facilities.add(base);
     }
 
-    /** A precinct building with police cruisers parked next to it. */
-    private void policeStation(int x, int y, int bw, int bh, int number) {
+    /** A precinct with police cruisers, or a hospital with ambulances, parked next to it. */
+    private void serviceBuilding(int x, int y, int bw, int bh, int kind, int number) {
         fill(x, y, bw, bh, LOT);
         boolean wide = bw >= bh;
         int sw = wide ? Math.max(3, bw / 2 - 1) : bw - 2, sh = wide ? bh - 2 : Math.max(3, bh / 2 - 1);
-        addFacilityLot(x + 1, y + 1, sw, sh, STATION, 3);
+        addFacilityLot(x + 1, y + 1, sw, sh, kind, kind == HOSPITAL ? 4 : 3);
         int lx = wide ? x + sw + 2 : x, ly = wide ? y : y + sh + 2;
         int lw = wide ? bw - sw - 2 : bw, lh = wide ? bh : bh - sh - 2;
         for (int j = ly + 1; j < ly + lh - 1; j += 3)
             for (int i = lx + 1; i < lx + lw - 1; i++)
-                if (rnd.nextFloat() < 0.6f) {
+                if (rnd.nextFloat() < (kind == HOSPITAL ? 0.35f : 0.6f)) {
                     tiles[j * w + i] = CAR;
-                    carKind[j * w + i] = 1;
+                    carKind[j * w + i] = (byte) (kind == HOSPITAL ? 3 : 1);
                 }
         float cx = (lx + lw / 2f) * T, cy = (ly + lh / 2f) * T;
         float[] c = findWalkable(cx, cy);
         if (c == null) c = new float[]{cx, cy};
-        facilities.add(new Facility(FACILITY_POLICE, c[0], c[1], 64, c[0], c[1], "Precinct " + number));
+        if (kind == HOSPITAL) {
+            facilities.add(new Facility(FACILITY_HOSPITAL, c[0], c[1], 64, c[0], c[1], "City Hospital"));
+            return;
+        }
+        Facility station = new Facility(FACILITY_POLICE, c[0], c[1], 64, c[0], c[1], "Precinct " + number);
+        for (int k = -1; k <= 1; k += 2) {
+            float[] p = findWalkable(c[0] + k * 18, c[1] + 10);
+            if (p != null) station.posts.add(p);
+        }
+        facilities.add(station);
     }
 
     private void addFacilityLot(int x, int y, int lw, int lh, int kind, int floors) {
@@ -416,6 +478,9 @@ final class City {
         if (kind == STATION) {
             roof = 0xFF2F4F86;
             wall = 0xFFD5D9DF;
+        } else if (kind == HOSPITAL) {
+            roof = 0xFFE9ECEF;
+            wall = 0xFFE2E6EA;
         } else if (kind == TOWER) {
             roof = 0xFF4B5536;
             wall = 0xFF6B7350;
@@ -954,6 +1019,17 @@ final class City {
             c.drawCircle((x0 + x1) / 2, y0 + Math.min(bh * 0.25f, 12), 3.2f, p);
             return;
         }
+        if (kind == HOSPITAL) {
+            p.setColor(0xFFBFC5CB);
+            c.drawRect(x0, y0, x1, y1, p);
+            p.setColor(roof);
+            c.drawRect(x0 + 2, y0 + 2, x1 - 2, y1 - 2, p);
+            float cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, s = Math.min(Math.min(bw, bh) * 0.3f, 14);
+            p.setColor(0xFFD83A3A);
+            c.drawRect(cx - s, cy - s * 0.33f, cx + s, cy + s * 0.33f, p);
+            c.drawRect(cx - s * 0.33f, cy - s, cx + s * 0.33f, cy + s, p);
+            return;
+        }
         if (kind == TOWER) {
             p.setColor(darken(roof, 0.7f));
             c.drawRect(x0, y0, x1, y1, p);
@@ -1025,7 +1101,8 @@ final class City {
         if (kind == 2) vertical = true;
         float hl = kind == 2 ? 7.8f : 7.5f, hw = kind == 2 ? 4.8f : 4.2f;
         RectF rect = vertical ? new RectF(cx - hw, cy - hl, cx + hw, cy + hl) : new RectF(cx - hl, cy - hw, cx + hl, cy + hw);
-        int color = kind == 1 ? 0xFF1C1D22 : kind == 2 ? 0xFF4F5A33 : CAR_COLORS[rnd.nextInt(CAR_COLORS.length)];
+        int color = kind == 1 ? 0xFF1C1D22 : kind == 2 ? 0xFF4F5A33 : kind == 3 ? 0xFFF2F2F2
+                : CAR_COLORS[rnd.nextInt(CAR_COLORS.length)];
         p.setColor(0x55000000);
         rect.offset(1.5f, 1.5f);
         c.drawRoundRect(rect, 2.5f, 2.5f, p);
@@ -1059,6 +1136,13 @@ final class City {
             p.setColor(0xFF2F6BFF);
             if (vertical) c.drawRect(cx, cy - 0.8f, cx + hw - 1, cy + 0.6f, p);
             else c.drawRect(cx - 0.8f, cy, cx + 0.6f, cy + hw - 1, p);
+        } else if (kind == 3) {
+            // Ambulance: red stripe and cross.
+            p.setColor(0xFFD83A3A);
+            if (vertical) c.drawRect(cx - hw, cy + 3.5f, cx + hw, cy + 4.6f, p);
+            else c.drawRect(cx - 4.6f, cy - hw, cx - 3.5f, cy + hw, p);
+            c.drawRect(cx - 0.6f, cy - 2, cx + 0.6f, cy + 2, p);
+            c.drawRect(cx - 2, cy - 0.6f, cx + 2, cy + 0.6f, p);
         } else if (kind == 2) {
             // Army truck: canvas-covered cargo bed.
             p.setColor(0xFF5F6B40);
@@ -1243,6 +1327,59 @@ final class City {
         bfs(zombieDist, entities, true);
     }
 
+    /** Can a vehicle drive over this tile, and at what cost: roads are cheap, sidewalks and lots dearer. */
+    private int driveCost(int i) {
+        byte t = tiles[i];
+        if (t == ROAD) return 2;
+        if (t == LOT || t == BASE) return 3;
+        if (t == SIDEWALK || t == PLAZA) return 8;
+        return -1;
+    }
+
+    boolean drivable(float x, float y) {
+        int tx = (int) Math.floor(x / T), ty = (int) Math.floor(y / T);
+        return tx >= 0 && ty >= 0 && tx < w && ty < h && driveCost(ty * w + tx) > 0;
+    }
+
+    /** The nearest drivable tile centre to (x, y), or null. */
+    float[] nearestDrivable(float x, float y) {
+        int tx = (int) (x / T), ty = (int) (y / T);
+        for (int r = 0; r <= 6; r++)
+            for (int j = ty - r; j <= ty + r; j++)
+                for (int i = tx - r; i <= tx + r; i++) {
+                    if (Math.max(Math.abs(i - tx), Math.abs(j - ty)) != r) continue;
+                    if (i < 0 || j < 0 || i >= w || j >= h || driveCost(j * w + i) < 0) continue;
+                    return new float[]{i * T + T / 2f, j * T + T / 2f};
+                }
+        return null;
+    }
+
+    /** Driving cost field to (x, y) for vehicles (Dijkstra; prefers roads). Returns false if unreachable. */
+    boolean driveField(int[] dist, float x, float y) {
+        Arrays.fill(dist, FAR);
+        float[] p = nearestDrivable(x, y);
+        if (p == null) return false;
+        java.util.PriorityQueue<Long> pq = new java.util.PriorityQueue<Long>();
+        int s0 = tileIndex(p[0], p[1]);
+        dist[s0] = 0;
+        pq.add((long) s0);
+        while (!pq.isEmpty()) {
+            long top = pq.poll();
+            int t = (int) (top & 0xFFFFFF), d = (int) (top >>> 24);
+            if (d > dist[t]) continue;
+            int tx = t % w, ty = t / w;
+            for (int k = 0; k < 4; k++) {
+                int nx = tx + (k == 0 ? 1 : k == 1 ? -1 : 0), ny = ty + (k == 2 ? 1 : k == 3 ? -1 : 0);
+                if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+                int n = ny * w + nx, c = driveCost(n);
+                if (c < 0 || d + c >= dist[n]) continue;
+                dist[n] = d + c;
+                pq.add(((long) dist[n] << 24) | n);
+            }
+        }
+        return true;
+    }
+
     /** Distance field (in tiles) to the nearest of the given points. */
     void fieldFromPoints(int[] dist, float[] xs, float[] ys, int n) {
         Arrays.fill(dist, FAR);
@@ -1269,6 +1406,17 @@ final class City {
                 queue[tail++] = t;
             }
         }
+        // People hiding indoors can still be smelled: their building's door counts as a source.
+        if (!zombies)
+            for (int i = 0, n = buildings.size(); i < n; i++) {
+                Building b = buildings.get(i);
+                if (b.occupants.isEmpty()) continue;
+                int t = tileIndex(b.doorX, b.doorY);
+                if (dist[t] != 0) {
+                    dist[t] = 0;
+                    queue[tail++] = t;
+                }
+            }
         spread(dist, tail);
     }
 

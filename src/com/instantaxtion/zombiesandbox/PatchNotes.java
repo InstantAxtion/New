@@ -2,11 +2,26 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "1.2";
-    static final int VERSION_CODE = 3;
+    static final String VERSION = "1.3";
+    static final int VERSION_CODE = 4;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "1.3  -  911, radio and safe zones",
+                    "911 calls: civilians who spot zombies call it in. Dispatch opens an incident at the nearest street corner and sends the closest free cops.",
+                    "Cops report when they're en route, on scene and when the area is clear. Dispatch calls it in when an officer goes down.",
+                    "Police and military talk on the radio: big incidents, downed officers or a safe zone under attack make police request military support, and the military sends a squad.",
+                    "Reinforcements: if nobody is free, backup officers or a military squad arrive from the edge of the map. Can be turned off on the New Game screen.",
+                    "Safe zones: police and military set up guarded zones with sandbags in parks, plazas and parking lots. Guards take posts around the edge and face outward.",
+                    "Civilians run to safe zones when they're scared or hear about one on the news, and shelter inside.",
+                    "Safe zones can be overrun. When a police zone falls, officers fall back to a military zone.",
+                    "New Safe Zone tool: tap anywhere to order one. The Erase tool on a zone's centre closes it.",
+                    "Radio feed on screen. Tap a message to jump the camera there. Can be turned off in Settings.",
+                    "Street names, callsigns (Unit 14, Bravo-2), phone and radio icons above people, and 911 markers on the map.",
+                    "New sounds: phones ringing and radio chatter.",
+                    "Games now start with the Move tool selected.",
+            },
             {
                     "1.2  -  Menus, sound and new maps",
                     "Main menu with a live zombie city running in the background.",

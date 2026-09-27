@@ -15,12 +15,12 @@ import java.util.Random;
 
 /** Renders the world, runs the game loop and handles all touch input and on-screen buttons. */
 final class GameView extends View implements Menu.Host {
-    private static final int TOOL_PAN = 0, TOOL_BOMB = 7, TOOL_ERASE = 8;
+    private static final int TOOL_PAN = 0, TOOL_ZONE = 7, TOOL_BOMB = 8, TOOL_ERASE = 9;
     // Tool index -> entity type spawned (or -1).
     private static final int[] TOOL_TYPE = {-1, Entity.CIVILIAN, Entity.COP, Entity.SOLDIER, Entity.ZOMBIE,
-            Entity.RUNNER, Entity.BRUTE, -1, -1};
+            Entity.RUNNER, Entity.BRUTE, -1, -1, -1};
     private static final String[] TOOL_NAMES = {"Move", "Civilian", "Cop", "Military", "Zombie", "Runner",
-            "Brute", "Bomb", "Erase"};
+            "Brute", "Safe Zone", "Bomb", "Erase"};
     private static final int BTN_PAUSE = 0, BTN_SPEED = 1, BTN_BRUSH = 2, BTN_CLEAR = 3, BTN_MENU = 4;
     private static final int[] SPEEDS = {1, 2, 4};
     private static final int[] BRUSHES = {1, 5, 10};
@@ -35,13 +35,18 @@ final class GameView extends View implements Menu.Host {
     private boolean hasGame;
     private float menuTime, savedCamX, savedCamY, savedScale;
     private float fps, fpsTimer;
+    private int lastMessageCount;
+    private final RectF feedRect = new RectF();
+    private final RectF[] feedLines = {new RectF(), new RectF(), new RectF(), new RectF()};
+    private final Dispatch.Message[] feedMsgs = new Dispatch.Message[4];
+    private int feedCount;
     private int fpsFrames;
 
     private float camX, camY, scale = 2f;
     private boolean running, simPaused;
     private long lastFrame;
     private int speedIdx, brushIdx;
-    private int tool = Entity.ZOMBIE + 1;
+    private int tool = TOOL_PAN;
     private Entity follow;
     private float hintTime = 14f;
 
@@ -79,7 +84,7 @@ final class GameView extends View implements Menu.Host {
         stroke.setStyle(Paint.Style.STROKE);
         stroke.setStrokeCap(Paint.Cap.ROUND);
         text.setTypeface(Typeface.create(Typeface.DEFAULT, Typeface.BOLD));
-        for (int i = 0; i < 9; i++) toolRects[i] = new RectF();
+        for (int i = 0; i < toolRects.length; i++) toolRects[i] = new RectF();
         for (int i = 0; i < 5; i++) topRects[i] = new RectF();
         buildIcons();
         settings = new Settings(context);
@@ -153,8 +158,9 @@ final class GameView extends View implements Menu.Host {
         hasGame = true;
         simPaused = false;
         speedIdx = 0;
-        tool = Entity.ZOMBIE + 1;
+        tool = TOOL_PAN;
         hintTime = 14f;
+        lastMessageCount = 0;
         menu.screen = Menu.NONE;
     }
 
@@ -244,9 +250,11 @@ final class GameView extends View implements Menu.Host {
         float lh = 17 * dp;
         if (portrait) {
             float top = 10 * dp + th + 8 * dp;
-            statsRect.set(10 * dp, top, 10 * dp + Math.min(260 * dp, w - 20 * dp), top + lh * 5 + 12 * dp);
+            statsRect.set(10 * dp, top, 10 * dp + Math.min(260 * dp, w - 20 * dp), top + lh * 6 + 12 * dp);
+            feedRect.set(10 * dp, statsRect.bottom + 8 * dp, w - 10 * dp, statsRect.bottom + 8 * dp + 4 * 24 * dp);
         } else {
-            statsRect.set(10 * dp, 10 * dp, 180 * dp, 10 * dp + lh * 8 + 12 * dp);
+            statsRect.set(10 * dp, 10 * dp, 190 * dp, 10 * dp + lh * 9 + 12 * dp);
+            feedRect.set(topRects[0].left, topRects[0].bottom + 8 * dp, w - 10 * dp, topRects[0].bottom + 8 * dp + 4 * 24 * dp);
         }
         if (oldw == 0) {
             centerCamera();
@@ -295,6 +303,10 @@ final class GameView extends View implements Menu.Host {
         }
         sound.playTrack(inGame || menu.screen == Menu.PAUSE ? Synth.TRACK_GAME : Synth.TRACK_MENU);
         playSounds(inGame ? 1f : 0.35f);
+        if (world.dispatch.messageCount != lastMessageCount) {
+            if (inGame && settings.radio()) sound.play(Sfx.RADIO, 0.5f, 0);
+            lastMessageCount = world.dispatch.messageCount;
+        }
 
         drawWorld(c);
         if (menu.isOpen()) menu.draw(c, getWidth(), getHeight(), dt);
@@ -363,6 +375,8 @@ final class GameView extends View implements Menu.Host {
             c.drawCircle(x, y, r, fill);
         }
 
+        for (int i = 0, n = world.dispatch.zones.size(); i < n; i++) drawZone(c, world.dispatch.zones.get(i));
+
         for (int i = 0, n = world.corpses.size(); i < n; i++) {
             World.Corpse k = world.corpses.get(i);
             if (k.x < vx0 || k.x > vx1 || k.y < vy0 || k.y > vy1) continue;
@@ -376,6 +390,15 @@ final class GameView extends View implements Menu.Host {
             else {
                 fill.setColor(e.isZombie() ? 0xFF6FBF3F : e.body);
                 c.drawCircle(e.x, e.y, e.radius * 1.2f, fill);
+            }
+        }
+
+        if (detailed) {
+            for (int i = 0, n = world.entities.size(); i < n; i++) {
+                Entity e = world.entities.get(i);
+                if (e.phoneTimer <= 0 && e.talkTimer <= 0) continue;
+                if (e.x < vx0 || e.x > vx1 || e.y < vy0 || e.y > vy1) continue;
+                drawSpeechIcon(c, e);
             }
         }
 
@@ -444,6 +467,16 @@ final class GameView extends View implements Menu.Host {
         }
 
         drawBuildings(c, vx0, vy0, vx1, vy1, detailed, night);
+
+        for (int i = 0, n = world.dispatch.incidents.size(); i < n; i++) {
+            Dispatch.Incident inc = world.dispatch.incidents.get(i);
+            float pulse = (world.time * 1.5f + i * 0.3f) % 1f;
+            stroke.setStrokeWidth(2f / Math.max(0.5f, scale) + 0.6f);
+            stroke.setColor(alpha(0xFFFF4A3A, 1 - pulse));
+            c.drawCircle(inc.x, inc.y, 10 + pulse * 40, stroke);
+            stroke.setColor(0xCCFF4A3A);
+            c.drawCircle(inc.x, inc.y, 7, stroke);
+        }
 
         if (follow != null) {
             stroke.setColor(0xCCFFFFFF);
@@ -631,6 +664,131 @@ final class GameView extends View implements Menu.Host {
         c.restore();
     }
 
+    /** A safe zone on the ground: tinted area, a sandbag ring with gaps for entrances and a tent. */
+    private void drawZone(Canvas c, Dispatch.SafeZone z) {
+        int tint = z.military ? 0xFF6FBF3F : 0xFF4F8FE0;
+        fill.setColor(alpha(tint, 0.16f));
+        c.drawCircle(z.x, z.y, z.r, fill);
+        int bags = (int) (z.r * 2 * Math.PI / 5.5f);
+        for (int i = 0; i < bags; i++) {
+            if (i % 12 == 0 || i % 12 == 1) continue;
+            double a = i * Math.PI * 2 / bags;
+            float bx = z.x + (float) Math.cos(a) * z.r, by = z.y + (float) Math.sin(a) * z.r;
+            fill.setColor(0x60000000);
+            c.drawCircle(bx + 0.8f, by + 1f, 3f, fill);
+            fill.setColor(i % 2 == 0 ? 0xFFA38D5E : 0xFF917C50);
+            c.drawCircle(bx, by, 3f, fill);
+        }
+        fill.setColor(0x60000000);
+        c.drawRect(z.x - 7, z.y - 5, z.x + 9, z.y + 7, fill);
+        fill.setColor(z.military ? 0xFF5B6B3A : 0xFF2F4F86);
+        c.drawRect(z.x - 8, z.y - 6, z.x + 8, z.y + 6, fill);
+        fill.setColor(z.military ? 0xFF6F8048 : 0xFF3F64A6);
+        c.drawRect(z.x - 8, z.y - 6, z.x + 8, z.y - 0.5f, fill);
+        stroke.setColor(0xFFDDDDDD);
+        stroke.setStrokeWidth(1f);
+        c.drawLine(z.x + 11, z.y + 6, z.x + 11, z.y - 12, stroke);
+        fill.setColor(tint);
+        c.drawRect(z.x + 11, z.y - 12, z.x + 19, z.y - 7, fill);
+    }
+
+    /** A phone above someone calling 911, or a radio bubble above a unit that just spoke. */
+    private void drawSpeechIcon(Canvas c, Entity e) {
+        float x = e.x + e.radius + 2, y = e.y - e.radius - 7;
+        if (e.phoneTimer > 0) {
+            fill.setColor(0xFF1B1B1B);
+            oval.set(x - 2.2f, y - 3.6f, x + 2.2f, y + 3.6f);
+            c.drawRoundRect(oval, 0.8f, 0.8f, fill);
+            fill.setColor((int) (world.time * 4) % 2 == 0 ? 0xFF7FE0FF : 0xFFFFFFFF);
+            c.drawRect(x - 1.5f, y - 2.6f, x + 1.5f, y + 1.8f, fill);
+        } else {
+            int col = e.type == Entity.SOLDIER ? 0xFFA6DC72 : 0xFF7FB0FF;
+            fill.setColor(0xEEFFFFFF);
+            oval.set(x - 4.5f, y - 3f, x + 4.5f, y + 3f);
+            c.drawRoundRect(oval, 2f, 2f, fill);
+            c.drawCircle(x - 2.5f, y + 3.5f, 1f, fill);
+            fill.setColor(col);
+            for (int k = -1; k <= 1; k++) c.drawCircle(x + k * 2.2f, y, 0.8f, fill);
+        }
+    }
+
+    private float screenX(float wx) {
+        return (wx - camX) * scale;
+    }
+
+    private float screenY(float wy) {
+        return (wy - camY) * scale;
+    }
+
+    /** Names over safe zones and 911 markers, drawn at screen size so they stay readable. */
+    private void drawMapLabels(Canvas c) {
+        text.setTextAlign(Paint.Align.CENTER);
+        text.setTextSize(11.5f * dp);
+        for (int i = 0, n = world.dispatch.zones.size(); i < n; i++) {
+            Dispatch.SafeZone z = world.dispatch.zones.get(i);
+            float sx = screenX(z.x), sy = screenY(z.y - z.r) - 10 * dp;
+            if (sx < -100 * dp || sx > getWidth() + 100 * dp || sy < 0 || sy > barTop) continue;
+            String label = (z.military ? "MILITARY" : "POLICE") + " SAFE ZONE  -  " + z.sheltered + " sheltered";
+            float tw = text.measureText(label);
+            oval.set(sx - tw / 2 - 8 * dp, sy - 14 * dp, sx + tw / 2 + 8 * dp, sy + 5 * dp);
+            fill.setColor(z.military ? 0xD0304A20 : 0xD0203A66);
+            c.drawRoundRect(oval, 8 * dp, 8 * dp, fill);
+            text.setColor(0xFFFFFFFF);
+            c.drawText(label, sx, sy, text);
+        }
+        for (int i = 0, n = world.dispatch.incidents.size(); i < n; i++) {
+            Dispatch.Incident inc = world.dispatch.incidents.get(i);
+            float sx = screenX(inc.x), sy = screenY(inc.y) - 22 * dp;
+            if (sx < -60 * dp || sx > getWidth() + 60 * dp || sy < 0 || sy > barTop) continue;
+            String label = "911  " + inc.zombiesNear + (inc.cops + inc.soldiers > 0 ? "  -  " + (inc.cops + inc.soldiers) + " responding" : "");
+            float tw = text.measureText(label);
+            oval.set(sx - tw / 2 - 7 * dp, sy - 13 * dp, sx + tw / 2 + 7 * dp, sy + 5 * dp);
+            fill.setColor(0xD8A01E16);
+            c.drawRoundRect(oval, 7 * dp, 7 * dp, fill);
+            text.setColor(0xFFFFFFFF);
+            c.drawText(label, sx, sy, text);
+        }
+    }
+
+    /** The last few radio messages. Tapping one moves the camera to where it happened. */
+    private void drawFeed(Canvas c) {
+        feedCount = 0;
+        if (!settings.radio()) return;
+        java.util.ArrayList<Dispatch.Message> log = world.dispatch.log;
+        int shown = 0;
+        for (int i = log.size() - 1; i >= 0 && shown < 4; i--) {
+            if (log.get(i).age > 16) break;
+            shown++;
+        }
+        float lineH = 22 * dp, gap = 3 * dp, y = feedRect.top;
+        text.setTextSize(11.5f * dp);
+        for (int k = 0; k < shown; k++) {
+            Dispatch.Message m = log.get(log.size() - shown + k);
+            float a = Math.min(1, (16 - m.age) / 2f);
+            String who = m.who + ": ";
+            text.setTextAlign(Paint.Align.LEFT);
+            float whoW = text.measureText(who);
+            float maxText = feedRect.width() - whoW - 20 * dp;
+            String body = m.text;
+            if (text.measureText(body) > maxText) {
+                while (body.length() > 4 && text.measureText(body + "...") > maxText) body = body.substring(0, body.length() - 1);
+                body = body + "...";
+            }
+            float lw = whoW + text.measureText(body) + 16 * dp;
+            RectF r = feedLines[feedCount];
+            r.set(feedRect.right - lw, y, feedRect.right, y + lineH);
+            if (portrait) r.offsetTo(feedRect.left, y);
+            fill.setColor(alpha(0xC8000000, a));
+            c.drawRoundRect(r, 7 * dp, 7 * dp, fill);
+            text.setColor(alpha(m.color, a));
+            c.drawText(who, r.left + 8 * dp, y + lineH * 0.68f, text);
+            text.setColor(alpha(0xFFFFFFFF, a));
+            c.drawText(body, r.left + 8 * dp + whoW, y + lineH * 0.68f, text);
+            feedMsgs[feedCount++] = m;
+            y += lineH + gap;
+        }
+    }
+
     private static int alpha(int color, float a) {
         int base = (color >>> 24) & 0xFF;
         int na = (int) (base * Math.max(0, Math.min(1, a)));
@@ -775,11 +933,17 @@ final class GameView extends View implements Menu.Host {
         float y = statsRect.top + 6 * dp + lh * 0.8f + perCol * lh;
         text.setColor(0xFFA0A4AA);
         text.setTextSize(11.5f * dp);
+        Dispatch d = world.dispatch;
         c.drawText("Turned " + world.turned + "   Killed " + world.zombiesKilled, pad + 12 * dp, y, text);
         y += lh;
+        c.drawText("911 calls " + d.calls + "   Safe zones " + d.zones.size(), pad + 12 * dp, y, text);
+        y += lh;
         int secs = (int) world.time;
-        c.drawText(String.format("Time %d:%02d   Total %d", secs / 60, secs % 60, world.entities.size()),
+        c.drawText(String.format("Sheltered %d   Time %d:%02d", d.sheltered, secs / 60, secs % 60),
                 pad + 12 * dp, y, text);
+
+        drawMapLabels(c);
+        drawFeed(c);
 
         // Top buttons.
         String[] top = {simPaused ? "Play" : "Pause", "Speed " + SPEEDS[speedIdx] + "x",
@@ -835,7 +999,7 @@ final class GameView extends View implements Menu.Host {
                     + (int) follow.maxHp + (follow.infected ? "  -  INFECTED" : "") + "   (drag to stop)";
             drawBanner(c, s, w / 2f, infoY);
         } else if (hintTime > 0) {
-            drawBanner(c, "Pick a unit below and tap the city to spawn it.  Pinch to zoom, two fingers to pan.",
+            drawBanner(c, "Pick a unit or tool below, then tap the city.  Use Move to drag around, pinch to zoom.",
                     w / 2f, infoY);
         } else if (simPaused) {
             drawBanner(c, "PAUSED", w / 2f, infoY);
@@ -898,6 +1062,17 @@ final class GameView extends View implements Menu.Host {
             c.drawLine(cx, cy - a, cx + hd, cy - a + hd, stroke);
             c.drawLine(cx, cy + a, cx - hd, cy + a - hd, stroke);
             c.drawLine(cx, cy + a, cx + hd, cy + a - hd, stroke);
+        } else if (t == TOOL_ZONE) {
+            stroke.setColor(0xFF9BD46A);
+            stroke.setStrokeWidth(2 * dp);
+            oval.set(cx - size * 0.85f, cy + size * 0.25f, cx + size * 0.85f, cy + size * 0.85f);
+            c.drawOval(oval, stroke);
+            stroke.setColor(0xFFDDDDDD);
+            c.drawLine(cx - size * 0.2f, cy + size * 0.55f, cx - size * 0.2f, cy - size * 0.8f, stroke);
+            fill.setColor(0xFF4F8FE0);
+            c.drawRect(cx - size * 0.2f, cy - size * 0.8f, cx + size * 0.55f, cy - size * 0.3f, fill);
+            fill.setColor(0xFFFFFFFF);
+            c.drawRect(cx + size * 0.05f, cy - size * 0.66f, cx + size * 0.3f, cy - size * 0.44f, fill);
         } else if (t == TOOL_BOMB) {
             fill.setColor(0xFF15171A);
             c.drawCircle(cx - size * 0.1f, cy + size * 0.15f, size * 0.62f, fill);
@@ -979,6 +1154,17 @@ final class GameView extends View implements Menu.Host {
             }
             return true;
         }
+        for (int i = 0; i < feedCount; i++) {
+            if (feedLines[i].contains(x, y)) {
+                Dispatch.Message m = feedMsgs[i];
+                follow = null;
+                camX = m.x - getWidth() / scale / 2;
+                camY = m.y - barTop / scale / 2;
+                clampCamera();
+                click();
+                return true;
+            }
+        }
         for (int i = 0; i < topRects.length; i++) {
             RectF r = topRects[i];
             if (x >= r.left - 4 * dp && x <= r.right + 4 * dp && y >= r.top - 6 * dp && y <= r.bottom + 6 * dp) {
@@ -1025,8 +1211,10 @@ final class GameView extends View implements Menu.Host {
         follow = null;
         if (tool == TOOL_BOMB) {
             world.explode(wx, wy, 70, 400);
+        } else if (tool == TOOL_ZONE) {
+            world.dispatch.orderZone(wx, wy);
         } else if (tool == TOOL_ERASE) {
-            world.erase(wx, wy, 22);
+            if (!world.dispatch.removeZoneAt(wx, wy)) world.erase(wx, wy, 22);
         } else {
             spawnBrush(wx, wy);
         }
@@ -1046,7 +1234,7 @@ final class GameView extends View implements Menu.Host {
             }
         } else if (tool == TOOL_ERASE) {
             world.erase(wx, wy, 22);
-        } else if (tool != TOOL_BOMB) {
+        } else if (tool != TOOL_BOMB && tool != TOOL_ZONE) {
             float ddx = wx - lastSpawnX, ddy = wy - lastSpawnY;
             float spacing = BRUSHES[brushIdx] > 1 ? 22 : 12;
             if (ddx * ddx + ddy * ddy > spacing * spacing) {

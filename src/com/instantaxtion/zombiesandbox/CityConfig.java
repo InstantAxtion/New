@@ -13,7 +13,7 @@ final class CityConfig implements OptionSet {
     static final int TIME_DAY = 0, TIME_SUNSET = 1, TIME_NIGHT = 2;
 
     private static final String[] LABELS = {"Preset", "Map size", "Buildings", "Density", "Height", "Parks",
-            "Water", "Traffic", "Time of day", "Civilians", "Cops", "Military", "Zombies"};
+            "Water", "Traffic", "Time of day", "Civilians", "Cops", "Military", "Zombies", "Reinforcements"};
     private static final String[][] VALUES = {
             PRESETS,
             {"Small", "Medium", "Large"},
@@ -28,6 +28,7 @@ final class CityConfig implements OptionSet {
             {"0", "5", "10", "20", "40"},
             {"0", "5", "10", "20"},
             {"0", "1", "5", "20", "50"},
+            {"Off", "On"},
     };
     private static final int[] SIZES = {64, 96, 128};
     private static final int[] CIVILIANS = {0, 50, 100, 150, 250, 400};
@@ -56,6 +57,7 @@ final class CityConfig implements OptionSet {
     int cops() { return COPS[v[10]]; }
     int soldiers() { return SOLDIERS[v[11]]; }
     int zombies() { return ZOMBIES[v[12]]; }
+    boolean reinforcements() { return v[13] == 1; }
 
     boolean river() { return water() == WATER_RIVER || water() == WATER_BOTH; }
     boolean island() { return water() == WATER_ISLAND || water() == WATER_BOTH; }
@@ -75,6 +77,7 @@ final class CityConfig implements OptionSet {
         v[0] = p;
         if (p >= presets.length) return;
         System.arraycopy(presets[p], 0, v, 1, presets[p].length);
+        v[13] = 1;
     }
 
     void randomize(Random r) {

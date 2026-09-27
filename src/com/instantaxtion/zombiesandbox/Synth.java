@@ -32,6 +32,8 @@ final class Synth {
             case Sfx.GROAN: out = groan(r, 88, 1.1f); break;
             case Sfx.GROAN_DEEP: out = groan(r, 52, 1.5f); break;
             case Sfx.SCREAM: out = scream(r); break;
+            case Sfx.RADIO: out = radio(r); break;
+            case Sfx.PHONE: out = phone(); break;
             default: out = click(); break;
         }
         return toPcm(out, id == Sfx.CLICK ? 0.5f : 0.92f);
@@ -120,6 +122,37 @@ final class Synth {
             lp += (v - lp) * 0.45f;
             float env = smooth(Math.min(1, t / 0.03f)) * (float) Math.pow(1 - u, 1.4f);
             o[i] = (lp + (r.nextFloat() * 2 - 1) * 0.08f) * env;
+        }
+        return o;
+    }
+
+    /** Walkie-talkie: a burst of squelch, then a short chirp. */
+    private static float[] radio(Random r) {
+        int n = (int) (0.32f * RATE);
+        float[] o = new float[n];
+        float lp = 0, lp2 = 0;
+        for (int i = 0; i < n; i++) {
+            float t = i / (float) RATE;
+            float white = r.nextFloat() * 2 - 1;
+            lp += (white - lp) * 0.5f;
+            lp2 += (lp - lp2) * 0.08f;
+            float squelch = (lp - lp2) * (t < 0.14f ? 1 : 0) * Math.min(1, t / 0.01f);
+            float chirp = t > 0.17f && t < 0.26f ? (float) Math.sin(TAU * (1500 + 900 * (t - 0.17f) / 0.09f) * t) * 0.5f : 0;
+            o[i] = squelch * 1.4f + chirp;
+        }
+        return o;
+    }
+
+    /** A phone ringing: two quick trills of mixed tones. */
+    private static float[] phone() {
+        int n = (int) (0.9f * RATE);
+        float[] o = new float[n];
+        for (int i = 0; i < n; i++) {
+            float t = i / (float) RATE;
+            boolean on = (t < 0.35f) || (t > 0.5f && t < 0.85f);
+            float trill = (float) Math.sin(TAU * 20 * t) > 0 ? 1 : 0.35f;
+            float v = (float) Math.sin(TAU * 1300 * t) + (float) Math.sin(TAU * 1700 * t);
+            o[i] = on ? v * trill * 0.5f : 0;
         }
         return o;
     }

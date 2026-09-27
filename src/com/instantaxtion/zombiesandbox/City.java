@@ -81,7 +81,15 @@ final class City {
     /** Street lamps as {x, y}; they light up at night. */
     final List<float[]> lamps = new ArrayList<float[]>();
     private final List<int[]> fountains = new ArrayList<int[]>();
+    /** Open spaces where a safe zone can be set up, as {x, y, kind}: 0 park, 1 plaza, 2 parking lot. */
+    final List<float[]> openAreas = new ArrayList<float[]>();
+    private final List<String> colNames = new ArrayList<String>();
+    private final List<String> rowNames = new ArrayList<String>();
     private int origin;
+
+    private static final String[] STREETS = {"Main St", "Oak St", "Pine St", "Elm St", "Maple St", "Cedar St",
+            "Lake St", "Hill St", "Park St", "Church St", "Market St", "Mill St", "King St", "Queen St",
+            "Walnut St", "Spruce St", "Birch St", "Chestnut St", "Harbor St", "Union St"};
 
     City(CityConfig cfg) {
         this.cfg = cfg;
@@ -204,6 +212,12 @@ final class City {
             }
         }
 
+        // Street names: numbered avenues run north-south, named streets east-west.
+        for (int i = 0; i < colStarts.size(); i++) colNames.add(ordinal(i + 1) + " Ave");
+        List<String> names = new ArrayList<String>(Arrays.asList(STREETS));
+        java.util.Collections.shuffle(names, rnd);
+        for (int i = 0; i < rowStarts.size(); i++) rowNames.add(names.get(i % names.size()));
+
         // Street lamps on the sidewalk corners of every intersection.
         for (int cs : colStarts)
             for (int rs : rowStarts) {
@@ -232,12 +246,21 @@ final class City {
             plaza *= 0.6f;
         }
         float roll = rnd.nextFloat();
-        if (roll < park) park(x, y, bw, bh);
-        else if ((roll -= park) < plaza) plaza(x, y, bw, bh);
-        else if ((roll -= plaza) < parking) parking(x, y, bw, bh);
-        else if ((roll -= parking) < open) {
-            if (rnd.nextBoolean()) park(x, y, bw, bh);
+        float ax = (x + bw / 2f) * T, ay = (y + bh / 2f) * T;
+        if (roll < park) {
+            park(x, y, bw, bh);
+            openAreas.add(new float[]{ax, ay, 0});
+        } else if ((roll -= park) < plaza) {
+            plaza(x, y, bw, bh);
+            openAreas.add(new float[]{ax, ay, 1});
+        } else if ((roll -= plaza) < parking) {
+            parking(x, y, bw, bh);
+            openAreas.add(new float[]{ax, ay, 2});
+        } else if ((roll -= parking) < open) {
+            boolean isPark = rnd.nextBoolean();
+            if (isPark) park(x, y, bw, bh);
             else plaza(x, y, bw, bh);
+            openAreas.add(new float[]{ax, ay, isPark ? 0 : 1});
         } else {
             if (style == CityConfig.STYLE_MIXED) {
                 float cx = x + bw / 2f - w / 2f, cy = y + bh / 2f - h / 2f;
@@ -812,6 +835,65 @@ final class City {
         return new float[]{T * 1.5f, T * 1.5f};
     }
 
+    // ------------------------------------------------------------------ places
+
+    private static String ordinal(int n) {
+        String suffix = n % 100 >= 11 && n % 100 <= 13 ? "th"
+                : n % 10 == 1 ? "st" : n % 10 == 2 ? "nd" : n % 10 == 3 ? "rd" : "th";
+        return n + suffix;
+    }
+
+    /** A street corner name for a world position, like "Oak St & 3rd Ave". */
+    String placeName(float x, float y) {
+        String col = null, row = null;
+        float best = Float.MAX_VALUE;
+        for (int i = 0; i < colStarts.size(); i++) {
+            float d = Math.abs(x - (colStarts.get(i) + 1.5f) * T);
+            if (d < best) {
+                best = d;
+                col = colNames.get(i);
+            }
+        }
+        best = Float.MAX_VALUE;
+        for (int i = 0; i < rowStarts.size(); i++) {
+            float d = Math.abs(y - (rowStarts.get(i) + 1.5f) * T);
+            if (d < best) {
+                best = d;
+                row = rowNames.get(i);
+            }
+        }
+        if (col == null) return row == null ? "downtown" : row;
+        if (row == null) return col;
+        return row + " & " + col;
+    }
+
+    /** A name for an open area, like "Pine St Park". */
+    String areaName(float[] area) {
+        String street = placeName(area[0], area[1]);
+        int amp = street.indexOf(" & ");
+        if (amp > 0) street = street.substring(0, amp);
+        String[] kinds = {"Park", "Plaza", "Parking Lot"};
+        return street + " " + kinds[(int) area[2]];
+    }
+
+    /** A walkable spot near the edge of the map, as close as possible to (tx, ty). */
+    float[] edgeSpawn(float tx, float ty) {
+        float best = Float.MAX_VALUE;
+        float[] res = null;
+        for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++) {
+                int d = Math.min(Math.min(x, y), Math.min(w - 1 - x, h - 1 - y));
+                if (d > origin + 2 || solid[y * w + x]) continue;
+                float cx = x * T + T / 2f, cy = y * T + T / 2f;
+                float dd = (cx - tx) * (cx - tx) + (cy - ty) * (cy - ty);
+                if (dd < best) {
+                    best = dd;
+                    res = new float[]{cx, cy};
+                }
+            }
+        return res;
+    }
+
     // ------------------------------------------------------------------ flow fields
 
     void computeFields(List<Entity> entities) {
@@ -819,9 +901,23 @@ final class City {
         bfs(zombieDist, entities, true);
     }
 
+    /** Distance field (in tiles) to the nearest of the given points. */
+    void fieldFromPoints(int[] dist, float[] xs, float[] ys, int n) {
+        Arrays.fill(dist, FAR);
+        int tail = 0;
+        for (int i = 0; i < n; i++) {
+            int t = tileIndex(xs[i], ys[i]);
+            if (dist[t] != 0) {
+                dist[t] = 0;
+                queue[tail++] = t;
+            }
+        }
+        spread(dist, tail);
+    }
+
     private void bfs(int[] dist, List<Entity> entities, boolean zombies) {
         Arrays.fill(dist, FAR);
-        int head = 0, tail = 0;
+        int tail = 0;
         for (int i = 0, n = entities.size(); i < n; i++) {
             Entity e = entities.get(i);
             if (e.dead || e.isZombie() != zombies) continue;
@@ -831,6 +927,11 @@ final class City {
                 queue[tail++] = t;
             }
         }
+        spread(dist, tail);
+    }
+
+    private void spread(int[] dist, int tail) {
+        int head = 0;
         while (head < tail) {
             int t = queue[head++];
             int tx = t % w, ty = t / w, nd = dist[t] + 1;

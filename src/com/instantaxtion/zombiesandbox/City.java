@@ -17,7 +17,7 @@ final class City {
     static final int FAR = 1 << 20;
 
     static final byte ROAD = 0, SIDEWALK = 1, BUILDING = 2, GRASS = 3, TREE = 4, PLAZA = 5, CAR = 6,
-            FOUNTAIN = 7, LOT = 8, WATER = 9, SAND = 10, BRIDGE = 11, BASE = 12, FENCE = 13;
+            STATUE = 7, LOT = 8, BASE = 9, FENCE = 10;
 
     static final int OFFICE = 0, HOUSE = 1, WAREHOUSE = 2, STATION = 3, BARRACKS = 4, TOWER = 5;
     static final int FACILITY_POLICE = 0, FACILITY_BASE = 1;
@@ -96,7 +96,6 @@ final class City {
     private final List<Integer> rowStarts = new ArrayList<Integer>(), rowWidths = new ArrayList<Integer>();
     /** Block rectangles (including their sidewalk ring) as {x0, y0, x1, y1}, x1/y1 exclusive. */
     private final List<int[]> blocks = new ArrayList<int[]>();
-    private boolean[] river, ocean, beach;
     /** 0 normal car, 1 police car, 2 army truck. */
     private byte[] carKind;
     private final List<float[]> helipads = new ArrayList<float[]>();
@@ -108,9 +107,9 @@ final class City {
     final List<Building> buildings = new ArrayList<Building>();
     /** Tree canopies as {x, y, radius}; drawn above the ground by GameView. */
     final List<float[]> trees = new ArrayList<float[]>();
-    /** Street lamps as {x, y}; they light up at night. */
+    /** Street lamps as {x, y}. */
     final List<float[]> lamps = new ArrayList<float[]>();
-    private final List<int[]> fountains = new ArrayList<int[]>();
+    private final List<int[]> statues = new ArrayList<int[]>();
     /** Open spaces where a safe zone can be set up, as {x, y, kind}: 0 park, 1 plaza, 2 parking lot. */
     final List<float[]> openAreas = new ArrayList<float[]>();
     private final List<String> colNames = new ArrayList<String>();
@@ -137,7 +136,7 @@ final class City {
         generate();
         for (int i = 0; i < tiles.length; i++) {
             byte t = tiles[i];
-            solid[i] = t == BUILDING || t == TREE || t == CAR || t == FOUNTAIN || t == WATER || t == FENCE;
+            solid[i] = t == BUILDING || t == TREE || t == CAR || t == STATUE || t == FENCE;
             opaque[i] = t == BUILDING;
         }
         for (int[] l : buildingLots) {
@@ -185,60 +184,9 @@ final class City {
         return out;
     }
 
-    /** Decides where the river and ocean go before anything is built, so facilities can avoid them. */
-    private void planWater() {
-        river = new boolean[w * h];
-        ocean = new boolean[w * h];
-        beach = new boolean[w * h];
-        if (cfg.island()) {
-            // A rounded, wobbly coastline (a "squircle" with a few sine waves on it).
-            float p1 = rnd.nextFloat() * 7, p2 = rnd.nextFloat() * 7, p3 = rnd.nextFloat() * 7;
-            for (int y = 0; y < h; y++)
-                for (int x = 0; x < w; x++) {
-                    float u = (x + 0.5f) / w * 2 - 1, v = (y + 0.5f) / h * 2 - 1;
-                    float r = (float) Math.pow(u * u * u * u + v * v * v * v, 0.25);
-                    float a = (float) Math.atan2(v, u);
-                    float coast = 0.87f + 0.04f * (float) Math.sin(2 * a + p1) + 0.03f * (float) Math.sin(5 * a + p2)
-                            + 0.015f * (float) Math.sin(11 * a + p3);
-                    if (r > coast) ocean[y * w + x] = true;
-                    else if (r > coast - 0.05f) beach[y * w + x] = true;
-                }
-        }
-        if (cfg.river()) {
-            // A meandering river across the map.
-            boolean vertical = rnd.nextBoolean();
-            float amp = w * (0.08f + rnd.nextFloat() * 0.06f), half = 2.4f + rnd.nextFloat();
-            float f1 = (float) (Math.PI * 2 / (w * (0.7f + rnd.nextFloat() * 0.5f)));
-            float f2 = (float) (Math.PI * 2 / (w * 0.23f));
-            float ph1 = rnd.nextFloat() * 7, ph2 = rnd.nextFloat() * 7;
-            float offset = w * (0.4f + rnd.nextFloat() * 0.2f);
-            for (int t = 0; t < h; t++) {
-                float c = offset + amp * (float) Math.sin(t * f1 + ph1) + amp * 0.3f * (float) Math.sin(t * f2 + ph2);
-                for (int s2 = 0; s2 < w; s2++) {
-                    if (Math.abs(s2 + 0.5f - c) >= half) continue;
-                    if (vertical) river[t * w + s2] = true;
-                    else river[s2 * w + t] = true;
-                }
-            }
-            riverVertical = vertical;
-        }
-    }
-
-    private boolean riverVertical;
-
-    private boolean touchesWater(int x0, int y0, int x1, int y1) {
-        for (int y = Math.max(0, y0 - 1); y < Math.min(h, y1 + 1); y++)
-            for (int x = Math.max(0, x0 - 1); x < Math.min(w, x1 + 1); x++) {
-                int i = y * w + x;
-                if (river[i] || ocean[i] || beach[i]) return true;
-            }
-        return false;
-    }
-
     private void generate() {
-        origin = cfg.island() ? 2 : 0;
-        int inner = w - origin * 2;
-        planWater();
+        origin = 0;
+        int inner = w;
         List<int[]> cols = separators(inner);
         List<int[]> rows = separators(inner);
         for (int[] c : cols) {
@@ -297,14 +245,14 @@ final class City {
             }
         }
 
-        // Pick blocks for the military base and police stations, away from water.
+        // Pick blocks for the military base and police stations.
         boolean[] used = new boolean[blocks.size()];
         if (cfg.militaryBase()) {
             int best = -1, bestArea = 0;
             for (int k = 0; k < blocks.size(); k++) {
                 int[] b = blocks.get(k);
                 int bw = b[2] - b[0] - 2, bh = b[3] - b[1] - 2;
-                if (bw < 9 || bh < 9 || touchesWater(b[0], b[1], b[2], b[3])) continue;
+                if (bw < 9 || bh < 9) continue;
                 if (bw * bh > bestArea) {
                     bestArea = bw * bh;
                     best = k;
@@ -321,7 +269,7 @@ final class City {
             List<Integer> options = new ArrayList<Integer>();
             for (int k = 0; k < blocks.size(); k++) {
                 int[] b = blocks.get(k);
-                if (used[k] || b[2] - b[0] - 2 < 6 || b[3] - b[1] - 2 < 6 || touchesWater(b[0], b[1], b[2], b[3])) continue;
+                if (used[k] || b[2] - b[0] - 2 < 6 || b[3] - b[1] - 2 < 6) continue;
                 float cx = (b[0] + b[2]) / 2f * T, cy = (b[1] + b[3]) / 2f * T;
                 boolean near = false;
                 for (Facility f : facilities)
@@ -346,8 +294,6 @@ final class City {
             if (iw < 2 || ih < 2) continue;
             block(ix, iy, iw, ih);
         }
-
-        carveWater();
 
         // Abandoned cars on the roads (never at intersections, never next to each other).
         float carChance = CAR_CHANCE[cfg.traffic()];
@@ -385,77 +331,6 @@ final class City {
                     if (k[0] < 0 || k[1] < 0 || k[0] >= w || k[1] >= h) continue;
                     if (tiles[k[1] * w + k[0]] == SIDEWALK) lamps.add(new float[]{k[0] * T + T / 2f, k[1] * T + T / 2f});
                 }
-            }
-    }
-
-    /** Floods the planned river and ocean, knocking out any building that stood in the way. */
-    private void carveWater() {
-        // Keep a 2-tile bank along the river: buildings there are cleared and the ground becomes grass.
-        boolean[] bank = new boolean[w * h];
-        for (int y = 0; y < h; y++)
-            for (int x = 0; x < w; x++) {
-                if (!river[y * w + x]) continue;
-                for (int dy = -2; dy <= 2; dy++)
-                    for (int dx = -2; dx <= 2; dx++) {
-                        int nx = x + dx, ny = y + dy;
-                        if (nx >= 0 && ny >= 0 && nx < w && ny < h && !river[ny * w + nx]) bank[ny * w + nx] = true;
-                    }
-            }
-        for (int y = 0; y < h; y++)
-            for (int x = 0; x < w; x++) {
-                int i = y * w + x;
-                byte t = tiles[i];
-                if (ocean[i]) tiles[i] = WATER;
-                else if (river[i]) {
-                    boolean road = (t == ROAD || t == CAR) && (riverVertical ? roadRow[y] : roadCol[x]);
-                    tiles[i] = road ? BRIDGE : WATER;
-                } else if (beach[i]) tiles[i] = SAND;
-            }
-        for (int k = buildingLots.size() - 1; k >= 0; k--) {
-            int[] l = buildingLots.get(k);
-            boolean wet = false;
-            for (int y = l[1]; y < l[1] + l[3] && !wet; y++)
-                for (int x = l[0]; x < l[0] + l[2]; x++)
-                    if (tiles[y * w + x] == WATER || tiles[y * w + x] == SAND || tiles[y * w + x] == BRIDGE
-                            || bank[y * w + x]) wet = true;
-            if (!wet) continue;
-            buildingLots.remove(k);
-            for (int y = l[1]; y < l[1] + l[3]; y++)
-                for (int x = l[0]; x < l[0] + l[2]; x++)
-                    if (tiles[y * w + x] == BUILDING) tiles[y * w + x] = GRASS;
-        }
-        for (int i = 0; i < w * h; i++) {
-            if (!bank[i]) continue;
-            byte t = tiles[i];
-            if (t == PLAZA || t == LOT || t == FOUNTAIN || t == BUILDING || (t == CAR && carKind[i] == 0 && !roadCol[i % w] && !roadRow[i / w]))
-                tiles[i] = GRASS;
-        }
-        for (int k = fountains.size() - 1; k >= 0; k--) {
-            int[] f = fountains.get(k);
-            if (tiles[f[1] * w + f[0]] != FOUNTAIN || tiles[(f[1] + 1) * w + f[0] + 1] != FOUNTAIN) {
-                fountains.remove(k);
-                fill(f[0], f[1], 2, 2, tiles[f[1] * w + f[0]] == GRASS ? GRASS : PLAZA);
-                carveWaterTiles(f[0], f[1], 2, 2);
-            }
-        }
-        for (int k = openAreas.size() - 1; k >= 0; k--) {
-            float[] a = openAreas.get(k);
-            int i = tileIndex(a[0], a[1]);
-            if (river[i] || ocean[i] || beach[i]) openAreas.remove(k);
-        }
-        for (int k = paths.size() - 1; k >= 0; k--) {
-            float[] p = paths.get(k);
-            if (touchesWater((int) ((p[0] - p[2]) / T), (int) ((p[1] - p[3]) / T), (int) ((p[0] + p[2]) / T) + 1,
-                    (int) ((p[1] + p[3]) / T) + 1)) paths.remove(k);
-        }
-    }
-
-    private void carveWaterTiles(int x, int y, int fw, int fh) {
-        for (int j = y; j < y + fh; j++)
-            for (int i = x; i < x + fw; i++) {
-                int k = j * w + i;
-                if (ocean[k] || river[k]) tiles[k] = WATER;
-                else if (beach[k]) tiles[k] = SAND;
             }
     }
 
@@ -712,35 +587,9 @@ final class City {
             for (int i = x; i < x + pw; i++) tiles[cy * w + i] = PLAZA;
             for (int j = y; j < y + ph; j++) tiles[j * w + cx] = PLAZA;
         }
-        if (pw >= 9 && ph >= 9 && rnd.nextFloat() < (organic ? 0.7f : 0.35f)) {
-            // A pond that never touches a path: inside the loop of a curved path, or tucked into one
-            // quarter of the park between the straight paths.
-            float px, py, rx, ry;
-            if (organic) {
-                px = x + pw / 2f;
-                py = y + ph / 2f;
-                rx = pw * 0.19f;
-                ry = ph * 0.17f;
-            } else {
-                int qx = rnd.nextBoolean() ? x : cx + 1, qy = rnd.nextBoolean() ? y : cy + 1;
-                int qw = (qx == x ? cx - x : x + pw - qx), qh = (qy == y ? cy - y : y + ph - qy);
-                px = qx + qw / 2f;
-                py = qy + qh / 2f;
-                rx = qw / 2f - 0.8f;
-                ry = qh / 2f - 0.8f;
-            }
-            if (rx >= 1.2f && ry >= 1.2f) {
-                for (int j = y + 1; j < y + ph - 1; j++)
-                    for (int i = x + 1; i < x + pw - 1; i++) {
-                        float u = (i + 0.5f - px) / rx, v = (j + 0.5f - py) / ry;
-                        if (u * u + v * v < 1 && tiles[j * w + i] == GRASS) tiles[j * w + i] = WATER;
-                    }
-            }
-        }
         for (int j = y; j < y + ph; j++)
             for (int i = x; i < x + pw; i++)
-                if (tiles[j * w + i] == GRASS && rnd.nextFloat() < 0.13f && !hasNeighbor(i, j, TREE)
-                        && !hasNeighbor(i, j, WATER))
+                if (tiles[j * w + i] == GRASS && rnd.nextFloat() < 0.13f && !hasNeighbor(i, j, TREE))
                     tiles[j * w + i] = TREE;
     }
 
@@ -748,8 +597,8 @@ final class City {
         fill(x, y, pw, ph, PLAZA);
         if (pw >= 6 && ph >= 6) {
             int fx = x + pw / 2 - 1, fy = y + ph / 2 - 1;
-            fill(fx, fy, 2, 2, FOUNTAIN);
-            fountains.add(new int[]{fx, fy});
+            fill(fx, fy, 2, 2, STATUE);
+            statues.add(new int[]{fx, fy});
         }
         int[][] corners = {{x + 1, y + 1}, {x + pw - 2, y + 1}, {x + 1, y + ph - 2}, {x + pw - 2, y + ph - 2}};
         for (int[] c : corners) if (tiles[c[1] * w + c[0]] == PLAZA) tiles[c[1] * w + c[0]] = TREE;
@@ -765,11 +614,6 @@ final class City {
 
     // ------------------------------------------------------------------ rendering
 
-    private boolean nextTo(int x, int y, byte type) {
-        return (x > 0 && tiles[y * w + x - 1] == type) || (x < w - 1 && tiles[y * w + x + 1] == type)
-                || (y > 0 && tiles[(y - 1) * w + x] == type) || (y < h - 1 && tiles[(y + 1) * w + x] == type);
-    }
-
     private void render(Canvas c) {
         Paint p = new Paint();
         p.setAntiAlias(true);
@@ -782,14 +626,10 @@ final class City {
                 switch (t) {
                     case SIDEWALK: col = 0xFF8F8D87; break;
                     case GRASS: case TREE: col = 0xFF4C7837; break;
-                    case PLAZA: case FOUNTAIN: col = 0xFFB3A487; break;
+                    case PLAZA: case STATUE: col = 0xFFB3A487; break;
                     case LOT: col = 0xFF48494D; break;
                     case BUILDING: col = 0xFF8F8D87; break;
-                    case WATER: col = nextTo(x, y, SAND) || nextTo(x, y, SIDEWALK) || nextTo(x, y, BRIDGE)
-                            || nextTo(x, y, GRASS) ? 0xFF3A83AE : 0xFF2C6A96; break;
                     case BASE: case FENCE: col = 0xFF6A6E5E; break;
-                    case SAND: col = 0xFFD9C791; break;
-                    case BRIDGE: col = 0xFF4B4E54; break;
                     default: col = 0xFF3A3D43; break;
                 }
                 if (t == TREE && isPlazaTree(x, y)) col = 0xFFB3A487;
@@ -825,34 +665,9 @@ final class City {
                         p.setColor(0x22000000);
                         c.drawCircle(fx + rnd.nextFloat() * T, fy + rnd.nextFloat() * T, 1 + rnd.nextFloat() * 3, p);
                     }
-                } else if (t == SAND) {
-                    for (int k = 0; k < 5; k++) {
-                        p.setColor(rnd.nextBoolean() ? 0xFFE6D6A4 : 0xFFC8B57E);
-                        c.drawCircle(fx + rnd.nextFloat() * T, fy + rnd.nextFloat() * T, 0.8f, p);
-                    }
-                } else if (t == WATER) {
-                    if (rnd.nextFloat() < 0.35f) {
-                        p.setColor(0x40FFFFFF);
-                        float wx = fx + rnd.nextFloat() * 10, wy = fy + 3 + rnd.nextFloat() * 10;
-                        c.drawLine(wx, wy, wx + 3, wy - 1.2f, p);
-                        c.drawLine(wx + 3, wy - 1.2f, wx + 6, wy, p);
-                    }
                 }
             }
         }
-
-        // Bridge railings wherever a bridge meets the water.
-        p.setColor(0xFFB9B9B4);
-        p.setStrokeWidth(2f);
-        for (int y = 0; y < h; y++)
-            for (int x = 0; x < w; x++) {
-                if (tiles[y * w + x] != BRIDGE) continue;
-                float fx = x * T, fy = y * T;
-                if (y > 0 && tiles[(y - 1) * w + x] == WATER) c.drawLine(fx, fy + 1, fx + T, fy + 1, p);
-                if (y < h - 1 && tiles[(y + 1) * w + x] == WATER) c.drawLine(fx, fy + T - 1, fx + T, fy + T - 1, p);
-                if (x > 0 && tiles[y * w + x - 1] == WATER) c.drawLine(fx + 1, fy, fx + 1, fy + T, p);
-                if (x < w - 1 && tiles[y * w + x + 1] == WATER) c.drawLine(fx + T - 1, fy, fx + T - 1, fy + T, p);
-            }
 
         drawRoadMarkings(c, p);
         drawParkingLines(c, p);
@@ -889,16 +704,19 @@ final class City {
         }
         for (int[] b : buildingLots) drawBuilding(c, p, b);
 
-        for (int[] f : fountains) {
+        for (int[] f : statues) {
+            // A statue on a stepped stone plinth.
             float cx = (f[0] + 1) * T, cy = (f[1] + 1) * T;
-            p.setColor(0xFF8A8478);
-            c.drawCircle(cx, cy, 15, p);
-            p.setColor(0xFF3D86B8);
-            c.drawCircle(cx, cy, 12, p);
-            p.setColor(0xFF7FC3EA);
-            c.drawCircle(cx, cy, 4, p);
-            p.setColor(0x66FFFFFF);
-            c.drawCircle(cx - 4, cy - 4, 2, p);
+            p.setColor(0x50000000);
+            c.drawRect(cx - 12, cy - 10, cx + 16, cy + 16, p);
+            p.setColor(0xFF9C968A);
+            c.drawRect(cx - 14, cy - 14, cx + 14, cy + 14, p);
+            p.setColor(0xFFB2AC9F);
+            c.drawRect(cx - 10, cy - 10, cx + 10, cy + 10, p);
+            p.setColor(0xFF5E6A5C);
+            c.drawCircle(cx, cy, 5, p);
+            p.setColor(0xFF7D8B7A);
+            c.drawCircle(cx - 1.2f, cy - 1.2f, 2.6f, p);
         }
 
         for (int y = 0; y < h; y++)
@@ -1069,7 +887,7 @@ final class City {
     private boolean paved(int x, int y) {
         if (x < 0 || y < 0 || x >= w || y >= h) return false;
         byte t = tiles[y * w + x];
-        return t == ROAD || t == CAR || t == BRIDGE;
+        return t == ROAD || t == CAR;
     }
 
     private void drawParkingLines(Canvas c, Paint p) {
@@ -1338,7 +1156,7 @@ final class City {
         for (int k = 0; k < 500; k++) {
             int tx = r.nextInt(w), ty = r.nextInt(h);
             byte t = tiles[ty * w + tx];
-            if (t == SIDEWALK || t == PLAZA || t == GRASS || t == SAND || ((t == ROAD || t == LOT) && r.nextFloat() < 0.2f))
+            if (t == SIDEWALK || t == PLAZA || t == GRASS || ((t == ROAD || t == LOT) && r.nextFloat() < 0.2f))
                 return new float[]{tx * T + 3 + r.nextFloat() * (T - 6), ty * T + 3 + r.nextFloat() * (T - 6)};
         }
         return new float[]{T * 1.5f, T * 1.5f};

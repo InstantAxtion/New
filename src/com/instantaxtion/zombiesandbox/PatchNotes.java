@@ -2,11 +2,18 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "1.5";
-    static final int VERSION_CODE = 6;
+    static final String VERSION = "1.6";
+    static final int VERSION_CODE = 7;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "1.6  -  Simpler cities",
+                    "Water is gone: no more rivers, islands, ponds or fountains. Plazas have statues instead.",
+                    "It's always daytime. The sunset and night modes (and the orange haze) are removed.",
+                    "The New Game screen is down to 7 options: map, map size, civilians, cops, military, zombies and reinforcements.",
+                    "Maps: Classic, Downtown, Suburbs, Industrial and Parkland. Each one decides its own buildings, street layout, parks, police stations and military base.",
+            },
             {
                     "1.5  -  Limits",
                     "Safe zones have a capacity: 25 in a park zone, 35 at a police station, 40 for a military zone and 60 at a base. Labels show how full each one is.",

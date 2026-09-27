@@ -9,12 +9,10 @@ away from the middle of the screen as you pan, and the game plays in both portra
 
 ## Main menu
 
-- **New Game** opens the city setup. Pick a preset (Classic, Downtown, Suburbs, Industrial, Riverside,
-  Island, Parkland, Night City), or change any option to make a custom city: map size, building style
-  (offices, houses, warehouses or mixed), density, building height, parks, water (river, island or
-  both), traffic, time of day (day, sunset, night), and how many civilians, cops, military and zombies
-  are there at the start, how many reserves can be called in (Off, Low, Medium, High), the street layout (Grid, Varied or
-  Organic), how many police stations there are and whether there is a military base. **Randomize** rolls a random city.
+- **New Game** opens the city setup, which has 7 options: the map (Classic, Downtown, Suburbs,
+  Industrial or Parkland), map size, how many civilians, cops, military and zombies there are at the
+  start, and how many reinforcements can be called in (Off, Low, Medium or High). Each map decides its
+  own buildings, layout, parks, police stations and military base. **Randomize** rolls a random setup.
 - **Settings**: music and sound volume, 3D buildings, blood, health bars, screen shake, FPS counter
   and max population. Saved between sessions.
 - **Patch Notes**: what changed in each version.
@@ -26,8 +24,8 @@ on the phone, so the APK contains no audio files.
 ## City layout
 
 Varied and Organic layouts merge some blocks into superblocks (so streets have T-junctions), add
-tree-lined boulevards, and give parks ponds and curved paths. Rivers wind across the map with
-bridges where roads cross, and islands have an irregular coastline with beaches.
+tree-lined boulevards, and give parks curved paths. It is always daytime, and there is no water on
+the maps.
 
 **Police stations** hold parked cruisers; some cops start there, backup officers leave from there and
 police prefer to set up their safe zone there. The **military base** is a fenced compound with gates,
@@ -87,7 +85,7 @@ install as updates over older ones. GitHub Actions also builds the APK on every 
 Code layout (`src/com/instantaxtion/zombiesandbox/`):
 
 - `CityConfig.java`: map presets and custom city options.
-- `City.java`: city generation (building styles and heights, rivers, islands), the pre-rendered map, line of sight and BFS flow fields.
+- `City.java`: city generation (building styles and heights, layouts, stations and bases), the pre-rendered map, line of sight and BFS flow fields.
 - `World.java`: simulation (AI, shooting, infection, explosions, particles).
 - `Dispatch.java`: 911 calls, incidents, police/military radio, reinforcements and safe zones.
 - `GameView.java`: rendering (including the leaning 3D buildings), camera, touch input and UI.

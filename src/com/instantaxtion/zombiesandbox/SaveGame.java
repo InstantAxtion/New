@@ -17,7 +17,7 @@ import java.util.ArrayList;
  * damaged or collapsed buildings.
  */
 final class SaveGame {
-    private static final int VERSION = 3;
+    private static final int VERSION = 4;
 
     private SaveGame() {
     }
@@ -39,6 +39,10 @@ final class SaveGame {
             out.writeInt(w.shotsFired);
             out.writeInt(w.cured);
             out.writeInt(w.peakZombies);
+            out.writeInt(w.peakCops);
+            out.writeInt(w.peakSoldiers);
+            out.writeInt(w.recruits);
+            out.writeInt(w.refused);
             out.writeFloat(w.statStep);
             out.writeInt(w.histCount);
             for (int i = 0; i < w.histCount; i++) {
@@ -188,6 +192,8 @@ final class SaveGame {
         out.writeFloat(e.postX);
         out.writeFloat(e.postY);
         out.writeInt(e.role);
+        // Someone on their way to enlist is saved as not yet asked, so they can volunteer again.
+        out.writeBoolean(e.asked && e.task != Dispatch.T_ENLIST);
     }
 
     static World load(File file) throws IOException {
@@ -211,6 +217,12 @@ final class SaveGame {
             w.shotsFired = in.readInt();
             w.cured = in.readInt();
             w.peakZombies = in.readInt();
+            if (version >= 4) {
+                w.peakCops = in.readInt();
+                w.peakSoldiers = in.readInt();
+                w.recruits = in.readInt();
+                w.refused = in.readInt();
+            }
             w.statStep = in.readFloat();
             w.histCount = in.readInt();
             for (int i = 0; i < w.histCount; i++) {
@@ -335,6 +347,7 @@ final class SaveGame {
         e.postX = in.readFloat();
         e.postY = in.readFloat();
         if (version >= 3) e.role = in.readInt();
+        if (version >= 4) e.asked = in.readBoolean();
         if (zone >= 0 && zone < d.zones.size()) e.zone = d.zones.get(zone);
         return e;
     }

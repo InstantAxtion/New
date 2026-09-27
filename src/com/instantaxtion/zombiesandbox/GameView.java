@@ -1656,7 +1656,8 @@ final class GameView extends View implements Menu.Host {
             float y = statsRect.top + 6 * dp + lh * 0.8f + perCol * lh;
             text.setColor(0xFFA0A4AA);
             text.setTextSize(11.5f * dp);
-            c.drawText("Turned " + world.turned + "   Killed " + world.zombiesKilled, pad + 12 * dp, y, text);
+            c.drawText("Turned " + world.turned + "   Killed " + world.zombiesKilled
+                    + (world.recruits + world.refused > 0 ? "   Recruits " + world.recruits : ""), pad + 12 * dp, y, text);
             y += lh;
             c.drawText("911 calls " + d.calls + "   Safe zones " + d.zones.size(), pad + 12 * dp, y, text);
             y += lh;

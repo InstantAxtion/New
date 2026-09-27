@@ -2,11 +2,18 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "2.3";
-    static final int VERSION_CODE = 11;
+    static final String VERSION = "2.4";
+    static final int VERSION_CODE = 12;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "2.4  -  Volunteers",
+                    "Recruitment: once the outbreak has cost the police or army people, they put a call out on the radio for volunteers to fill the gaps (only as many as they've lost, and only while the station or base is safe).",
+                    "Civilians decide for themselves. Most say no. People who own a gun are keen, and people with family to look after or who are hurt usually refuse. Anyone who says no isn't asked again.",
+                    "Volunteers walk to the precinct or base, train for a few seconds and come out as a cop or soldier. Scared volunteers turn back if zombies show up on the way.",
+                    "The stats panel and Stats screen show how many joined and how many said no.",
+            },
             {
                     "2.3  -  Armor, ambulances and a new setup screen",
                     "New Game screen redesigned: a live preview of the city, map cards with a description of each map, one-tap buttons for every option, and a New map button to reroll the city before you start.",

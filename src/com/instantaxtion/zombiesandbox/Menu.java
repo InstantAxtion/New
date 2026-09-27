@@ -374,6 +374,7 @@ final class Menu {
                 {"Infections cured", String.valueOf(world.cured)},
                 {"911 calls", String.valueOf(world.dispatch.calls)},
                 {"Shots fired", String.valueOf(world.shotsFired)},
+                {"Volunteers joined (said no)", world.recruits + " (" + world.refused + ")"},
                 {"City code", world.city.cfg.code()},
         };
         float tx0 = landscape ? chart.right + 24 * dp : side, tx1 = w - side;

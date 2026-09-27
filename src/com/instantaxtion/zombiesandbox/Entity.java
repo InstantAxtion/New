@@ -61,6 +61,9 @@ final class Entity {
     float roamX, roamY, feedTimer;
     int hordeSize;
     boolean hordeAnnounced;
+    /** Civilians: already asked to sign up (and said no), and where they are going to enlist. */
+    boolean asked;
+    City.Facility enlistAt;
     /** Zombies approach from their own angle so a crowd surrounds its prey. */
     float flank;
     /** Civilians: a cop or soldier nearby to run towards. */

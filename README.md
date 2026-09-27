@@ -32,6 +32,8 @@ on the phone, so the APK contains no audio files.
 - **Fire engines** drive out from fire stations and hose down burning cars and gas pumps.
 - **Tanks** roll out for big hordes; **ambulances** fetch badly hurt people to the hospital. The
   **helicopter** takes off from and lands on its helipad. Every vehicle shows a status label.
+- **Recruitment**: after heavy losses, police and the army ask civilians to volunteer. Only some agree
+  (gun owners more often, people with family or injuries less); volunteers train at the precinct or base.
 - **Military roles**: riflemen, machine gunners, snipers and a commander who boosts nearby soldiers
   and calls in armor or air support.
 - **Buildings** include apartment blocks, parking garages and pharmacies (which patch people up).

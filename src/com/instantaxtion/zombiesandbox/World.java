@@ -75,6 +75,11 @@ final class World {
     float statStep = 2f;
     private float statTimer;
     int shotsFired, cured, peakZombies, hiding;
+    /** Recruitment: the most cops and soldiers there have been, how many civilians joined up or refused. */
+    int peakCops, peakSoldiers, recruits, refused;
+    private float recruitTimer, lastRecruitSay = -100;
+    private boolean policeDrive, armyDrive;
+    private final ArrayList<Entity> newRecruits = new ArrayList<Entity>();
 
     // Spatial hash (counting sort into cells).
     private static final int CELL = 32;
@@ -777,6 +782,15 @@ final class World {
         updateBuildings(dt);
         updatePickups(dt);
         updateEffects(dt);
+        recruitTimer -= dt;
+        if (recruitTimer <= 0) {
+            recruitTimer = 4;
+            recruitment();
+        }
+        if (!newRecruits.isEmpty()) {
+            for (int i = 0; i < newRecruits.size(); i++) entities.add(newRecruits.get(i));
+            newRecruits.clear();
+        }
         recount();
         statTimer += dt;
         if (statTimer >= statStep) {
@@ -1284,6 +1298,18 @@ final class World {
             }
         }
 
+        // Volunteers on their way to sign up.
+        if (e.task == Dispatch.T_ENLIST) {
+            if (threat != null && threatDist < 60 || e.enlistAt == null) {
+                // Not now: run, and maybe try again later.
+                e.task = Dispatch.T_NONE;
+                e.enlistAt = null;
+            } else {
+                enlistWalk(e, dt);
+                return;
+            }
+        }
+
         // Anyone grabbed can try to shove the zombie off.
         if (e.meleeCd <= 0) {
             Entity z = nearestInReach(e);
@@ -1462,6 +1488,115 @@ final class World {
         else if (lead.want > 1) steer(e, lead.mx, lead.my, lead.want);
         else steer(e, 0, 0, 0);
         return true;
+    }
+
+    // ------------------------------------------------------------------ recruitment
+
+    /**
+     * After the outbreak has cost the police or army people, they ask civilians to join up and fill the
+     * gaps. Each person decides for themselves: some sign up, most don't.
+     */
+    private void recruitment() {
+        peakCops = Math.max(peakCops, counts[Entity.COP]);
+        peakSoldiers = Math.max(peakSoldiers, counts[Entity.SOLDIER]);
+        if (peakZombies < 5) return;
+        policeDrive = drive(Entity.COP, City.FACILITY_POLICE, peakCops, policeDrive);
+        armyDrive = drive(Entity.SOLDIER, City.FACILITY_BASE, peakSoldiers, armyDrive);
+    }
+
+    private boolean drive(int type, int facilityKind, int peak, boolean active) {
+        int enlisting = 0;
+        for (int i = 0, n = entities.size(); i < n; i++) {
+            Entity e = entities.get(i);
+            if (e.task == Dispatch.T_ENLIST && e.enlistAt != null && e.enlistAt.kind == facilityKind) enlisting++;
+        }
+        int missing = peak - counts[type] - enlisting;
+        if (missing <= 0) return enlisting > 0 && active;
+        // Recruiting only happens where it's safe.
+        City.Facility office = null;
+        for (City.Facility f : city.facilities)
+            if (f.kind == facilityKind && countZombiesNear(f.x, f.y, 220) == 0) {
+                office = f;
+                break;
+            }
+        if (office == null) return active;
+        if (!active) {
+            int lost = peak - counts[type];
+            if (type == Entity.COP)
+                dispatch.say(Dispatch.WHO_POLICE, null, "Police Command: We've lost " + lost + (lost == 1 ? " officer" : " officers")
+                        + ". Any civilians willing to serve, report to " + office.name + " to be sworn in.", office.x, office.y);
+            else
+                dispatch.say(Dispatch.WHO_MILITARY, null, "Military: We're down " + lost + (lost == 1 ? " soldier" : " soldiers")
+                        + ". Volunteers wanted at " + office.name + ". We'll train you and give you a rifle.", office.x, office.y);
+        }
+        // Ask a few people who are nearby and not in danger right now.
+        int asks = Math.min(missing, 3) * 2;
+        for (int i = 0, n = entities.size(); i < n && asks > 0 && missing > 0; i++) {
+            Entity e = entities.get(i);
+            if (e.dead || e.type != Entity.CIVILIAN || e.asked || e.infected || e.fleeTimer > 0) continue;
+            if (e.task != Dispatch.T_NONE && e.task != Dispatch.T_SEEK) continue;
+            if (Math.hypot(e.x - office.x, e.y - office.y) > 900 || city.fieldAt(office.field, e.x, e.y) >= City.FAR) continue;
+            asks--;
+            e.asked = true;
+            if (rnd.nextFloat() < willingness(e)) {
+                e.task = Dispatch.T_ENLIST;
+                e.enlistAt = office;
+                e.taskTimer = 0;
+                e.talkTimer = 1.5f;
+                missing--;
+            } else {
+                refused++;
+            }
+        }
+        return true;
+    }
+
+    /** How likely someone is to sign up: gun owners are keen, people with family to look after and the hurt much less. */
+    private float willingness(Entity e) {
+        float p = 0.22f;
+        if (e.hasGun) p += 0.35f;
+        if (e.leader != null) p -= 0.12f;
+        for (int i = 0, n = entities.size(); i < n; i++)
+            if (entities.get(i).leader == e && entities.get(i).type == Entity.CIVILIAN) {
+                p -= 0.12f;
+                break;
+            }
+        if (e.hp < e.maxHp * 0.6f) p -= 0.1f;
+        return Math.max(0.03f, p);
+    }
+
+    /** Walks to the precinct or base, trains for a few seconds, then comes out in uniform. */
+    private void enlistWalk(Entity e, float dt) {
+        City.Facility f = e.enlistAt;
+        float ddx = f.x - e.x, ddy = f.y - e.y;
+        if (ddx * ddx + ddy * ddy > f.r * f.r * 0.5f) {
+            e.taskTimer = 0;
+            if (!followField(e, f.field, e.speed * 1.4f)) {
+                float d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
+                steer(e, ddx / d, ddy / d, e.speed * 1.4f);
+            }
+            return;
+        }
+        // Training.
+        wander(e, e.speed * 0.3f);
+        if (e.taskTimer > -6) return;
+        int type = f.kind == City.FACILITY_BASE ? Entity.SOLDIER : Entity.COP;
+        Entity r = make(type, e.x, e.y, -1, 0);
+        r.skin = e.skin;
+        r.angle = e.angle;
+        e.dead = true;
+        e.removed = true;
+        for (int i = 0, n = entities.size(); i < n; i++) if (entities.get(i).leader == e) entities.get(i).leader = null;
+        newRecruits.add(r);
+        recruits++;
+        String where = f.name;
+        // Keep the radio readable when lots join at once.
+        if (time - lastRecruitSay < 8) return;
+        lastRecruitSay = time;
+        if (type == Entity.COP)
+            dispatch.say(Dispatch.WHO_POLICE, r, "New recruit, sworn in at " + where + ". Ready for duty.", r.x, r.y);
+        else
+            dispatch.say(Dispatch.WHO_MILITARY, r, "Volunteer reporting in at " + where + ", trained and armed.", r.x, r.y);
     }
 
     /** Word spreads: people near someone who spots a zombie start running too. */

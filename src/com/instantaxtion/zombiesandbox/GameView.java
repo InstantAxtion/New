@@ -478,7 +478,13 @@ final class GameView extends View implements Menu.Host {
             float total = dt * (inGame ? SPEEDS[speedIdx] : 1);
             int steps = Math.max(1, (int) Math.ceil(total / 0.034f));
             float step = total / steps;
-            for (int i = 0; i < steps; i++) world.update(step);
+            // Never spend more than about half a frame simulating: on a slow phone high speeds run a little
+            // slower instead of every frame taking longer and the game grinding to a halt.
+            long simStart = System.nanoTime();
+            for (int i = 0; i < steps; i++) {
+                world.update(step);
+                if (System.nanoTime() - simStart > 14000000L) break;
+            }
         }
         if (inGame && hintTime > 0) hintTime -= dt;
         if (orderMarker > 0) orderMarker -= dt;
@@ -663,13 +669,21 @@ final class GameView extends View implements Menu.Host {
                 miniSrc.set(0, 0, world.city.bitmap.getWidth(), world.city.bitmap.getHeight());
                 roofDst.set(0, 0, 200, 200);
                 mc.drawBitmap(world.city.bitmap, miniSrc, roofDst, p);
+                miniTimer = 0;
             }
             fill.setColor(0xE0101216);
             oval.set(miniRect.left - 3 * dp, miniRect.top - 3 * dp, miniRect.right + 3 * dp, miniRect.bottom + 3 * dp);
             c.drawRoundRect(oval, 8 * dp, 8 * dp, fill);
+            // The people and the infection heatmap are drawn into a copy of the map a few times a second, so
+            // the minimap costs one picture per frame however many people there are.
+            miniTimer -= 1 / 60f;
+            if (miniDots == null || miniTimer <= 0) {
+                miniTimer = 0.2f;
+                drawMiniDots();
+            }
             miniSrc.set(0, 0, 200, 200);
             bmpPaint.setAlpha(230);
-            c.drawBitmap(miniMap, miniSrc, miniRect, bmpPaint);
+            c.drawBitmap(miniDots, miniSrc, miniRect, bmpPaint);
             bmpPaint.setAlpha(255);
             float sx = miniRect.width() / world.city.worldW(), sy = miniRect.height() / world.city.worldH();
             for (int i = 0, n = world.dispatch.zones.size(); i < n; i++) {
@@ -677,37 +691,7 @@ final class GameView extends View implements Menu.Host {
                 fill.setColor(z.military ? 0x886FBF3F : 0x884F8FE0);
                 c.drawCircle(miniRect.left + z.x * sx, miniRect.top + z.y * sy, Math.max(2.5f * dp, z.r * sx), fill);
             }
-            // Infection heatmap: where the zombies are thickest.
-            int hg = 24;
-            if (heat == null) heat = new int[hg * hg];
-            java.util.Arrays.fill(heat, 0);
-            for (int i = 0, n = world.entities.size(); i < n; i++) {
-                Entity e = world.entities.get(i);
-                if (!e.isZombie()) continue;
-                int hx = Math.min(hg - 1, Math.max(0, (int) (e.x / world.city.worldW() * hg)));
-                int hy = Math.min(hg - 1, Math.max(0, (int) (e.y / world.city.worldH() * hg)));
-                heat[hy * hg + hx]++;
-            }
-            float cw = miniRect.width() / hg, ch = miniRect.height() / hg;
-            for (int k = 0; k < heat.length; k++) {
-                if (heat[k] == 0) continue;
-                fill.setColor(alpha(0xFFFF3A20, Math.min(0.65f, 0.15f + heat[k] * 0.04f)));
-                float hx = miniRect.left + (k % hg) * cw, hy = miniRect.top + (k / hg) * ch;
-                c.drawRect(hx, hy, hx + cw, hy + ch, fill);
-            }
             float dot = Math.max(1.2f, dp * 0.9f);
-            for (int i = 0, n = world.entities.size(); i < n; i++) {
-                Entity e = world.entities.get(i);
-                int col;
-                if (e.isZombie()) col = 0xFF7CE04A;
-                else if (e.isArmed()) col = e.type == Entity.SOLDIER ? 0xFFB8E07A : 0xFF6FA8FF;
-                else if (e.type == Entity.RAIDER) col = 0xFFFF4A3A;
-                else if (i % 3 != 0) continue;
-                else col = 0xAAFFFFFF;
-                fill.setColor(col);
-                float x = miniRect.left + e.x * sx, y = miniRect.top + e.y * sy;
-                c.drawRect(x - dot / 2, y - dot / 2, x + dot / 2, y + dot / 2, fill);
-            }
             for (int i = 0, n = world.fleet.vehicles.size(); i < n; i++) {
                 Fleet.Vehicle v = world.fleet.vehicles.get(i);
                 if (v.type == Fleet.CAR && v.parked) continue;
@@ -732,6 +716,51 @@ final class GameView extends View implements Menu.Host {
         c.drawRoundRect(camChip, 9 * dp, 9 * dp, fill);
         text.setColor(0xFFF2F2F2);
         c.drawText(label, camChip.centerX(), camChip.centerY() + 4 * dp, text);
+    }
+
+    private android.graphics.Bitmap miniDots;
+    private Canvas miniDotsCanvas;
+    private float miniTimer;
+
+    /** Redraws the minimap picture: the map, the infection heatmap and a dot for (most) people. */
+    private void drawMiniDots() {
+        if (miniDots == null) {
+            miniDots = android.graphics.Bitmap.createBitmap(200, 200, android.graphics.Bitmap.Config.ARGB_8888);
+            miniDotsCanvas = new Canvas(miniDots);
+        }
+        Canvas mc = miniDotsCanvas;
+        mc.drawBitmap(miniMap, 0, 0, null);
+        float sx = 200f / world.city.worldW(), sy = 200f / world.city.worldH();
+        // Infection heatmap: where the zombies are thickest.
+        int hg = 24;
+        if (heat == null) heat = new int[hg * hg];
+        java.util.Arrays.fill(heat, 0);
+        for (int i = 0, n = world.entities.size(); i < n; i++) {
+            Entity e = world.entities.get(i);
+            if (!e.isZombie()) continue;
+            int hx = Math.min(hg - 1, Math.max(0, (int) (e.x / world.city.worldW() * hg)));
+            int hy = Math.min(hg - 1, Math.max(0, (int) (e.y / world.city.worldH() * hg)));
+            heat[hy * hg + hx]++;
+        }
+        float cw = 200f / hg;
+        for (int k = 0; k < heat.length; k++) {
+            if (heat[k] == 0) continue;
+            fill.setColor(alpha(0xFFFF3A20, Math.min(0.65f, 0.15f + heat[k] * 0.04f)));
+            float hx = (k % hg) * cw, hy = (k / hg) * cw;
+            mc.drawRect(hx, hy, hx + cw, hy + cw, fill);
+        }
+        for (int i = 0, n = world.entities.size(); i < n; i++) {
+            Entity e = world.entities.get(i);
+            int col;
+            if (e.isZombie()) col = 0xFF7CE04A;
+            else if (e.isArmed()) col = e.type == Entity.SOLDIER ? 0xFFB8E07A : 0xFF6FA8FF;
+            else if (e.type == Entity.RAIDER) col = 0xFFFF4A3A;
+            else if (i % 3 != 0) continue;
+            else col = 0xAAFFFFFF;
+            fill.setColor(col);
+            float x = e.x * sx, y = e.y * sy;
+            mc.drawRect(x - 0.9f, y - 0.9f, x + 0.9f, y + 0.9f, fill);
+        }
     }
 
     /** Draws the city (no buttons) into a picture for sharing. */
@@ -944,8 +973,10 @@ final class GameView extends View implements Menu.Host {
                 // Zoomed out: a body in its colour with a head dot, so types stay readable.
                 fill.setColor(e.isZombie() ? 0xFF5FAF35 : e.body);
                 c.drawCircle(e.x, e.y, e.radius * 1.35f, fill);
-                fill.setColor(e.isZombie() ? 0xFF2E5A1A : e.head);
-                c.drawCircle(e.x, e.y, e.radius * 0.7f, fill);
+                if (scale > 0.8f) {
+                    fill.setColor(e.isZombie() ? 0xFF2E5A1A : e.head);
+                    c.drawCircle(e.x, e.y, e.radius * 0.7f, fill);
+                }
             }
         }
         if (boxing) {
@@ -988,7 +1019,11 @@ final class GameView extends View implements Menu.Host {
         }
         for (int i = 0, n = world.fleet.vehicles.size(); i < n; i++) {
             Fleet.Vehicle v = world.fleet.vehicles.get(i);
-            if (!Fleet.airborne(v)) drawVehicle(c, v);
+            if (Fleet.airborne(v)) continue;
+            // Trains are long, so they get a wider margin before they count as off screen.
+            float m = v.type == Fleet.TRAIN ? Fleet.TRAIN_LENGTH + 20 : 20;
+            if (v.x < vx0 - m || v.x > vx1 + m || v.y < vy0 - m || v.y > vy1 + m) continue;
+            drawVehicle(c, v);
         }
 
         if (detailed) {
@@ -1147,7 +1182,7 @@ final class GameView extends View implements Menu.Host {
             c.drawCircle(x, y, r, fill);
             // The canopy sways gently in the breeze.
             float sway = (float) Math.sin(world.time * 1.3f + t[0] * 0.07f + t[1] * 0.05f) * 0.9f * ts;
-            if (realistic) {
+            if (realistic && scale > 2.5f) {
                 drawRealTree(c, x, y, r, sway, ts, 1 - see * 0.5f, (int) (t[0] * 7 + t[1] * 13));
                 continue;
             }
@@ -1197,7 +1232,8 @@ final class GameView extends View implements Menu.Host {
             visibleKey[j] = key;
         }
 
-        boolean windows = detailed || scale > 0.8f;
+        // Windows are only a few pixels tall when zoomed out, and there are thousands of them: skip them then.
+        boolean windows = scale > 2.2f;
         wallFade = 1 - 0.55f * see;
         for (int i = 0; i < n; i++) {
             City.Building b = visible[i];
@@ -1428,8 +1464,8 @@ final class GameView extends View implements Menu.Host {
                     } else {
                         fill.setColor(fade(lit ? litColor : City.darken(0xFF27313B, glass)));
                         c.drawRect(u0 + 3, v0 + 3.5f, u0 + cw - 3, v0 + 9.5f, fill);
-                        if (realistic) {
-                            // Sky reflected in the top of the glass, and a sill beneath.
+                        if (realistic && scale > 6f) {
+                            // Sky reflected in the top of the glass, and a sill beneath (only when close enough to see).
                             fill.setColor(fade(lit ? 0x30FFFFFF : 0x2A9CC3E8));
                             c.drawRect(u0 + 3, v0 + 3.5f, u0 + cw - 3, v0 + 5.5f, fill);
                             fill.setColor(fade(0x40000000));
@@ -1441,13 +1477,13 @@ final class GameView extends View implements Menu.Host {
             fill.setColor(fade(City.darken(b.wall, shade * 0.8f)));
             c.drawRect(0, hgt - 2.5f, len, hgt, fill);
         }
-        if (realistic) {
+        if (realistic && scale > 2f) {
             // Soft light: darker towards the ground, a lit cornice along the top.
             float band = Math.min(hgt * 0.35f, 14);
-            for (int k = 0; k < 4; k++) {
-                fill.setColor(fade(0x10000000));
-                c.drawRect(0, hgt - band * (k + 1) / 4f, len, hgt, fill);
-            }
+            fill.setColor(fade(0x14000000));
+            c.drawRect(0, hgt - band, len, hgt, fill);
+            fill.setColor(fade(0x18000000));
+            c.drawRect(0, hgt - band * 0.45f, len, hgt, fill);
             fill.setColor(fade(0x30FFFFFF));
             c.drawRect(0, 0, len, 1.2f, fill);
             fill.setColor(fade(0x22000000));
@@ -2202,7 +2238,7 @@ final class GameView extends View implements Menu.Host {
         }
         float r = e.radius;
         // One light source for everything: shadows fall down and to the right.
-        if (realistic) {
+        if (realistic && scale > 3f) {
             // A soft shadow: a pale outer edge round a darker core.
             fill.setColor(0x1C000000);
             c.drawCircle(e.x + r * 0.4f, e.y + r * 0.55f, r * 1.2f, fill);
@@ -2216,7 +2252,7 @@ final class GameView extends View implements Menu.Host {
         c.translate(e.x, e.y);
         c.rotate((float) Math.toDegrees(e.angle));
 
-        if (e.type != Entity.CRAWLER) {
+        if (e.type != Entity.CRAWLER && scale > 2.5f) {
             // Legs stepping out in front and behind as they walk.
             float step = (float) Math.sin(e.phase) * r * 0.55f;
             fill.setColor(e.isZombie() ? City.darken(e.skin, 0.55f) : e.type == Entity.SOLDIER ? 0xFF2E3320 : 0xFF26282C);
@@ -2323,8 +2359,8 @@ final class GameView extends View implements Menu.Host {
 
         fill.setColor(e.head);
         c.drawCircle(r * 0.08f, 0, r * 0.56f, fill);
-        if (e.type == Entity.CIVILIAN || e.type == Entity.MEDIC || e.type == Entity.ZOMBIE || e.type == Entity.RUNNER
-                || e.type == Entity.SCREAMER) drawHair(c, e, r);
+        if (scale > 2.5f && (e.type == Entity.CIVILIAN || e.type == Entity.MEDIC || e.type == Entity.ZOMBIE
+                || e.type == Entity.RUNNER || e.type == Entity.SCREAMER)) drawHair(c, e, r);
         if (e.type == Entity.COP) {
             fill.setColor(0xFF0B1022);
             oval.set(r * 0.35f, -r * 0.45f, r * 0.85f, r * 0.45f);
@@ -2373,7 +2409,7 @@ final class GameView extends View implements Menu.Host {
             c.drawCircle(0, 0, r * 1.05f, fill);
         }
         c.restore();
-        if (realistic && e.type != Entity.CRAWLER) {
+        if (realistic && e.type != Entity.CRAWLER && scale > 3f) {
             // Light from the top left: a soft highlight on the shoulders and head, shade on the far side.
             fill.setColor(0x26FFFFFF);
             c.drawCircle(e.x - r * 0.28f, e.y - r * 0.3f, r * 0.42f, fill);

@@ -881,6 +881,7 @@ final class World {
     // ------------------------------------------------------------------ update
 
     void update(float dt) {
+        pathBudget = Math.min(3, pathBudget + dt * 4);
         time += dt;
         shake = Math.max(0, shake - dt * 3);
         if (messageTime > 0) messageTime -= dt;
@@ -1816,15 +1817,28 @@ final class World {
         return true;
     }
 
-    /** Somewhere to go: a shop, supermarket, the mall, a church or school, a pharmacy, or home. */
+    /** Places people go on errands: the named landmarks and a handful of shops (so their routes stay cached). */
+    private ArrayList<City.Building> errandSpots;
+
+    /** Somewhere to go: a shop, supermarket, the mall, a church or school, or a pharmacy. */
     private City.Building pickErrand(Entity e, City.Building home) {
-        if (home != null && rnd.nextFloat() < 0.3f) return home;
+        if (errandSpots == null) {
+            errandSpots = new ArrayList<City.Building>();
+            ArrayList<City.Building> shops = new ArrayList<City.Building>();
+            for (City.Building b : city.buildings) {
+                if (b.doorX == 0) continue;
+                if (b.name != null) errandSpots.add(b);
+                else if (b.kind == City.SHOP || b.kind == City.PHARMACY || b.kind == City.KIOSK) shops.add(b);
+            }
+            java.util.Collections.shuffle(shops, rnd);
+            for (int i = 0; i < shops.size() && errandSpots.size() < 24; i++) errandSpots.add(shops.get(i));
+        }
+        if (errandSpots.isEmpty()) return null;
         City.Building best = null;
         float bestScore = Float.MAX_VALUE;
-        for (int k = 0; k < 6; k++) {
-            City.Building b = city.buildings.get(rnd.nextInt(city.buildings.size()));
-            boolean place = b.name != null || b.kind == City.SHOP || b.kind == City.PHARMACY || b.kind == City.KIOSK;
-            if (!place || b.collapsed || b.doorX == 0) continue;
+        for (int k = 0; k < 4; k++) {
+            City.Building b = errandSpots.get(rnd.nextInt(errandSpots.size()));
+            if (b.collapsed) continue;
             float d = (float) Math.hypot(b.doorX - e.x, b.doorY - e.y);
             if (d > 700) continue;
             float score = d + rnd.nextFloat() * 200;
@@ -2878,6 +2892,8 @@ final class World {
     }
 
     private final ArrayList<City.Building> doorPaths = new ArrayList<City.Building>();
+    /** How many new door routes may be worked out right now (each is a search over the whole map). */
+    private float pathBudget = 3;
 
     /**
      * Walks to a building's door around the building (not into its wall): a path field to the door is
@@ -2888,7 +2904,13 @@ final class World {
             steer(e, ddx / d, ddy / d, speed);
             return true;
         }
+        if (b.field == null && pathBudget < 1) {
+            // Too many new routes this second: head straight there for now and plan properly later.
+            steer(e, ddx / d, ddy / d, speed);
+            return false;
+        }
         if (b.field == null) {
+            pathBudget -= 1;
             // Keep a limited number of these around.
             if (doorPaths.size() >= 60) doorPaths.remove(0).field = null;
             b.field = new int[city.w * city.h];

@@ -2,11 +2,18 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "4.1";
-    static final int VERSION_CODE = 16;
+    static final String VERSION = "4.2";
+    static final int VERSION_CODE = 17;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "4.2  -  Performance",
+                    "Fixed the big slowdown from 4.0: people's daily errands were working out a brand new route across the whole city almost every frame. They now visit a set of popular places whose routes are remembered, and only a few new routes are planned each second. The simulation runs about 15 times faster in a busy city.",
+                    "On a slow phone, high game speeds now run a little slower instead of making every frame take longer and longer.",
+                    "Far less drawing when zoomed out: windows, legs, hair, soft shadows and shading are only drawn when you're close enough to see them, and vehicles off screen aren't drawn at all.",
+                    "The minimap draws its dots a few times a second instead of every frame.",
+            },
             {
                     "4.1  -  Realistic graphics",
                     "New Graphics setting: Realistic (the new default) or Classic (the old flat look). It switches straight away, even mid-game.",

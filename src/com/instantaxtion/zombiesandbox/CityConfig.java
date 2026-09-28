@@ -31,14 +31,14 @@ final class CityConfig implements OptionSet {
             "Reinforcements"};
     private static final String[][] VALUES = {
             PRESETS,
-            {"Small", "Medium", "Large"},
+            {"Small", "Medium", "Large", "Massive"},
             {"0", "50", "100", "150", "250", "400", "600", "800"},
             {"0", "5", "10", "20", "40", "60"},
             {"0", "5", "10", "20", "40"},
             {"0", "1", "5", "20", "50", "100", "200"},
             {"Off", "Low", "Medium", "High"},
     };
-    private static final int[] SIZES = {96, 128, 160};
+    private static final int[] SIZES = {96, 128, 160, 224};
     private static final int[] CIVILIANS = {0, 50, 100, 150, 250, 400, 600, 800};
     private static final int[] COPS = {0, 5, 10, 20, 40, 60};
     private static final int[] SOLDIERS = {0, 5, 10, 20, 40};
@@ -136,6 +136,21 @@ final class CityConfig implements OptionSet {
     }
 
     int tiles() { return SIZES[v[OPT_SIZE]]; }
+
+    /** A massive map: the city sits in the middle of open countryside. */
+    boolean massive() { return v[OPT_SIZE] == 3; }
+
+    /**
+     * How much of the map (across) is town; the rest is countryside with dirt roads, farms and woods. A village
+     * is a small cluster in the fields, a small town has fields round the edge, and massive maps are mostly
+     * country around a city.
+     */
+    float coreFraction() {
+        int p = v[OPT_PRESET];
+        float f = p == 9 ? 0.55f : p == 6 ? 0.72f : 1f;
+        if (massive()) f = Math.min(f, 0.62f) * (p == 9 ? 0.8f : 1f);
+        return f;
+    }
     int civilians() { return CIVILIANS[v[OPT_CIVILIANS]]; }
     int cops() { return COPS[v[OPT_COPS]]; }
     int soldiers() { return SOLDIERS[v[OPT_MILITARY]]; }

@@ -691,7 +691,8 @@ final class World {
 
     private void spawnRandom(int type, int n) {
         for (int i = 0; i < n; i++) {
-            float[] p = city.randomWalkable(rnd);
+            // Where there's countryside, most people are in town.
+            float[] p = rnd.nextFloat() < 0.85f ? city.randomWalkableInTown(rnd) : city.randomWalkable(rnd);
             spawn(type, p[0], p[1]);
         }
     }
@@ -3480,7 +3481,8 @@ final class World {
             tx = dispatch.zones.get(0).x;
             ty = dispatch.zones.get(0).y;
         }
-        float[] edge = rnd.nextBoolean() ? new float[]{20, rnd.nextFloat() * city.worldH()} : new float[]{rnd.nextFloat() * city.worldW(), 20};
+        float[] edge = city.edgeRoad(rnd);
+        if (edge == null) edge = new float[]{20, city.worldH() / 2};
         int before = fleet.vehicles.size();
         for (int k = 0; k < 2; k++) fleet.send(Entity.SOLDIER, 6, edge[0], edge[1], tx, ty, null, null, city.placeName(tx, ty));
         for (int i = before; i < fleet.vehicles.size(); i++) fleet.vehicles.get(i).guardUnit = true;

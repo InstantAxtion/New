@@ -11,7 +11,7 @@ away from the middle of the screen as you pan, and the game plays in both portra
 
 - **New Game** opens the city setup, with a live preview of the city and 7 options: the map (Classic,
   Downtown, Suburbs, Industrial, Parkland, Old Town, Small Town, Campus, Metropolis or Village), map size, how many civilians, cops, military and zombies there are at the
-  start, and how many reinforcements can be called in (Off, Low, Medium or High). Each map decides its
+  start (map size: Small, Medium, Large or Massive), and how many reinforcements can be called in (Off, Low, Medium or High). Each map decides its
   own buildings, layout, parks, police stations and military base. **Randomize** rolls a random setup.
   **City code** replays a city: every city has a code like `12-483920` (shown in the pause menu and
   stats), so you can play the same streets again or share them with a friend.
@@ -111,6 +111,12 @@ bandstand and flower beds. Every city has a name. Parks come as
 classic parks, playgrounds, soccer fields, courts, community gardens, skateparks and cemeteries.
 Traffic drives the streets, pigeons flock in the parks, and explosions leave burning wrecks.
 
+**Countryside:** Villages, small towns and every Massive map are surrounded by open country:
+winding dirt lanes out to the edge of the map, farms and lonely cabins along them, and woods. A
+Village is not a grid: it is a high street, a crossroad and a back lane, with cottages in gardens,
+a few shops and its police station, school, church and clinic strung along them. Only some maps
+have a railway (always Industrial and Metropolis, sometimes Classic and Small Town).
+
 Varied and Organic layouts merge some blocks into superblocks (so streets have T-junctions), add
 tree-lined boulevards, and give parks curved paths. It is always daytime, and there is no water on
 the maps.
@@ -133,18 +139,30 @@ military safe zone.
   around the edge) in parks, plazas and parking lots. Civilians run there when scared or when they
   hear about one, and shelter inside. Each zone has a capacity (25 to 60 people); a full zone turns
   people away. A zone with no guards left is overrun; police then fall back
-  to a military zone.
+  to a military zone. When a zone has been quiet for a while (or empty of people for 90 seconds),
+  it packs up; once the outbreak is over, zones close within half a minute of the last zombie.
+- **Roadblocks**: when a zone opens, police cars from the nearest precinct drive to the roads
+  leading into it (up to three), park across the road with cones out and an officer on guard. They
+  pack up and drive back when the zone closes.
+- **National Guard**: when the army's reserves are spent and the war is going badly, the Governor
+  calls out the National Guard once: two trucks of guardsmen drive in from the edge of the map and
+  reinforce the safe zones.
+- **Firefighters** wait at the fire station and ride out on fire engines. They put out fires with
+  hoses, give first aid to the injured nearby, fight zombies off with an axe and back away from crowds.
 - Recent radio messages appear on screen. Tap one to jump the camera to where it happened.
 
 ## How to play
 
 - **Pick a tool** in the bottom bar, then **tap or drag on the city**:
-  - **Civilian**: wanders the streets and runs from zombies.
-  - **Cop**: pistol with a 12-round magazine. Hunts zombies nearby and backs off when they get close.
-  - **Military**: rifle fired in 3-round bursts, longer range, more health, and grenades for big crowds.
-  - **Medic**: heals injured people and can cure fresh bites.
-  - **Zombie**: tap the button again to switch type: zombie (slow shambler), runner (fast, fragile),
-    brute (huge, knocks people back), crawler (low and hard to hit) or screamer (calls the horde).
+  - Buttons with a dot open a **picker** with a short description of each choice: tap one, then tap
+    the city. Tap the button again (or anywhere else) to close it.
+  - **People**: civilians (wander and run from zombies), medics (heal and cure fresh bites),
+    firefighters, dogs and raiders.
+  - **Police**: cops (12-round pistol), riot cops and K9 units.
+  - **Military**: soldiers (3-round bursts, grenades), commanders, snipers, gunners and the National
+    Guard.
+  - **Zombies**: zombie (slow shambler), runner (fast, fragile), brute (huge, knocks people back),
+    crawler (low and hard to hit), screamer (calls the horde), zombie dog, spitter and bloater.
   - **Orders**: tap a cop or soldier (or drag a box round a group), then tap where to send them.
   - **Safe Zone**: orders police or military to set up a guarded safe zone where you tap.
   - **Bomb**: explosion at the tap point.
@@ -160,8 +178,6 @@ military safe zone.
 - Tap anyone with **Move** to follow them and see who they are. The **minimap** jumps the camera;
   **Auto cam** follows the action. Take a **screenshot** from the pause menu.
 - Zoom right in and roofs turn see-through, so you can see who is hiding inside.
-- Tap the **Cop** button again for riot police and K9 units, the **Civilian** button again for dogs and raiders, the **Military** button again for commanders,
-  snipers and gunners, and the **Zombie** button again for other zombie types.
 
 A person killed by a zombie gets up again as a zombie a few seconds later. Bites can also infect: an
 infected person glows green and turns within about 12–26 seconds, even if they escape.

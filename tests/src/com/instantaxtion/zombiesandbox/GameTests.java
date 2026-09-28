@@ -17,7 +17,7 @@ public final class GameTests {
         test("every map and size generates", new Check() {
             public void run() {
                 for (int p = 0; p < CityConfig.PRESETS.length; p++)
-                    for (int size = 0; size < 3; size++) {
+                    for (int size = 0; size < 4; size++) {
                         CityConfig c = new CityConfig();
                         c.v[CityConfig.OPT_PRESET] = p;
                         c.v[CityConfig.OPT_SIZE] = size;
@@ -252,6 +252,83 @@ public final class GameTests {
                 check(w.city.tiles[i] == before && !w.city.solid[i], "tile restored");
             }
         });
+        test("villages and massive maps have countryside, lanes and few roads", new Check() {
+            public void run() {
+                int rails = 0;
+                for (int p = 0; p < CityConfig.PRESETS.length; p++) {
+                    CityConfig c = new CityConfig();
+                    c.v[CityConfig.OPT_PRESET] = p;
+                    c.v[CityConfig.OPT_SIZE] = 1;
+                    c.seed = 77 + p;
+                    if (c.hasRail()) rails++;
+                }
+                check(rails > 0 && rails < CityConfig.PRESETS.length, "only some maps have a railway");
+                for (int size : new int[]{1, 3}) {
+                    CityConfig c = new CityConfig();
+                    c.v[CityConfig.OPT_PRESET] = 9;
+                    c.v[CityConfig.OPT_SIZE] = size;
+                    c.seed = 5;
+                    City city = new City(c, 0.1f);
+                    int road = 0, dirt = 0;
+                    for (byte t : city.tiles) {
+                        if (t == City.ROAD) road++;
+                        if (t == City.DIRT) dirt++;
+                    }
+                    check(road < city.tiles.length / 25, "a village has few paved roads (" + road + ")");
+                    check(dirt > 100, "dirt lanes lead out of the village");
+                    check(city.railY0 < 0, "no railway through the village");
+                    check(city.edgeRoad(new java.util.Random(1)) != null, "convoys can drive in from the edge");
+                }
+                CityConfig c = new CityConfig();
+                c.v[CityConfig.OPT_SIZE] = 3;
+                c.seed = 9;
+                City big = new City(c, 0.1f);
+                check(big.w == 224, "massive maps are 224 tiles");
+                int grass = 0;
+                for (byte t : big.tiles) if (t == City.GRASS || t == City.TREE) grass++;
+                check(grass > big.tiles.length / 4, "massive maps have open country around the city");
+            }
+        });
+        test("firefighters fight fires, safe zones close, the Guard comes", new Check() {
+            public void run() {
+                CityConfig c = new CityConfig();
+                c.v[CityConfig.OPT_ZOMBIES] = 0;
+                c.seed = 21;
+                World w = new World(c);
+                w.populate(c);
+                int ff = 0;
+                for (Entity e : w.entities) if (e.type == Entity.FIREFIGHTER) ff++;
+                check(ff >= 3, "firefighters wait at the fire station");
+                check(!w.create(Entity.FIREFIGHTER, 0, 0).isZombie(), "firefighters are not zombies");
+                City.Facility st = w.city.nearestFacility(City.FACILITY_FIRE, 0, 0);
+                check(st != null, "the city has a fire station");
+                float[] p = w.city.findWalkable(st.x + 120, st.y);
+                w.ignite(p[0], p[1], 60);
+                int fires = w.fires.size();
+                w.dispatch.restoreZone(p[0] + 300, p[1], 120, false, "Test", 20, 2);
+                for (int i = 0; i < 30 * 200; i++) {
+                    w.update(1 / 30f);
+                    w.evCount = 0;
+                }
+                check(fires > 0 && w.fires.isEmpty(), "the fire went out");
+                check(w.dispatch.zones.isEmpty(), "a quiet, empty safe zone closes");
+                for (Fleet.Vehicle v : w.fleet.vehicles) check(!v.cones && v.block == null, "roadblocks are cleared away");
+                w.outbreak = true;
+                w.outbreakTime = 120;
+                w.warBalance = 0.3f;
+                w.dispatch.squadReserve = 0;
+                w.readiness = 0;
+                w.callNationalGuard();
+                check(w.guardCalled, "the Governor calls out the Guard");
+                int trucks = 0;
+                for (Fleet.Vehicle v : w.fleet.vehicles) if (v.guardUnit) trucks++;
+                check(trucks == 2, "two Guard trucks are on the way");
+                w.callNationalGuard();
+                trucks = 0;
+                for (Fleet.Vehicle v : w.fleet.vehicles) if (v.guardUnit) trucks++;
+                check(trucks == 2, "the Guard comes only once");
+            }
+        });
         test("every screen draws", new Check() {
             public void run() throws Exception {
                 GameView v = new GameView(new android.app.Activity());
@@ -267,6 +344,14 @@ public final class GameTests {
                     v.startGame(c);
                     m.screen = Menu.NONE;
                     for (int k = 0; k < 20; k++) draw(v, size);
+                    // Every spawn picker opens and draws.
+                    Field pk = GameView.class.getDeclaredField("picker");
+                    pk.setAccessible(true);
+                    for (int t = 0; t < 9; t++) {
+                        pk.setInt(v, t);
+                        draw(v, size);
+                    }
+                    pk.setInt(v, -1);
                     m.open(Menu.PAUSE);
                     draw(v, size);
                     m.open(Menu.STATS);

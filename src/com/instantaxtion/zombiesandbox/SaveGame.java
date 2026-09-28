@@ -17,7 +17,7 @@ import java.util.ArrayList;
  * damaged or collapsed buildings.
  */
 final class SaveGame {
-    private static final int VERSION = 8;
+    private static final int VERSION = 9;
 
     private SaveGame() {
     }
@@ -73,7 +73,10 @@ final class SaveGame {
 
             // People in vehicles are saved as if they had just got out.
             ArrayList<Entity> all = new ArrayList<Entity>();
-            for (Entity e : w.entities) if (!e.dead) all.add(e);
+            // Roadblock officers are left out: the zone sets up its roadblocks again when it is loaded.
+            java.util.HashSet<Entity> posted = new java.util.HashSet<Entity>();
+            for (Fleet.Vehicle v : w.fleet.vehicles) if (v.guard != null) posted.add(v.guard);
+            for (Entity e : w.entities) if (!e.dead && !posted.contains(e)) all.add(e);
             for (Fleet.Vehicle v : w.fleet.vehicles) {
                 for (Entity e : v.riders) {
                     e.x = v.x;
@@ -81,7 +84,11 @@ final class SaveGame {
                     all.add(e);
                 }
                 if (Fleet.airborne(v) || v.passengers <= 0 || v.state > 1 || v.broken) continue;
-                for (int i = 0; i < v.passengers; i++) all.add(w.create(v.passengerType, v.x, v.y));
+                for (int i = 0; i < v.passengers; i++) {
+                    Entity p = w.create(v.passengerType, v.x, v.y);
+                    if (v.guardUnit) w.applyRole(p, Entity.ROLE_GUARD);
+                    all.add(p);
+                }
             }
             out.writeInt(all.size());
             for (Entity e : all) writeEntity(out, e, d);
@@ -178,6 +185,7 @@ final class SaveGame {
             out.writeBoolean(w.blackout);
             out.writeBoolean(w.hospitalLost);
             out.writeInt(w.armedAtStores);
+            out.writeBoolean(w.guardCalled);
         } finally {
             out.close();
         }
@@ -395,6 +403,7 @@ final class SaveGame {
             w.blackout = in.readBoolean();
             w.hospitalLost = in.readBoolean();
             w.armedAtStores = in.readInt();
+            if (version >= 9) w.guardCalled = in.readBoolean();
             d.copCount = copCount;
             d.soldierCount = soldierCount;
             w.afterLoad();

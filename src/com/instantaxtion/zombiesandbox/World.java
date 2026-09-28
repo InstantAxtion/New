@@ -3473,7 +3473,7 @@ final class World {
      * When the army has nothing left to send and the war is going badly, the governor calls out the National
      * Guard (once): two trucks of guardsmen drive in from the edge of town to protect the civilians.
      */
-    private void callNationalGuard() {
+    void callNationalGuard() {
         if (guardCalled || !outbreak || outbreakTime < 90 || warBalance > 0.45f || dispatch.squadReserve > 0 || readiness == 1) return;
         guardCalled = true;
         float tx = city.worldW() / 2, ty = city.worldH() / 2;

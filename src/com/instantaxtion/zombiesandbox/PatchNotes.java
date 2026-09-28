@@ -2,11 +2,27 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "5.0";
-    static final int VERSION_CODE = 18;
+    static final String VERSION = "5.1";
+    static final int VERSION_CODE = 19;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "5.1  -  Guard, firefighters and the countryside",
+                    "National Guard: when the army has no reserve squads left and the war is going badly, the Governor calls out the Guard. Two trucks of guardsmen (tough, well stocked, olive drab) drive in from the edge of the map and reinforce the safe zones. You can also place them yourself from the Military picker.",
+                    "Firefighters are a real unit now. Three wait at each fire station and more ride out on fire engines. They hose down fires, give first aid to hurt people nearby, fight zombies off with an axe and back away from crowds.",
+                    "Simpler spawn menu: fewer buttons (People, Police, Military, Zombies). Buttons with a dot open a picker that shows every choice with a one-line description. Tap one and tap the city.",
+                    "New map size: Massive. The city sits in open country, with room to spare.",
+                    "Countryside: villages, small towns and massive maps are surrounded by fields, woods, winding dirt lanes out to the edge of the map, and farms and lonely cabins along them.",
+                    "Villages are villages: a high street, a crossroad and a back lane with cottages in gardens, instead of a grid of city blocks.",
+                    "Not every map has a train any more. Industrial and Metropolis always do, Classic and Small Town sometimes, the others never.",
+                    "Roadblocks are realistic: police cars drive from the nearest precinct to the roads leading into a safe zone, park across the road with cones and an officer on guard, and drive home when the zone closes. No more cars appearing out of nowhere.",
+                    "Fixed: safe zones never closed. A zone now packs up when it has been quiet for a while or empty for 90 seconds, and quickly once the outbreak is over.",
+                    "Fixed: the Military button could cycle to police roles.",
+                    "Fixed: name tags piled on top of each other in crowds, and the radio feed could overlap the win meter on a phone held upright.",
+                    "Fixed: roadblock officers were saved as ordinary cops and stood at their posts forever after loading, and Guard trucks lost their guardsmen when saved.",
+                    "Fixed: new people types could have been counted as zombies.",
+            },
             {
                     "5.0  -  Who will win?",
                     "(Games saved in older versions can't be loaded, because cities are built differently now.)",

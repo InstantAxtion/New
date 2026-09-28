@@ -69,7 +69,7 @@ final class Menu {
 
     private static final String[][] TUTORIAL_PAGES = {
             {"Welcome to Zombie City", "A sandbox: set up a city, start an outbreak and watch what happens. There are no missions. Play however you like."},
-            {"Spawning", "Pick a unit in the bottom bar and tap the city. Drag to paint a line of them, or use Brush (top) to spawn 5 or 10 at once. Tap the Zombie button again to switch between zombie types, and the Civilian button again for dogs."},
+            {"Spawning", "Pick a unit in the bottom bar and tap the city. Drag to paint a line of them, or use Brush (top) to spawn 5 or 10 at once. Buttons with a dot open a picker: People (civilians, medics, firefighters, dogs, raiders), Police, Military (soldiers, snipers, gunners, the National Guard) and Zombies. Tap a choice, then tap the city."},
             {"Looking around", "Pinch to zoom and drag with two fingers. With Move selected you can drag with one finger, and tap anyone to follow them with the camera. Zoom right in to see through roofs. The View button switches between 3D and bird's-eye."},
             {"The city fights back", "Civilians call 911, the police respond by car, and the military is called in when it gets bad. The radio feed shows what they say. Tap a message to jump there."},
             {"Safe zones and hiding", "Police and soldiers set up guarded safe zones and civilians run to them. Others barricade themselves in buildings until zombies break the door down. Use the Safe Zone tool to order a zone yourself."},

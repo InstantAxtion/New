@@ -144,6 +144,11 @@ final class City {
     final Random rnd;
     final Bitmap bitmap;
     float maxHeight;
+    /** The Graphics setting: realistic ground, shadows and roofs, or the classic flat look. */
+    static volatile boolean realistic = true;
+    /** Which look the map bitmap was last drawn with. */
+    boolean drawnRealistic;
+    private final float detail;
 
     /** A street: a band of road tiles {x0, y0, x1, y1} (x1/y1 exclusive) running one way, with its name. */
     static final class Street {
@@ -207,6 +212,7 @@ final class City {
     /** A city; with a detail below 1 the map bitmap is drawn smaller (for the New Game preview). */
     City(CityConfig cfg, float detail) {
         this.cfg = cfg;
+        this.detail = detail;
         w = h = cfg.tiles();
         rnd = new Random(cfg.seed);
         Random nameRnd = new Random(cfg.seed * 31 + 7);
@@ -270,9 +276,17 @@ final class City {
         // The big map uses 16-bit colour to keep memory down.
         bitmap = Bitmap.createBitmap((int) (w * T * detail), (int) (h * T * detail),
                 w * detail > 140 ? Bitmap.Config.RGB_565 : Bitmap.Config.ARGB_8888);
+        redraw();
+    }
+
+    /** Draws (or redraws, after the Graphics setting changes) the ground bitmap. */
+    void redraw() {
+        trees.clear();
         Canvas canvas = new Canvas(bitmap);
         if (detail != 1f) canvas.scale(detail, detail);
+        drawnRealistic = realistic;
         render(canvas);
+        for (Building b : buildings) if (b.collapsed) drawRubble(b);
     }
 
     private boolean stadiumNamed;
@@ -1473,7 +1487,13 @@ final class City {
                 solid[k] = false;
                 opaque[k] = false;
             }
+        drawRubble(b);
+        for (Facility f : facilities) fieldFromPoints(f.field, new float[]{f.x}, new float[]{f.y}, 1);
+    }
+
+    private void drawRubble(Building b) {
         Canvas c = new Canvas(bitmap);
+        if (detail != 1f) c.scale(detail, detail);
         Paint p = new Paint();
         p.setAntiAlias(true);
         Random r = new Random(b.seed * 31L + 7);
@@ -1499,12 +1519,12 @@ final class City {
         c.drawLine(b.x1 - 1, b.y1 - 1, b.x1 - (b.x1 - b.x0) * (0.2f + r.nextFloat() * 0.3f), b.y1 - 1, p);
         c.drawLine(b.x0 + 1, b.y1 - 1, b.x0 + 1, b.y1 - (b.y1 - b.y0) * (0.2f + r.nextFloat() * 0.4f), p);
         p.setStyle(Paint.Style.FILL);
-        for (Facility f : facilities) fieldFromPoints(f.field, new float[]{f.x}, new float[]{f.y}, 1);
     }
 
     /** Scorches a burnt-out car into the map. */
     void charTile(int tx, int ty) {
         Canvas c = new Canvas(bitmap);
+        if (detail != 1f) c.scale(detail, detail);
         Paint p = new Paint();
         p.setAntiAlias(true);
         float cx = tx * T + T / 2f, cy = ty * T + T / 2f;
@@ -1563,14 +1583,15 @@ final class City {
             for (int x = 0; x < w; x++) {
                 byte t = tiles[y * w + x];
                 int col;
+                boolean real = drawnRealistic;
                 switch (t) {
-                    case SIDEWALK: col = 0xFF8F8D87; break;
-                    case GRASS: case TREE: col = 0xFF4C7837; break;
-                    case PLAZA: case STATUE: col = 0xFFB3A487; break;
-                    case LOT: col = 0xFF48494D; break;
-                    case BUILDING: col = 0xFF8F8D87; break;
+                    case SIDEWALK: col = real ? 0xFF96938C : 0xFF8F8D87; break;
+                    case GRASS: case TREE: col = real ? 0xFF4F6F36 : 0xFF4C7837; break;
+                    case PLAZA: case STATUE: col = real ? 0xFFB2A58A : 0xFFB3A487; break;
+                    case LOT: col = real ? 0xFF46474A : 0xFF48494D; break;
+                    case BUILDING: col = real ? 0xFF96938C : 0xFF8F8D87; break;
                     case BASE: case FENCE: col = 0xFF6A6E5E; break;
-                    default: col = 0xFF3A3D43; break;
+                    default: col = real ? 0xFF38393C : 0xFF3A3D43; break;
                 }
                 if (t == TREE && isPlazaTree(x, y)) col = 0xFFB3A487;
                 if (t == CAR && isLotCar(x, y)) col = 0xFF48494D;
@@ -1653,10 +1674,12 @@ final class City {
             }
         }
 
+        if (drawnRealistic) drawRealGround(c, p);
         drawRoadMarkings(c, p);
         drawRail(c, p);
         drawStreetFurniture(c, p);
         drawParkingLines(c, p);
+        if (drawnRealistic) drawKerbs(c, p);
         roundCorners(c, p);
         drawBaseDetails(c, p);
         p.setStyle(Paint.Style.STROKE);
@@ -1676,8 +1699,28 @@ final class City {
 
         // Building shadows (longer for taller buildings), then roofs. The roof art is drawn at the
         // footprint and GameView lifts it to the building's height.
-        p.setColor(0x50000000);
         Path shadow = new Path();
+        if (drawnRealistic) {
+            // Soft light: ambient darkening hugging each building, and a pale penumbra past the shadow's edge.
+            for (Building b : buildings) {
+                for (int k = 3; k >= 1; k--) {
+                    p.setColor(0x16000000);
+                    c.drawRect(b.x0 - k * 1.6f, b.y0 - k * 1.6f, b.x1 + k * 1.6f, b.y1 + k * 1.6f, p);
+                }
+                float sx = b.height * 0.28f * 1.12f + 2, sy = b.height * 0.38f * 1.12f + 2;
+                shadow.reset();
+                shadow.moveTo(b.x0 - 1, b.y0 - 1);
+                shadow.lineTo(b.x1 + 1, b.y0 - 1);
+                shadow.lineTo(b.x1 + sx, b.y0 + sy);
+                shadow.lineTo(b.x1 + sx, b.y1 + sy);
+                shadow.lineTo(b.x0 + sx, b.y1 + sy);
+                shadow.lineTo(b.x0 - 1, b.y1 + 1);
+                shadow.close();
+                p.setColor(0x22000000);
+                c.drawPath(shadow, p);
+            }
+        }
+        p.setColor(drawnRealistic ? 0x46000000 : 0x50000000);
         for (Building b : buildings) {
             float sx = b.height * 0.28f, sy = b.height * 0.38f;
             shadow.reset();
@@ -1691,6 +1734,7 @@ final class City {
             c.drawPath(shadow, p);
         }
         for (int[] b : buildingLots) drawBuilding(c, p, b);
+        if (drawnRealistic) for (int[] b : buildingLots) weatherRoof(c, p, b);
 
         for (int[] f : statues) {
             // A statue on a stepped stone plinth.
@@ -1776,6 +1820,132 @@ final class City {
                     c.drawCircle(cx, cy, 1.6f, p);
                     trees.add(new float[]{cx, cy, r});
                 }
+    }
+
+    // ------------------------------------------------------------------ realistic graphics
+
+    /**
+     * Realistic ground: grainy asphalt with darker tyre tracks and the odd oil stain, paving slabs that
+     * vary in tone, and grass with lighter and darker patches.
+     */
+    private void drawRealGround(Canvas c, Paint p) {
+        Random r = new Random(cfg.seed * 7L + 1);
+        for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++) {
+                byte t = tiles[y * w + x];
+                float fx = x * T, fy = y * T;
+                if (t == ROAD || t == CAR) {
+                    for (int k = 0; k < 5; k++) {
+                        p.setColor(r.nextBoolean() ? 0x14FFFFFF : 0x1A000000);
+                        float gx = fx + r.nextFloat() * T, gy = fy + r.nextFloat() * T;
+                        c.drawRect(gx, gy, gx + 0.8f, gy + 0.8f, p);
+                    }
+                    // Patchy tarmac: lighter worn areas and darker fresh ones.
+                    if (r.nextFloat() < 0.2f) {
+                        p.setColor(0x08000000);
+                        float bx = fx + r.nextFloat() * T, by = fy + r.nextFloat() * T, br = 5 + r.nextFloat() * 7;
+                        c.drawCircle(bx, by, br, p);
+                        c.drawCircle(bx, by, br * 0.6f, p);
+                    }
+                    if (r.nextFloat() < 0.025f) {
+                        p.setColor(0x22101010);
+                        c.drawCircle(fx + 4 + r.nextFloat() * 8, fy + 4 + r.nextFloat() * 8, 2 + r.nextFloat() * 2.5f, p);
+                    }
+                } else if (t == SIDEWALK) {
+                    // Each half-slab a slightly different tone, with the odd crack.
+                    for (int k = 0; k < 2; k++) {
+                        int tone = r.nextInt(3);
+                        if (tone == 0) continue;
+                        p.setColor(tone == 1 ? 0x10FFFFFF : 0x12000000);
+                        c.drawRect(fx + k * T / 2f + 0.5f, fy + 0.5f, fx + (k + 1) * T / 2f - 0.5f, fy + T - 0.5f, p);
+                    }
+                    if (r.nextFloat() < 0.06f) {
+                        p.setColor(0x33000000);
+                        p.setStrokeWidth(0.5f);
+                        float cx = fx + r.nextFloat() * T, cy = fy + r.nextFloat() * T;
+                        c.drawLine(cx, cy, cx + r.nextFloat() * 6 - 3, cy + r.nextFloat() * 6 - 3, p);
+                    }
+                } else if (t == GRASS || t == TREE) {
+                    // Mown lawn stripes.
+                    p.setColor((x / 2) % 2 == 0 ? 0x0CFFFFFF : 0x08000000);
+                    c.drawRect(fx, fy, fx + T, fy + T, p);
+                    if (r.nextFloat() < 0.3f) {
+                        p.setColor(r.nextBoolean() ? 0x1A8AC060 : 0x18203A10);
+                        c.drawCircle(fx + r.nextFloat() * T, fy + r.nextFloat() * T, 4 + r.nextFloat() * 7, p);
+                    }
+                    for (int k = 0; k < 4; k++) {
+                        p.setColor(r.nextBoolean() ? 0x30A8D080 : 0x30284A18);
+                        float gx = fx + r.nextFloat() * T, gy = fy + r.nextFloat() * T;
+                        c.drawRect(gx, gy, gx + 0.6f, gy + 1.6f, p);
+                    }
+                } else if (t == LOT || t == BASE) {
+                    for (int k = 0; k < 3; k++) {
+                        p.setColor(r.nextBoolean() ? 0x10FFFFFF : 0x14000000);
+                        float gx = fx + r.nextFloat() * T, gy = fy + r.nextFloat() * T;
+                        c.drawRect(gx, gy, gx + 0.8f, gy + 0.8f, p);
+                    }
+                }
+            }
+    }
+
+    /** A raised kerb where pavement meets road: a shadow on the road side and a lit edge on top. */
+    private void drawKerbs(Canvas c, Paint p) {
+        for (int y = 1; y < h - 1; y++)
+            for (int x = 1; x < w - 1; x++) {
+                byte t = tiles[y * w + x];
+                if (t != SIDEWALK && t != PLAZA) continue;
+                float fx = x * T, fy = y * T;
+                if (tiles[y * w + x + 1] == ROAD) {
+                    p.setColor(0x40000000);
+                    c.drawRect(fx + T, fy, fx + T + 1.2f, fy + T, p);
+                    p.setColor(0x30FFFFFF);
+                    c.drawRect(fx + T - 1, fy, fx + T, fy + T, p);
+                }
+                if (tiles[y * w + x - 1] == ROAD) {
+                    p.setColor(0x28000000);
+                    c.drawRect(fx - 1, fy, fx, fy + T, p);
+                    p.setColor(0x30FFFFFF);
+                    c.drawRect(fx, fy, fx + 1, fy + T, p);
+                }
+                if (tiles[(y + 1) * w + x] == ROAD) {
+                    p.setColor(0x40000000);
+                    c.drawRect(fx, fy + T, fx + T, fy + T + 1.2f, p);
+                    p.setColor(0x30FFFFFF);
+                    c.drawRect(fx, fy + T - 1, fx + T, fy + T, p);
+                }
+                if (tiles[(y - 1) * w + x] == ROAD) {
+                    p.setColor(0x28000000);
+                    c.drawRect(fx, fy - 1, fx + T, fy, p);
+                    p.setColor(0x30FFFFFF);
+                    c.drawRect(fx, fy, fx + T, fy + 1, p);
+                }
+            }
+    }
+
+    /** Weathering on roofs: grime speckles, streaks, a lit parapet on the sunny edges and a dark one opposite. */
+    private void weatherRoof(Canvas c, Paint p, int[] b) {
+        float x0 = b[0] * T, y0 = b[1] * T, x1 = (b[0] + b[2]) * T, y1 = (b[1] + b[3]) * T;
+        int kind = b[6];
+        if (kind == SILO || kind == SPIRE) return;
+        Random r = new Random(b[5] * 13L + 5);
+        int n = (int) ((x1 - x0) * (y1 - y0) / 40);
+        for (int k = 0; k < n; k++) {
+            p.setColor(r.nextInt(3) == 0 ? 0x14FFFFFF : 0x16000000);
+            float gx = x0 + 2 + r.nextFloat() * (x1 - x0 - 4), gy = y0 + 2 + r.nextFloat() * (y1 - y0 - 4);
+            c.drawRect(gx, gy, gx + 0.9f, gy + 0.9f, p);
+        }
+        // A few rain streaks and stains.
+        for (int k = 0; k < 1 + n / 60; k++) {
+            p.setColor(0x12000000);
+            float gx = x0 + 3 + r.nextFloat() * (x1 - x0 - 6), gy = y0 + 3 + r.nextFloat() * (y1 - y0 - 6);
+            c.drawCircle(gx, gy, 2 + r.nextFloat() * 4, p);
+        }
+        p.setColor(0x38FFFFFF);
+        c.drawRect(x0, y0, x1, y0 + 0.9f, p);
+        c.drawRect(x0, y0, x0 + 0.9f, y1, p);
+        p.setColor(0x40000000);
+        c.drawRect(x0, y1 - 0.9f, x1, y1, p);
+        c.drawRect(x1 - 0.9f, y0, x1, y1, p);
     }
 
     /** Rounds the outer corners of every block's sidewalk where two roads meet. */

@@ -2,11 +2,21 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "4.0";
-    static final int VERSION_CODE = 15;
+    static final String VERSION = "4.1";
+    static final int VERSION_CODE = 16;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "4.1  -  Realistic graphics",
+                    "New Graphics setting: Realistic (the new default) or Classic (the old flat look). It switches straight away, even mid-game.",
+                    "Realistic ground: grainy, patched tarmac, raised kerbs with a lit edge and a shadow on the road, paving slabs in slightly different shades, mown stripes on the lawns and more natural colours.",
+                    "Soft lighting: buildings darken the ground right around them, their shadows have soft edges, and roofs are weathered with grime, stains and a lit parapet.",
+                    "Walls are darker near the ground with a lit cornice along the top, and windows reflect the sky and have sills.",
+                    "Leafy tree canopies made of several clumps, shaded underneath and lit on top.",
+                    "People are lit from above with soft shadows; cars have a sheen along the roof, darker sides, an outline and wing mirrors.",
+                    "The map is smoothed instead of pixelated when you zoom in.",
+            },
             {
                     "4.0  -  The big one",
                     "(Games saved in older versions can't be loaded, because cities are built differently now.)",

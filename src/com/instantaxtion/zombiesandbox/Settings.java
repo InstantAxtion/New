@@ -9,12 +9,13 @@ final class Settings implements OptionSet {
     private static final String[] ON_OFF = {"Off", "On"};
     private static final String[] LABELS = {"Music", "Sound effects", "View", "Blood", "Health bars",
             "Screen shake", "Show FPS", "Max population", "Radio messages", "Minimap",
-            "Text & buttons", "Battery saver", "Name tags"};
+            "Text & buttons", "Battery saver", "Name tags", "Graphics"};
     private static final String[][] VALUES = {VOLUME, VOLUME, {"Bird's-eye", "3D"}, ON_OFF, ON_OFF, ON_OFF, ON_OFF,
-            {"800", "1600", "2500", "4000", "6000"}, ON_OFF, ON_OFF, {"Small", "Normal", "Large"}, ON_OFF, ON_OFF};
+            {"800", "1600", "2500", "4000", "6000"}, ON_OFF, ON_OFF, {"Small", "Normal", "Large"}, ON_OFF, ON_OFF,
+            {"Classic", "Realistic"}};
     private static final String[] KEYS = {"music", "sfx", "buildings3d", "gore", "healthBars", "shake", "fps",
-            "maxPop", "radio", "minimap", "uiSize", "battery", "nameTags"};
-    private static final int[] DEFAULTS = {2, 3, 1, 1, 1, 1, 0, 2, 1, 1, 1, 0, 1};
+            "maxPop", "radio", "minimap", "uiSize", "battery", "nameTags", "graphics"};
+    private static final int[] DEFAULTS = {2, 3, 1, 1, 1, 1, 0, 2, 1, 1, 1, 0, 1, 1};
     private static final int[] MAX_POP = {800, 1600, 2500, 4000, 6000};
 
     private final SharedPreferences prefs;
@@ -46,6 +47,8 @@ final class Settings implements OptionSet {
     boolean batterySaver() { return v[11] == 1; }
     /** Names above people when zoomed right in. */
     boolean nameTags() { return v[12] == 1; }
+    /** Realistic graphics (textured ground, soft shadows, shading) or the classic flat look. */
+    boolean realistic() { return v[13] == 1; }
 
     /** True if the player has not opened the patch notes since this version was installed. */
     boolean hasUnreadNotes() {

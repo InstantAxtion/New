@@ -18,7 +18,7 @@ away from the middle of the screen as you pan, and the game plays in both portra
 - **Load Game**: three save slots plus the autosave (save from the pause menu).
 - **Records & Achievements**: best results across games and 15 achievements.
 - **Settings**: music and sound volume, view (3D or bird's-eye), minimap, text and button size, battery saver, blood, health bars, screen shake, FPS counter
-  max population and name tags. Saved between sessions.
+  max population, name tags and graphics (Realistic: textured ground, soft shadows and shading; or Classic). Saved between sessions.
 - **Patch Notes**: what changed in each version.
 - In game, the **Menu** button (or the phone's back button) pauses and opens the pause menu: save/load,
   screenshot, the **Radio Log** (every message this game; tap one to go there), **Hide Buttons** for

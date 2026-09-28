@@ -194,6 +194,16 @@ public final class GameTests {
                     draw(v, size);
                     m.open(Menu.SAVES);
                     draw(v, size);
+                    // Both graphics styles draw, and switching redraws the map.
+                    Settings st = (Settings) field(v, "settings");
+                    World w = (World) field(v, "world");
+                    for (int g = 0; g < 2; g++) {
+                        st.set(13, g);
+                        v.settingsChanged();
+                        check(w.city.drawnRealistic == (g == 1), "map redrawn in the chosen style");
+                        m.screen = Menu.NONE;
+                        draw(v, size);
+                    }
                     m.screen = Menu.NONE;
                 }
             }

@@ -394,6 +394,12 @@ final class World {
         }
     }
 
+    /** Redraws the map in the current Graphics setting, keeping the scorch marks. */
+    void redrawCity() {
+        city.redraw();
+        for (int i = 0; i < burned.length; i++) if (burned[i]) city.charTile(i % city.w, i / city.w);
+    }
+
     /** Marks a car or pump tile as burnt and scorches it into the map. */
     void burnTile(int i) {
         burned[i] = true;

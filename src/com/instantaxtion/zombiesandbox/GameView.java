@@ -126,6 +126,7 @@ final class GameView extends View implements Menu.Host {
         for (int i = 0; i < clearRects.length; i++) clearRects[i] = new RectF();
         buildIcons();
         settings = new Settings(context);
+        City.realistic = settings.realistic();
         sound = new Sound(context);
         menu = new Menu(this, settings, dp);
         records = new Records(context);
@@ -180,7 +181,13 @@ final class GameView extends View implements Menu.Host {
         world.maxEntities = settings.maxPopulation();
         world.gore = settings.gore();
         sound.setVolumes(settings.music(), settings.sfx());
+        realistic = settings.realistic();
+        City.realistic = realistic;
+        if (world.city.drawnRealistic != realistic) world.redrawCity();
     }
+
+    /** The Graphics setting, cached for drawing. */
+    private boolean realistic = true;
 
     // ------------------------------------------------------------------ Menu.Host
 
@@ -802,7 +809,8 @@ final class GameView extends View implements Menu.Host {
         }
         c.scale(scale, scale);
         c.translate(-camX, -camY);
-        bmpPaint.setFilterBitmap(scale < 1.5f);
+        // Realistic graphics smooth the map when zoomed in; classic keeps the crisp pixels.
+        bmpPaint.setFilterBitmap(realistic || scale < 1.5f);
         c.drawBitmap(world.city.bitmap, 0, 0, bmpPaint);
 
         float vx0 = camX - 20, vy0 = camY - 20;
@@ -1139,6 +1147,10 @@ final class GameView extends View implements Menu.Host {
             c.drawCircle(x, y, r, fill);
             // The canopy sways gently in the breeze.
             float sway = (float) Math.sin(world.time * 1.3f + t[0] * 0.07f + t[1] * 0.05f) * 0.9f * ts;
+            if (realistic) {
+                drawRealTree(c, x, y, r, sway, ts, 1 - see * 0.5f, (int) (t[0] * 7 + t[1] * 13));
+                continue;
+            }
             fill.setColor(alpha(0xFF3B742D, 1 - see * 0.5f));
             c.drawCircle(x - 1.5f * ts + sway * 0.6f, y - 1.5f * ts + sway * 0.3f, r * 0.65f, fill);
             fill.setColor(alpha(0xFF4C8A3A, 1 - see * 0.5f));
@@ -1416,11 +1428,30 @@ final class GameView extends View implements Menu.Host {
                     } else {
                         fill.setColor(fade(lit ? litColor : City.darken(0xFF27313B, glass)));
                         c.drawRect(u0 + 3, v0 + 3.5f, u0 + cw - 3, v0 + 9.5f, fill);
+                        if (realistic) {
+                            // Sky reflected in the top of the glass, and a sill beneath.
+                            fill.setColor(fade(lit ? 0x30FFFFFF : 0x2A9CC3E8));
+                            c.drawRect(u0 + 3, v0 + 3.5f, u0 + cw - 3, v0 + 5.5f, fill);
+                            fill.setColor(fade(0x40000000));
+                            c.drawRect(u0 + 2.5f, v0 + 9.5f, u0 + cw - 2.5f, v0 + 10.3f, fill);
+                        }
                     }
                 }
             }
             fill.setColor(fade(City.darken(b.wall, shade * 0.8f)));
             c.drawRect(0, hgt - 2.5f, len, hgt, fill);
+        }
+        if (realistic) {
+            // Soft light: darker towards the ground, a lit cornice along the top.
+            float band = Math.min(hgt * 0.35f, 14);
+            for (int k = 0; k < 4; k++) {
+                fill.setColor(fade(0x10000000));
+                c.drawRect(0, hgt - band * (k + 1) / 4f, len, hgt, fill);
+            }
+            fill.setColor(fade(0x30FFFFFF));
+            c.drawRect(0, 0, len, 1.2f, fill);
+            fill.setColor(fade(0x22000000));
+            c.drawRect(0, 1.2f, len, 2f, fill);
         }
         // Bullet holes and scorch marks from the fighting.
         for (int m = 0; m < b.markCount; m++) {
@@ -1580,6 +1611,21 @@ final class GameView extends View implements Menu.Host {
             stroke.setStrokeWidth(0.5f);
             float wsx = civ ? 3f : truck ? hl * 0.57f : amb ? hl * 0.66f : engine ? hl * 0.62f : 3.7f;
             c.drawLine(wsx - 0.6f, -hw + 1.6f, wsx + 0.6f, -hw * 0.1f, stroke);
+        }
+        if (realistic && !v.burnt) {
+            // Shading: a sheen along the roof, darker flanks and a crisp outline.
+            fill.setColor(0x22FFFFFF);
+            c.drawRect(-hl + 2, -hw * 0.35f, hl - 2.5f, hw * 0.05f, fill);
+            fill.setColor(0x1E000000);
+            c.drawRect(-hl + 1, hw * 0.55f, hl - 1, hw - 0.3f, fill);
+            stroke.setColor(0x55000000);
+            stroke.setStrokeWidth(0.45f);
+            oval.set(-hl, -hw, hl, hw);
+            c.drawRoundRect(oval, 2.5f, 2.5f, stroke);
+            // Wing mirrors.
+            fill.setColor(City.darken(civ ? v.color : 0xFF333333, 0.8f));
+            c.drawRect(hl * 0.35f, -hw - 1f, hl * 0.35f + 1.2f, -hw, fill);
+            c.drawRect(hl * 0.35f, hw, hl * 0.35f + 1.2f, hw + 1f, fill);
         }
         float dmg = 1 - Math.max(0, v.hp) / v.maxHp;
         if (dmg > 0.3f) {
@@ -1794,6 +1840,27 @@ final class GameView extends View implements Menu.Host {
         c.drawLine(z.x + 11, z.y + 6, z.x + 11, z.y - 12, stroke);
         fill.setColor(tint);
         c.drawRect(z.x + 11, z.y - 12, z.x + 19, z.y - 7, fill);
+    }
+
+    private static final int[] LEAF_DARK = {0xFF24481C, 0xFF2A4E1E, 0xFF2E4A22};
+    private static final int[] LEAF_MID = {0xFF33662A, 0xFF3A6E2C, 0xFF3F6A30};
+    private static final int[] LEAF_LIGHT = {0xFF4E8A3C, 0xFF5A9444, 0xFF55883E};
+
+    /** A leafy canopy: overlapping clumps, shaded underneath and lit on top, each tree a little different. */
+    private void drawRealTree(Canvas c, float x, float y, float r, float sway, float ts, float a, int seed) {
+        int v = (seed & 0x7FFFFFFF) % 3;
+        fill.setColor(alpha(LEAF_DARK[v], a));
+        c.drawCircle(x + 0.8f * ts, y + 0.8f * ts, r, fill);
+        for (int k = 0; k < 5; k++) {
+            double ang = k * 1.2566 + (seed % 7) * 0.3;
+            float lx = x + (float) Math.cos(ang) * r * 0.45f + sway * 0.4f, ly = y + (float) Math.sin(ang) * r * 0.45f + sway * 0.2f;
+            fill.setColor(alpha(LEAF_MID[(v + k) % 3], a));
+            c.drawCircle(lx - 0.6f * ts, ly - 0.6f * ts, r * 0.52f, fill);
+        }
+        fill.setColor(alpha(LEAF_LIGHT[v], a));
+        c.drawCircle(x - r * 0.3f + sway * 0.8f, y - r * 0.3f + sway * 0.4f, r * 0.38f, fill);
+        fill.setColor(alpha(0xFF7AB05A, a * 0.6f));
+        c.drawCircle(x - r * 0.42f + sway, y - r * 0.45f + sway * 0.5f, r * 0.16f, fill);
     }
 
     /** A phone above someone calling 911, or a radio bubble above a unit that just spoke. */
@@ -2135,8 +2202,16 @@ final class GameView extends View implements Menu.Host {
         }
         float r = e.radius;
         // One light source for everything: shadows fall down and to the right.
-        fill.setColor(0x40000000);
-        c.drawCircle(e.x + r * 0.35f, e.y + r * 0.5f, r * 0.95f, fill);
+        if (realistic) {
+            // A soft shadow: a pale outer edge round a darker core.
+            fill.setColor(0x1C000000);
+            c.drawCircle(e.x + r * 0.4f, e.y + r * 0.55f, r * 1.2f, fill);
+            fill.setColor(0x30000000);
+            c.drawCircle(e.x + r * 0.35f, e.y + r * 0.5f, r * 0.85f, fill);
+        } else {
+            fill.setColor(0x40000000);
+            c.drawCircle(e.x + r * 0.35f, e.y + r * 0.5f, r * 0.95f, fill);
+        }
         c.save();
         c.translate(e.x, e.y);
         c.rotate((float) Math.toDegrees(e.angle));
@@ -2298,6 +2373,13 @@ final class GameView extends View implements Menu.Host {
             c.drawCircle(0, 0, r * 1.05f, fill);
         }
         c.restore();
+        if (realistic && e.type != Entity.CRAWLER) {
+            // Light from the top left: a soft highlight on the shoulders and head, shade on the far side.
+            fill.setColor(0x26FFFFFF);
+            c.drawCircle(e.x - r * 0.28f, e.y - r * 0.3f, r * 0.42f, fill);
+            fill.setColor(0x1A000000);
+            c.drawCircle(e.x + r * 0.3f, e.y + r * 0.32f, r * 0.4f, fill);
+        }
         if (e.stun > 0 && e.isZombie()) {
             // Dazed: little stars spinning over its head.
             fill.setColor(0xFFFFE27A);

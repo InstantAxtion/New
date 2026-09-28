@@ -1154,7 +1154,7 @@ final class World {
         }
     }
 
-    private void recount() {
+    void recount() {
         Arrays.fill(counts, 0);
         commanders.clear();
         for (int i = 0, n = entities.size(); i < n; i++) {

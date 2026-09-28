@@ -128,6 +128,87 @@ public final class GameTests {
                 check(w.patientZero != null || w.outbreakPlace != null, "patient zero was tracked");
             }
         });
+        test("every city is split into named districts", new Check() {
+            public void run() {
+                for (int p = 0; p < CityConfig.PRESETS.length; p++) {
+                    CityConfig c = new CityConfig();
+                    c.v[CityConfig.OPT_PRESET] = p;
+                    c.seed = 77 + p;
+                    City city = new City(c, 0.1f);
+                    check(city.districts.size() >= 3, CityConfig.PRESETS[p] + " has districts");
+                    int covered = 0;
+                    for (City.District d : city.districts) {
+                        check(d.name != null && d.name.length() > 0, "district named");
+                        covered += d.tiles;
+                    }
+                    check(covered == city.w * city.h, "every tile is in a district");
+                    check(city.districtOf(10, 10) != null, "districts can be looked up");
+                }
+            }
+        });
+        test("buildings: zombies inside burst out, survivors eat, gun stores arm people", new Check() {
+            public void run() {
+                CityConfig c = new CityConfig();
+                c.v[CityConfig.OPT_ZOMBIES] = 0;
+                c.seed = 5;
+                World w = new World(c);
+                w.populate(c);
+                City.Building shelter = null, gunStore = null;
+                for (City.Building b : w.city.buildings) {
+                    if (shelter == null && b.capacity > 0 && b.kind == City.OFFICE) shelter = b;
+                    if (gunStore == null && b.kind == City.SHOP && b.shopType == 1) gunStore = b;
+                }
+                check(shelter != null, "found an office");
+                shelter.lurkers = 3;
+                int before = w.zombieCount();
+                w.burstOut(shelter);
+                w.recount();
+                check(shelter.lurkers == 0 && shelter.infestKnown, "lurkers came out");
+                check(w.zombieCount() == before + 3, "three zombies on the street");
+                // Survivors inside eat through the food (once the zombies that came out are dealt with).
+                for (Entity e : w.entities) if (e.isZombie()) {
+                    e.dead = true;
+                    e.removed = true;
+                }
+                shelter.lurkers = 0;
+                shelter.food = 5;
+                for (int i = 0; i < 4; i++) {
+                    Entity e = w.create(Entity.CIVILIAN, shelter.doorX, shelter.doorY);
+                    e.dead = true;
+                    e.removed = true;
+                    shelter.occupants.add(e);
+                }
+                for (int i = 0; i < 30 * 70; i++) {
+                    w.update(1 / 30f);
+                    w.evCount = 0;
+                }
+                check(shelter.food < 5, "food was eaten");
+                check(gunStore == null || gunStore.stock > 0, "gun stores start stocked");
+            }
+        });
+        test("the war ends with a winner", new Check() {
+            public void run() {
+                CityConfig c = new CityConfig();
+                c.v[CityConfig.OPT_ZOMBIES] = 0;
+                c.seed = 9;
+                World w = new World(c);
+                w.populate(c);
+                float[] p = w.city.randomWalkable(new java.util.Random(2));
+                Entity z = w.spawn(Entity.ZOMBIE, p[0], p[1]);
+                for (City.Building b : w.city.buildings) b.lurkers = 0;
+                w.recount();
+                check(w.outbreak, "an outbreak started");
+                z.hp = 0;
+                for (int i = 0; i < 30 * 20 && w.warResult == 0; i++) {
+                    for (Entity e : w.entities) if (e.isZombie()) e.hp = 0;
+                    w.update(1 / 30f);
+                    w.evCount = 0;
+                }
+                check(w.warResult == 1, "the city survived");
+                check(w.warBanner != null, "the ending was announced");
+                check(w.strainName != null, "the strain has a name");
+            }
+        });
         test("army checkpoints stop most bitten people", new Check() {
             public void run() throws Exception {
                 World w = world[0];

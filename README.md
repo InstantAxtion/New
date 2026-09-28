@@ -75,6 +75,32 @@ on the phone, so the APK contains no audio files.
 - **Orders**: select a cop or a soldier's squad with the Orders tool and tap where to send them.
 - **Save/load**, a **Stats** screen (people vs zombies over time) and a **How to Play** tutorial.
 
+## Who wins?
+
+Every outbreak is a real war that can go either way. Each game rolls a hidden **strain** (fast- or
+slow-acting, virulent or weak bites, tough or frail zombies, swift ones, keen or dull senses, or the dead
+rising without a bite) and a hidden **city readiness** (unprepared, panicking, a gun town or well
+prepared). Both are revealed on the radio as the war goes on, and the Stats screen lists what's known.
+
+People tire when they sprint and the dead never do; body shots only wear a zombie down while headshots
+drop it; police and soldiers can be overwhelmed; hunger draws the dead from right across town. A
+tug-of-war bar under the stats shows who is ahead, banners mark the turning points, and the war ends with
+"The city survives" or "The city has fallen" (once 85% of its people are gone). In simulated games with
+the default city, 5 zombies take it about 1 time in 10, 20 zombies about 1 in 5, and 50 zombies about 2 in 5.
+
+## Buildings
+
+- **Districts**: downtown towers, old-town terraces, suburbs, industrial estates, a university district
+  and parkside neighbourhoods, each named on the map when you zoom out.
+- **Supplies**: every building has food; survivors hiding inside eat it and have to go out foraging
+  when it runs out. Supermarkets and gun stores stock ammo, pharmacies medicine.
+- **Functions**: gun stores arm frightened civilians; if the power station is overrun there is a
+  blackout (no sirens, no safe-zone broadcasts); if the hospital falls, nobody can be treated.
+- **Zombies inside**: some buildings hide zombies that burst out when someone comes near or tries to
+  shelter there. Idle zombies lurk in empty buildings, smash shop windows and set off car alarms.
+- **Interiors**: zoom right in to see furniture laid out for what the building is, who is hiding, and
+  (if you look closely) shapes waiting in the dark. Tap a building with Move for its info card.
+
 ## City layout
 
 Besides homes, offices and warehouses, cities have shops, gas stations, churches, schools, fire

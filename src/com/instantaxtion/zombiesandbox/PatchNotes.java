@@ -2,11 +2,25 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "4.2";
-    static final int VERSION_CODE = 17;
+    static final String VERSION = "5.0";
+    static final int VERSION_CODE = 18;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "5.0  -  Who will win?",
+                    "(Games saved in older versions can't be loaded, because cities are built differently now.)",
+                    "Districts: every city is made of named neighbourhoods, each with its own character. Downtown has small blocks of glass towers on a grid; the Old Town has wandering streets of brick terraces with shops and courtyards; the suburbs sprawl with houses; industrial estates have big warehouse yards; the University District has halls on lawns; parkside districts are green. Zoom out to see their names.",
+                    "Buildings do things. Every building has food, and survivors hiding inside eat it. When it runs out they have to go out and find more. Gun stores arm frightened people until they're cleaned out. If the power station is overrun there's a blackout: no sirens, and nobody hears about safe zones any more. If the hospital falls, nobody can be treated. Both come back once they're cleared.",
+                    "Tap a building (with Move) to see what it is, its district, who's inside, its food, ammo or medicine, and what it does for the city.",
+                    "New interiors: zoom right in to see inside. Houses have kitchens, sofas, beds and baths; offices have desks and screens; supermarkets and the mall have aisles; the hospital has wards; the police station has cells; schools have classrooms; diners have booths; gun stores have racks. Looted and smashed places are wrecked inside.",
+                    "Zombies in the buildings: some are shut inside, waiting. Nobody knows until someone opens the door, or until they burst out. Idle zombies wander into empty buildings to lurk, put in shop windows, and set off car alarms that draw every zombie for streets around. When a shelter is overrun, some people don't get out.",
+                    "Every outbreak is a different strain, with hidden traits found out over the radio: fast- or slow-acting, virulent or weak bites, tough or frail zombies, swift ones, keen or dull senses, or the dead rising even without a bite. How ready the city was is revealed too: unprepared, panicking, a gun town, or well prepared.",
+                    "The war can go either way now. People tire when they sprint (the dead never do), body shots only wear a zombie down while headshots drop it, police and soldiers can be overwhelmed, and hunger draws the dead from right across town. A small outbreak is usually contained, but not always; a big one is anyone's guess.",
+                    "A tug-of-war bar under the stats shows which side is winning. Banners mark the turning points and the end: \"The city survives\" or \"The city has fallen\". The Stats screen shows the strain and what's known about it.",
+                    "Heroes call out their kills on the radio at 10, 25, 50 and 100.",
+                    "Fixed: spitters and bloaters weren't counted as zombies, so an outbreak could end with them still around.",
+            },
             {
                     "4.2  -  Performance",
                     "Fixed the big slowdown from 4.0: people's daily errands were working out a brand new route across the whole city almost every frame. They now visit a set of popular places whose routes are remembered, and only a few new routes are planned each second. The simulation runs about 15 times faster in a busy city.",

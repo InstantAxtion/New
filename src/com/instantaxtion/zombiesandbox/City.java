@@ -419,7 +419,7 @@ final class City {
                 b.shopType = roll == 0 ? 1 : roll < 3 ? 2 : 0;
                 if (b.shopType == 1) {
                     b.name = GUN_STORES[nr.nextInt(GUN_STORES.length)];
-                    b.stock = 120;
+                    b.stock = 240;
                 }
             }
             // Food in the cupboards and on the shelves.

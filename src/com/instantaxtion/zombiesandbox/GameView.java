@@ -964,6 +964,20 @@ final class GameView extends View implements Menu.Host {
             stroke.setStrokeWidth(2f);
             c.drawCircle(sc[0], sc[1], 10 + sc[2] * 120, stroke);
         }
+        // Emergency lights wash the road around them in red and blue.
+        for (int i = 0, n = world.fleet.vehicles.size(); i < n; i++) {
+            Fleet.Vehicle v = world.fleet.vehicles.get(i);
+            if (v.broken || Fleet.airborne(v)) continue;
+            boolean lights = v.type == Fleet.CRUISER || v.type == Fleet.FIRE_ENGINE || (v.type == Fleet.AMBULANCE && v.state != 0);
+            if (!lights || v.x < vx0 - 30 || v.x > vx1 + 30 || v.y < vy0 - 30 || v.y > vy1 + 30) continue;
+            boolean blink = ((int) (v.anim * 8)) % 2 == 0;
+            int col = blink ? 0xFFFF3A30 : v.type == Fleet.FIRE_ENGINE ? 0xFFFFB040 : 0xFF3A7BFF;
+            float side = blink ? -1 : 1, ox = (float) -Math.sin(v.angle) * side * 4, oy = (float) Math.cos(v.angle) * side * 4;
+            for (int k = 0; k < 3; k++) {
+                fill.setColor(alpha(col, 0.07f));
+                c.drawCircle(v.x + ox, v.y + oy, 10 + k * 7, fill);
+            }
+        }
         for (int i = 0, n = world.fleet.vehicles.size(); i < n; i++) {
             Fleet.Vehicle v = world.fleet.vehicles.get(i);
             if (!Fleet.airborne(v)) drawVehicle(c, v);
@@ -1121,12 +1135,16 @@ final class GameView extends View implements Menu.Host {
             float[] t = world.city.trees.get(i);
             float x = cx + (t[0] - cx) * ts, y = cy + (t[1] - cy) * ts, r = t[2] * ts;
             if (x + r < vx0 || x - r > vx1 || y + r < vy0 || y - r > vy1) continue;
+            fill.setColor(0x26000000);
+            c.drawCircle(t[0] + 2.5f, t[1] + 3.5f, t[2], fill);
             fill.setColor(alpha(0xFF2C5A22, 1 - see * 0.5f));
             c.drawCircle(x, y, r, fill);
+            // The canopy sways gently in the breeze.
+            float sway = (float) Math.sin(world.time * 1.3f + t[0] * 0.07f + t[1] * 0.05f) * 0.9f * ts;
             fill.setColor(alpha(0xFF3B742D, 1 - see * 0.5f));
-            c.drawCircle(x - 1.5f * ts, y - 1.5f * ts, r * 0.65f, fill);
+            c.drawCircle(x - 1.5f * ts + sway * 0.6f, y - 1.5f * ts + sway * 0.3f, r * 0.65f, fill);
             fill.setColor(alpha(0xFF4C8A3A, 1 - see * 0.5f));
-            c.drawCircle(x - 2.5f * ts, y - 2.5f * ts, r * 0.3f, fill);
+            c.drawCircle(x - 2.5f * ts + sway, y - 2.5f * ts + sway * 0.5f, r * 0.3f, fill);
         }
         if (!in3d) {
             // Bird's-eye: the flat roofs are already in the ground bitmap.
@@ -1437,12 +1455,26 @@ final class GameView extends View implements Menu.Host {
                 py = y;
             }
         }
+        // Shadow, always down and to the right like everything else.
+        c.save();
+        c.translate(v.x + 1.6f, v.y + 2.2f);
+        c.rotate((float) Math.toDegrees(v.angle));
+        fill.setColor(0x48000000);
+        oval.set(-hl - 0.5f, -hw - 0.5f, hl + 0.5f, hw + 0.5f);
+        c.drawRoundRect(oval, 2.5f, 2.5f, fill);
+        c.restore();
         c.save();
         c.translate(v.x, v.y);
         c.rotate((float) Math.toDegrees(v.angle));
-        fill.setColor(0x55000000);
-        oval.set(-hl + 1.5f, -hw + 1.5f, hl + 1.5f, hw + 1.5f);
-        c.drawRoundRect(oval, 2.5f, 2.5f, fill);
+        if (!v.burnt) {
+            // Tyres poking out at the corners.
+            fill.setColor(0xFF111214);
+            float wx = hl * 0.62f, ww = truck || engine ? 1.8f : 1.5f;
+            for (int sx = -1; sx <= 1; sx += 2) {
+                c.drawRect(sx * wx - ww, -hw - 0.5f, sx * wx + ww, -hw + 1f, fill);
+                c.drawRect(sx * wx - ww, hw - 1f, sx * wx + ww, hw + 0.5f, fill);
+            }
+        }
         boolean civ = v.type == Fleet.CAR;
         int body = civ ? v.color : truck ? 0xFF4F5A33 : engine ? 0xFFC8302A : amb ? 0xFFF2F2F2 : 0xFF1C1D22;
         if (v.burnt) body = 0xFF2B2623;
@@ -1520,6 +1552,23 @@ final class GameView extends View implements Menu.Host {
                 fill.setColor(blink ? 0xFF3A5AA0 : 0xFF3A7BFF);
                 c.drawRect(-1f, 0, 0.5f, hw - 1, fill);
             }
+        }
+        if (!v.broken) {
+            // Brake lights: bright red when slowing or stopped in traffic.
+            boolean braking = !v.parked && v.speed < 25;
+            fill.setColor(braking ? 0xFFFF2A20 : 0xFF7A1410);
+            c.drawRect(-hl, -hw + 0.8f, -hl + 0.9f, -hw + 2f, fill);
+            c.drawRect(-hl, hw - 2f, -hl + 0.9f, hw - 0.8f, fill);
+            if (braking) {
+                fill.setColor(0x40FF2A20);
+                c.drawCircle(-hl - 1, -hw + 1.4f, 2f, fill);
+                c.drawCircle(-hl - 1, hw - 1.4f, 2f, fill);
+            }
+            // A glint on the windscreen.
+            stroke.setColor(0x66FFFFFF);
+            stroke.setStrokeWidth(0.5f);
+            float wsx = civ ? 3f : truck ? hl * 0.57f : amb ? hl * 0.66f : engine ? hl * 0.62f : 3.7f;
+            c.drawLine(wsx - 0.6f, -hw + 1.6f, wsx + 0.6f, -hw * 0.1f, stroke);
         }
         float dmg = 1 - Math.max(0, v.hp) / v.maxHp;
         if (dmg > 0.3f) {
@@ -2018,19 +2067,78 @@ final class GameView extends View implements Menu.Host {
         }
     }
 
+    private static final int[] HAIR = {0xFF1A1410, 0xFF3B2A1A, 0xFF6B4A2A, 0xFFC8A060, 0xFF8A3A1A, 0xFF8A8A8A};
+    private static final int[] HATS = {0xFFD83A3A, 0xFF2E5FB0, 0xFF3C8A4E, 0xFFE0C050, 0xFF222428, 0xFFE07A2E};
+
+    /** Hair, caps and beanies, picked from the person's name so they keep the same look. */
+    private void drawHair(Canvas c, Entity e, float r) {
+        int seed = e.nameSeed & 0x7FFFFFFF;
+        int style = seed % 7, hair = HAIR[(seed / 7) % HAIR.length], hat = HATS[(seed / 49) % HATS.length];
+        boolean zombie = e.isZombie();
+        if (zombie) {
+            if (style == 0 || style == 3) style = 4; // Hats are long gone.
+            hair = City.darken(hair, 0.8f);
+        }
+        if (e.type == Entity.MEDIC) style = 4;
+        switch (style) {
+            case 0: // Baseball cap.
+                fill.setColor(hat);
+                c.drawCircle(-r * 0.04f, 0, r * 0.5f, fill);
+                fill.setColor(City.darken(hat, 0.75f));
+                oval.set(r * 0.3f, -r * 0.3f, r * 0.8f, r * 0.3f);
+                c.drawOval(oval, fill);
+                break;
+            case 1: // Long hair.
+                fill.setColor(hair);
+                oval.set(-r * 0.62f, -r * 0.54f, r * 0.12f, r * 0.54f);
+                c.drawOval(oval, fill);
+                break;
+            case 2: // Bald.
+                break;
+            case 3: // Beanie.
+                fill.setColor(hat);
+                c.drawCircle(-r * 0.06f, 0, r * 0.5f, fill);
+                fill.setColor(City.lighten(hat, 0.3f));
+                c.drawCircle(-r * 0.12f, 0, r * 0.14f, fill);
+                break;
+            case 5: // Hair in a bun.
+                fill.setColor(hair);
+                c.drawCircle(-r * 0.1f, 0, r * 0.44f, fill);
+                c.drawCircle(-r * 0.58f, 0, r * 0.2f, fill);
+                break;
+            default: // Short hair.
+                fill.setColor(hair);
+                c.drawCircle(-r * 0.12f, 0, r * 0.44f, fill);
+                if (zombie) {
+                    fill.setColor(e.head);
+                    c.drawCircle(-r * 0.2f, r * 0.2f, r * 0.14f, fill);
+                }
+                break;
+        }
+    }
+
     private void drawEntity(Canvas c, Entity e, boolean healthBar) {
         if (e.type == Entity.DOG || e.type == Entity.ZOMBIE_DOG) {
             drawDog(c, e, healthBar);
             return;
         }
         float r = e.radius;
+        // One light source for everything: shadows fall down and to the right.
+        fill.setColor(0x40000000);
+        c.drawCircle(e.x + r * 0.35f, e.y + r * 0.5f, r * 0.95f, fill);
         c.save();
         c.translate(e.x, e.y);
         c.rotate((float) Math.toDegrees(e.angle));
 
-        fill.setColor(0x44000000);
-        oval.set(-r * 0.7f + 0.9f, -r + 0.9f, r * 0.7f + 0.9f, r + 0.9f);
-        c.drawOval(oval, fill);
+        if (e.type != Entity.CRAWLER) {
+            // Legs stepping out in front and behind as they walk.
+            float step = (float) Math.sin(e.phase) * r * 0.55f;
+            fill.setColor(e.isZombie() ? City.darken(e.skin, 0.55f) : e.type == Entity.SOLDIER ? 0xFF2E3320 : 0xFF26282C);
+            oval.set(step - r * 0.3f, -r * 0.55f, step + r * 0.3f, -r * 0.12f);
+            c.drawOval(oval, fill);
+            oval.set(-step - r * 0.3f, r * 0.12f, -step + r * 0.3f, r * 0.55f);
+            c.drawOval(oval, fill);
+        }
 
         if (e.type == Entity.CRAWLER) {
             // Dragging itself along on its arms: long low body, no legs.
@@ -2129,6 +2237,8 @@ final class GameView extends View implements Menu.Host {
 
         fill.setColor(e.head);
         c.drawCircle(r * 0.08f, 0, r * 0.56f, fill);
+        if (e.type == Entity.CIVILIAN || e.type == Entity.MEDIC || e.type == Entity.ZOMBIE || e.type == Entity.RUNNER
+                || e.type == Entity.SCREAMER) drawHair(c, e, r);
         if (e.type == Entity.COP) {
             fill.setColor(0xFF0B1022);
             oval.set(r * 0.35f, -r * 0.45f, r * 0.85f, r * 0.45f);

@@ -3277,19 +3277,24 @@ final class World {
             float len = d + 20 + rnd.nextFloat() * 40;
             float ex = mx, ey = my;
             Fleet.Vehicle car = null;
+            boolean hitWall = false;
             for (float s = 0; s < len && car == null; s += 4) {
                 ex = mx + (float) Math.cos(a) * s;
                 ey = my + (float) Math.sin(a) * s;
                 if (city.solidAt(ex, ey)) {
                     for (int i = 0; i < 3; i++)
                         particle(ex, ey, rnd.nextFloat() * 60 - 30, rnd.nextFloat() * 60 - 30, 0.2f, 0.7f, 0xFFFFD27A, P_DOT);
+                    impactPuff(ex - (float) Math.cos(a) * 2, ey - (float) Math.sin(a) * 2, 0xFFB8B0A0);
                     bulletHole(ex, ey, e.x, e.y);
+                    hitWall = true;
                     break;
                 }
                 if (s > 12 && ((int) s) % 8 == 0) car = vehicleAt(ex, ey);
             }
             // Stray rounds put holes in cars too.
             if (car != null) fleet.damage(car, dmg * 0.4f, false);
+            // A miss kicks up a little puff of dust where it lands.
+            else if (!hitWall) impactPuff(ex, ey, 0xFF8E8676);
             tracer(mx, my, ex, ey);
         }
         particle(mx, my, 0, 0, 0.06f, soldier ? 3.2f : 2.6f, 0xFFFFE9A0, P_FLASH);
@@ -4103,6 +4108,13 @@ final class World {
         }
         if (rnd.nextFloat() < 0.5f)
             decal(x + nx * 4 + rnd.nextFloat() * 4 - 2, y + ny * 4 + rnd.nextFloat() * 4 - 2, 1.5f + rnd.nextFloat() * 2.5f, 0x996E0A0A);
+    }
+
+    /** A small puff of dust or plaster where a bullet strikes. */
+    private void impactPuff(float x, float y, int color) {
+        for (int k = 0; k < 2; k++)
+            particle(x, y, rnd.nextFloat() * 16 - 8, rnd.nextFloat() * 16 - 8, 0.35f + rnd.nextFloat() * 0.2f,
+                    1.6f + rnd.nextFloat(), color, P_SMOKE);
     }
 
     private void tracer(float x0, float y0, float x1, float y1) {

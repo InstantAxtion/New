@@ -1944,6 +1944,18 @@ final class City {
                 p.setColor(0xFF6A5A50);
                 c.drawRect(x0 + bw * 0.7f, y0 + 3, x0 + bw * 0.7f + 4, y0 + 7, p);
             }
+            // Some houses have solar panels on the sunny slope.
+            if (new Random(b[5] * 7L + 3).nextInt(4) == 0) {
+                float px0 = x0 + 4, py0 = y0 + 3, px1, py1;
+                if (bw >= bh) {
+                    px1 = x0 + bw * 0.55f;
+                    py1 = (y0 + y1) / 2 - 1.5f;
+                } else {
+                    px1 = (x0 + x1) / 2 - 1.5f;
+                    py1 = y0 + bh * 0.55f;
+                }
+                drawSolar(c, p, px0, py0, px1, py1);
+            }
             return;
         }
         if (kind == STATION) {
@@ -2150,11 +2162,40 @@ final class City {
         p.setColor(lighten(roof, 0.08f));
         c.drawRect(x0 + 5, y0 + 5, x1 - 5, y1 - 5, p);
 
+        // Roof details on the lower half: solar panels, a rooftop garden or a row of skylights.
+        int deco = bw >= 40 && bh >= 40 ? new Random(b[5] * 7L + 3).nextInt(5) : 4;
+        float dx0 = x0 + 7, dy0 = (y0 + y1) / 2 + 2, dx1 = x1 - 7, dy1 = y1 - 7;
+        if (deco == 0) {
+            drawSolar(c, p, dx0, dy0, dx1, dy1);
+        } else if (deco == 1) {
+            p.setColor(0xFF6B5238);
+            c.drawRect(dx0, dy0, dx1, dy1, p);
+            p.setColor(0xFF4F8A3A);
+            c.drawRect(dx0 + 1.5f, dy0 + 1.5f, dx1 - 1.5f, dy1 - 1.5f, p);
+            Random g = new Random(b[5]);
+            for (int k = 0; k < (int) ((dx1 - dx0) * (dy1 - dy0) / 60); k++) {
+                float gx = dx0 + 3 + g.nextFloat() * Math.max(1, dx1 - dx0 - 6), gy = dy0 + 3 + g.nextFloat() * Math.max(1, dy1 - dy0 - 6);
+                p.setColor(g.nextInt(4) == 0 ? 0xFFE07AA0 : g.nextBoolean() ? 0xFF3B742D : 0xFF6AA84F);
+                c.drawCircle(gx, gy, 1.5f + g.nextFloat() * 1.5f, p);
+            }
+            p.setColor(0xFFB8A888);
+            c.drawRect(dx0 + 2, (dy0 + dy1) / 2 - 1, dx1 - 2, (dy0 + dy1) / 2 + 1, p);
+        } else if (deco == 2) {
+            for (float sx = dx0 + 2; sx + 8 < dx1; sx += 12) {
+                p.setColor(darken(roof, 0.6f));
+                c.drawRect(sx, dy0 + 2, sx + 8, dy1 - 2, p);
+                p.setColor(0xCC9CC3D9);
+                c.drawRect(sx + 1, dy0 + 3, sx + 7, dy1 - 3, p);
+                p.setColor(0x66FFFFFF);
+                c.drawRect(sx + 1, dy0 + 3, sx + 2.5f, dy1 - 3, p);
+            }
+        }
+        float unitsH = deco < 3 ? bh / 2 : bh;
         int units = 1 + r.nextInt(Math.max(1, (int) (bw * bh / 1500f)) + 1);
         for (int i = 0; i < units; i++) {
             float uw = 6 + r.nextInt(6), uh = 5 + r.nextInt(5);
             float ux = x0 + 7 + r.nextFloat() * Math.max(1, bw - 14 - uw);
-            float uy = y0 + 7 + r.nextFloat() * Math.max(1, bh - 14 - uh);
+            float uy = y0 + 7 + r.nextFloat() * Math.max(1, unitsH - 14 - uh);
             p.setColor(0x44000000);
             c.drawRect(ux + 1.5f, uy + 1.5f, ux + uw + 1.5f, uy + uh + 1.5f, p);
             p.setColor(0xFFA7ABAF);
@@ -2176,6 +2217,21 @@ final class City {
             c.drawRect(cx + 3.5f, cy - 7, cx + 6, cy + 7, p);
             c.drawRect(cx - 4, cy - 1.2f, cx + 4, cy + 1.2f, p);
         }
+    }
+
+    /** A grid of dark blue solar panels. */
+    private static void drawSolar(Canvas c, Paint p, float x0, float y0, float x1, float y1) {
+        if (x1 - x0 < 4 || y1 - y0 < 4) return;
+        p.setColor(0xFF8A8E94);
+        c.drawRect(x0, y0, x1, y1, p);
+        float cw = 5, ch = 4;
+        for (float y = y0 + 0.6f; y + ch <= y1; y += ch + 0.6f)
+            for (float x = x0 + 0.6f; x + cw <= x1; x += cw + 0.6f) {
+                p.setColor(0xFF1F3A66);
+                c.drawRect(x, y, x + cw, y + ch, p);
+                p.setColor(0xFF3A5C8E);
+                c.drawRect(x, y, x + cw, y + 0.8f, p);
+            }
     }
 
     private void drawCar(Canvas c, Paint p, int x, int y) {

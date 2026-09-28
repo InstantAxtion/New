@@ -884,6 +884,7 @@ final class Dispatch {
         z.age = 20;
         zones.add(z);
         zonesDirty = true;
+        if (!military) w.fleet.roadblocks(z);
     }
 
     /** True if some safe zone still has room. */

@@ -8,7 +8,7 @@ import java.lang.reflect.Field;
 
 /**
  * Runs the game on a desktop JVM (with small stand-ins for the Android classes in tests/stubs) and checks
- * that cities generate, the simulation runs, saves round-trip and every screen draws. Run with ./test.sh.
+ * that cities generate, the simulation runs, saves round-trip, checkpoints work and every screen draws. Run with ./test.sh.
  */
 public final class GameTests {
     private static int passed, failed;
@@ -72,7 +72,85 @@ public final class GameTests {
                 check(l.city.cfg.code().equals(w.city.cfg.code()), "same city");
                 check(Math.abs(l.entities.size() - w.entities.size()) <= w.fleet.riderCount() + 8, "same people");
                 check(l.zombiesKilled == w.zombiesKilled, "same stats");
+                check(l.histCount == w.histCount && (w.histCount == 0 || l.histArmed[w.histCount - 1] == w.histArmed[w.histCount - 1]),
+                        "same police and army history");
+                check(l.turnedAway == w.turnedAway && l.medkits.size() == w.medkits.size(), "same checkpoints and medkits");
                 f.delete();
+            }
+        });
+        test("new map features appear across the presets", new Check() {
+            public void run() {
+                int malls = 0, stadiums = 0, farms = 0, roundabouts = 0, sites = 0;
+                for (int p = 0; p < CityConfig.PRESETS.length; p++)
+                    for (int seed = 1; seed <= 2; seed++) {
+                        CityConfig c = new CityConfig();
+                        c.v[CityConfig.OPT_PRESET] = p;
+                        c.v[CityConfig.OPT_SIZE] = 1;
+                        c.seed = seed * 31 + p;
+                        City city = new City(c, 0.1f);
+                        for (City.Building b : city.buildings) {
+                            if (b.kind == City.MALL) malls++;
+                            if (b.kind == City.STADIUM) stadiums++;
+                            if (b.kind == City.BARN) farms++;
+                        }
+                        for (float[] d : city.decor) {
+                            if ((int) d[0] == City.D_ROUNDABOUT) roundabouts++;
+                            if ((int) d[0] == City.D_SITE) sites++;
+                        }
+                    }
+                check(malls > 0 && stadiums > 0 && farms > 0 && roundabouts > 0 && sites > 0,
+                        "malls " + malls + ", stadiums " + stadiums + ", farms " + farms + ", roundabouts " + roundabouts + ", sites " + sites);
+            }
+        });
+        test("new zombies, units and events run", new Check() {
+            public void run() {
+                CityConfig c = new CityConfig();
+                c.v[CityConfig.OPT_ZOMBIES] = 2;
+                c.seed = 12;
+                World w = new World(c);
+                w.populate(c);
+                float cx = w.city.worldW() / 2, cy = w.city.worldH() / 2;
+                float[] p = w.city.findWalkable(cx, cy);
+                for (int i = 0; i < 4; i++) {
+                    w.spawn(Entity.SPITTER, p[0] + i * 6, p[1]);
+                    w.spawn(Entity.BLOATER, p[0], p[1] + i * 6);
+                    w.spawnCop(i % 2 == 0 ? Entity.ROLE_RIOT : Entity.ROLE_K9, p[0] - 40, p[1] - 40);
+                }
+                w.placeMedkit(p[0] - 30, p[1]);
+                w.airstrike(p[0] + 120, p[1] + 120);
+                w.cityAlarm();
+                w.infectAt(p[0] + 60, p[1]);
+                for (int i = 0; i < 30 * 60; i++) {
+                    w.update(1 / 30f);
+                    w.evCount = 0;
+                }
+                check(w.humans + w.zombies > 0, "someone is left");
+                check(w.patientZero != null || w.outbreakPlace != null, "patient zero was tracked");
+            }
+        });
+        test("army checkpoints stop most bitten people", new Check() {
+            public void run() throws Exception {
+                World w = world[0];
+                Dispatch.SafeZone z = new Dispatch.SafeZone();
+                z.x = w.city.worldW() / 2;
+                z.y = w.city.worldH() / 2;
+                z.r = 60;
+                z.military = true;
+                z.place = "Test";
+                java.lang.reflect.Method m = World.class.getDeclaredMethod("checkpoint", Entity.class, Dispatch.SafeZone.class);
+                m.setAccessible(true);
+                int before = w.turnedAway + w.quarantined, stopped = 0;
+                for (int i = 0; i < 40; i++) {
+                    Entity e = w.create(Entity.CIVILIAN, z.x, z.y);
+                    e.infected = true;
+                    e.infectTimer = 30;
+                    if ((Boolean) m.invoke(w, e, z)) stopped++;
+                    check(e.screened, "checked at the gate");
+                }
+                int caught = w.turnedAway + w.quarantined - before;
+                check(caught >= 20 && stopped <= caught, "caught " + caught + " of 40");
+                Entity clean = w.create(Entity.CIVILIAN, z.x, z.y);
+                check(!(Boolean) m.invoke(w, clean, z), "healthy people walk in");
             }
         });
         test("barricades block and come away cleanly", new Check() {
@@ -111,6 +189,10 @@ public final class GameTests {
                     m.open(Menu.PAUSE);
                     draw(v, size);
                     m.open(Menu.STATS);
+                    draw(v, size);
+                    m.open(Menu.LOG);
+                    draw(v, size);
+                    m.open(Menu.SAVES);
                     draw(v, size);
                     m.screen = Menu.NONE;
                 }

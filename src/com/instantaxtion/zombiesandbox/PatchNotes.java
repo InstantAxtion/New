@@ -2,11 +2,32 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "3.1";
-    static final int VERSION_CODE = 14;
+    static final String VERSION = "4.0";
+    static final int VERSION_CODE = 15;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "4.0  -  The big one",
+                    "(Games saved in older versions can't be loaded, because cities are built differently now.)",
+                    "New zombies: Spitters hang back and lob acid that leaves burning puddles. Bloaters are slow and swollen, and burst into a cloud of infectious gas when they die (police and soldiers try not to shoot them when people are close).",
+                    "New police: riot police with shields that turn away most bites from the front, and K9 units (an officer with a police dog). Tap the Cop button again to switch.",
+                    "New events: an airstrike (a jet makes a bombing run across the spot you tap), a city alarm (sirens send everyone indoors or to a safe zone) and Infect (someone at that spot is bitten). New Place item: a medkit that patches up anyone nearby and can treat fresh bites.",
+                    "Army checkpoints: soldiers check everyone coming into a military safe zone for bites. Most are caught: they are treated in quarantine if a medic is about, otherwise turned away and sent to the hospital.",
+                    "Police roadblocks: when the police open a safe zone they park cruisers across the roads leading to it, lights on. They pack up when the zone closes.",
+                    "Drag to select: with the Orders tool, drag a box to select a whole group of police and soldiers at once.",
+                    "8x speed. Three save slots (plus the autosave) with a Load Game button on the main menu. A Radio Log with every message this game; tap one to go there. Hide Buttons in the pause menu for clean screenshots.",
+                    "Name tags setting shows everyone's name. The stats screen graphs police and army numbers too, lists the top killers and where the outbreak started, and Patient Zero is marked on the map.",
+                    "The minimap shows where the infection is spreading. Every city has a name.",
+                    "Graphics: everything casts shadows the same way, people walk with their legs and have hair, caps and beanies, cars have tyres, brake lights and a glint on the windscreen, trees sway in the breeze, and roofs have solar panels, rooftop gardens and skylights.",
+                    "Effects: acid puddles, bloater gas, puffs of dust where bullets hit, a jet with its contrail and shadow, and emergency lights that wash the road red and blue.",
+                    "New sounds: the jet, spitting, a bloater bursting, the city alarm and bites glancing off riot shields.",
+                    "New in the city: roundabouts, trees along the pavements, back alleys with bins and dumpsters, building sites with a crane, a shopping mall, a football stadium, a power station, a helipad and ambulance bay at the hospital, bandstands and flower beds in parks, and farms on the edge of town.",
+                    "Smarter zombies: they see a long way in front of them but only notice what is close behind, remember where they last saw someone and search around there, and their moans draw in other zombies nearby.",
+                    "Smarter civilians: everyone has a home. While the city is calm they run errands to the shops, the mall, church or school and go home again; once they hear about the outbreak they head home and lock the door.",
+                    "Smarter police and soldiers: they radio sightings to units nearby, move in a wedge behind their leader, advance by bounding (half the squad covers while the other half moves), send flankers round the side for a clear shot, and pull back to a medic when badly hurt. Police form a cordon around the scene of a call.",
+                    "Medics do triage: fresh bites first, then the worst hurt. Anyone they cure is pointed to a safe zone.",
+            },
             {
                     "3.1  -  Streets, not grids",
                     "Cities are laid out a new way: a few main roads, then each district is split up by its own streets. Streets rarely line up across a main road, so you get offset crossings, T-junctions and blocks of every size instead of a grid. Downtown blocks are small, the suburbs have long ones.",

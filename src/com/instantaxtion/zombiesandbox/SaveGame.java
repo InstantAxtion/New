@@ -17,7 +17,7 @@ import java.util.ArrayList;
  * damaged or collapsed buildings.
  */
 final class SaveGame {
-    private static final int VERSION = 6;
+    private static final int VERSION = 7;
 
     private SaveGame() {
     }
@@ -149,6 +149,16 @@ final class SaveGame {
             for (boolean x : w.burned) if (x) burned++;
             out.writeInt(burned);
             for (int i = 0; i < w.burned.length; i++) if (w.burned[i]) out.writeInt(i);
+
+            // Version 7: police and army history, checkpoints, where it started, the fallen and medkits.
+            for (int i = 0; i < w.histCount; i++) out.writeInt(w.histArmed[i]);
+            out.writeInt(w.turnedAway);
+            out.writeInt(w.quarantined);
+            out.writeUTF(w.outbreakPlace == null ? "" : w.outbreakPlace);
+            out.writeInt(w.fallenHeroes.size());
+            for (int[] h : w.fallenHeroes) for (int k = 0; k < 4; k++) out.writeInt(h[k]);
+            out.writeInt(w.medkits.size());
+            for (float[] m : w.medkits) for (int k = 0; k < 3; k++) out.writeFloat(m[k]);
         } finally {
             out.close();
         }
@@ -212,8 +222,8 @@ final class SaveGame {
         DataInputStream in = new DataInputStream(new BufferedInputStream(new FileInputStream(file)));
         try {
             int version = in.readInt();
-            // Cities are generated differently since version 6, so older saves can't be rebuilt.
-            if (version < 6 || version > VERSION) throw new IOException("Unsupported save version");
+            // Cities are generated differently since version 7, so older saves can't be rebuilt.
+            if (version < 7 || version > VERSION) throw new IOException("Unsupported save version");
             CityConfig cfg = new CityConfig();
             int n = in.readInt();
             for (int i = 0; i < n; i++) {
@@ -330,6 +340,15 @@ final class SaveGame {
                     if (t >= 0 && t < w.burned.length) w.burnTile(t);
                 }
             }
+            for (int i = 0; i < w.histCount; i++) w.histArmed[i] = in.readInt();
+            w.turnedAway = in.readInt();
+            w.quarantined = in.readInt();
+            String place = in.readUTF();
+            w.outbreakPlace = place.length() == 0 ? null : place;
+            int fallen = in.readInt();
+            for (int i = 0; i < fallen; i++) w.fallenHeroes.add(new int[]{in.readInt(), in.readInt(), in.readInt(), in.readInt()});
+            int kits = in.readInt();
+            for (int i = 0; i < kits; i++) w.medkits.add(new float[]{in.readFloat(), in.readFloat(), in.readFloat()});
             d.copCount = copCount;
             d.soldierCount = soldierCount;
             w.afterLoad();

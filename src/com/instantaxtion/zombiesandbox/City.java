@@ -127,6 +127,12 @@ final class City {
     static final float TREE_HEIGHT = 14f;
 
     final CityConfig cfg;
+    /** The town's name, the same every time for a given city code. */
+    final String name;
+    private static final String[] NAME_START = {"Ash", "Maple", "Oak", "Stone", "Clay", "Wolf", "Fair", "Green", "North",
+            "Silver", "Iron", "Elder", "Hollow", "Red", "Kings", "Bright", "Glen", "Hazel", "Thorn", "Mill"};
+    private static final String[] NAME_END = {"ford", "field", "ville", "wood", "ton", "bury", "ridge", "haven", "dale",
+            "stead", "wick", "gate", "hurst", "moor"};
     final int w, h;
     final byte[] tiles;
     final boolean[] solid;
@@ -201,6 +207,8 @@ final class City {
         this.cfg = cfg;
         w = h = cfg.tiles();
         rnd = new Random(cfg.seed);
+        Random nameRnd = new Random(cfg.seed * 31 + 7);
+        name = NAME_START[nameRnd.nextInt(NAME_START.length)] + NAME_END[nameRnd.nextInt(NAME_END.length)];
         tiles = new byte[w * h];
         solid = new boolean[w * h];
         opaque = new boolean[w * h];

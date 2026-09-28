@@ -39,16 +39,33 @@ final class Menu {
         /** Saves a picture of the city and offers to share it. */
         void screenshot();
 
+        /** Save slots 1-3 (0 is the autosave): save, load, and a short description (null if empty). */
+        boolean saveSlot(int slot);
+
+        boolean loadSlot(int slot);
+
+        String slotInfo(int slot);
+
+        /** Moves the camera to a spot. */
+        void jumpTo(float x, float y);
+
+        /** Hides the buttons and panels until the next tap. */
+        void hideHud();
+
         /** Asks the player to type a city code (shows the current one to copy or edit). */
         void askCityCode(String current);
     }
 
-    static final int NONE = 0, MAIN = 1, SETUP = 2, SETTINGS = 3, NOTES = 4, PAUSE = 5, STATS = 6, TUTORIAL = 7, RECORDS = 8;
+    static final int NONE = 0, MAIN = 1, SETUP = 2, SETTINGS = 3, NOTES = 4, PAUSE = 5, STATS = 6, TUTORIAL = 7, RECORDS = 8,
+            SAVES = 9, LOG = 10;
+    /** The save slot screen: saving (from the pause menu) or loading (from the main menu). */
+    private boolean savingMode;
     Records records;
 
     private static final int A_CONTINUE = 0, A_NEW = 1, A_SETTINGS = 2, A_NOTES = 3, A_QUIT = 4, A_RESUME = 5,
             A_MAIN_MENU = 6, A_BACK = 7, A_START = 8, A_RANDOM = 9, A_SAVE = 10, A_STATS = 11, A_HOW_TO = 12,
-            A_TUT_NEXT = 13, A_TUT_PREV = 14, A_TUT_DONE = 15, A_CODE = 16, A_REROLL = 17, A_SHOT = 18, A_RECORDS = 19;
+            A_TUT_NEXT = 13, A_TUT_PREV = 14, A_TUT_DONE = 15, A_CODE = 16, A_REROLL = 17, A_SHOT = 18, A_RECORDS = 19, A_SAVES = 20, A_LOAD = 21, A_LOG = 22, A_HUD = 23,
+            A_SLOT = 100, A_LOG_ROW = 200;
 
     private static final String[][] TUTORIAL_PAGES = {
             {"Welcome to Zombie City", "A sandbox: set up a city, start an outbreak and watch what happens. There are no missions. Play however you like."},
@@ -66,7 +83,7 @@ final class Menu {
         final RectF r = new RectF();
         String label;
         int action;
-        boolean primary;
+        boolean primary, invisible;
     }
 
     /** One tappable choice on the New Game screen: an option set to a value. */
@@ -138,7 +155,7 @@ final class Menu {
     }
 
     void open(int s) {
-        if (s == SETUP || s == SETTINGS || s == NOTES || s == STATS || s == TUTORIAL || s == RECORDS) {
+        if (s == SETUP || s == SETTINGS || s == NOTES || s == STATS || s == TUTORIAL || s == RECORDS || s == SAVES || s == LOG) {
             if (screen == MAIN || screen == PAUSE || screen == NONE) returnTo = screen;
         } else {
             returnTo = MAIN;
@@ -194,6 +211,8 @@ final class Menu {
             case STATS: drawStats(c, w, h); break;
             case TUTORIAL: drawTutorial(c, w, h); break;
             case RECORDS: drawRecords(c, w, h); break;
+            case SAVES: drawSaves(c, w, h); break;
+            case LOG: drawLog(c, w, h); break;
         }
         for (Button b : buttons) drawButton(c, b);
     }
@@ -203,12 +222,14 @@ final class Menu {
         btn.label = label;
         btn.action = action;
         btn.primary = primary;
+        btn.invisible = false;
         btn.r.set(l, t, r, b);
         buttons.add(btn);
         return btn;
     }
 
     private void drawButton(Canvas c, Button b) {
+        if (b.invisible) return;
         fill.setColor(b.primary ? 0xFF3F8A3A : 0xE0262A30);
         c.drawRoundRect(b.r, 12 * dp, 12 * dp, fill);
         stroke.setStrokeWidth(1.5f * dp);
@@ -254,7 +275,8 @@ final class Menu {
         boolean landscape = w > h;
         float bw = Math.min(300 * dp, w - 60 * dp), bh = 52 * dp, gap = 12 * dp;
         boolean game = host.canContinue();
-        int n = game ? 7 : 6;
+        boolean slots = host.slotInfo(1) != null || host.slotInfo(2) != null || host.slotInfo(3) != null;
+        int n = (game ? 7 : 6) + (slots ? 1 : 0);
         float bx, by;
         if (landscape) {
             drawTitle(c, w * 0.29f, h * 0.45f, w * 0.44f);
@@ -265,7 +287,8 @@ final class Menu {
         } else {
             drawTitle(c, w / 2f, h * 0.22f, w - 40 * dp);
             bx = (w - bw) / 2;
-            by = h * 0.4f;
+            by = h * 0.38f;
+            bh = Math.min(bh, (h * 0.6f - gap * (n - 1)) / n);
         }
         if (game) {
             button("Continue", A_CONTINUE, true, bx, by, bx + bw, by + bh);
@@ -273,6 +296,10 @@ final class Menu {
         }
         button("New Game", A_NEW, !game, bx, by, bx + bw, by + bh);
         by += bh + gap;
+        if (slots) {
+            button("Load Game", A_LOAD, false, bx, by, bx + bw, by + bh);
+            by += bh + gap;
+        }
         button("How to Play", A_HOW_TO, false, bx, by, bx + bw, by + bh);
         by += bh + gap;
         button("Settings", A_SETTINGS, false, bx, by, bx + bw, by + bh);
@@ -292,8 +319,13 @@ final class Menu {
     private void drawPause(Canvas c, int w, int h) {
         fill.setColor(0x99000000);
         c.drawRect(0, 0, w, h, fill);
-        float gap = 7 * dp, bh = Math.min(46 * dp, (h - 110 * dp - gap * 6) / 7);
-        float pw = Math.min(320 * dp, w - 40 * dp), ph = 70 * dp + bh * 7 + gap * 6 + 20 * dp;
+        String[] labels = {"Resume", "Save / Load", "Screenshot", "Radio Log", "Hide Buttons", "Stats", "New Game", "Settings",
+                "Main Menu"};
+        int[] actions = {A_RESUME, A_SAVES, A_SHOT, A_LOG, A_HUD, A_STATS, A_NEW, A_SETTINGS, A_MAIN_MENU};
+        int cols = w > h ? 2 : 1, rowsN = (labels.length + cols - 1) / cols;
+        float gap = 7 * dp, bh = Math.min(46 * dp, (h - 120 * dp - gap * (rowsN - 1)) / rowsN);
+        float colW = Math.min(300 * dp, (w - 60 * dp) / cols);
+        float pw = colW * cols + gap * (cols - 1) + 40 * dp, ph = 76 * dp + bh * rowsN + gap * (rowsN - 1) + 20 * dp;
         tmp.set((w - pw) / 2, (h - ph) / 2, (w + pw) / 2, (h + ph) / 2);
         fill.setColor(0xF0181A1E);
         c.drawRoundRect(tmp, 16 * dp, 16 * dp, fill);
@@ -304,17 +336,91 @@ final class Menu {
         plain.setTextAlign(Paint.Align.CENTER);
         plain.setTextSize(12 * dp);
         plain.setColor(0xFF9AA0A8);
-        c.drawText("City code " + host.world().city.cfg.code(), w / 2f, tmp.top + 58 * dp, plain);
-        float bx = tmp.left + 20 * dp, bw = pw - 40 * dp, by = tmp.top + 70 * dp;
-        String[] labels = {"Resume", "Save Game", "Screenshot", "Stats", "New Game", "Settings", "Main Menu"};
-        int[] actions = {A_RESUME, A_SAVE, A_SHOT, A_STATS, A_NEW, A_SETTINGS, A_MAIN_MENU};
+        World world = host.world();
+        c.drawText(world.city.name + "  -  city code " + world.city.cfg.code(), w / 2f, tmp.top + 58 * dp, plain);
+        float top = tmp.top + 72 * dp;
         for (int i = 0; i < labels.length; i++) {
-            button(labels[i], actions[i], i == 0, bx, by, bx + bw, by + bh);
-            by += bh + gap;
+            int col = cols == 2 ? i % 2 : 0, row = cols == 2 ? i / 2 : i;
+            float bx = tmp.left + 20 * dp + col * (colW + gap), by = top + row * (bh + gap);
+            button(labels[i], actions[i], i == 0, bx, by, bx + colW, by + bh);
         }
     }
 
-    /** Humans vs zombies over time, plus the totals for this game. */
+    /** The three save slots (and the autosave when loading). */
+    private void drawSaves(Canvas c, int w, int h) {
+        float top = header(c, w, h, savingMode ? "Save Game" : "Load Game");
+        listArea.set(0, top, w, h - 12 * dp);
+        float side = 20 * dp, maxW = Math.min(w - side * 2, 560 * dp), x0 = (w - maxW) / 2;
+        float y = top + 10 * dp - scroll;
+        int first = savingMode ? 1 : 0;
+        for (int slot = first; slot <= 3; slot++) {
+            String info = host.slotInfo(slot);
+            if (slot == 0 && info == null) continue;
+            tmp.set(x0, y, x0 + maxW, y + 86 * dp);
+            fill.setColor(0xE0202328);
+            c.drawRoundRect(tmp, 12 * dp, 12 * dp, fill);
+            text.setTextAlign(Paint.Align.LEFT);
+            text.setTextSize(16 * dp);
+            text.setColor(0xFF8BD450);
+            c.drawText(slot == 0 ? "Autosave" : "Slot " + slot, x0 + 14 * dp, y + 26 * dp, text);
+            plain.setTextAlign(Paint.Align.LEFT);
+            plain.setTextSize(12.5f * dp);
+            plain.setColor(0xFFC8CCD2);
+            String[] lines = info == null ? new String[]{"Empty"} : info.split("\n");
+            for (int k = 0; k < lines.length && k < 3; k++) c.drawText(lines[k], x0 + 14 * dp, y + 46 * dp + k * 15 * dp, plain);
+            boolean can = savingMode || info != null;
+            if (can) button(savingMode ? (info == null ? "Save" : "Overwrite") : "Load", A_SLOT + slot, true,
+                    x0 + maxW - 120 * dp, y + 22 * dp, x0 + maxW - 14 * dp, y + 64 * dp);
+            y += 96 * dp;
+        }
+        contentHeight = y + scroll - top;
+        clampScroll();
+    }
+
+    /** Every radio message this game, newest first. Tap one to go there. */
+    private void drawLog(Canvas c, int w, int h) {
+        float top = header(c, w, h, "Radio Log");
+        listArea.set(0, top, w, h - 12 * dp);
+        float side = 16 * dp, maxW = Math.min(w - side * 2, 720 * dp), x0 = (w - maxW) / 2;
+        c.save();
+        c.clipRect(listArea);
+        float y = top + 8 * dp - scroll;
+        java.util.ArrayList<Dispatch.Message> log = host.world().dispatch.log;
+        plain.setTextSize(13 * dp);
+        text.setTextSize(13 * dp);
+        for (int i = log.size() - 1; i >= 0; i--) {
+            Dispatch.Message m = log.get(i);
+            text.setTextAlign(Paint.Align.LEFT);
+            float whoW = text.measureText(m.who + ": ");
+            ArrayList<String> lines = wrap(m.text, maxW - whoW - 24 * dp, plain);
+            float rh = 12 * dp + lines.size() * 18 * dp;
+            if (y + rh > top && y < h) {
+                tmp.set(x0, y, x0 + maxW, y + rh);
+                fill.setColor(0xE0202328);
+                c.drawRoundRect(tmp, 8 * dp, 8 * dp, fill);
+                text.setColor(m.color);
+                c.drawText(m.who + ": ", x0 + 10 * dp, y + 20 * dp, text);
+                plain.setTextAlign(Paint.Align.LEFT);
+                plain.setColor(0xFFE6E6E6);
+                for (int k = 0; k < lines.size(); k++) c.drawText(lines.get(k), x0 + 10 * dp + whoW, y + 20 * dp + k * 18 * dp, plain);
+                // The whole row is a button (drawn invisibly by keeping it out of the button list's paint).
+                Button b = button("", A_LOG_ROW + (log.size() - 1 - i), false, x0, Math.max(y, top), x0 + maxW, y + rh);
+                b.invisible = true;
+            }
+            y += rh + 6 * dp;
+        }
+        c.restore();
+        if (log.isEmpty()) {
+            plain.setTextAlign(Paint.Align.CENTER);
+            plain.setColor(0xFF9AA0A8);
+            c.drawText("Nothing on the radio yet.", w / 2f, top + 40 * dp, plain);
+        }
+        contentHeight = y + scroll - top;
+        clampScroll();
+        drawScrollHint(c, w);
+    }
+
+    /** Humans vs zombies over time (and police and army), plus the totals and heroes of this game. */
     private void drawStats(Canvas c, int w, int h) {
         float top = header(c, w, h, "Stats");
         World world = host.world();
@@ -346,9 +452,9 @@ final class Menu {
         plain.setTextAlign(Paint.Align.RIGHT);
         c.drawText(String.format("%d:%02d", secs / 60, secs % 60), plot.right, plot.bottom + 16 * dp, plain);
         if (n >= 2) {
-            int[][] series = {world.histHumans, world.histZombies};
-            int[] colors = {0xFF6FA8FF, 0xFF7CC24E};
-            for (int sIdx = 0; sIdx < 2; sIdx++) {
+            int[][] series = {world.histHumans, world.histZombies, world.histArmed};
+            int[] colors = {0xFF6FA8FF, 0xFF7CC24E, 0xFFE8C547};
+            for (int sIdx = 0; sIdx < 3; sIdx++) {
                 stroke.setColor(colors[sIdx]);
                 stroke.setStrokeWidth(2.2f * dp);
                 for (int i = 1; i < n; i++) {
@@ -372,6 +478,9 @@ final class Menu {
         fill.setColor(0xFF7CC24E);
         c.drawCircle(chart.left + 96 * dp, chart.top + 16 * dp, 4.5f * dp, fill);
         c.drawText("Zombies", chart.left + 106 * dp, chart.top + 20 * dp, text);
+        fill.setColor(0xFFE8C547);
+        c.drawCircle(chart.left + 186 * dp, chart.top + 16 * dp, 4.5f * dp, fill);
+        c.drawText("Police & army", chart.left + 196 * dp, chart.top + 20 * dp, text);
 
         int t = (int) world.time;
         String[][] totals = {
@@ -386,8 +495,19 @@ final class Menu {
                 {"911 calls", String.valueOf(world.dispatch.calls)},
                 {"Shots fired", String.valueOf(world.shotsFired)},
                 {"Volunteers joined (said no)", world.recruits + " (" + world.refused + ")"},
-                {"City code", world.city.cfg.code()},
+                {"City", world.city.name + "  (" + world.city.cfg.code() + ")"},
+                {"Outbreak started", world.outbreakPlace == null ? "-" : world.outbreakPlace},
         };
+        java.util.ArrayList<int[]> heroes = world.heroes(3);
+        String[][] withHeroes = new String[totals.length + heroes.size()][];
+        System.arraycopy(totals, 0, withHeroes, 0, totals.length);
+        for (int i = 0; i < heroes.size(); i++) {
+            int[] hr = heroes.get(i);
+            String who = hr[1] == Entity.DOG ? Names.dog(hr[0]) : Names.person(hr[0]);
+            withHeroes[totals.length + i] = new String[]{(i == 0 ? "Top killer: " : "   ") + who + (hr[4] == 0 ? " (fallen)" : ""),
+                    hr[3] + " kills"};
+        }
+        totals = withHeroes;
         float tx0 = landscape ? chart.right + 24 * dp : side, tx1 = w - side;
         float ty = landscape ? top + 26 * dp : chart.bottom + 30 * dp, lh = Math.min(26 * dp, (h - ty - 10 * dp) / totals.length);
         plain.setTextSize(14 * dp);
@@ -851,7 +971,8 @@ final class Menu {
                 break;
             case MotionEvent.ACTION_MOVE:
                 if (!dragging && Math.abs(y - downY) > 10 * dp && listArea.contains(downX, downY)
-                        && (screen == SETUP || screen == SETTINGS || screen == NOTES || screen == RECORDS)) dragging = true;
+                        && (screen == SETUP || screen == SETTINGS || screen == NOTES || screen == RECORDS || screen == LOG
+                        || screen == SAVES)) dragging = true;
                 if (dragging) {
                     scroll -= y - lastY;
                     clampScroll();
@@ -908,6 +1029,28 @@ final class Menu {
     }
 
     private void act(int action) {
+        if (action >= A_LOG_ROW) {
+            java.util.ArrayList<Dispatch.Message> log = host.world().dispatch.log;
+            int idx = log.size() - 1 - (action - A_LOG_ROW);
+            if (idx >= 0 && idx < log.size()) {
+                Dispatch.Message m = log.get(idx);
+                host.continueGame();
+                host.jumpTo(m.x, m.y);
+            }
+            return;
+        }
+        if (action >= A_SLOT) {
+            int slot = action - A_SLOT;
+            if (savingMode) {
+                boolean ok = host.saveSlot(slot);
+                host.world().say(ok ? "Saved to slot " + slot : "Could not save");
+                host.continueGame();
+            } else if (!host.loadSlot(slot)) {
+                note = "That save couldn't be loaded.";
+                noteTime = 3;
+            }
+            return;
+        }
         switch (action) {
             case A_CONTINUE:
             case A_RESUME:
@@ -957,6 +1100,21 @@ final class Menu {
                 break;
             case A_RECORDS:
                 open(RECORDS);
+                break;
+            case A_SAVES:
+                savingMode = true;
+                open(SAVES);
+                break;
+            case A_LOAD:
+                savingMode = false;
+                open(SAVES);
+                break;
+            case A_LOG:
+                open(LOG);
+                break;
+            case A_HUD:
+                host.continueGame();
+                host.hideHud();
                 break;
             case A_SHOT:
                 host.continueGame();

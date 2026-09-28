@@ -119,7 +119,7 @@ final class Dispatch {
             }
         }
         log.add(new Message(label, text, WHO_COLORS[who], x, y));
-        if (log.size() > 60) log.remove(0);
+        if (log.size() > 200) log.remove(0);
         messageCount++;
     }
 

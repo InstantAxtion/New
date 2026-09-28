@@ -80,7 +80,7 @@ final class SaveGame {
                     e.y = v.y;
                     all.add(e);
                 }
-                if (v.type == Fleet.HELI || v.passengers <= 0 || v.state > 1 || v.broken) continue;
+                if (Fleet.airborne(v) || v.passengers <= 0 || v.state > 1 || v.broken) continue;
                 for (int i = 0; i < v.passengers; i++) all.add(w.create(v.passengerType, v.x, v.y));
             }
             out.writeInt(all.size());

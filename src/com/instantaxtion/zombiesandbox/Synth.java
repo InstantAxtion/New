@@ -49,6 +49,11 @@ final class Synth {
             case Sfx.HOSE: out = hose(r); break;
             case Sfx.AMB_SIREN: out = ambulance(); break;
             case Sfx.ENGINE: out = engine(r); break;
+            case Sfx.JET: out = jet(r); break;
+            case Sfx.SPIT: out = spit(r); break;
+            case Sfx.BURST: out = burst(r); break;
+            case Sfx.ALARM: out = alarm(); break;
+            case Sfx.SHIELD: out = shield(r); break;
             default: out = click(); break;
         }
         return toPcm(out, id == Sfx.CLICK ? 0.5f : 0.92f);
@@ -329,6 +334,84 @@ final class Synth {
             float firing = (float) Math.pow(Math.max(0, Math.sin(TAU * 28 * t)), 6);
             float clank = ((int) (t * 9)) % 2 == 0 && (t * 9) % 1 < 0.05f ? (r.nextFloat() - 0.5f) : 0;
             o[i] = (firing * 0.6f + lp * 2 + clank * 0.5f) * smooth(Math.min(1, t / 0.1f)) * smooth(Math.min(1, (dur - t) / 0.15f));
+        }
+        return o;
+    }
+
+    /** A jet screaming past overhead: a rising then falling roar. */
+    private static float[] jet(Random r) {
+        float dur = 2.6f;
+        int n = (int) (dur * RATE);
+        float[] o = new float[n];
+        float lp = 0, hp = 0, prev = 0;
+        for (int i = 0; i < n; i++) {
+            float t = i / (float) RATE, u = t / dur;
+            float white = r.nextFloat() * 2 - 1;
+            lp += (white - lp) * (0.05f + 0.25f * (float) Math.sin(Math.PI * u));
+            hp = 0.95f * (hp + white - prev);
+            prev = white;
+            float env = (float) Math.pow(Math.sin(Math.PI * Math.min(1, u * 1.2f)), 2);
+            o[i] = (lp * 3 + hp * 0.25f) * env;
+        }
+        return o;
+    }
+
+    /** A spitter hawking a glob of acid. */
+    private static float[] spit(Random r) {
+        int n = (int) (0.35f * RATE);
+        float[] o = new float[n];
+        float lp = 0;
+        for (int i = 0; i < n; i++) {
+            float t = i / (float) RATE;
+            lp += (r.nextFloat() * 2 - 1 - lp) * 0.4f;
+            float gurgle = (float) Math.sin(TAU * (180 + 90 * Math.sin(t * 40)) * t);
+            o[i] = (lp * 0.8f + gurgle * 0.5f) * (float) Math.exp(-t * 9) * smooth(Math.min(1, t / 0.02f));
+        }
+        return o;
+    }
+
+    /** A bloater bursting: a wet pop and a hiss of gas. */
+    private static float[] burst(Random r) {
+        int n = (int) (1.1f * RATE);
+        float[] o = new float[n];
+        float lp = 0, hp = 0, prev = 0;
+        for (int i = 0; i < n; i++) {
+            float t = i / (float) RATE;
+            float white = r.nextFloat() * 2 - 1;
+            lp += (white - lp) * 0.08f;
+            hp = 0.9f * (hp + white - prev);
+            prev = white;
+            o[i] = lp * 5 * (float) Math.exp(-t * 18) + (float) Math.sin(TAU * (90 - 50 * t) * t) * (float) Math.exp(-t * 12)
+                    + hp * 0.3f * (float) Math.exp(-t * 2.5f) * smooth(Math.min(1, t / 0.1f));
+        }
+        return o;
+    }
+
+    /** The city's air-raid siren: a long wail up and down. */
+    private static float[] alarm() {
+        float dur = 4f;
+        int n = (int) (dur * RATE);
+        float[] o = new float[n];
+        float phase = 0;
+        for (int i = 0; i < n; i++) {
+            float t = i / (float) RATE, u = t / dur;
+            float f = 300 + 400 * (float) Math.sin(Math.PI * u);
+            phase += f / RATE;
+            phase -= (int) phase;
+            float v = (float) Math.sin(TAU * phase) * 0.6f + (float) Math.sin(TAU * phase * 2) * 0.2f;
+            o[i] = v * smooth(Math.min(1, t / 0.3f)) * smooth(Math.min(1, (dur - t) / 0.5f));
+        }
+        return o;
+    }
+
+    /** A zombie bouncing off a riot shield. */
+    private static float[] shield(Random r) {
+        int n = (int) (0.3f * RATE);
+        float[] o = new float[n];
+        for (int i = 0; i < n; i++) {
+            float t = i / (float) RATE;
+            float ring = (float) (Math.sin(TAU * 520 * t) * 0.5 + Math.sin(TAU * 830 * t) * 0.3 + Math.sin(TAU * 1270 * t) * 0.2);
+            o[i] = (ring * (float) Math.exp(-t * 14) + (r.nextFloat() * 2 - 1) * (float) Math.exp(-t * 60)) * 0.8f;
         }
         return o;
     }

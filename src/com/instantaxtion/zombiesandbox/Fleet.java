@@ -8,14 +8,19 @@ import java.util.ArrayList;
  * for air support. Cars take damage from zombies, crashes and blasts, and break down when it is too much.
  */
 final class Fleet {
-    static final int CRUISER = 0, TRUCK = 1, HELI = 2, CAR = 3, FIRE_ENGINE = 4, TANK = 5, AMBULANCE = 6, TRAIN = 7;
+    static final int CRUISER = 0, TRUCK = 1, HELI = 2, CAR = 3, FIRE_ENGINE = 4, TANK = 5, AMBULANCE = 6, TRAIN = 7, JET = 8;
+
+    /** Aircraft fly over everything: no crashes, no zombies clawing at them. */
+    static boolean airborne(Vehicle v) {
+        return v.type == HELI || v.type == JET;
+    }
     /** A train: a locomotive and three carriages, this long in world units. */
     static final float TRAIN_LENGTH = 136;
     private static final int WAIT = 0, DRIVE = 1, RETURN = 2, FLY_IN = 3, CIRCLE = 4, FLY_OUT = 5, CRUISE = 6,
             ABANDONED = 7, SPRAY = 8, SPOOL = 9, LAND = 10, ENGAGE = 11, LOAD = 12;
     private static final int[] CAR_COLORS = {0xFFB03A2E, 0xFF2E5FB0, 0xFFE0E0E0, 0xFF222428, 0xFFD4A21C, 0xFF3C8A4E,
             0xFF8A8F96, 0xFF6B2E8A, 0xFFE07A2E};
-    private static final float[] MAX_HP = {160, 260, 1, 100, 240, 700, 160, 1};
+    private static final float[] MAX_HP = {160, 260, 1, 100, 240, 700, 160, 1, 1};
     /** Most people a car will squeeze in. */
     static final int SEATS = 4;
 
@@ -75,6 +80,8 @@ final class Fleet {
                 }
             case TRAIN:
                 return "Train: Passing through";
+            case JET:
+                return v.timer > 0 ? "Jet: Bombs away!" : "Jet: Attack run";
             case TANK:
                 if (v.broken) return "Tank: Knocked out";
                 switch (v.state) {
@@ -259,6 +266,40 @@ final class Fleet {
         return v;
     }
 
+    /** A strike jet: comes in from the nearest edge, drops a stick of bombs across the target, flies on. */
+    void sendJet(float tx, float ty) {
+        Vehicle v = make(JET);
+        float a = w.rnd.nextFloat() * (float) Math.PI * 2;
+        v.angle = a;
+        v.x = tx - (float) Math.cos(a) * 900;
+        v.y = ty - (float) Math.sin(a) * 900;
+        v.tx = tx;
+        v.ty = ty;
+        v.speed = 380;
+        v.alt = 1;
+        v.state = DRIVE;
+        vehicles.add(v);
+        w.emit(Sfx.JET, tx, ty);
+    }
+
+    private boolean updateJet(Vehicle v, float dt) {
+        v.x += (float) Math.cos(v.angle) * v.speed * dt;
+        v.y += (float) Math.sin(v.angle) * v.speed * dt;
+        float d = (float) Math.hypot(v.tx - v.x, v.ty - v.y);
+        v.gunCd -= dt;
+        boolean over = d < 120;
+        if (over && v.gunCd <= 0) {
+            v.gunCd = 0.12f;
+            v.timer = 1;
+            // The bombs take a moment to fall.
+            w.blastLater(v.x, v.y, 55, 280, 0.8f);
+        }
+        if (w.rnd.nextFloat() < dt * 40)
+            w.particle(v.x - (float) Math.cos(v.angle) * 14, v.y - (float) Math.sin(v.angle) * 14, 0, 0, 2.5f, 2.5f, 0xFFE8E8E8,
+                    World.P_SMOKE);
+        return Math.hypot(v.x - v.tx, v.y - v.ty) > 1000 && v.timer > 0;
+    }
+
     /** A tank rolls out of the base towards heavy fighting. */
     boolean sendTank(float fromX, float fromY, float toX, float toY, String place) {
         float[] start = city.nearestDrivable(fromX, fromY);
@@ -432,7 +473,7 @@ final class Fleet {
         for (float k = 0; k < TRAIN_LENGTH; k += 16) w.runOver(v.x - dir * k, v.y, 9, v.speed, v.angle);
         for (int i = 0; i < vehicles.size(); i++) {
             Vehicle o = vehicles.get(i);
-            if (o == v || o.type == HELI || o.type == TRAIN || o.broken) continue;
+            if (o == v || airborne(o) || o.type == TRAIN || o.broken) continue;
             float along = (o.x - v.x) * dir;
             if (along < 8 && along > -TRAIN_LENGTH && Math.abs(o.y - v.y) < 14) damage(o, 500, true);
         }
@@ -465,6 +506,7 @@ final class Fleet {
             v.crashCd -= dt;
             boolean done;
             if (v.type == HELI) done = updateHeli(v, dt);
+            else if (v.type == JET) done = updateJet(v, dt);
             else if (v.type == TRAIN) done = updateTrain(v, dt);
             else if (v.broken || v.parked) done = updateWreck(v, dt);
             else if (v.type == TANK) done = updateTank(v, dt);
@@ -477,7 +519,7 @@ final class Fleet {
                 vehicles.remove(i);
                 continue;
             }
-            if (v.type != HELI && v.hp < v.maxHp * 0.5f) smoke(v, dt);
+            if (!airborne(v) && v.type != TRAIN && v.hp < v.maxHp * 0.5f) smoke(v, dt);
         }
         collide();
     }
@@ -486,7 +528,7 @@ final class Fleet {
 
     /** Hurts a vehicle; at zero it breaks down and everyone inside gets out. */
     void damage(Vehicle v, float amount, boolean blast) {
-        if (v.type == HELI || v.type == TRAIN || amount <= 0) return;
+        if (airborne(v) || v.type == TRAIN || amount <= 0) return;
         v.hp -= amount;
         if (v.broken) {
             if (!v.burnt && (blast || v.hp < -v.maxHp * 0.5f)) burn(v);
@@ -549,10 +591,10 @@ final class Fleet {
     private void collide() {
         for (int i = 0, n = vehicles.size(); i < n; i++) {
             Vehicle a = vehicles.get(i);
-            if (a.type == HELI || a.type == TRAIN) continue;
+            if (airborne(a) || a.type == TRAIN) continue;
             for (int j = i + 1; j < n; j++) {
                 Vehicle b = vehicles.get(j);
-                if (b.type == HELI || b.type == TRAIN) continue;
+                if (airborne(b) || b.type == TRAIN) continue;
                 float dx = b.x - a.x, dy = b.y - a.y, reach = (a.length() + b.length()) * 0.62f;
                 float d2 = dx * dx + dy * dy;
                 if (d2 >= reach * reach) continue;
@@ -591,7 +633,7 @@ final class Fleet {
         float fx = (float) Math.cos(v.angle), fy = (float) Math.sin(v.angle);
         for (int i = 0, n = vehicles.size(); i < n; i++) {
             Vehicle o = vehicles.get(i);
-            if (o == v || o.type == HELI || o.type == TRAIN) continue;
+            if (o == v || airborne(o) || o.type == TRAIN) continue;
             float dx = o.x - v.x, dy = o.y - v.y;
             float ahead = dx * fx + dy * fy, side = Math.abs(dx * -fy + dy * fx);
             if (ahead > 0 && ahead < 24 && side < 8) return true;

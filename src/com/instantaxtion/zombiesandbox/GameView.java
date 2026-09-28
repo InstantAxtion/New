@@ -20,8 +20,10 @@ final class GameView extends View implements Menu.Host {
     // Tool index -> entity type spawned (or -1). The zombie tool spawns the selected zombie variant.
     private static final int[] TOOL_TYPE = {-1, -1, Entity.CIVILIAN, Entity.COP, Entity.SOLDIER, Entity.MEDIC,
             Entity.ZOMBIE, -1, -1, -1, -1, -1};
-    private static final String[] TOOL_NAMES = {"Move", "Orders", "Civilian", "Cop", "Military", "Medic", "Zombie",
+    private static final String[] TOOL_NAMES = {"Move", "Orders", "People", "Police", "Military", "Medic", "Zombies",
             "Place", "Events", "Safe Zone", "Bomb", "Erase"};
+    /** The medic has moved into the People picker, so its old tool slot isn't shown. */
+    private static final int TOOL_HIDDEN = 5;
     private static final String[] PLACE_NAMES = {"Car", "Police car", "Tank", "Fire engine", "Barricade", "Crate", "Fire",
             "Medkit"};
     private static final String[] EVENT_NAMES = {"Horde", "Panic", "Outbreak", "Supply drop", "Raiders", "Airstrike",
@@ -33,14 +35,34 @@ final class GameView extends View implements Menu.Host {
             "Barricades"};
     private static final int[] ZOMBIE_VARIANTS = {Entity.ZOMBIE, Entity.RUNNER, Entity.BRUTE, Entity.CRAWLER,
             Entity.SCREAMER, Entity.ZOMBIE_DOG, Entity.SPITTER, Entity.BLOATER};
-    private static final int[] CIV_VARIANTS = {Entity.CIVILIAN, Entity.DOG, Entity.RAIDER};
+    private static final int[] CIV_VARIANTS = {Entity.CIVILIAN, Entity.MEDIC, Entity.FIREFIGHTER, Entity.DOG, Entity.RAIDER};
+    private static final int[] MIL_ROLES = {Entity.ROLE_RIFLE, Entity.ROLE_COMMANDER, Entity.ROLE_SNIPER, Entity.ROLE_GUNNER,
+            Entity.ROLE_GUARD};
+    private static final String[] MIL_NAMES = {"Soldier", "Commander", "Sniper", "Machine gunner", "National Guard"};
+    // One line about each option in the pickers.
+    private static final String[] CIV_INFO = {"Goes about their day, runs and hides from zombies",
+            "Heals the hurt and can cure fresh bites", "Puts out fires, gives first aid, fights with an axe",
+            "Follows its owner and fights zombies", "Armed gang member: robs, loots and shoots"};
+    private static final String[] COP_INFO = {"Pistol, answers 911 calls", "Shield blocks bites from the front",
+            "Officer with a police dog"};
+    private static final String[] MIL_INFO = {"Rifle in bursts, grenades for crowds", "Boosts soldiers nearby, calls in support",
+            "Long-range scoped rifle", "Belt-fed machine gun", "Guardsmen who protect civilians and safe zones"};
+    private static final String[] ZOMBIE_INFO = {"Slow, relentless shambler", "Fast and fragile", "Huge, knocks people flying",
+            "Low and hard to hit", "Its shriek calls the horde", "Fast and vicious", "Keeps its distance and spits acid",
+            "Bursts into infectious gas"};
+    private static final String[] PLACE_INFO = {"A car in traffic", "A police car with two officers", "Holds the area for a few minutes",
+            "Heads for the nearest fire", "Drag to build a wall zombies must batter down", "Ammo for anyone passing",
+            "Something burning", "Heals and treats bites nearby"};
+    private static final String[] EVENT_INFO = {"A horde arrives from the edge of town", "People panic and run",
+            "An outbreak inside a building", "A crate on a parachute", "An armed gang drives in",
+            "A jet bombs the spot", "Sirens send everyone indoors", "Someone here is bitten"};
     private static final int BTN_PAUSE = 0, BTN_SPEED = 1, BTN_BRUSH = 2, BTN_VIEW = 3, BTN_CLEAR = 4, BTN_MENU = 5;
     private static final int TOP_BUTTONS = 6;
     private static final int[] SPEEDS = {1, 2, 4, 8};
     private static final int[] BRUSHES = {1, 5, 10};
     private static final int[] SHOP_AWNINGS = {0xFFD83A3A, 0xFF2E7D4F, 0xFF2E5FB0, 0xFFE8A21C, 0xFF8A2E6B};
-    private static final int[] ROW_COLORS = {0xFFF0AD4E, 0xFF4F7BE0, 0xFF8FA05A, 0xFFF2F2F2, 0xFF7CC24E};
-    private static final String[] ROW_LABELS = {"Civilians", "Cops", "Military", "Medics", "Zombies"};
+    private static final int[] ROW_COLORS = {0xFFF0AD4E, 0xFF4F7BE0, 0xFF8FA05A, 0xFFF2F2F2, 0xFFE8B84A, 0xFF7CC24E};
+    private static final String[] ROW_LABELS = {"Civilians", "Cops", "Military", "Medics", "Firefighters", "Zombies"};
 
     private World world;
     private final Random rnd = new Random();
@@ -142,17 +164,17 @@ final class GameView extends View implements Menu.Host {
 
     private void buildIcons() {
         int[] bodies = {0xFFD9534F, 0xFF23408E, 0xFF55623A, 0xFFF2F2F2, 0xFFB07A3E, 0xFF2E2622, 0xFF4E5A3E, 0xFF6B3A36,
-                0xFF4D3F4F, 0xFF4E5A3E, 0xFF6A6F60, 0xFF5E6444, 0xFF5E6A3E, 0xFF6E7A48};
+                0xFF4D3F4F, 0xFF4E5A3E, 0xFF6A6F60, 0xFF5E6444, 0xFF5E6A3E, 0xFF6E7A48, 0xFF8A6A34};
         int[] heads = {0xFF4A2E1A, 0xFF141C38, 0xFF3C4628, 0xFF4A2E1A, 0xFF8C6232, 0xFF9E2A22, 0xFF7C9A5E, 0xFF9DAA70,
-                0xFF6F8D55, 0xFF73905A, 0xFFC8D0B4, 0xFF4E5438, 0xFFA8BE52, 0xFF8E9A5A};
-        float[] radii = {3.6f, 3.8f, 4f, 3.7f, 2.8f, 3.7f, 3.8f, 3.5f, 6.5f, 3.0f, 3.5f, 2.8f, 3.6f, 5.4f};
+                0xFF6F8D55, 0xFF73905A, 0xFFC8D0B4, 0xFF4E5438, 0xFFA8BE52, 0xFF8E9A5A, 0xFFC8302A};
+        float[] radii = {3.6f, 3.8f, 4f, 3.7f, 2.8f, 3.7f, 3.8f, 3.5f, 6.5f, 3.0f, 3.5f, 2.8f, 3.6f, 5.4f, 3.9f};
         for (int t = 0; t < Entity.TYPE_COUNT; t++) {
             Entity e = new Entity();
             e.type = t;
             e.radius = radii[t];
             e.body = bodies[t];
             e.head = heads[t];
-            e.skin = t >= Entity.ZOMBIE ? heads[t] : t == Entity.DOG ? bodies[t] : 0xFFE0AC69;
+            e.skin = e.isZombie() ? heads[t] : t == Entity.DOG ? bodies[t] : 0xFFE0AC69;
             if (t == Entity.ZOMBIE_DOG) e.skin = 0xFF7A8058;
             if (t == Entity.RAIDER) e.hasGun = true;
             e.angle = (float) (-Math.PI / 2);
@@ -411,18 +433,21 @@ final class GameView extends View implements Menu.Host {
     protected void onSizeChanged(int w, int h, int oldw, int oldh) {
         super.onSizeChanged(w, h, oldw, oldh);
         portrait = h > w;
-        int n = toolRects.length;
+        int[] shown = new int[toolRects.length - 1];
+        for (int i = 0, k = 0; i < toolRects.length; i++) if (i != TOOL_HIDDEN) shown[k++] = i;
+        toolRects[TOOL_HIDDEN].setEmpty();
+        int n = shown.length;
         int perRow = portrait ? 6 : n;
         int rows = (n + perRow - 1) / perRow;
         float gap = 5 * dp, rowH = 62 * dp;
         barTop = h - rows * rowH - 8 * dp;
-        float bw = Math.min(96 * dp, (w - 16 * dp - gap * (perRow - 1)) / perRow);
+        float bw = Math.min(104 * dp, (w - 16 * dp - gap * (perRow - 1)) / perRow);
         for (int r = 0; r < rows; r++) {
             int first = r * perRow, count = Math.min(perRow, n - first);
             float x = (w - (bw * count + gap * (count - 1))) / 2;
             float top = barTop + 6 * dp + r * rowH;
-            for (int i = first; i < first + count; i++) {
-                toolRects[i].set(x, top, x + bw, top + rowH - 6 * dp);
+            for (int k = first; k < first + count; k++) {
+                toolRects[shown[k]].set(x, top, x + bw, top + rowH - 6 * dp);
                 x += bw + gap;
             }
         }
@@ -445,7 +470,7 @@ final class GameView extends View implements Menu.Host {
             statsRect.set(10 * dp, top, 10 * dp + Math.min(260 * dp, w - 20 * dp), top + lh * 8 + 12 * dp);
             feedRect.set(10 * dp, statsRect.bottom + 8 * dp, w - 10 * dp, statsRect.bottom + 8 * dp + 4 * 24 * dp);
         } else {
-            statsRect.set(10 * dp, 10 * dp, 200 * dp, 10 * dp + lh * 10 + 12 * dp);
+            statsRect.set(10 * dp, 10 * dp, 200 * dp, 10 * dp + lh * 11 + 12 * dp);
             feedRect.set(topRects[0].left, topRects[0].bottom + 8 * dp, w - 10 * dp, topRects[0].bottom + 8 * dp + 4 * 24 * dp);
         }
         if (oldw == 0) {
@@ -1752,7 +1777,7 @@ final class GameView extends View implements Menu.Host {
             }
         }
         boolean civ = v.type == Fleet.CAR;
-        int body = civ ? v.color : truck ? 0xFF4F5A33 : engine ? 0xFFC8302A : amb ? 0xFFF2F2F2 : 0xFF1C1D22;
+        int body = civ ? v.color : truck ? (v.guardUnit ? 0xFF8C8260 : 0xFF4F5A33) : engine ? 0xFFC8302A : amb ? 0xFFF2F2F2 : 0xFF1C1D22;
         if (v.burnt) body = 0xFF2B2623;
         else if (v.broken) body = City.darken(body, 0.65f);
         fill.setColor(body);
@@ -2229,6 +2254,7 @@ final class GameView extends View implements Menu.Host {
         // Names over people when zoomed right in, and the outbreak's first victim.
         if (settings.nameTags() && scale / dp > 3f) {
             text.setTextSize(9.5f * dp);
+            int placed = 0;
             for (int i = 0, n = world.entities.size(); i < n; i++) {
                 Entity e = world.entities.get(i);
                 float sx = screenX(e.x), sy = screenY(e.y) - (e.radius * scale + 12 * dp);
@@ -2239,6 +2265,11 @@ final class GameView extends View implements Menu.Host {
                 float tw = text.measureText(label);
                 oval.set(sx - tw / 2 - 3 * dp, sy - 9 * dp, sx + tw / 2 + 3 * dp, sy + 3 * dp);
                 if (uiCovers(oval)) continue;
+                // Skip a tag that would sit on top of one already drawn (in a crowd).
+                boolean overlaps = false;
+                for (int k = 0; k < placed && !overlaps; k++) if (RectF.intersects(tagRects[k], oval)) overlaps = true;
+                if (overlaps) continue;
+                if (placed < tagRects.length) tagRects[placed++].set(oval);
                 fill.setColor(0x90000000);
                 c.drawRoundRect(oval, 4 * dp, 4 * dp, fill);
                 text.setColor(e.type == Entity.RAIDER ? 0xFFFF8A7A : e.isArmed() ? 0xFFA8C8FF : 0xFFF2F2F2);
@@ -2296,6 +2327,8 @@ final class GameView extends View implements Menu.Host {
             shown++;
         }
         float lineH = 22 * dp, gap = 3 * dp, y = feedRect.top;
+        // In portrait the war meter sits where the messages start: move them below it.
+        if (portrait && (world.outbreak || world.warBannerTime > 0)) y += 36 * dp;
         text.setTextSize(11.5f * dp);
         for (int k = 0; k < shown; k++) {
             Dispatch.Message m = log.get(log.size() - shown + k);
@@ -2526,6 +2559,15 @@ final class GameView extends View implements Menu.Host {
         if (e.type == Entity.CRAWLER) oval.set(-r * 1.2f, -r * 0.7f, r * 0.62f, r * 0.7f);
         else oval.set(-r * 0.62f, -r, r * 0.62f, r);
         c.drawOval(oval, fill);
+        if (e.type == Entity.FIREFIGHTER) {
+            // Reflective stripes on the turnout coat, and an air tank on the back.
+            fill.setColor(0xFFE8D84A);
+            c.drawRect(-r * 0.5f, -r * 0.95f, -r * 0.32f, r * 0.95f, fill);
+            c.drawRect(r * 0.1f, -r * 0.95f, r * 0.28f, r * 0.95f, fill);
+            fill.setColor(0xFFB8BCC0);
+            oval.set(-r * 0.85f, -r * 0.35f, -r * 0.35f, r * 0.35f);
+            c.drawOval(oval, fill);
+        }
         if (e.type == Entity.MEDIC) {
             fill.setColor(0xFFD83A3A);
             c.drawRect(-r * 0.45f, -r * 0.13f, r * 0.05f, r * 0.13f, fill);
@@ -2734,7 +2776,7 @@ final class GameView extends View implements Menu.Host {
         float lh = 17 * dp;
         Dispatch d = world.dispatch;
         int[] rows = {world.counts[Entity.CIVILIAN], world.counts[Entity.COP], world.counts[Entity.SOLDIER],
-                world.counts[Entity.MEDIC], world.zombieCount()};
+                world.counts[Entity.MEDIC], world.counts[Entity.FIREFIGHTER], world.zombieCount()};
         text.setTextSize(12.5f * dp);
         if (statsCollapsed) {
             String line = "People " + (world.humanCount() + world.hiding + world.riding) + "   Zombies " + world.zombieCount()
@@ -2833,6 +2875,7 @@ final class GameView extends View implements Menu.Host {
         text.setTextSize(11.5f * dp);
         for (int i = 0; i < toolRects.length; i++) {
             RectF r = toolRects[i];
+            if (r.isEmpty()) continue;
             boolean sel = i == tool;
             fill.setColor(sel ? 0xFF3A6EA5 : 0xFF23262C);
             c.drawRoundRect(r, 10 * dp, 10 * dp, fill);
@@ -2846,19 +2889,21 @@ final class GameView extends View implements Menu.Host {
             text.setColor(sel ? 0xFFFFFFFF : 0xFFC8CCD2);
             String name = i == TOOL_ZOMBIE ? Entity.NAMES[ZOMBIE_VARIANTS[zombieVariant]]
                     : i == TOOL_CIV ? Entity.NAMES[CIV_VARIANTS[civVariant]]
-                    : i == TOOL_MIL && milVariant > 0 ? Entity.ROLE_NAMES[milVariant]
+                    : i == TOOL_MIL ? MIL_NAMES[milVariant]
                     : i == TOOL_COP ? COP_NAMES[copVariant]
                     : i == TOOL_PLACE ? PLACE_NAMES[placeVariant] : i == TOOL_EVENT ? EVENT_NAMES[eventVariant] : TOOL_NAMES[i];
             float fit = text.measureText(name);
             if (fit > r.width() - 6 * dp) text.setTextSize(11.5f * dp * (r.width() - 6 * dp) / fit);
             c.drawText(name, cx, r.bottom - 7 * dp, text);
             text.setTextSize(11.5f * dp);
-            if ((i == TOOL_ZOMBIE || i == TOOL_CIV || i == TOOL_MIL || i == TOOL_COP || i == TOOL_PLACE || i == TOOL_EVENT) && sel) {
-                text.setTextSize(9 * dp);
-                c.drawText("tap to change", cx, r.top + 10 * dp, text);
-                text.setTextSize(11.5f * dp);
+            if (hasPicker(i)) {
+                // A small arrow: this button opens a picker.
+                fill.setColor(sel ? 0xFFFFFFFF : 0xFF8A9099);
+                float ax = r.right - 9 * dp, ay = r.top + 8 * dp;
+                c.drawCircle(ax, ay, 2 * dp, fill);
             }
         }
+        if (picker >= 0) drawPicker(c);
 
         // Messages.
         text.setTextAlign(Paint.Align.CENTER);
@@ -3026,6 +3071,136 @@ final class GameView extends View implements Menu.Host {
         for (int i = 0; i < lines.size(); i++) c.drawText(lines.get(i), cx, top + i * lineH, text);
     }
 
+    /** Name tags already drawn this frame (so they don't pile up in a crowd). */
+    private final RectF[] tagRects = new RectF[120];
+
+    {
+        for (int i = 0; i < tagRects.length; i++) tagRects[i] = new RectF();
+    }
+
+    /** The tool whose option picker is open, or -1. */
+    private int picker = -1;
+    private final RectF[] pickerRects = new RectF[8];
+    private final RectF pickerPanel = new RectF();
+    private int pickerCount;
+
+    private static boolean hasPicker(int t) {
+        return t == TOOL_CIV || t == TOOL_COP || t == TOOL_MIL || t == TOOL_ZOMBIE || t == TOOL_PLACE || t == TOOL_EVENT;
+    }
+
+    private String[] optionNames(int t) {
+        switch (t) {
+            case TOOL_CIV: {
+                String[] n = new String[CIV_VARIANTS.length];
+                for (int k = 0; k < n.length; k++) n[k] = Entity.NAMES[CIV_VARIANTS[k]];
+                return n;
+            }
+            case TOOL_COP: return COP_NAMES;
+            case TOOL_MIL: return MIL_NAMES;
+            case TOOL_ZOMBIE: {
+                String[] n = new String[ZOMBIE_VARIANTS.length];
+                for (int k = 0; k < n.length; k++) n[k] = Entity.NAMES[ZOMBIE_VARIANTS[k]];
+                return n;
+            }
+            case TOOL_PLACE: return PLACE_NAMES;
+            default: return EVENT_NAMES;
+        }
+    }
+
+    private String[] optionInfo(int t) {
+        switch (t) {
+            case TOOL_CIV: return CIV_INFO;
+            case TOOL_COP: return COP_INFO;
+            case TOOL_MIL: return MIL_INFO;
+            case TOOL_ZOMBIE: return ZOMBIE_INFO;
+            case TOOL_PLACE: return PLACE_INFO;
+            default: return EVENT_INFO;
+        }
+    }
+
+    private int variant(int t) {
+        switch (t) {
+            case TOOL_CIV: return civVariant;
+            case TOOL_COP: return copVariant;
+            case TOOL_MIL: return milVariant;
+            case TOOL_ZOMBIE: return zombieVariant;
+            case TOOL_PLACE: return placeVariant;
+            default: return eventVariant;
+        }
+    }
+
+    private void setVariant(int t, int v) {
+        switch (t) {
+            case TOOL_CIV: civVariant = v; break;
+            case TOOL_COP: copVariant = v; break;
+            case TOOL_MIL: milVariant = v; break;
+            case TOOL_ZOMBIE: zombieVariant = v; break;
+            case TOOL_PLACE: placeVariant = v; break;
+            default: eventVariant = v; break;
+        }
+    }
+
+    /**
+     * The option picker above the tool bar: every choice for the category as a big button with its picture and
+     * name, and a line about the one that's selected.
+     */
+    private void drawPicker(Canvas c) {
+        String[] names = optionNames(picker), info = optionInfo(picker);
+        int n = names.length, cur = variant(picker);
+        pickerCount = n;
+        int cols = portrait ? Math.min(4, n) : n;
+        int rowsN = (n + cols - 1) / cols;
+        float gap = 6 * dp, bh = 74 * dp;
+        float maxW = Math.min(getWidth() - 20 * dp, cols * 118 * dp + gap * (cols - 1) + 20 * dp);
+        float bw = (maxW - 20 * dp - gap * (cols - 1)) / cols;
+        float ph = 44 * dp + rowsN * bh + (rowsN - 1) * gap + 12 * dp;
+        float left = (getWidth() - maxW) / 2, top = barTop - ph - 6 * dp;
+        pickerPanel.set(left, top, left + maxW, top + ph);
+        fill.setColor(0xF0141619);
+        c.drawRoundRect(pickerPanel, 14 * dp, 14 * dp, fill);
+        text.setTextAlign(Paint.Align.LEFT);
+        text.setTextSize(14 * dp);
+        text.setColor(0xFFFFFFFF);
+        c.drawText(TOOL_NAMES[picker], left + 14 * dp, top + 22 * dp, text);
+        text.setTextSize(11.5f * dp);
+        text.setColor(0xFFB8BDC4);
+        String line = names[cur] + ": " + info[cur];
+        float titleW = 0;
+        text.setTextSize(14 * dp);
+        titleW = text.measureText(TOOL_NAMES[picker]);
+        text.setTextSize(11.5f * dp);
+        float room = maxW - titleW - 40 * dp;
+        while (text.measureText(line) > room && line.length() > 4) line = line.substring(0, line.length() - 4) + "...";
+        c.drawText(line, left + 24 * dp + titleW, top + 22 * dp, text);
+        int saveVariant = cur;
+        for (int k = 0; k < n; k++) {
+            if (pickerRects[k] == null) pickerRects[k] = new RectF();
+            int col = k % cols, row = k / cols;
+            float bx = left + 10 * dp + col * (bw + gap), by = top + 34 * dp + row * (bh + gap);
+            RectF r = pickerRects[k];
+            r.set(bx, by, bx + bw, by + bh);
+            boolean sel = k == cur;
+            fill.setColor(sel ? 0xFF3A6EA5 : 0xFF23262C);
+            c.drawRoundRect(r, 10 * dp, 10 * dp, fill);
+            if (sel) {
+                stroke.setColor(0xFFA8D0FF);
+                stroke.setStrokeWidth(2 * dp);
+                c.drawRoundRect(r, 10 * dp, 10 * dp, stroke);
+            }
+            setVariant(picker, k);
+            drawToolIcon(c, picker, r.centerX(), r.top + bh * 0.4f, bh * 0.26f);
+            text.setTextAlign(Paint.Align.CENTER);
+            text.setTextSize(11.5f * dp);
+            text.setColor(sel ? 0xFFFFFFFF : 0xFFC8CCD2);
+            String name = names[k];
+            float fit = text.measureText(name);
+            if (fit > bw - 8 * dp) text.setTextSize(11.5f * dp * (bw - 8 * dp) / fit);
+            c.drawText(name, r.centerX(), r.bottom - 8 * dp, text);
+        }
+        setVariant(picker, saveVariant);
+        text.setTextSize(11.5f * dp);
+    }
+
     private void drawToolIcon(Canvas c, int t, float cx, float cy, float size) {
         int type = t == TOOL_ZOMBIE ? ZOMBIE_VARIANTS[zombieVariant] : t == TOOL_CIV ? CIV_VARIANTS[civVariant] : TOOL_TYPE[t];
         if (type >= 0) {
@@ -3033,8 +3208,9 @@ final class GameView extends View implements Menu.Host {
             if (type == Entity.COP) e.role = t == TOOL_COP ? COP_ROLES[copVariant] : 0;
             if (type == Entity.SOLDIER) {
                 // Show the chosen kind of soldier.
-                e.role = t == TOOL_MIL ? milVariant : 0;
-                e.head = e.role == Entity.ROLE_COMMANDER ? 0xFF8E1F1F : 0xFF3C4628;
+                e.role = t == TOOL_MIL ? MIL_ROLES[milVariant] : 0;
+                e.head = e.role == Entity.ROLE_COMMANDER ? 0xFF8E1F1F : e.role == Entity.ROLE_GUARD ? 0xFF6A6248 : 0xFF3C4628;
+                e.body = e.role == Entity.ROLE_GUARD ? 0xFF8C8260 : 0xFF55623A;
                 e.radius = e.role == Entity.ROLE_GUNNER ? 4.3f : 4f;
             }
             float s = size / 5.2f;
@@ -3219,16 +3395,25 @@ final class GameView extends View implements Menu.Host {
     }
 
     private boolean hitUi(float x, float y) {
+        if (picker >= 0 && y < barTop) {
+            // Choosing from the open picker; a tap anywhere else just closes it.
+            for (int k = 0; k < pickerCount; k++)
+                if (pickerRects[k].contains(x, y)) {
+                    click();
+                    setVariant(picker, k);
+                    picker = -1;
+                    return true;
+                }
+            picker = -1;
+            return true;
+        }
         if (y >= barTop) {
             for (int i = 0; i < toolRects.length; i++) {
                 if (toolRects[i].contains(x, y)) {
                     click();
-                    if (tool == i && i == TOOL_ZOMBIE) zombieVariant = (zombieVariant + 1) % ZOMBIE_VARIANTS.length;
-                    if (tool == i && i == TOOL_CIV) civVariant = (civVariant + 1) % CIV_VARIANTS.length;
-                    if (tool == i && i == TOOL_MIL) milVariant = (milVariant + 1) % Entity.ROLE_NAMES.length;
-                    if (tool == i && i == TOOL_COP) copVariant = (copVariant + 1) % COP_ROLES.length;
-                    if (tool == i && i == TOOL_PLACE) placeVariant = (placeVariant + 1) % PLACE_NAMES.length;
-                    if (tool == i && i == TOOL_EVENT) eventVariant = (eventVariant + 1) % EVENT_NAMES.length;
+                    // Spawn buttons open their picker (tap again to close it).
+                    if (hasPicker(i)) picker = picker == i ? -1 : i;
+                    else picker = -1;
                     if (i != TOOL_ORDER) selection.clear();
                     tool = i;
                     hintTime = Math.min(hintTime, 3);
@@ -3554,7 +3739,7 @@ final class GameView extends View implements Menu.Host {
         int type = tool == TOOL_ZOMBIE ? ZOMBIE_VARIANTS[zombieVariant] : tool == TOOL_CIV ? CIV_VARIANTS[civVariant] : TOOL_TYPE[tool];
         int n = BRUSHES[brushIdx];
         // Only one commander at a time.
-        if (tool == TOOL_MIL && milVariant == Entity.ROLE_COMMANDER) n = 1;
+        if (tool == TOOL_MIL && MIL_ROLES[milVariant] == Entity.ROLE_COMMANDER) n = 1;
         for (int i = 0; i < n; i++) {
             float ox = 0, oy = 0;
             if (n > 1) {
@@ -3562,7 +3747,7 @@ final class GameView extends View implements Menu.Host {
                 ox = (float) (Math.cos(a) * r);
                 oy = (float) (Math.sin(a) * r);
             }
-            Entity e = tool == TOOL_MIL ? world.spawnSoldier(milVariant, wx + ox, wy + oy)
+            Entity e = tool == TOOL_MIL ? world.spawnSoldier(MIL_ROLES[milVariant], wx + ox, wy + oy)
                     : tool == TOOL_COP ? world.spawnCop(COP_ROLES[copVariant], wx + ox, wy + oy) : world.spawn(type, wx + ox, wy + oy);
             if (e != null) lastAction.add(e);
         }

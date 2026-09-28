@@ -347,6 +347,10 @@ final class World {
         City.Facility hospital = city.nearestFacility(City.FACILITY_HOSPITAL, 0, 0);
         if (hospital != null)
             for (int i = 0; i < 3; i++) spawn(Entity.MEDIC, hospital.x + rnd.nextFloat() * 40 - 20, hospital.y + rnd.nextFloat() * 40 - 20);
+        // A crew at every fire station.
+        for (City.Facility f : city.facilities)
+            if (f.kind == City.FACILITY_FIRE)
+                for (int i = 0; i < 3; i++) spawn(Entity.FIREFIGHTER, f.x + rnd.nextFloat() * 30 - 15, f.y + rnd.nextFloat() * 30 - 15);
         // Half the cops start at their precinct, the rest on patrol; soldiers start on base.
         City.Facility base = city.nearestFacility(City.FACILITY_BASE, 0, 0);
         int stations = 0;
@@ -679,7 +683,7 @@ final class World {
     }
 
     int humanCount() {
-        return counts[Entity.CIVILIAN] + counts[Entity.COP] + counts[Entity.SOLDIER] + counts[Entity.MEDIC];
+        return counts[Entity.CIVILIAN] + counts[Entity.COP] + counts[Entity.SOLDIER] + counts[Entity.MEDIC] + counts[Entity.FIREFIGHTER];
     }
 
     /** People sitting in cars right now. */
@@ -813,6 +817,15 @@ final class World {
                 e.body = 0xFFF2F2F2;
                 e.head = HAIR[rnd.nextInt(HAIR.length)];
                 break;
+            case Entity.FIREFIGHTER:
+                e.hp = 70;
+                e.radius = 3.9f;
+                e.speed = 20;
+                e.runSpeed = 38;
+                e.body = 0xFF8A6A34;
+                e.head = 0xFFC8302A;
+                e.mass = 1.2f;
+                break;
             case Entity.CRAWLER:
                 e.hp = 35;
                 e.radius = 3.0f;
@@ -918,6 +931,15 @@ final class World {
     void applyRole(Entity e, int role) {
         e.role = role;
         switch (role) {
+            case Entity.ROLE_GUARD:
+                // Guardsmen: rifles and a little less training, in tan uniforms.
+                e.hp = e.maxHp = 75;
+                e.magSize = 30;
+                e.reserve = 120;
+                e.grenades = 1;
+                e.body = 0xFF8C8260;
+                e.head = 0xFF6A6248;
+                break;
             case Entity.ROLE_COMMANDER:
                 e.hp = e.maxHp = 130;
                 e.magSize = 15;
@@ -1328,6 +1350,7 @@ final class World {
         if (e.isZombie()) thinkZombie(e, dt);
         else if (e.isArmed()) thinkArmed(e, dt);
         else if (e.type == Entity.MEDIC) thinkMedic(e, dt);
+        else if (e.type == Entity.FIREFIGHTER) thinkFirefighter(e, dt);
         else if (e.type == Entity.DOG) thinkDog(e, dt);
         else if (e.type == Entity.RAIDER) thinkRaider(e, dt);
         else thinkCivilian(e, dt);
@@ -2535,6 +2558,7 @@ final class World {
     /** Once a second: the infection evolves, and after it's over the city slowly recovers. */
     private void cityLife() {
         keyBuildings();
+        callNationalGuard();
         if (outbreak) updateWar();
         int z = zombieCount();
         if (z > 0) {
@@ -3354,6 +3378,118 @@ final class World {
         }
     }
 
+    /**
+     * Firefighters: they put out fires with their hoses, give first aid to the hurt, and fight zombies off with
+     * their axes (backing away from a crowd). With nothing to do they go back to the station.
+     */
+    private void thinkFirefighter(Entity e, float dt) {
+        Entity z = nearest(e, 60, true, true);
+        if (e.meleeCd <= 0) {
+            Entity r = nearestInReach(e);
+            if (r != null) {
+                // A swing of the axe.
+                shove(e, r, true);
+                r.hp -= 10;
+                e.meleeCd = 1.0f;
+            }
+        }
+        if (z != null) {
+            float ddx = z.x - e.x, ddy = z.y - e.y, d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
+            int crowd = countZombiesNear(e.x, e.y, 45);
+            if (crowd >= 3 || e.hp < e.maxHp * 0.4f || z.type == Entity.BRUTE) {
+                flee(e, -ddx / d, -ddy / d, e.runSpeed);
+                return;
+            }
+            if (d < 35) {
+                steer(e, ddx / d, ddy / d, e.runSpeed);
+                return;
+            }
+        }
+        // Fires first: walk up close and hose them down.
+        Fire f = null;
+        float fd = 450 * 450;
+        for (int i = 0, n = fires.size(); i < n; i++) {
+            Fire o = fires.get(i);
+            float d2 = (o.x - e.x) * (o.x - e.x) + (o.y - e.y) * (o.y - e.y);
+            if (d2 < fd && o.life > 0.5f) {
+                fd = d2;
+                f = o;
+            }
+        }
+        if (f != null) {
+            float ddx = f.x - e.x, ddy = f.y - e.y, d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
+            if (d > 24) {
+                steer(e, ddx / d, ddy / d, e.runSpeed * 0.9f);
+                if (e.blocked) {
+                    e.blocked = false;
+                    e.unstick = 0.5f;
+                    e.unstickAngle = (float) Math.atan2(ddy, ddx) + (rnd.nextBoolean() ? 1.3f : -1.3f);
+                }
+            } else {
+                steer(e, 0, 0, 0);
+                e.angle = turn(e.angle, (float) Math.atan2(ddy, ddx), dt * 6);
+                f.life -= 3.5f * dt;
+                if (f.life <= 0 && f.life > -3.5f * dt) firesOut++;
+                if (rnd.nextFloat() < dt * 14)
+                    particle(e.x + ddx / d * 4, e.y + ddy / d * 4, ddx / d * 60 + rnd.nextFloat() * 10 - 5,
+                            ddy / d * 60 + rnd.nextFloat() * 10 - 5, 0.35f, 1.2f, 0xFFB8DCF0, P_DOT);
+            }
+            return;
+        }
+        // First aid for anyone badly hurt close by.
+        Entity patient = null;
+        float pd = 140 * 140;
+        for (int i = 0, n = entities.size(); i < n; i++) {
+            Entity o = entities.get(i);
+            if (o == e || o.dead || o.isZombie() || o.type == Entity.RAIDER || o.hp >= o.maxHp * 0.6f) continue;
+            float d2 = (o.x - e.x) * (o.x - e.x) + (o.y - e.y) * (o.y - e.y);
+            if (d2 < pd) {
+                pd = d2;
+                patient = o;
+            }
+        }
+        if (patient != null && z == null) {
+            float ddx = patient.x - e.x, ddy = patient.y - e.y, d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
+            if (d > e.radius + patient.radius + 5) steer(e, ddx / d, ddy / d, e.runSpeed * 0.8f);
+            else {
+                steer(e, 0, 0, 0);
+                patient.hp = Math.min(patient.maxHp, patient.hp + 6 * dt);
+            }
+            return;
+        }
+        City.Facility st = city.nearestFacility(City.FACILITY_FIRE, e.x, e.y);
+        if (st != null) {
+            float ddx = st.x - e.x, ddy = st.y - e.y;
+            if (ddx * ddx + ddy * ddy > st.r * st.r * 2 && followField(e, st.field, e.speed)) return;
+        }
+        wander(e, e.speed * 0.5f);
+    }
+
+    /** Whether the governor has already called out the National Guard this outbreak. */
+    boolean guardCalled;
+
+    /**
+     * When the army has nothing left to send and the war is going badly, the governor calls out the National
+     * Guard (once): two trucks of guardsmen drive in from the edge of town to protect the civilians.
+     */
+    private void callNationalGuard() {
+        if (guardCalled || !outbreak || outbreakTime < 90 || warBalance > 0.45f || dispatch.squadReserve > 0 || readiness == 1) return;
+        guardCalled = true;
+        float tx = city.worldW() / 2, ty = city.worldH() / 2;
+        if (!dispatch.zones.isEmpty()) {
+            tx = dispatch.zones.get(0).x;
+            ty = dispatch.zones.get(0).y;
+        }
+        float[] edge = rnd.nextBoolean() ? new float[]{20, rnd.nextFloat() * city.worldH()} : new float[]{rnd.nextFloat() * city.worldW(), 20};
+        int before = fleet.vehicles.size();
+        for (int k = 0; k < 2; k++) fleet.send(Entity.SOLDIER, 6, edge[0], edge[1], tx, ty, null, null, city.placeName(tx, ty));
+        for (int i = before; i < fleet.vehicles.size(); i++) fleet.vehicles.get(i).guardUnit = true;
+        if (fleet.vehicles.size() > before)
+            dispatch.say(Dispatch.WHO_MILITARY, null, "Governor: I'm calling out the National Guard. Two trucks of guardsmen are on their way to "
+                    + city.placeName(tx, ty) + ".", tx, ty);
+        else guardCalled = false;
+    }
+
     /** Medics run to the hurt and the infected, patch them up, and keep away from zombies. */
     private void thinkMedic(Entity e, float dt) {
         Entity threat = nearest(e, 60, true, true);
@@ -3593,6 +3729,26 @@ final class World {
             }
             wander(e, e.speed * 0.5f);
             return;
+        }
+        // The National Guard's job is protecting civilians: they reinforce the nearest safe zone.
+        if (soldier && e.role == Entity.ROLE_GUARD && e.task == Dispatch.T_NONE && e.taskTimer <= 0) {
+            e.taskTimer = 3;
+            Dispatch.SafeZone best = null;
+            float bd = Float.MAX_VALUE;
+            for (int i = 0; i < dispatch.zones.size(); i++) {
+                Dispatch.SafeZone z = dispatch.zones.get(i);
+                float d = (z.x - e.x) * (z.x - e.x) + (z.y - e.y) * (z.y - e.y);
+                if (d < bd && z.guards < z.wantGuards + 6) {
+                    bd = d;
+                    best = z;
+                }
+            }
+            if (best != null) {
+                e.task = Dispatch.T_GUARD;
+                e.zone = best;
+                best.guards++;
+                return;
+            }
         }
         // Soldiers keep their squad together.
         if (soldier && e.task == Dispatch.T_NONE) {

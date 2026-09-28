@@ -57,6 +57,10 @@ final class Fleet {
         float turret, cannonCd, idleTimer;
         /** Ambulances: the person they came for. */
         Entity patient;
+        /** An army truck carrying the National Guard. */
+        boolean guardUnit;
+        /** A fire engine's crew is already off fighting the fire. */
+        boolean crewOut;
         /** A parked car's alarm going off (seconds left) after zombies bumped into it. */
         float alarm;
         /** Police roadblocks: the safe zone this car is closing a road for, which way that road runs, cones out,
@@ -1020,6 +1024,7 @@ final class Fleet {
                     v.y + (float) Math.sin(v.angle + 1.57f) * (8 + i * 3));
             if (e == null) continue;
             if (first == null) first = e;
+            if (v.guardUnit) w.applyRole(e, Entity.ROLE_GUARD);
             if (v.incident != null && !v.incident.resolved) {
                 e.task = Dispatch.T_RESPOND;
                 e.incident = v.incident;
@@ -1113,6 +1118,15 @@ final class Fleet {
             if (!moving || close || v.stuckTimer > 4) {
                 v.state = SPRAY;
                 v.stuckTimer = 0;
+                // The crew jumps down to help (they stay on the scene afterwards).
+                if (!v.crewOut && w.counts[Entity.FIREFIGHTER] < 16) {
+                    v.crewOut = true;
+                    for (int k = 0; k < 2; k++) {
+                        float[] p = city.findWalkable(v.x + (float) Math.cos(v.angle + 1.57f) * (9 + k * 4),
+                                v.y + (float) Math.sin(v.angle + 1.57f) * (9 + k * 4));
+                        if (p != null) w.spawn(Entity.FIREFIGHTER, p[0], p[1]);
+                    }
+                }
             }
             return false;
         }

@@ -3,16 +3,19 @@ package com.instantaxtion.zombiesandbox;
 /** Someone in the city: a civilian, a cop, a soldier, a medic, a dog or one of the zombie kinds. */
 final class Entity {
     static final int CIVILIAN = 0, COP = 1, SOLDIER = 2, MEDIC = 3, DOG = 4, RAIDER = 5, ZOMBIE = 6, RUNNER = 7,
-            BRUTE = 8, CRAWLER = 9, SCREAMER = 10, ZOMBIE_DOG = 11, SPITTER = 12, BLOATER = 13;
-    static final int TYPE_COUNT = 14;
+            BRUTE = 8, CRAWLER = 9, SCREAMER = 10, ZOMBIE_DOG = 11, SPITTER = 12, BLOATER = 13, FIREFIGHTER = 14;
+    static final int TYPE_COUNT = 15;
     static final String[] NAMES = {"Civilian", "Cop", "Soldier", "Medic", "Dog", "Raider", "Zombie", "Runner", "Brute",
-            "Crawler", "Screamer", "Zombie dog", "Spitter", "Bloater"};
+            "Crawler", "Screamer", "Zombie dog", "Spitter", "Bloater", "Firefighter"};
 
     /** Soldiers' jobs: rifleman, the commander, snipers and machine gunners. */
     static final int ROLE_RIFLE = 0, ROLE_COMMANDER = 1, ROLE_SNIPER = 2, ROLE_GUNNER = 3;
-    static final String[] ROLE_NAMES = {"Soldier", "Commander", "Sniper", "Gunner"};
     /** Police jobs: riot officers carry shields, K9 handlers work with a police dog. */
     static final int ROLE_RIOT = 4, ROLE_K9 = 5;
+    /** The National Guard: soldiers called up by the governor to protect civilians. */
+    static final int ROLE_GUARD = 6;
+    static final String[] ROLE_NAMES = {"Soldier", "Commander", "Sniper", "Gunner", "Riot officer", "K9 handler",
+            "National Guard"};
 
     int type, role;
     float x, y, vx, vy, angle;
@@ -97,7 +100,7 @@ final class Entity {
     boolean retreatSaid;
 
     boolean isZombie() {
-        return type >= ZOMBIE;
+        return type >= ZOMBIE && type <= BLOATER;
     }
 
     boolean isArmed() {

@@ -8,4 +8,5 @@ public class RectF { public float left,top,right,bottom;
  public float centerX(){return (left+right)/2;} public float centerY(){return (top+bottom)/2;}
  public float width(){return right-left;} public float height(){return bottom-top;}
  public boolean contains(float x,float y){return x>=left&&x<right&&y>=top&&y<bottom;}
+ public static boolean intersects(RectF a,RectF b){return a.left<b.right&&b.left<a.right&&a.top<b.bottom&&b.top<a.bottom;}
 }

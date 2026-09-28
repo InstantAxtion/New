@@ -1150,9 +1150,28 @@ final class World {
         z.noiseTimer -= dt;
         z.screamCd -= dt;
         z.feedTimer -= dt;
+        z.memory -= dt;
+        z.searchTimer -= dt;
+        z.moanCd -= dt;
         if (rnd.nextFloat() < dt * 0.03f) emit(z.type == Entity.BRUTE ? Sfx.GROAN_DEEP : Sfx.GROAN, z.x, z.y);
-        Entity t = nearest(z, 110, false, true);
+        // Senses: they see a long way in front, but only hear or smell what is close behind them. Once they
+        // have spotted someone they keep track of them.
+        Entity t = nearest(z, 140, false, true);
+        if (t != null && z.memory <= 0) {
+            float ddx = t.x - z.x, ddy = t.y - z.y, d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
+            float facing = ((float) Math.cos(z.angle) * ddx + (float) Math.sin(z.angle) * ddy) / d;
+            if (d > 55 && facing < 0.1f && t.want < t.runSpeed * 0.9f) t = null;
+        }
         if (t != null) {
+            z.lastX = t.x + t.vx * 0.8f;
+            z.lastY = t.y + t.vy * 0.8f;
+            z.memory = 7;
+            z.searchTimer = 0;
+            // The moan: other zombies nearby hear it and come to join the hunt.
+            if (z.moanCd <= 0) {
+                z.moanCd = 4 + rnd.nextFloat() * 2;
+                herd(z, t.x, t.y);
+            }
             if (z.type == Entity.SCREAMER && z.screamCd <= 0) {
                 // A screamer calls every zombie around to its prey.
                 z.screamCd = 10;
@@ -1191,6 +1210,32 @@ final class World {
             }
             steer(z, ax, ay, d < 45 ? z.runSpeed : z.speed);
             if (d < z.radius + t.radius + 2.5f && z.biteCd <= 0) bite(z, t, ddx / d, ddy / d);
+            return;
+        }
+        // Lost sight of them: go to where they were last seen, then search around there for a while.
+        if (z.memory > 0) {
+            float ddx = z.lastX - z.x, ddy = z.lastY - z.y;
+            float d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
+            if (d < 14 || (z.blocked && d < 40)) {
+                z.memory = 0;
+                z.searchTimer = 5 + rnd.nextFloat() * 4;
+                z.blocked = false;
+            } else {
+                if (city.los(z.x, z.y, z.lastX, z.lastY) || !followField(z, city.humanDist, z.speed * 1.2f))
+                    steer(z, ddx / d, ddy / d, z.speed * 1.25f);
+                return;
+            }
+        }
+        if (z.searchTimer > 0) {
+            if (z.wanderTimer <= 0) {
+                z.wanderTimer = 0.8f + rnd.nextFloat();
+                z.wanderAngle = rnd.nextFloat() * TAU;
+            }
+            steer(z, (float) Math.cos(z.wanderAngle), (float) Math.sin(z.wanderAngle), z.speed * 0.7f);
+            if (z.blocked) {
+                z.blocked = false;
+                z.wanderTimer = 0;
+            }
             return;
         }
         if (z.taskTimer <= 0) {
@@ -1298,6 +1343,26 @@ final class World {
             return;
         }
         wander(z, z.speed * 0.45f);
+    }
+
+    /** A hunting zombie's moan draws in idle zombies nearby that haven't found anyone yet. */
+    private void herd(Entity z, float x, float y) {
+        float r = 90;
+        int cx0 = Math.max(0, (int) ((z.x - r) / CELL)), cx1 = Math.min(gw - 1, (int) ((z.x + r) / CELL));
+        int cy0 = Math.max(0, (int) ((z.y - r) / CELL)), cy1 = Math.min(gh - 1, (int) ((z.y + r) / CELL));
+        for (int cy = cy0; cy <= cy1; cy++)
+            for (int cx = cx0; cx <= cx1; cx++) {
+                int c = cy * gw + cx;
+                for (int k = cellStart[c], end = cellStart[c] + cellCount[c]; k < end; k++) {
+                    Entity o = sorted[k];
+                    if (o == z || o.dead || !o.isZombie() || o.memory > 0 || o.noiseTimer > 0) continue;
+                    if ((o.x - z.x) * (o.x - z.x) + (o.y - z.y) * (o.y - z.y) > r * r) continue;
+                    o.noiseX = x + rnd.nextFloat() * 20 - 10;
+                    o.noiseY = y + rnd.nextFloat() * 20 - 10;
+                    o.noiseTimer = 6;
+                }
+            }
+        if (rnd.nextFloat() < 0.3f) emit(z.type == Entity.BRUTE ? Sfx.GROAN_DEEP : Sfx.GROAN, z.x, z.y);
     }
 
     /** Hordes: idle zombies bunch up behind a leader who roams the city, and small hordes merge. */
@@ -1600,7 +1665,12 @@ final class World {
         if (e.task == Dispatch.T_NONE && threat != null && threatDist > 30 && !e.hasGun && e.taskTimer <= 0) {
             e.taskTimer = 1.5f;
             City.Building b = shelterNear(e);
-            if (b != null && rnd.nextFloat() < 0.6f) {
+            // Home is where people run first, if it is close enough to reach.
+            City.Building home = homeOf(e);
+            if (home != null && home.occupants.size() < home.capacity && home.barricade >= 40 && !home.collapsed
+                    && (home.doorX - e.x) * (home.doorX - e.x) + (home.doorY - e.y) * (home.doorY - e.y) < 220 * 220
+                    && countZombiesNear(home.doorX, home.doorY, 35) == 0) b = home;
+            if (b != null && (b == home || rnd.nextFloat() < 0.6f)) {
                 e.task = Dispatch.T_HIDE;
                 e.building = b;
             }
@@ -1671,9 +1741,93 @@ final class World {
                 }
             }
             flee(e, ax / d, ay / d, e.runSpeed);
-        } else {
+        } else if (!routine(e, dt)) {
             wander(e, e.speed);
         }
+    }
+
+    /** The home a civilian lives in: the nearest house or apartment block (found once). */
+    private City.Building homeOf(Entity e) {
+        if (!e.homeChecked) {
+            e.homeChecked = true;
+            float bd = 400 * 400;
+            for (int i = 0, n = city.buildings.size(); i < n; i++) {
+                City.Building b = city.buildings.get(i);
+                if ((b.kind != City.HOUSE && b.kind != City.APARTMENT) || b.capacity == 0) continue;
+                float d = (b.doorX - e.x) * (b.doorX - e.x) + (b.doorY - e.y) * (b.doorY - e.y) + rnd.nextFloat() * 3000;
+                if (d < bd) {
+                    bd = d;
+                    e.home = b;
+                }
+            }
+        }
+        if (e.home != null && e.home.collapsed) e.home = null;
+        return e.home;
+    }
+
+    /**
+     * Everyday life while the city is calm: people go shopping, to church or the park, visit the mall and head
+     * home again, stopping a while at each. Once they've heard about the outbreak they go home and stay there.
+     */
+    private boolean routine(Entity e, float dt) {
+        if (e.leader != null || e.task != Dispatch.T_NONE || e.hasGun) return false;
+        City.Building home = homeOf(e);
+        boolean outbreak = zombies > 0 && (e.fear > 0 || (outbreakTime > 60 && zombies >= 10));
+        if (outbreak) {
+            if (home == null || home.occupants.size() >= home.capacity || home.barricade < 40) return false;
+            float ddx = home.doorX - e.x, ddy = home.doorY - e.y;
+            if (ddx * ddx + ddy * ddy > 300 * 300) return false;
+            e.task = Dispatch.T_HIDE;
+            e.building = home;
+            return false;
+        }
+        e.errandTimer -= dt;
+        if (e.errand == null || e.errand.collapsed) {
+            if (e.errandTimer > 0) return false;
+            e.errand = pickErrand(e, home);
+            e.errandTimer = 0;
+            if (e.errand == null) {
+                e.errandTimer = 10 + rnd.nextFloat() * 20;
+                return false;
+            }
+        }
+        City.Building b = e.errand;
+        float ddx = b.doorX - e.x, ddy = b.doorY - e.y;
+        float d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
+        if (d > 18) {
+            walkTo(e, b, ddx, ddy, d, e.speed);
+            if (e.errandTimer < -90) e.errand = null; // Taking too long: give up.
+            return true;
+        }
+        // Arrived: hang about outside for a while, then move on.
+        if (e.errandTimer < 0 || e.errandTimer > 60) e.errandTimer = 12 + rnd.nextFloat() * 25;
+        if (e.errandTimer < 0.1f) {
+            e.errand = null;
+            e.errandTimer = 2 + rnd.nextFloat() * 6;
+            return false;
+        }
+        wander(e, e.speed * 0.35f);
+        return true;
+    }
+
+    /** Somewhere to go: a shop, supermarket, the mall, a church or school, a pharmacy, or home. */
+    private City.Building pickErrand(Entity e, City.Building home) {
+        if (home != null && rnd.nextFloat() < 0.3f) return home;
+        City.Building best = null;
+        float bestScore = Float.MAX_VALUE;
+        for (int k = 0; k < 6; k++) {
+            City.Building b = city.buildings.get(rnd.nextInt(city.buildings.size()));
+            boolean place = b.name != null || b.kind == City.SHOP || b.kind == City.PHARMACY || b.kind == City.KIOSK;
+            if (!place || b.collapsed || b.doorX == 0) continue;
+            float d = (float) Math.hypot(b.doorX - e.x, b.doorY - e.y);
+            if (d > 700) continue;
+            float score = d + rnd.nextFloat() * 200;
+            if (score < bestScore) {
+                bestScore = score;
+                best = b;
+            }
+        }
+        return best;
     }
 
     /** Family members stick with whoever leads them: keeping up, and running the same way. */
@@ -2869,16 +3023,22 @@ final class World {
             flee(e, ax / d, ay / d, e.runSpeed);
             return;
         }
+        // Triage: fresh bites first (they can still be saved), then the worst hurt, then whoever is closest.
         Entity patient = null;
-        float best = 320 * 320;
+        float best = Float.MAX_VALUE;
         for (int i = 0, n = entities.size(); i < n; i++) {
             Entity o = entities.get(i);
-            if (o == e || o.dead || o.isZombie()) continue;
-            boolean needs = o.hp < o.maxHp * 0.8f || (o.infected && !o.cureTried);
+            if (o == e || o.dead || o.isZombie() || o.type == Entity.RAIDER) continue;
+            boolean bitten = o.infected && !o.cureTried && o.infectTimer > 4;
+            boolean needs = o.hp < o.maxHp * 0.8f || bitten;
             if (!needs) continue;
             float ddx = o.x - e.x, ddy = o.y - e.y, d2 = ddx * ddx + ddy * ddy;
-            if (d2 < best) {
-                best = d2;
+            if (d2 > 320 * 320) continue;
+            float urgency = bitten ? 0.25f : 0.4f + o.hp / o.maxHp;
+            if (o.isArmed()) urgency *= 0.8f;
+            float score = d2 * urgency;
+            if (score < best) {
+                best = score;
                 patient = o;
             }
         }
@@ -2889,7 +3049,12 @@ final class World {
                 steer(e, 0, 0, 0);
                 e.angle = (float) Math.atan2(ddy, ddx);
                 patient.hp = Math.min(patient.maxHp, patient.hp + 14 * dt);
-                if (patient.infected && !patient.cureTried) tryCure(patient, 0.6f);
+                if (patient.infected && !patient.cureTried) {
+                    tryCure(patient, 0.6f);
+                    // Cured civilians are pointed to the nearest safe zone.
+                    if (!patient.infected && patient.type == Entity.CIVILIAN && patient.task == Dispatch.T_NONE
+                            && dispatch.hasRoom()) patient.task = Dispatch.T_SEEK;
+                }
                 if (rnd.nextFloat() < dt * 6)
                     particle(patient.x + rnd.nextFloat() * 6 - 3, patient.y - 4, 0, -12, 0.6f, 1.2f, 0xFF63E06B, P_DOT);
                 return;
@@ -2974,12 +3139,37 @@ final class World {
         }
 
         Entity t = e.ammo > 0 || e.reserve > 0 ? pickTarget(e, range) : null;
+        e.shareCd -= dt;
         if (t != null && t.isZombie()) {
             // Remember where it was, to go and look if it slips out of sight.
             e.threatX = t.x;
             e.threatY = t.y;
             e.fear = 20;
+            // Call it in: nearby units that can't see anything come and help.
+            if (e.shareCd <= 0) {
+                e.shareCd = 2.5f;
+                shareSighting(e, t.x, t.y);
+            }
         }
+        // Badly hurt: pull back towards a medic or the squad while the others cover.
+        if (t != null && e.hp < e.maxHp * 0.35f && (e.task == Dispatch.T_NONE || e.task == Dispatch.T_RESPOND)) {
+            if (!e.retreatSaid) {
+                e.retreatSaid = true;
+                dispatch.say(soldier ? Dispatch.WHO_MILITARY : Dispatch.WHO_POLICE, e, "I'm hit! Falling back!", e.x, e.y);
+            }
+            Entity medic = nearestOfType(e, Entity.MEDIC, 300);
+            float ddx = t.x - e.x, ddy = t.y - e.y, d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
+            if (medic != null) {
+                float mx = medic.x - e.x, my = medic.y - e.y, md = (float) Math.sqrt(mx * mx + my * my) + 0.001f;
+                if (md > 20) steer(e, mx / md * 0.7f - ddx / d * 0.3f, my / md * 0.7f - ddy / d * 0.3f, e.runSpeed);
+                else steer(e, 0, 0, 0);
+            } else {
+                flee(e, -ddx / d, -ddy / d, e.runSpeed);
+            }
+            if (d < 120) aimAndFire(e, t, d, range, dt);
+            return;
+        }
+        if (e.hp >= e.maxHp * 0.6f) e.retreatSaid = false;
         boolean stationary = e.task == Dispatch.T_POST || e.task == Dispatch.T_HOLD;
         if (t != null && e.task != Dispatch.T_MOVE) {
             float ddx = t.x - e.x, ddy = t.y - e.y;
@@ -2992,7 +3182,11 @@ final class World {
                 // Too close, reloading or outnumbered: fall back while shooting.
                 flee(e, -ddx / d, -ddy / d, e.runSpeed * (swarmed ? 0.95f : 0.8f));
             else if (guarding != null) holdPost(e, guarding, 0.5f);
-            else steer(e, 0, 0, 0);
+            else if (e.task == Dispatch.T_NONE && e.member % 3 == 2 && d > keep + 25) {
+                // Flankers work round to the side for a clear angle, instead of all firing down one line.
+                float side = e.callsign % 2 == 0 ? 1 : -1;
+                steer(e, -ddy / d * side, ddx / d * side, e.speed * 0.5f);
+            } else steer(e, 0, 0, 0);
             if (!aimAndFire(e, t, d, range, dt) && !stationary && guarding == null) {
                 // Someone in the line of fire: step sideways for a clear shot.
                 float side = (e.callsign + e.member) % 2 == 0 ? 1 : -1;
@@ -3038,6 +3232,16 @@ final class World {
                 dispatch.onScene(e, inc);
             }
             if (city.fieldAt(city.zombieDist, e.x, e.y) < 10 && followField(e, city.zombieDist, e.speed * 1.2f)) return;
+            if (!soldier) {
+                // Police throw a cordon round the scene: spread out in a ring, facing outwards.
+                float a = (e.callsign * 2.4f + e.member * 1.7f) % TAU, r = 38;
+                float px = inc.x + (float) Math.cos(a) * r, py = inc.y + (float) Math.sin(a) * r;
+                if (!city.solidAt(px, py)) {
+                    standAt(e, px, py, 0.8f);
+                    if (e.want < 1) e.angle = turn(e.angle, a, dt * 3);
+                    return;
+                }
+            }
             wander(e, e.speed * 0.5f);
             return;
         }
@@ -3048,11 +3252,25 @@ final class World {
                 e.leader = e.role == Entity.ROLE_COMMANDER ? biggestGroup(e) : squadLead(e);
             }
             Entity lead = e.leader;
-            if (lead != null && !lead.dead) {
+            if (lead != null && !lead.dead && lead != e) {
                 float lx = lead.x - e.x, ly = lead.y - e.y, ld = (float) Math.sqrt(lx * lx + ly * ly) + 0.001f;
                 if (ld > 80) {
                     steer(e, lx / ld, ly / ld, e.runSpeed);
                     return;
+                }
+                // On the move with the squad: keep a wedge behind the leader.
+                if (lead.want > 1 && e.fear <= 0) {
+                    float hx = lead.mx, hy = lead.my, hl = (float) Math.sqrt(hx * hx + hy * hy) + 0.001f;
+                    hx /= hl;
+                    hy /= hl;
+                    int m = e.member + 1;
+                    float back = 12 + (m / 2) * 12, side = (m % 2 == 0 ? 1 : -1) * (8 + (m / 2) * 9);
+                    float sx = lead.x - hx * back - hy * side, sy = lead.y - hy * back + hx * side;
+                    float dx = sx - e.x, dy = sy - e.y, sd = (float) Math.sqrt(dx * dx + dy * dy) + 0.001f;
+                    if (sd > 5 && !city.solidAt(sx, sy)) {
+                        steer(e, dx / sd, dy / sd, Math.min(e.runSpeed, lead.want + sd * 0.8f));
+                        return;
+                    }
                 }
             }
         }
@@ -3061,7 +3279,14 @@ final class World {
             float lx = e.threatX - e.x, ly = e.threatY - e.y, ld = (float) Math.sqrt(lx * lx + ly * ly) + 0.001f;
             if (ld < 20) e.fear = 0;
             else {
-                steer(e, lx / ld, ly / ld, e.speed * 1.2f);
+                // Bounding overwatch: half the squad moves up while the other half covers, then they swap.
+                boolean cover = soldier && e.leader != null && ld > 60 && ((int) (time / 3) + e.member) % 2 == 0;
+                if (cover) {
+                    steer(e, 0, 0, 0);
+                    e.angle = turn(e.angle, (float) Math.atan2(ly, lx), dt * 4);
+                } else {
+                    steer(e, lx / ld, ly / ld, e.speed * 1.2f);
+                }
                 return;
             }
         }
@@ -3077,6 +3302,40 @@ final class World {
             }
         }
         wander(e, e.speed * 0.6f);
+    }
+
+    /** Radios a sighting: other police and soldiers nearby with nothing in view come to look. */
+    private void shareSighting(Entity e, float x, float y) {
+        float r = 180;
+        int cx0 = Math.max(0, (int) ((e.x - r) / CELL)), cx1 = Math.min(gw - 1, (int) ((e.x + r) / CELL));
+        int cy0 = Math.max(0, (int) ((e.y - r) / CELL)), cy1 = Math.min(gh - 1, (int) ((e.y + r) / CELL));
+        for (int cy = cy0; cy <= cy1; cy++)
+            for (int cx = cx0; cx <= cx1; cx++) {
+                int c = cy * gw + cx;
+                for (int k = cellStart[c], end = cellStart[c] + cellCount[c]; k < end; k++) {
+                    Entity o = sorted[k];
+                    if (o == e || o.dead || !o.isArmed() || o.aiming || o.fear > 0 || o.task != Dispatch.T_NONE) continue;
+                    if ((o.x - e.x) * (o.x - e.x) + (o.y - e.y) * (o.y - e.y) > r * r) continue;
+                    o.threatX = x;
+                    o.threatY = y;
+                    o.fear = 12;
+                }
+            }
+    }
+
+    private Entity nearestOfType(Entity e, int type, float radius) {
+        Entity best = null;
+        float bd = radius * radius;
+        for (int i = 0, n = entities.size(); i < n; i++) {
+            Entity o = entities.get(i);
+            if (o.type != type || o.dead || o == e) continue;
+            float d = (o.x - e.x) * (o.x - e.x) + (o.y - e.y) * (o.y - e.y);
+            if (d < bd) {
+                bd = d;
+                best = o;
+            }
+        }
+        return best;
     }
 
     /** Where this unit can get more ammo: the base for soldiers, a precinct for cops (or either). */

@@ -84,6 +84,15 @@ final class Entity {
     Entity protector;
     /** A car this civilian has flagged down and is running to. */
     Fleet.Vehicle ride;
+    /** Zombies: where the prey was last seen, how long they remember it, and time left searching there. */
+    float lastX, lastY, memory, searchTimer, moanCd;
+    /** Civilians: their home, and the errand they are on (a place to go and how long to stay). */
+    City.Building home, errand;
+    float errandTimer;
+    boolean homeChecked;
+    /** Police and soldiers: when they last radioed a sighting to the others, and a retreat already called. */
+    float shareCd;
+    boolean retreatSaid;
 
     boolean isZombie() {
         return type >= ZOMBIE;

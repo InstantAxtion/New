@@ -1701,6 +1701,28 @@ final class GameView extends View implements Menu.Host {
             fill.setColor(i % 2 == 0 ? 0xFFA38D5E : 0xFF917C50);
             c.drawCircle(bx, by, 3f, fill);
         }
+        // Army checkpoints in the gaps: a striped boom and a guard hut.
+        if (z.military) {
+            for (int i = 0; i < bags; i += 12) {
+                double a = (i + 0.5) * Math.PI * 2 / bags;
+                float cx = (float) Math.cos(a), cy = (float) Math.sin(a);
+                float gx = z.x + cx * z.r, gy = z.y + cy * z.r;
+                float tx = -cy, ty = cx;
+                for (int k = 0; k < 4; k++) {
+                    float s0 = -5.5f + k * 2.75f, s1 = s0 + 2.75f;
+                    stroke.setColor(k % 2 == 0 ? 0xFFE03A30 : 0xFFF2F2F2);
+                    stroke.setStrokeWidth(1.4f);
+                    c.drawLine(gx + tx * s0, gy + ty * s0, gx + tx * s1, gy + ty * s1, stroke);
+                }
+                float hx = gx + cx * 6 + tx * 8, hy = gy + cy * 6 + ty * 8;
+                fill.setColor(0x60000000);
+                c.drawRect(hx - 2.5f, hy - 2f, hx + 3.5f, hy + 4f, fill);
+                fill.setColor(0xFF6F7A55);
+                c.drawRect(hx - 3, hy - 3, hx + 3, hy + 3, fill);
+                fill.setColor(0xFF9FD0E8);
+                c.drawRect(hx - 2, hy - 2, hx + 2, hy - 0.5f, fill);
+            }
+        }
         fill.setColor(0x60000000);
         c.drawRect(z.x - 7, z.y - 5, z.x + 9, z.y + 7, fill);
         fill.setColor(z.military ? 0xFF5B6B3A : 0xFF2F4F86);

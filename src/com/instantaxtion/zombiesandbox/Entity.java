@@ -30,6 +30,8 @@ final class Entity {
     /** A civilian carrying a gun (their own, or one picked up). */
     boolean hasGun;
 
+    /** Safe zone checkpoints: already checked for bites, and turned away. */
+    boolean screened, refused;
     boolean infected, dead, removed, killedByZombie, gibbed, aiming, blocked, paused;
 
     int body, head, skin;

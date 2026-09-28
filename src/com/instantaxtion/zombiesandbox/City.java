@@ -816,6 +816,11 @@ final class City {
         }
     }
 
+    /** Which way the road on this tile runs: 1 north-south, 2 east-west, 3 a junction, 0 not a road. */
+    int roadDirAt(int x, int y) {
+        return x < 0 || y < 0 || x >= w || y >= h ? 0 : roadDir[y * w + x];
+    }
+
     private boolean isRoad(int x, int y) {
         return x >= 0 && y >= 0 && x < w && y < h && tiles[y * w + x] == ROAD;
     }

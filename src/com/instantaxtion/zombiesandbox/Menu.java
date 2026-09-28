@@ -496,6 +496,7 @@ final class Menu {
                 {"Shots fired", String.valueOf(world.shotsFired)},
                 {"Volunteers joined (said no)", world.recruits + " (" + world.refused + ")"},
                 {"City", world.city.name + "  (" + world.city.cfg.code() + ")"},
+                {"Checkpoints: turned away / treated", world.turnedAway + " / " + world.quarantined},
                 {"Outbreak started", world.outbreakPlace == null ? "-" : world.outbreakPlace},
         };
         java.util.ArrayList<int[]> heroes = world.heroes(3);

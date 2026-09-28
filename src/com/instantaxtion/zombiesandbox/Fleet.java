@@ -17,7 +17,7 @@ final class Fleet {
     /** A train: a locomotive and three carriages, this long in world units. */
     static final float TRAIN_LENGTH = 136;
     private static final int WAIT = 0, DRIVE = 1, RETURN = 2, FLY_IN = 3, CIRCLE = 4, FLY_OUT = 5, CRUISE = 6,
-            ABANDONED = 7, SPRAY = 8, SPOOL = 9, LAND = 10, ENGAGE = 11, LOAD = 12;
+            ABANDONED = 7, SPRAY = 8, SPOOL = 9, LAND = 10, ENGAGE = 11, LOAD = 12, BLOCK = 13;
     private static final int[] CAR_COLORS = {0xFFB03A2E, 0xFF2E5FB0, 0xFFE0E0E0, 0xFF222428, 0xFFD4A21C, 0xFF3C8A4E,
             0xFF8A8F96, 0xFF6B2E8A, 0xFFE07A2E};
     private static final float[] MAX_HP = {160, 260, 1, 100, 240, 700, 160, 1, 1};
@@ -57,6 +57,8 @@ final class Fleet {
         float turret, cannonCd, idleTimer;
         /** Ambulances: the person they came for. */
         Entity patient;
+        /** Police roadblocks: the safe zone this car is parked across the road for. */
+        Dispatch.SafeZone block;
         /** A stopped car rolls over to the kerb. */
         float pullX, pullY;
         boolean pulling;
@@ -104,6 +106,7 @@ final class Fleet {
             case TRUCK: {
                 String who = v.type == CRUISER ? "Police car" : "Army truck";
                 if (v.broken) return who + ": Wrecked";
+                if (v.state == BLOCK) return "Police car: Roadblock" + (where != null ? " on " + where : "");
                 if (v.state == WAIT) return who + ": Loading up";
                 if (v.state == DRIVE) return who + ": " + (v.type == TRUCK ? "Carrying squad" : "Responding") + (where != null ? " to " + where : "");
                 return who + ": Returning";
@@ -378,6 +381,48 @@ final class Fleet {
         return null;
     }
 
+    /**
+     * Police close the roads around a new safe zone: a cruiser parked across each street leading in, lights on.
+     * Traffic slows and squeezes past or turns back; zombies have to go round.
+     */
+    void roadblocks(Dispatch.SafeZone z) {
+        ArrayList<float[]> spots = new ArrayList<float[]>();
+        int tx0 = (int) (z.x / City.T), ty0 = (int) (z.y / City.T);
+        int rMin = (int) ((z.r + 40) / City.T), rMax = (int) ((z.r + 100) / City.T);
+        for (int ty = ty0 - rMax; ty <= ty0 + rMax; ty++)
+            for (int tx = tx0 - rMax; tx <= tx0 + rMax; tx++) {
+                if (tx < 1 || ty < 1 || tx >= city.w - 1 || ty >= city.h - 1) continue;
+                int dd = (tx - tx0) * (tx - tx0) + (ty - ty0) * (ty - ty0);
+                if (dd < rMin * rMin || dd > rMax * rMax) continue;
+                int dir = city.roadDirAt(tx, ty);
+                if (dir != 1 && dir != 2) continue;
+                // The middle of the road: road on both sides across it.
+                boolean mid = dir == 1 ? city.roadDirAt(tx - 1, ty) == 1 && city.roadDirAt(tx + 1, ty) == 1
+                        : city.roadDirAt(tx, ty - 1) == 2 && city.roadDirAt(tx, ty + 1) == 2;
+                if (!mid) continue;
+                float x = tx * City.T + City.T / 2f, y = ty * City.T + City.T / 2f;
+                boolean near = false;
+                for (int k = 0; k < spots.size(); k++)
+                    if (Math.hypot(spots.get(k)[0] - x, spots.get(k)[1] - y) < 110) near = true;
+                for (int k = 0; k < vehicles.size() && !near; k++)
+                    if (Math.hypot(vehicles.get(k).x - x, vehicles.get(k).y - y) < 20) near = true;
+                if (!near) spots.add(new float[]{x, y, dir == 1 ? 0 : (float) Math.PI / 2});
+            }
+        java.util.Collections.shuffle(spots, w.rnd);
+        for (int k = 0; k < spots.size() && k < 4; k++) {
+            float[] s = spots.get(k);
+            Vehicle v = make(CRUISER);
+            v.x = s[0];
+            v.y = s[1];
+            v.angle = s[2] + (w.rnd.nextBoolean() ? 0 : (float) Math.PI) + (w.rnd.nextFloat() - 0.5f) * 0.3f;
+            v.parked = true;
+            v.state = BLOCK;
+            v.block = z;
+            v.place = city.placeName(s[0], s[1]);
+            vehicles.add(v);
+        }
+    }
+
     /** A tank parked here that holds the area for a few minutes. */
     Vehicle placeTank(float x, float y) {
         float[] p = city.nearestDrivable(x, y);
@@ -497,7 +542,8 @@ final class Fleet {
             if (movingTraffic() < trafficTarget && w.zombieCount() < 10) spawnTraffic(1);
             int parked = 0;
             for (int i = vehicles.size() - 1; i >= 0; i--)
-                if (vehicles.get(i).parked && vehicles.get(i).riders.isEmpty() && ++parked > 25) vehicles.remove(i);
+                if (vehicles.get(i).parked && vehicles.get(i).block == null && vehicles.get(i).riders.isEmpty() && ++parked > 25)
+                    vehicles.remove(i);
         }
         for (int i = vehicles.size() - 1; i >= 0; i--) {
             Vehicle v = vehicles.get(i);
@@ -643,6 +689,14 @@ final class Fleet {
 
     private boolean updateWreck(Vehicle v, float dt) {
         v.speed = 0;
+        if (v.block != null && !v.broken && v.block.removed) {
+            // The zone has closed: the roadblock packs up and drives off.
+            v.block = null;
+            v.parked = false;
+            v.state = RETURN;
+            float[] home = randomRoad();
+            return home == null || !route(v, home[0], home[1]);
+        }
         if (v.pulling) {
             // Rolling to a stop against the kerb.
             float dx = v.pullX - v.x, dy = v.pullY - v.y, d = (float) Math.sqrt(dx * dx + dy * dy);

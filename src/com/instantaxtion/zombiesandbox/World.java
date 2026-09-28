@@ -83,6 +83,8 @@ final class World {
     float statStep = 2f;
     private float statTimer;
     int shotsFired, cured, peakZombies, hiding;
+    /** Army checkpoints: bitten people turned away at the gate, and caught and treated in quarantine. */
+    int turnedAway, quarantined;
     /** Recruitment: the most cops and soldiers there have been, how many civilians joined up or refused. */
     int peakCops, peakSoldiers, recruits, refused;
     /** How far the infection has evolved (0-5), how long the outbreak has run, and the recovery afterwards. */
@@ -1624,12 +1626,12 @@ final class World {
         // Safe zones: scared people head for one, and some go as soon as they hear it on the news.
         boolean room = dispatch.hasRoom();
         if (e.task == Dispatch.T_SHELTER && dispatch.zones.isEmpty()) e.task = Dispatch.T_NONE;
-        if (e.task == Dispatch.T_SEEK && !room) e.task = Dispatch.T_NONE;
-        if (e.task == Dispatch.T_NONE && room && (e.fleeTimer > 0 || rnd.nextFloat() < dt * 0.03f))
+        if (e.task == Dispatch.T_SEEK && (!room || e.refused)) e.task = Dispatch.T_NONE;
+        if (e.task == Dispatch.T_NONE && room && !e.refused && (e.fleeTimer > 0 || rnd.nextFloat() < dt * 0.03f))
             e.task = Dispatch.T_SEEK;
         if (e.task == Dispatch.T_SEEK) {
             Dispatch.SafeZone z = dispatch.zoneAt(e.x, e.y, 0.7f);
-            if (z != null) dispatch.admit(e, z);
+            if (z != null && (!z.military || !checkpoint(e, z))) dispatch.admit(e, z);
         }
 
         if (e.task == Dispatch.T_SEEK && threatDist > 28) {
@@ -2797,6 +2799,47 @@ final class World {
             return true;
         }
         if (!followField(e, hospital.field, e.speed)) e.task = Dispatch.T_NONE;
+        return true;
+    }
+
+    /**
+     * The army checks everyone coming into its safe zones for bites. Most bites are found: the person is held in
+     * quarantine and treated if a medic is about, and otherwise sent off to the hospital. Returns true if they
+     * were stopped at the gate.
+     */
+    private boolean checkpoint(Entity e, Dispatch.SafeZone z) {
+        if (!e.infected || e.screened) return false;
+        e.screened = true;
+        if (rnd.nextFloat() < 0.2f) return false; // The bite was missed.
+        boolean medic = false;
+        for (int i = 0, n = entities.size(); i < n && !medic; i++) {
+            Entity m = entities.get(i);
+            if (m.type == Entity.MEDIC && !m.dead && Math.abs(m.x - z.x) < z.r + 200 && Math.abs(m.y - z.y) < z.r + 200) medic = true;
+        }
+        boolean cured = false;
+        if (!e.cureTried && e.infectTimer > 4) {
+            tryCure(e, medic ? 0.7f : 0.25f);
+            cured = !e.infected;
+        }
+        String where = z.place;
+        if (cured) {
+            quarantined++;
+            if (z.checkCd <= 0) {
+                z.checkCd = 20;
+                dispatch.say(Dispatch.WHO_MILITARY, null, "Checkpoint: Bitten civilian caught at the " + where
+                        + " gate. Treated in quarantine" + (medic ? " by our medics." : "."), z.x, z.y);
+            }
+            return false;
+        }
+        turnedAway++;
+        e.refused = true;
+        e.task = Dispatch.T_HEAL;
+        e.talkTimer = 2;
+        if (z.checkCd <= 0) {
+            z.checkCd = 20;
+            dispatch.say(Dispatch.WHO_MILITARY, null, "Checkpoint: Bite found on someone at the " + where
+                    + " gate. Turned away and sent to the hospital.", z.x, z.y);
+        }
         return true;
     }
 

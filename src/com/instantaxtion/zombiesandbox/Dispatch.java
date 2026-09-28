@@ -33,7 +33,7 @@ final class Dispatch {
     }
 
     static final class SafeZone {
-        float x, y, r, age, attackCd, statusTimer, quietTime;
+        float x, y, r, age, attackCd, statusTimer, quietTime, checkCd;
         boolean military, removed, full, fullAnnounced;
         String place;
         int guards, sheltered, wantGuards, capacity;
@@ -573,6 +573,7 @@ final class Dispatch {
         for (int i = zones.size() - 1; i >= 0; i--) {
             SafeZone z = zones.get(i);
             z.age += step;
+            z.checkCd -= step;
             z.attackCd -= step;
             int near = w.countZombiesNear(z.x, z.y, z.r * 1.6f);
             if (z.guards == 0 && z.age > 10) {
@@ -763,6 +764,13 @@ final class Dispatch {
         int got = assignGuards(z, z.wantGuards, Float.MAX_VALUE, military ? Entity.SOLDIER : Entity.COP);
         if (got == 0) return null;
         zones.add(z);
+        if (!military) {
+            int before = w.fleet.vehicles.size();
+            w.fleet.roadblocks(z);
+            int n = w.fleet.vehicles.size() - before;
+            if (n > 0) say(WHO_POLICE, null, "Police Command: Roadblocks going up on " + n + (n == 1 ? " road" : " roads")
+                    + " around " + place + ".", x, y);
+        }
         zonesDirty = true;
         if (military)
             say(WHO_MILITARY, null, "Military: Safe zone established at " + place + ", " + got

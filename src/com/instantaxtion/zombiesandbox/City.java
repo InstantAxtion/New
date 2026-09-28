@@ -21,13 +21,15 @@ final class City {
 
     static final int OFFICE = 0, HOUSE = 1, WAREHOUSE = 2, STATION = 3, BARRACKS = 4, TOWER = 5, HOSPITAL = 6,
             SHOP = 7, CHURCH = 8, SCHOOL = 9, FIRE_STATION = 10, MARKET = 11, KIOSK = 12, SPIRE = 13, CRYPT = 14,
-            APARTMENT = 15, GARAGE = 16, PHARMACY = 17, TRAIN_STATION = 18;
-    static final int KIND_COUNT = 19;
+            APARTMENT = 15, GARAGE = 16, PHARMACY = 17, TRAIN_STATION = 18, MALL = 19, STADIUM = 20, POWER = 21,
+            BARN = 22, SILO = 23;
+    static final int KIND_COUNT = 24;
     private static final int[] APARTMENT_WALLS = {0xFFC9B8A0, 0xFFB5A08A, 0xFFD4C8B8, 0xFFA89484, 0xFFBFB0C0};
     private static final String[] PHARMACIES = {"CityCare Pharmacy", "Main Street Drugs", "HealthPlus", "Corner Pharmacy"};
     /** Ground decorations drawn into the map: {kind, x0, y0, x1, y1, variant} in world units. */
     static final int D_COURT = 0, D_FIELD = 1, D_PLAYGROUND = 2, D_GARDEN = 3, D_GRAVE = 4, D_SKATE = 5,
-            D_CANOPY = 6;
+            D_CANOPY = 6, D_ALLEY = 7, D_SITE = 8, D_POWER = 9, D_HELIPAD = 10, D_BAY = 11, D_BANDSTAND = 12,
+            D_FLOWERS = 13, D_CROPS = 14, D_ROUNDABOUT = 15, D_FLOODLIGHT = 16;
     private static final int[] SHOP_ROOFS = {0xFF8C5A4A, 0xFF5A6E8C, 0xFF7E7A5C, 0xFF6E5A7E, 0xFF8A6A3E, 0xFF4F6F66};
     private static final int[] SHOP_WALLS = {0xFFE0C9A6, 0xFFB9C6D2, 0xFFD8B8A8, 0xFFC9D6B8, 0xFFE8DCC8, 0xFFB8A8C8};
     static final int FACILITY_POLICE = 0, FACILITY_BASE = 1, FACILITY_HOSPITAL = 2, FACILITY_FIRE = 3;
@@ -233,7 +235,9 @@ final class City {
                     l[4], l[8], l[5], l[6]);
             int k = l[6];
             if (k == OFFICE || k == HOUSE || k == WAREHOUSE || k == SHOP || k == CHURCH || k == SCHOOL || k == MARKET
-                    || k == KIOSK || k == APARTMENT || k == GARAGE || k == PHARMACY || k == TRAIN_STATION) placeDoor(b, l);
+                    || k == KIOSK || k == APARTMENT || k == GARAGE || k == PHARMACY || k == TRAIN_STATION || k == MALL
+                    || k == BARN || (k == STADIUM && !stadiumNamed)) placeDoor(b, l);
+            if (k == MALL) b.capacity = 40;
             if (k == APARTMENT) b.capacity = Math.max(8, Math.min(30, l[2] * l[3]));
             // Bigger and taller buildings take more to bring down.
             b.maxHp = b.hp = 150 + l[2] * l[3] * 22 + l[7] * 60;
@@ -241,6 +245,11 @@ final class City {
             if (k == CHURCH) b.name = SAINTS[nr.nextInt(SAINTS.length)] + " Church";
             else if (k == SCHOOL) b.name = SCHOOLS[nr.nextInt(SCHOOLS.length)];
             else if (k == TRAIN_STATION) b.name = "Central Station";
+            else if (k == MALL) b.name = name + " Mall";
+            else if (k == STADIUM && !stadiumNamed) {
+                b.name = name + " Stadium";
+                stadiumNamed = true;
+            }
             else if (k == MARKET) {
                 b.name = MARKETS[nr.nextInt(MARKETS.length)];
                 b.stock = 240;
@@ -265,6 +274,8 @@ final class City {
         if (detail != 1f) canvas.scale(detail, detail);
         render(canvas);
     }
+
+    private boolean stadiumNamed;
 
     /** Puts the door in the middle of the first side that opens onto walkable ground. */
     private void placeDoor(Building b, int[] l) {
@@ -426,6 +437,8 @@ final class City {
             }
         }
 
+        roundabouts();
+
         // Pick blocks for the military base and police stations.
         boolean[] used = new boolean[blocks.size()];
         if (cfg.militaryBase()) {
@@ -536,6 +549,47 @@ final class City {
             }
         }
 
+        // Big sites: a shopping mall, a stadium and a power station, on blocks large enough to take them.
+        boolean rural = cfg.density() == 0 && cfg.style() == CityConfig.STYLE_HOUSES;
+        if (!rural) {
+            int k = bigBlock(used, 11, 9, 0.45f);
+            if (k >= 0) {
+                used[k] = true;
+                int[] b = blocks.get(k);
+                fill(b[0], b[1], b[2] - b[0], b[3] - b[1], SIDEWALK);
+                mall(b[0] + 1, b[1] + 1, b[2] - b[0] - 2, b[3] - b[1] - 2);
+            }
+        }
+        if (w >= 128 || cfg.density() == 2) {
+            int k = bigBlock(used, 12, 11, 0.6f);
+            if (k >= 0) {
+                used[k] = true;
+                int[] b = blocks.get(k);
+                fill(b[0], b[1], b[2] - b[0], b[3] - b[1], SIDEWALK);
+                stadium(b[0] + 1, b[1] + 1, b[2] - b[0] - 2, b[3] - b[1] - 2);
+            }
+        }
+        {
+            int best = -1;
+            float bestD = Float.MAX_VALUE;
+            float ix0 = w / 2f + (float) Math.cos(industryAngle) * w * 0.4f, iy0 = h / 2f + (float) Math.sin(industryAngle) * h * 0.4f;
+            for (int k = 0; k < blocks.size(); k++) {
+                int[] b = blocks.get(k);
+                if (used[k] || b[2] - b[0] - 2 < 8 || b[3] - b[1] - 2 < 7) continue;
+                float d = (float) Math.hypot((b[0] + b[2]) / 2f - ix0, (b[1] + b[3]) / 2f - iy0);
+                if (d < bestD) {
+                    bestD = d;
+                    best = k;
+                }
+            }
+            if (best >= 0) {
+                used[best] = true;
+                int[] b = blocks.get(best);
+                fill(b[0], b[1], b[2] - b[0], b[3] - b[1], SIDEWALK);
+                powerStation(b[0] + 1, b[1] + 1, b[2] - b[0] - 2, b[3] - b[1] - 2);
+            }
+        }
+
         for (int k = 0; k < blocks.size(); k++) {
             if (used[k]) continue;
             int[] b = blocks.get(k);
@@ -544,6 +598,14 @@ final class City {
             fill(x0, y0, x1 - x0, y1 - y0, SIDEWALK);
             int ix = x0 + 1, iy = y0 + 1, iw = x1 - x0 - 2, ih = y1 - y0 - 2;
             if (iw < 2 || ih < 2) continue;
+            // Farms on the edge of town.
+            float fcx = (x0 + x1) / 2f - w / 2f, fcy = (y0 + y1) / 2f - h / 2f;
+            float fd = (float) Math.sqrt(fcx * fcx + fcy * fcy) / (w * 0.5f);
+            float farmChance = rural ? 0.4f : cfg.style() == CityConfig.STYLE_HOUSES || cfg.density() == 0 ? 0.25f : cfg.density() == 2 ? 0 : 0.1f;
+            if (fd > 0.8f && iw >= 7 && ih >= 7 && rnd.nextFloat() < farmChance) {
+                farm(ix, iy, iw, ih);
+                continue;
+            }
             block(ix, iy, iw, ih);
         }
 
@@ -687,6 +749,15 @@ final class City {
         float[] c = findWalkable(cx, cy);
         if (c == null) c = new float[]{cx, cy};
         if (kind == HOSPITAL) {
+            // A helipad on the far end of the car park, and an ambulance bay by the doors.
+            int px = wide ? lx + lw - 4 : lx + lw - 4, py = wide ? ly + lh - 4 : ly + lh - 4;
+            if (lw >= 5 && lh >= 5) {
+                fill(px, py, 3, 3, LOT);
+                addDecor(D_HELIPAD, px * T + 2, py * T + 2, (px + 3) * T - 2, (py + 3) * T - 2, 0);
+            }
+            float bx0 = wide ? (x + sw + 1) * T + 1 : (x + 1) * T, by0 = wide ? (y + 1) * T : (y + sh + 1) * T + 1;
+            if (wide) addDecor(D_BAY, bx0, by0, bx0 + T - 2, by0 + Math.min(sh, 4) * T, 1);
+            else addDecor(D_BAY, bx0, by0, bx0 + Math.min(sw, 4) * T, by0 + T - 2, 0);
             facilities.add(new Facility(FACILITY_HOSPITAL, c[0], c[1], 64, c[0], c[1], "City Hospital"));
             return;
         }
@@ -740,6 +811,21 @@ final class City {
         } else if (kind == TOWER) {
             roof = 0xFF4B5536;
             wall = 0xFF6B7350;
+        } else if (kind == MALL) {
+            roof = 0xFFC8C4BC;
+            wall = 0xFFE2DCD0;
+        } else if (kind == STADIUM) {
+            roof = 0xFF9EA2A8;
+            wall = 0xFFB8BCC0;
+        } else if (kind == POWER) {
+            roof = 0xFF7C7F82;
+            wall = 0xFF9A8A78;
+        } else if (kind == BARN) {
+            roof = 0xFF8E2E24;
+            wall = 0xFFA83A2C;
+        } else if (kind == SILO) {
+            roof = 0xFFB8BCC0;
+            wall = 0xFFC8CCD0;
         } else {
             roof = 0xFF5B6B3A;
             wall = 0xFF7C8456;
@@ -800,7 +886,8 @@ final class City {
             // Shops line the main roads; side streets are mostly homes and offices.
             int shopChance = mainRoad ? cfg.shopShare() + 20 : cfg.shopShare() / 3;
             if (style == CityConfig.STYLE_HOUSES && !mainRoad) shopChance = cfg.shopShare() / 6;
-            if (rnd.nextInt(100) < shopChance && bw >= 5 && bh >= 5 && style != CityConfig.STYLE_WAREHOUSES) shops(x, y, bw, bh);
+            if (style != CityConfig.STYLE_HOUSES && bw >= 6 && bh >= 6 && rnd.nextFloat() < 0.05f) constructionSite(x, y, bw, bh);
+            else if (rnd.nextInt(100) < shopChance && bw >= 5 && bh >= 5 && style != CityConfig.STYLE_WAREHOUSES) shops(x, y, bw, bh);
             else if (style == CityConfig.STYLE_HOUSES && rnd.nextInt(100) < cfg.buildingMix()[0] / 2 && bw >= 5 && bh >= 5) {
                 // An apartment block on the edge of the suburbs.
                 fill(x, y, bw, bh, GRASS);
@@ -846,12 +933,14 @@ final class City {
             int cut = 3 + rnd.nextInt(lw - 5);
             lots(x, y, cut, lh, depth + 1);
             lots(x + cut + 1, y, lw - cut - 1, lh, depth + 1);
+            if (lh >= 4) addDecor(D_ALLEY, (x + cut) * T + 1, y * T, (x + cut + 1) * T - 1, (y + lh) * T, 0);
             return;
         }
         if (depth < maxDepth && lh >= 7 && rnd.nextFloat() < 0.75f) {
             int cut = 3 + rnd.nextInt(lh - 5);
             lots(x, y, lw, cut, depth + 1);
             lots(x, y + cut + 1, lw, lh - cut - 1, depth + 1);
+            if (lw >= 4) addDecor(D_ALLEY, x * T, (y + cut) * T + 1, (x + lw) * T, (y + cut + 1) * T - 1, 0);
             return;
         }
         if (lw < 2 || lh < 2) return;
@@ -1181,7 +1270,169 @@ final class City {
                 break;
             default:
                 park(x, y, bw, bh);
+                if (bw >= 6 && bh >= 6 && rnd.nextFloat() < 0.45f) bandstand(x, y, bw, bh);
                 break;
+        }
+    }
+
+    /** A bandstand in the middle of the park, with flower beds around it. */
+    private void bandstand(int x, int y, int bw, int bh) {
+        int cx = x + bw / 2, cy = y + bh / 2;
+        for (int j = cy - 1; j <= cy + 1; j++)
+            for (int i = cx - 1; i <= cx + 1; i++) tiles[j * w + i] = PLAZA;
+        addDecor(D_BANDSTAND, (cx - 1) * T, (cy - 1) * T, (cx + 2) * T, (cy + 2) * T, 0);
+        int[][] beds = {{x + 1, y + 1}, {x + bw - 3, y + 1}, {x + 1, y + bh - 3}, {x + bw - 3, y + bh - 3}};
+        for (int[] b : beds) {
+            boolean clear = true;
+            for (int j = b[1]; j < b[1] + 2; j++)
+                for (int i = b[0]; i < b[0] + 2; i++) if (tiles[j * w + i] != GRASS && tiles[j * w + i] != TREE) clear = false;
+            if (!clear) continue;
+            fill(b[0], b[1], 2, 2, GRASS);
+            addDecor(D_FLOWERS, b[0] * T + 3, b[1] * T + 3, (b[0] + 2) * T - 3, (b[1] + 2) * T - 3, rnd.nextInt(3));
+        }
+    }
+
+    /** The unused block with room for (mw x mh) inside, closest to a distance from the centre (0-1). */
+    private int bigBlock(boolean[] used, int mw, int mh, float want) {
+        int best = -1;
+        float bestScore = Float.MAX_VALUE;
+        for (int k = 0; k < blocks.size(); k++) {
+            int[] b = blocks.get(k);
+            int iw = b[2] - b[0] - 2, ih = b[3] - b[1] - 2;
+            if (used[k] || !((iw >= mw && ih >= mh) || (iw >= mh && ih >= mw))) continue;
+            float cx = (b[0] + b[2]) / 2f - w / 2f, cy = (b[1] + b[3]) / 2f - h / 2f;
+            float d = (float) Math.sqrt(cx * cx + cy * cy) / (w * 0.5f);
+            float score = Math.abs(d - want) + rnd.nextFloat() * 0.15f;
+            if (score < bestScore) {
+                bestScore = score;
+                best = k;
+            }
+        }
+        return best;
+    }
+
+    /**
+     * Four-way junctions sometimes become roundabouts: a round island in the middle that traffic drives around.
+     * Only junctions with a road coming in on every side.
+     */
+    private void roundabouts() {
+        for (int y = 5; y < h - 10; y++)
+            for (int x = 5; x < w - 10; x++)
+                for (int sz = 3; sz <= 5; sz += 2) {
+                    if (railY0 >= 0 && y + sz >= railY0 - 3 && y <= railY0 + railRows + 3) continue;
+                    boolean ok = arm(x - 1, y, sz, false) && arm(x + sz, y, sz, false) && arm(x, y - 1, sz, true)
+                            && arm(x, y + sz, sz, true);
+                    for (int j = 0; j < sz && ok; j++)
+                        for (int k = 0; k < sz && ok; k++) if (tiles[(y + j) * w + x + k] != ROAD) ok = false;
+                    if (!ok || rnd.nextFloat() > 0.4f) continue;
+                    int island = sz == 3 ? 1 : 3, o = (sz - island) / 2;
+                    for (int j = 0; j < island; j++)
+                        for (int k = 0; k < island; k++) {
+                            tiles[(y + o + j) * w + x + o + k] = GRASS;
+                            roadDir[(y + o + j) * w + x + o + k] = 0;
+                        }
+                    for (int j = 0; j < sz; j++)
+                        for (int k = 0; k < sz; k++) if (roadDir[(y + j) * w + x + k] != 0) roadDir[(y + j) * w + x + k] = 3;
+                    addDecor(D_ROUNDABOUT, x * T, y * T, (x + sz) * T, (y + sz) * T, island);
+                }
+    }
+
+    /** A road exactly sz tiles wide leading away at (x, y): vertical (running north-south) or horizontal. */
+    private boolean arm(int x, int y, int sz, boolean vertical) {
+        for (int k = 0; k < sz; k++) {
+            int i = vertical ? x + k : x, j = vertical ? y : y + k;
+            if (roadDir[j * w + i] != (vertical ? 1 : 2)) return false;
+        }
+        int bi = vertical ? x - 1 : x, bj = vertical ? y : y - 1, ai = vertical ? x + sz : x, aj = vertical ? y : y + sz;
+        return roadDir[bj * w + bi] == 0 && roadDir[aj * w + ai] == 0;
+    }
+
+    /** A shopping mall in the middle of its car park. */
+    private void mall(int x, int y, int bw, int bh) {
+        fill(x, y, bw, bh, LOT);
+        int mw = Math.max(6, bw - 4), mh = Math.max(5, bh - 4);
+        int mx = x + (bw - mw) / 2, my = y + (bh - mh) / 2;
+        addFacilityLot(mx, my, mw, mh, MALL, 2 + rnd.nextInt(2));
+        for (int j = y; j < y + bh; j++)
+            for (int i = x; i < x + bw; i++)
+                if (tiles[j * w + i] == LOT && (j - y) % 3 != 1 && rnd.nextFloat() < 0.3f && !hasNeighbor(i, j, CAR))
+                    tiles[j * w + i] = CAR;
+        openAreas.add(new float[]{(x + bw / 2f) * T, (y + bh / 2f) * T, 2});
+    }
+
+    /** A football stadium: stands on all four sides with gaps to walk in, the pitch in the middle. */
+    private void stadium(int x, int y, int bw, int bh) {
+        fill(x, y, bw, bh, PLAZA);
+        int t = 2, gap = 2;
+        int mx = x + bw / 2 - 1, my = y + bh / 2 - 1;
+        // Top and bottom stands (split by an entrance), then the ends.
+        addFacilityLot(x, y, mx - x, t, STADIUM, 2);
+        addFacilityLot(mx + gap, y, x + bw - mx - gap, t, STADIUM, 2);
+        addFacilityLot(x, y + bh - t, mx - x, t, STADIUM, 2);
+        addFacilityLot(mx + gap, y + bh - t, x + bw - mx - gap, t, STADIUM, 2);
+        addFacilityLot(x, y + t, t, my - y - t, STADIUM, 2);
+        addFacilityLot(x, my + gap, t, y + bh - t - my - gap, STADIUM, 2);
+        addFacilityLot(x + bw - t, y + t, t, my - y - t, STADIUM, 2);
+        addFacilityLot(x + bw - t, my + gap, t, y + bh - t - my - gap, STADIUM, 2);
+        fill(x + t + 1, y + t + 1, bw - 2 * t - 2, bh - 2 * t - 2, GRASS);
+        addDecor(D_FIELD, (x + t + 1) * T + 3, (y + t + 1) * T + 3, (x + bw - t - 1) * T - 3, (y + bh - t - 1) * T - 3, 0);
+        addDecor(D_FLOODLIGHT, (x + t) * T, (y + t) * T, (x + bw - t) * T, (y + bh - t) * T, 0);
+        openAreas.add(new float[]{(x + bw / 2f) * T, (y + bh / 2f) * T, 0});
+    }
+
+    /** A power station: turbine hall, chimneys, and a fenced yard of transformers. */
+    private void powerStation(int x, int y, int bw, int bh) {
+        fill(x, y, bw, bh, LOT);
+        boolean wide = bw >= bh;
+        int hw = wide ? bw / 2 : bw - 2, hh = wide ? bh - 2 : bh / 2;
+        addFacilityLot(x + 1, y + 1, hw, hh, POWER, 3);
+        int yx = wide ? x + hw + 2 : x + 1, yy = wide ? y + 1 : y + hh + 2;
+        int yw = wide ? bw - hw - 3 : bw - 2, yh = wide ? bh - 2 : bh - hh - 3;
+        if (yw < 3 || yh < 3) return;
+        for (int i = yx; i < yx + yw; i++) {
+            tiles[yy * w + i] = FENCE;
+            tiles[(yy + yh - 1) * w + i] = FENCE;
+        }
+        for (int j = yy; j < yy + yh; j++) {
+            tiles[j * w + yx] = FENCE;
+            tiles[j * w + yx + yw - 1] = FENCE;
+        }
+        addDecor(D_POWER, (yx + 1) * T, (yy + 1) * T, (yx + yw - 1) * T, (yy + yh - 1) * T, 0);
+    }
+
+    /** A building site: hoardings round the edge, a crane, foundations and piles of materials. */
+    private void constructionSite(int x, int y, int bw, int bh) {
+        fill(x, y, bw, bh, LOT);
+        for (int i = x; i < x + bw; i++) {
+            if (Math.abs(i - (x + bw / 2)) > 1) tiles[y * w + i] = FENCE;
+            tiles[(y + bh - 1) * w + i] = FENCE;
+        }
+        for (int j = y; j < y + bh; j++) {
+            tiles[j * w + x] = FENCE;
+            tiles[j * w + x + bw - 1] = FENCE;
+        }
+        addDecor(D_SITE, (x + 1) * T, (y + 1) * T, (x + bw - 1) * T, (y + bh - 1) * T, rnd.nextInt(4));
+        // A half-built block in one corner.
+        if (bw >= 8 && bh >= 8) addLot(x + bw - 4, y + bh - 4, 2, 2, OFFICE);
+    }
+
+    /** A farm: the farmhouse, a barn and a silo in the yard, and fields of crops. */
+    private void farm(int x, int y, int bw, int bh) {
+        fill(x, y, bw, bh, GRASS);
+        boolean wide = bw >= bh;
+        int yard = 4;
+        int yx = x, yy = y;
+        addLot(yx + 1, yy + 1, 2, 2, HOUSE);
+        addFacilityLot(wide ? yx + 1 : yx + 4, wide ? yy + 4 : yy + 1, 3, 2, BARN, 1);
+        if (wide ? bh >= 8 : bw >= 8) addFacilityLot(wide ? yx + 2 : yx + 8, wide ? yy + 7 : yy + 2, 1, 1, SILO, 3);
+        int fx = wide ? x + yard + 1 : x, fy = wide ? y : y + yard + 1;
+        int fw = wide ? bw - yard - 1 : bw, fh = wide ? bh : bh - yard - 1;
+        // Split the land into two or three fields with different crops.
+        int fields = Math.max(1, Math.min(3, (wide ? fw : fh) / 5));
+        for (int k = 0; k < fields; k++) {
+            float a0 = (wide ? fx : fy) + (wide ? fw : fh) * k / (float) fields, a1 = (wide ? fx : fy) + (wide ? fw : fh) * (k + 1) / (float) fields;
+            if (wide) addDecor(D_CROPS, a0 * T + 3, fy * T + 3, a1 * T - 3, (fy + fh) * T - 3, rnd.nextInt(3));
+            else addDecor(D_CROPS, fx * T + 3, a0 * T + 3, (fx + fw) * T - 3, a1 * T - 3, rnd.nextInt(3));
         }
     }
 
@@ -1504,6 +1755,27 @@ final class City {
                     c.drawCircle(cx, cy, 2f, p);
                     trees.add(new float[]{cx, cy, r});
                 }
+
+        // Street trees along the pavement, their canopies over people's heads.
+        if (cfg.parks() > 0)
+            for (int y = 1; y < h - 1; y++)
+                for (int x = 1; x < w - 1; x++) {
+                    if (tiles[y * w + x] != SIDEWALK || ((x * 7 + y * 13) % (cfg.parks() >= 2 ? 5 : 8)) != 0) continue;
+                    boolean nextToRoad = tiles[y * w + x - 1] == ROAD || tiles[y * w + x + 1] == ROAD
+                            || tiles[(y - 1) * w + x] == ROAD || tiles[(y + 1) * w + x] == ROAD;
+                    if (!nextToRoad || hasNeighborDir(x, y) || hasNeighbor(x, y, CAR)) continue;
+                    boolean lamp = false;
+                    for (float[] l : lamps) if (Math.abs(l[0] - (x * T + T / 2f)) < T * 2 && Math.abs(l[1] - (y * T + T / 2f)) < T * 2) lamp = true;
+                    if (lamp) continue;
+                    float cx = x * T + T / 2f, cy = y * T + T / 2f, r = 6f + ((x * 3 + y) % 3);
+                    p.setColor(0x40000000);
+                    c.drawCircle(cx + TREE_HEIGHT * 0.28f, cy + TREE_HEIGHT * 0.38f, r, p);
+                    p.setColor(0xFF6B5A48);
+                    c.drawRect(cx - 3.5f, cy - 3.5f, cx + 3.5f, cy + 3.5f, p);
+                    p.setColor(0xFF4A3524);
+                    c.drawCircle(cx, cy, 1.6f, p);
+                    trees.add(new float[]{cx, cy, r});
+                }
     }
 
     /** Rounds the outer corners of every block's sidewalk where two roads meet. */
@@ -1727,6 +1999,227 @@ final class City {
                 p.setStrokeWidth(1.4f);
                 p.setColor(0xFF555555);
                 c.drawLine(x0 + dw * 0.6f, y0 + dh * 0.65f, x0 + dw * 0.9f, y0 + dh * 0.65f, p);
+                break;
+            }
+            case D_ALLEY: {
+                // A narrow back alley: worn tarmac, bins and a dumpster or two.
+                Random r = new Random((long) (x0 * 31 + y0 * 17));
+                p.setColor(0xFF5A5854);
+                c.drawRect(x0, y0, x1, y1, p);
+                float len = wide ? dw : dh;
+                for (float t = 6 + r.nextFloat() * 20; t < len - 8; t += 22 + r.nextFloat() * 30) {
+                    float px = wide ? x0 + t : x0 + 1, py = wide ? y0 + 1 : y0 + t;
+                    float sx = wide ? 9 : dw - 2, sy = wide ? dh - 2 : 9;
+                    if (r.nextBoolean()) {
+                        p.setColor(0x50000000);
+                        c.drawRect(px + 1, py + 1.5f, px + sx + 1, py + sy + 1.5f, p);
+                        p.setColor(r.nextBoolean() ? 0xFF2F6B45 : 0xFF3A5A8A);
+                        c.drawRect(px, py, px + sx, py + sy, p);
+                        p.setColor(0x33FFFFFF);
+                        c.drawRect(px, py, px + sx, py + 1.2f, p);
+                    } else {
+                        p.setColor(0xFF22262A);
+                        c.drawCircle(px + (wide ? 3 : sx / 2), py + (wide ? sy / 2 : 3), 2.3f, p);
+                        p.setColor(0xFF1A1A1A);
+                        c.drawCircle(px + (wide ? 7 : sx / 2 + 2), py + (wide ? sy / 2 + 1 : 7), 1.8f, p);
+                    }
+                }
+                break;
+            }
+            case D_SITE: {
+                // Dug-out foundations, rebar, stacked materials and a tower crane.
+                Random r = new Random((long) (x0 * 13 + y0 * 7));
+                p.setColor(0xFF8A6E4E);
+                c.drawRect(x0, y0, x1, y1, p);
+                for (int k = 0; k < 40; k++) {
+                    p.setColor(r.nextBoolean() ? 0xFF7A5E40 : 0xFF9A7E5A);
+                    c.drawCircle(x0 + r.nextFloat() * dw, y0 + r.nextFloat() * dh, 1 + r.nextFloat() * 2, p);
+                }
+                float fx0 = x0 + dw * 0.1f, fy0 = y0 + dh * 0.12f, fx1 = x0 + dw * 0.6f, fy1 = y0 + dh * 0.55f;
+                p.setColor(0xFF9E9A92);
+                c.drawRect(fx0, fy0, fx1, fy1, p);
+                p.setColor(0xFF6E6A62);
+                c.drawRect(fx0 + 2, fy0 + 2, fx1 - 2, fy1 - 2, p);
+                p.setColor(0xFFB06A3A);
+                p.setStrokeWidth(0.5f);
+                for (float gx = fx0 + 4; gx < fx1 - 2; gx += 5) c.drawLine(gx, fy0 + 2, gx, fy1 - 2, p);
+                for (float gy = fy0 + 4; gy < fy1 - 2; gy += 5) c.drawLine(fx0 + 2, gy, fx1 - 2, gy, p);
+                // Stacks of planks, pipes and bricks.
+                for (int k = 0; k < 3; k++) {
+                    float mx = x0 + dw * (0.12f + k * 0.18f), my = y0 + dh * 0.75f;
+                    p.setColor(k == 0 ? 0xFFC8A060 : k == 1 ? 0xFF8A8E94 : 0xFFA8543A);
+                    c.drawRect(mx, my, mx + 10, my + 6, p);
+                    p.setColor(0x33000000);
+                    for (float l = my + 1.5f; l < my + 6; l += 1.5f) c.drawLine(mx, l, mx + 10, l, p);
+                }
+                // Portable cabin.
+                p.setColor(0xFFE8C547);
+                c.drawRect(x1 - 18, y0 + 3, x1 - 3, y0 + 10, p);
+                p.setColor(0xFF4A6E8A);
+                c.drawRect(x1 - 15, y0 + 5, x1 - 11, y0 + 8, p);
+                // The crane: a mast with a long jib, and its shadow on the ground.
+                float mx = fx1 - 4, my = fy1 - 4, ang = variant * 1.4f + 0.4f, jl = Math.max(dw, dh) * 0.9f;
+                float jx = (float) Math.cos(ang), jy = (float) Math.sin(ang);
+                p.setStrokeWidth(3f);
+                p.setColor(0x40000000);
+                c.drawLine(mx + 10 - jx * jl * 0.25f, my + 14 - jy * jl * 0.25f, mx + 10 + jx * jl, my + 14 + jy * jl, p);
+                p.setColor(0xFFE8B830);
+                c.drawRect(mx - 3, my - 3, mx + 3, my + 3, p);
+                p.setStrokeWidth(2.2f);
+                c.drawLine(mx - jx * jl * 0.25f, my - jy * jl * 0.25f, mx + jx * jl, my + jy * jl, p);
+                p.setColor(0xFF6A6A6A);
+                c.drawRect(mx - jx * jl * 0.25f - 3, my - jy * jl * 0.25f - 3, mx - jx * jl * 0.25f + 3, my - jy * jl * 0.25f + 3, p);
+                p.setStrokeWidth(1f);
+                break;
+            }
+            case D_POWER: {
+                // Rows of transformers and a pylon.
+                p.setColor(0xFF9A968C);
+                c.drawRect(x0, y0, x1, y1, p);
+                p.setColor(0xFF8A867C);
+                for (float gy = y0 + 2; gy < y1; gy += 4) c.drawRect(x0, gy, x1, gy + 0.6f, p);
+                for (float ty = y0 + 5; ty < y1 - 8; ty += 14)
+                    for (float tx = x0 + 5; tx < x1 - 8; tx += 14) {
+                        p.setColor(0x50000000);
+                        c.drawRect(tx + 1.5f, ty + 2, tx + 9.5f, ty + 10, p);
+                        p.setColor(0xFF5E6A5A);
+                        c.drawRect(tx, ty, tx + 8, ty + 8, p);
+                        p.setColor(0xFF7E8A78);
+                        for (float fx = tx + 1; fx < tx + 8; fx += 2) c.drawRect(fx, ty + 1, fx + 0.8f, ty + 7, p);
+                        p.setColor(0xFFD8D8D0);
+                        c.drawCircle(tx + 2, ty + 1, 0.9f, p);
+                        c.drawCircle(tx + 6, ty + 1, 0.9f, p);
+                    }
+                p.setColor(0xFF3A3A3A);
+                p.setStrokeWidth(0.5f);
+                c.drawLine(x0, y0 + 3, x1, y0 + 3, p);
+                c.drawLine(x0, y1 - 3, x1, y1 - 3, p);
+                p.setStrokeWidth(1f);
+                break;
+            }
+            case D_HELIPAD: {
+                p.setColor(0xFF3A3C40);
+                c.drawCircle(cx, cy, Math.min(dw, dh) / 2, p);
+                p.setStyle(Paint.Style.STROKE);
+                p.setStrokeWidth(1.5f);
+                p.setColor(0xFFE8E8E8);
+                c.drawCircle(cx, cy, Math.min(dw, dh) / 2 - 2.5f, p);
+                p.setStyle(Paint.Style.FILL);
+                p.setColor(0xFFD83A3A);
+                float hs = Math.min(dw, dh) * 0.22f;
+                c.drawRect(cx - hs, cy - hs, cx - hs * 0.55f, cy + hs, p);
+                c.drawRect(cx + hs * 0.55f, cy - hs, cx + hs, cy + hs, p);
+                c.drawRect(cx - hs, cy - hs * 0.2f, cx + hs, cy + hs * 0.2f, p);
+                break;
+            }
+            case D_BAY: {
+                // Yellow hatched ambulance bay.
+                p.setColor(0xFFE8C547);
+                p.setStyle(Paint.Style.STROKE);
+                p.setStrokeWidth(1f);
+                c.drawRect(x0 + 0.5f, y0 + 0.5f, x1 - 0.5f, y1 - 0.5f, p);
+                p.setStyle(Paint.Style.FILL);
+                float len = wide ? dw : dh;
+                for (float t = 3; t < len - 2; t += 5) {
+                    if (wide) c.drawLine(x0 + t, y0 + 1, x0 + t + 3, y1 - 1, p);
+                    else c.drawLine(x0 + 1, y0 + t, x1 - 1, y0 + t + 3, p);
+                }
+                break;
+            }
+            case D_BANDSTAND: {
+                // An eight-sided bandstand with a green roof.
+                float rr = Math.min(dw, dh) * 0.42f;
+                Path oct = new Path();
+                for (int k = 0; k < 8; k++) {
+                    double a = Math.PI / 8 + k * Math.PI / 4;
+                    float px = cx + (float) Math.cos(a) * rr, py = cy + (float) Math.sin(a) * rr;
+                    if (k == 0) oct.moveTo(px, py);
+                    else oct.lineTo(px, py);
+                }
+                oct.close();
+                c.save();
+                c.translate(3, 4);
+                p.setColor(0x50000000);
+                c.drawPath(oct, p);
+                c.restore();
+                p.setColor(0xFFE8E4DA);
+                c.drawPath(oct, p);
+                c.save();
+                c.translate(cx, cy);
+                c.scale(0.82f, 0.82f);
+                c.translate(-cx, -cy);
+                p.setColor(0xFF3F7A5A);
+                c.drawPath(oct, p);
+                c.restore();
+                p.setColor(0xFF5A9A74);
+                c.drawCircle(cx, cy, rr * 0.3f, p);
+                p.setColor(0xFFE8C547);
+                c.drawCircle(cx, cy, 1.5f, p);
+                break;
+            }
+            case D_FLOWERS: {
+                Random r = new Random((long) (x0 * 7 + y0 * 3));
+                p.setColor(0xFF6B4A30);
+                c.drawRoundRect(new RectF(x0, y0, x1, y1), 4, 4, p);
+                int[][] sets = {{0xFFE84A5A, 0xFFF2E86B}, {0xFFB08AE8, 0xFFF2F2F2}, {0xFFE87BB0, 0xFFE8A040}};
+                for (int k = 0; k < (int) (dw * dh / 5); k++) {
+                    p.setColor(r.nextInt(3) == 0 ? 0xFF3E8A34 : sets[variant % 3][r.nextInt(2)]);
+                    c.drawCircle(x0 + 2 + r.nextFloat() * (dw - 4), y0 + 2 + r.nextFloat() * (dh - 4), 1.1f, p);
+                }
+                break;
+            }
+            case D_CROPS: {
+                // Ploughed rows: wheat, cabbages or bare earth.
+                int base = variant == 0 ? 0xFFC8A850 : variant == 1 ? 0xFF4E8A38 : 0xFF7A5A3A;
+                int row = variant == 0 ? 0xFFB09040 : variant == 1 ? 0xFF3A6E2A : 0xFF6A4A2E;
+                p.setColor(base);
+                c.drawRect(x0, y0, x1, y1, p);
+                p.setColor(row);
+                boolean rowsAcross = variant == 1 ? !wide : wide;
+                if (rowsAcross) for (float gy = y0 + 1; gy < y1; gy += 3.5f) c.drawRect(x0, gy, x1, gy + 1.2f, p);
+                else for (float gx = x0 + 1; gx < x1; gx += 3.5f) c.drawRect(gx, y0, gx + 1.2f, y1, p);
+                if (variant == 1) {
+                    p.setColor(0xFF6FB04A);
+                    for (float gy = y0 + 2; gy < y1 - 1; gy += 3.5f)
+                        for (float gx = x0 + 2; gx < x1 - 1; gx += 3.5f) c.drawCircle(gx, gy, 1.1f, p);
+                }
+                break;
+            }
+            case D_ROUNDABOUT: {
+                // Paint the corners of the island back to road, then the round island with a kerb and flowers.
+                float ir = variant * T / 2f + (variant == 1 ? 2 : 4);
+                float ix0 = cx - variant * T / 2f, iy0 = cy - variant * T / 2f;
+                p.setColor(0xFF3A3D43);
+                c.drawRect(ix0, iy0, ix0 + variant * T, iy0 + variant * T, p);
+                p.setStyle(Paint.Style.STROKE);
+                p.setStrokeWidth(1f);
+                p.setColor(0xB0E8E8E8);
+                c.drawCircle(cx, cy, ir + 5, p);
+                p.setStyle(Paint.Style.FILL);
+                p.setColor(0xFFB8B4AC);
+                c.drawCircle(cx, cy, ir, p);
+                p.setColor(0xFF4C7837);
+                c.drawCircle(cx, cy, ir - 1.5f, p);
+                p.setColor(0xFF578A3F);
+                c.drawCircle(cx, cy, ir * 0.6f, p);
+                int[] fl = {0xFFE84A5A, 0xFFF2E86B, 0xFFF2F2F2};
+                for (int k = 0; k < 8; k++) {
+                    double a = k * Math.PI / 4;
+                    p.setColor(fl[k % 3]);
+                    c.drawCircle(cx + (float) Math.cos(a) * ir * 0.72f, cy + (float) Math.sin(a) * ir * 0.72f, 1.2f, p);
+                }
+                break;
+            }
+            case D_FLOODLIGHT: {
+                float[][] corners = {{x0, y0}, {x1, y0}, {x0, y1}, {x1, y1}};
+                for (float[] k : corners) {
+                    p.setColor(0x50000000);
+                    c.drawRect(k[0] - 2, k[1] - 2, k[0] + 5, k[1] + 5, p);
+                    p.setColor(0xFF4A4C50);
+                    c.drawRect(k[0] - 3.5f, k[1] - 3.5f, k[0] + 3.5f, k[1] + 3.5f, p);
+                    p.setColor(0xFFF2F0DA);
+                    c.drawRect(k[0] - 2.5f, k[1] - 2.5f, k[0] + 2.5f, k[1] - 0.5f, p);
+                }
                 break;
             }
             default:
@@ -2027,6 +2520,98 @@ final class City {
             c.drawLine((x0 + x1) / 2, (y0 + y1) / 2, (x0 + x1) / 2 + 2, (y0 + y1) / 2, p);
             return;
         }
+        if (kind == MALL) {
+            // Big flat roof with a glass atrium down the middle and plant rooms.
+            p.setColor(darken(roof, 0.7f));
+            c.drawRect(x0, y0, x1, y1, p);
+            p.setColor(roof);
+            c.drawRect(x0 + 2, y0 + 2, x1 - 2, y1 - 2, p);
+            boolean along = bw >= bh;
+            float ax0 = along ? x0 + 8 : (x0 + x1) / 2 - 7, ay0 = along ? (y0 + y1) / 2 - 7 : y0 + 8;
+            float ax1 = along ? x1 - 8 : (x0 + x1) / 2 + 7, ay1 = along ? (y0 + y1) / 2 + 7 : y1 - 8;
+            p.setColor(0xFF6E8CA0);
+            c.drawRect(ax0, ay0, ax1, ay1, p);
+            p.setColor(0xFF9CC3D9);
+            c.drawRect(ax0 + 1, ay0 + 1, ax1 - 1, ay1 - 1, p);
+            p.setColor(0xFF6E8CA0);
+            p.setStrokeWidth(0.8f);
+            if (along) for (float gx = ax0 + 6; gx < ax1; gx += 6) c.drawLine(gx, ay0, gx, ay1, p);
+            else for (float gy = ay0 + 6; gy < ay1; gy += 6) c.drawLine(ax0, gy, ax1, gy, p);
+            c.drawLine(along ? ax0 : (ax0 + ax1) / 2, along ? (ay0 + ay1) / 2 : ay0, along ? ax1 : (ax0 + ax1) / 2,
+                    along ? (ay0 + ay1) / 2 : ay1, p);
+            p.setColor(0x66FFFFFF);
+            c.drawRect(ax0 + 1, ay0 + 1, along ? ax1 - 1 : ax0 + 3, along ? ay0 + 3 : ay1 - 1, p);
+            p.setColor(0xFFA7ABAF);
+            c.drawRect(x0 + 6, y0 + 6, x0 + 16, y0 + 13, p);
+            c.drawRect(x1 - 16, y1 - 13, x1 - 6, y1 - 6, p);
+            p.setColor(0xFF7D8185);
+            c.drawCircle(x0 + 11, y0 + 9.5f, 2.5f, p);
+            c.drawCircle(x1 - 11, y1 - 9.5f, 2.5f, p);
+            return;
+        }
+        if (kind == STADIUM) {
+            // Tiered seating in club colours.
+            p.setColor(0xFF6E7278);
+            c.drawRect(x0, y0, x1, y1, p);
+            boolean along = bw >= bh;
+            int[] seats = {0xFFB83A30, 0xFFE8E8E8};
+            int rows = (int) ((along ? bh : bw) / 3);
+            for (int k = 0; k < rows; k++) {
+                p.setColor(darken(seats[k % 2], 0.8f + 0.2f * k / Math.max(1, rows)));
+                if (along) c.drawRect(x0 + 1, y0 + 1 + k * 3, x1 - 1, y0 + 3 + k * 3, p);
+                else c.drawRect(x0 + 1 + k * 3, y0 + 1, x0 + 3 + k * 3, y1 - 1, p);
+            }
+            return;
+        }
+        if (kind == POWER) {
+            p.setColor(darken(roof, 0.7f));
+            c.drawRect(x0, y0, x1, y1, p);
+            p.setColor(roof);
+            c.drawRect(x0 + 2, y0 + 2, x1 - 2, y1 - 2, p);
+            p.setColor(darken(roof, 0.85f));
+            p.setStrokeWidth(1f);
+            for (float x = x0 + 5; x < x1 - 3; x += 4) c.drawLine(x, y0 + 2, x, y1 - 2, p);
+            // Two tall chimneys, red and white.
+            for (int k = 0; k < 2; k++) {
+                float cx = x0 + bw * (0.3f + k * 0.4f), cy = y0 + bh * 0.35f;
+                p.setColor(0x60000000);
+                c.drawCircle(cx + 3, cy + 4, 5, p);
+                p.setColor(0xFFE8E8E8);
+                c.drawCircle(cx, cy, 5, p);
+                p.setColor(0xFFC8302A);
+                c.drawCircle(cx, cy, 3.6f, p);
+                p.setColor(0xFF2A2A2A);
+                c.drawCircle(cx, cy, 2.2f, p);
+            }
+            return;
+        }
+        if (kind == BARN) {
+            p.setColor(darken(roof, 0.7f));
+            c.drawRect(x0, y0, x1, y1, p);
+            boolean along = bw >= bh;
+            p.setColor(lighten(roof, 0.1f));
+            if (along) c.drawRect(x0 + 1, y0 + 1, x1 - 1, (y0 + y1) / 2, p);
+            else c.drawRect(x0 + 1, y0 + 1, (x0 + x1) / 2, y1 - 1, p);
+            p.setColor(roof);
+            if (along) c.drawRect(x0 + 1, (y0 + y1) / 2, x1 - 1, y1 - 1, p);
+            else c.drawRect((x0 + x1) / 2, y0 + 1, x1 - 1, y1 - 1, p);
+            p.setColor(0xFFE8E0D0);
+            if (along) c.drawRect(x0 + 1, (y0 + y1) / 2 - 0.7f, x1 - 1, (y0 + y1) / 2 + 0.7f, p);
+            else c.drawRect((x0 + x1) / 2 - 0.7f, y0 + 1, (x0 + x1) / 2 + 0.7f, y1 - 1, p);
+            return;
+        }
+        if (kind == SILO) {
+            p.setColor(0xFF4C7837);
+            c.drawRect(x0, y0, x1, y1, p);
+            float cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+            p.setColor(darken(roof, 0.7f));
+            c.drawCircle(cx, cy, bw / 2 - 0.5f, p);
+            p.setColor(roof);
+            c.drawCircle(cx, cy, bw / 2 - 1.5f, p);
+            p.setColor(lighten(roof, 0.2f));
+            c.drawCircle(cx - 1.5f, cy - 1.5f, bw / 4, p);
+            return;
+        }
         if (kind == APARTMENT) {
             // Flat roof with a rooftop water tank, stairwell hut and washing lines.
             p.setColor(darken(roof, 0.75f));
@@ -2164,7 +2749,7 @@ final class City {
 
         // Roof details on the lower half: solar panels, a rooftop garden or a row of skylights.
         int deco = bw >= 40 && bh >= 40 ? new Random(b[5] * 7L + 3).nextInt(5) : 4;
-        float dx0 = x0 + 7, dy0 = (y0 + y1) / 2 + 2, dx1 = x1 - 7, dy1 = y1 - 7;
+        float dx0 = x0 + 7, dy0 = (y0 + y1) / 2 + 2, dx1 = Math.min(x1 - 7, x0 + 7 + 70), dy1 = Math.min(y1 - 7, dy0 + 44);
         if (deco == 0) {
             drawSolar(c, p, dx0, dy0, dx1, dy1);
         } else if (deco == 1) {

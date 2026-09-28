@@ -1135,8 +1135,6 @@ final class GameView extends View implements Menu.Host {
             float[] t = world.city.trees.get(i);
             float x = cx + (t[0] - cx) * ts, y = cy + (t[1] - cy) * ts, r = t[2] * ts;
             if (x + r < vx0 || x - r > vx1 || y + r < vy0 || y - r > vy1) continue;
-            fill.setColor(0x26000000);
-            c.drawCircle(t[0] + 2.5f, t[1] + 3.5f, t[2], fill);
             fill.setColor(alpha(0xFF2C5A22, 1 - see * 0.5f));
             c.drawCircle(x, y, r, fill);
             // The canopy sways gently in the breeze.
@@ -1368,7 +1366,20 @@ final class GameView extends View implements Menu.Host {
                         c.drawRect(u0 + 1.5f, 0, u0 + cw - 1.5f, 9.5f, fill);
                         fill.setColor(fade(City.darken(0xFFE8E8E8, glass)));
                         for (float v = 2; v < 9; v += 2.5f) c.drawRect(u0 + 1.5f, v, u0 + cw - 1.5f, v + 0.5f, fill);
-                    } else if ((b.kind == City.MARKET || b.kind == City.KIOSK) && k == 0) {
+                    } else if (b.kind == City.STADIUM || b.kind == City.SILO) {
+                        // Bare concrete with ribs.
+                        if (k == 0 && i % 2 == 0) {
+                            fill.setColor(fade(City.darken(b.wall, shade * 0.85f)));
+                            c.drawRect(u0 + cw * 0.4f, 0, u0 + cw * 0.6f, hgt, fill);
+                        }
+                    } else if (b.kind == City.BARN) {
+                        if (k == 0 && i == cols / 2) {
+                            fill.setColor(fade(City.darken(0xFFE8E0D0, glass)));
+                            c.drawRect(u0 + 1, 0, u0 + cw - 1, 10, fill);
+                            fill.setColor(fade(City.darken(0xFF7A2A20, glass)));
+                            c.drawRect(u0 + 2, 1, u0 + cw - 2, 9, fill);
+                        }
+                    } else if ((b.kind == City.MARKET || b.kind == City.KIOSK || b.kind == City.MALL) && k == 0) {
                         fill.setColor(fade(City.darken(0xFF7FA6C0, glass)));
                         c.drawRect(u0, 0.5f, u0 + cw, 8.5f, fill);
                         fill.setColor(fade(City.darken(b.kind == City.KIOSK ? 0xFFD83A3A : 0xFF3E8A4A, glass)));
@@ -1378,7 +1389,7 @@ final class GameView extends View implements Menu.Host {
                             fill.setColor(fade(City.darken(0xFF3A3632, glass)));
                             c.drawRect(u0 + cw * 0.3f, 0, u0 + cw * 0.7f, 8, fill);
                         }
-                    } else if (b.kind == City.WAREHOUSE) {
+                    } else if (b.kind == City.WAREHOUSE || b.kind == City.POWER) {
                         if (k == 0 && i % 2 == 0) {
                             fill.setColor(fade(City.darken(0xFFA4A8AC, glass)));
                             c.drawRect(u0 + 2, 0, u0 + cw - 2, 9, fill);

@@ -33,7 +33,7 @@ final class Dispatch {
     }
 
     static final class SafeZone {
-        float x, y, r, age, attackCd, statusTimer, quietTime, checkCd;
+        float x, y, r, age, attackCd, statusTimer, quietTime, checkCd, emptyTime;
         boolean military, removed, full, fullAnnounced;
         String place;
         int guards, sheltered, wantGuards, capacity;
@@ -580,11 +580,17 @@ final class Dispatch {
                 removeZone(z, near > 0);
                 continue;
             }
-            // Nothing has come near for a couple of minutes: stand the zone down and send people home.
-            if (w.countZombiesNear(z.x, z.y, 700) == 0) z.quietTime += step;
+            // Stand the zone down when its own neighbourhood has been quiet for a while, when nobody has
+            // needed it for a while, or soon after the outbreak is over.
+            if (w.countZombiesNear(z.x, z.y, 380) == 0) z.quietTime += step;
             else z.quietTime = 0;
-            if (z.quietTime > 120 && z.age > 150) {
+            if (z.sheltered == 0 && near == 0) z.emptyTime += step;
+            else z.emptyTime = 0;
+            boolean over = !w.outbreak;
+            if (z.age > 90 && (z.quietTime > (over ? 25 : 75) || z.emptyTime > 90)) {
                 closeZone(z);
+                if (z.military) militaryZoneCd = 90;
+                else policeZoneCd = 90;
                 continue;
             }
             if (z.guards < z.wantGuards) assignGuards(z, z.wantGuards - z.guards, 900, z.military ? Entity.SOLDIER : Entity.COP);
@@ -765,11 +771,9 @@ final class Dispatch {
         if (got == 0) return null;
         zones.add(z);
         if (!military) {
-            int before = w.fleet.vehicles.size();
-            w.fleet.roadblocks(z);
-            int n = w.fleet.vehicles.size() - before;
-            if (n > 0) say(WHO_POLICE, null, "Police Command: Roadblocks going up on " + n + (n == 1 ? " road" : " roads")
-                    + " around " + place + ".", x, y);
+            int n = w.fleet.roadblocks(z);
+            if (n > 0) say(WHO_POLICE, null, "Police Command: Sending " + n + (n == 1 ? " car" : " cars")
+                    + " to close the roads into " + place + ".", x, y);
         }
         zonesDirty = true;
         if (military)

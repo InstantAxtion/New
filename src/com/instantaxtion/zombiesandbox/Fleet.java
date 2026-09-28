@@ -59,8 +59,12 @@ final class Fleet {
         Entity patient;
         /** A parked car's alarm going off (seconds left) after zombies bumped into it. */
         float alarm;
-        /** Police roadblocks: the safe zone this car is parked across the road for. */
+        /** Police roadblocks: the safe zone this car is closing a road for, which way that road runs, cones out,
+         *  and the officer posted beside it. */
         Dispatch.SafeZone block;
+        int blockDir;
+        boolean cones;
+        Entity guard;
         /** A stopped car rolls over to the kerb. */
         float pullX, pullY;
         boolean pulling;
@@ -109,6 +113,7 @@ final class Fleet {
                 String who = v.type == CRUISER ? "Police car" : "Army truck";
                 if (v.broken) return who + ": Wrecked";
                 if (v.state == BLOCK) return "Police car: Roadblock" + (where != null ? " on " + where : "");
+                if (v.block != null && v.state == DRIVE) return "Police car: Setting up a roadblock" + (where != null ? " on " + where : "");
                 if (v.state == WAIT) return who + ": Loading up";
                 if (v.state == DRIVE) return who + ": " + (v.type == TRUCK ? "Carrying squad" : "Responding") + (where != null ? " to " + where : "");
                 return who + ": Returning";
@@ -384,45 +389,69 @@ final class Fleet {
     }
 
     /**
-     * Police close the roads around a new safe zone: a cruiser parked across each street leading in, lights on.
-     * Traffic slows and squeezes past or turns back; zombies have to go round.
+     * Police close the main approaches to a new safe zone. For each side of the zone, the nearest road running
+     * towards it gets a cruiser sent from the precinct; on arrival it parks angled across the inbound lane with
+     * cones out and an officer posted beside it. Returns how many were sent.
      */
-    void roadblocks(Dispatch.SafeZone z) {
-        ArrayList<float[]> spots = new ArrayList<float[]>();
+    int roadblocks(Dispatch.SafeZone z) {
+        City.Facility precinct = city.nearestFacility(City.FACILITY_POLICE, z.x, z.y);
+        if (precinct == null) return 0;
         int tx0 = (int) (z.x / City.T), ty0 = (int) (z.y / City.T);
-        int rMin = (int) ((z.r + 40) / City.T), rMax = (int) ((z.r + 100) / City.T);
-        for (int ty = ty0 - rMax; ty <= ty0 + rMax; ty++)
-            for (int tx = tx0 - rMax; tx <= tx0 + rMax; tx++) {
-                if (tx < 1 || ty < 1 || tx >= city.w - 1 || ty >= city.h - 1) continue;
-                int dd = (tx - tx0) * (tx - tx0) + (ty - ty0) * (ty - ty0);
-                if (dd < rMin * rMin || dd > rMax * rMax) continue;
-                int dir = city.roadDirAt(tx, ty);
-                if (dir != 1 && dir != 2) continue;
-                // The middle of the road: road on both sides across it.
-                boolean mid = dir == 1 ? city.roadDirAt(tx - 1, ty) == 1 && city.roadDirAt(tx + 1, ty) == 1
-                        : city.roadDirAt(tx, ty - 1) == 2 && city.roadDirAt(tx, ty + 1) == 2;
-                if (!mid) continue;
-                float x = tx * City.T + City.T / 2f, y = ty * City.T + City.T / 2f;
-                boolean near = false;
-                for (int k = 0; k < spots.size(); k++)
-                    if (Math.hypot(spots.get(k)[0] - x, spots.get(k)[1] - y) < 110) near = true;
-                for (int k = 0; k < vehicles.size() && !near; k++)
-                    if (Math.hypot(vehicles.get(k).x - x, vehicles.get(k).y - y) < 20) near = true;
-                if (!near) spots.add(new float[]{x, y, dir == 1 ? 0 : (float) Math.PI / 2});
+        int rMin = (int) ((z.r + 30) / City.T), rMax = (int) ((z.r + 90) / City.T);
+        int sent = 0;
+        // North, south, west, east: walk outwards along a narrow band looking for a road heading into the zone.
+        int[][] dirs = {{0, -1}, {0, 1}, {-1, 0}, {1, 0}};
+        for (int[] dv : dirs) {
+            if (sent >= 3) break;
+            float[] best = null;
+            for (int dist = rMin; dist <= rMax && best == null; dist++)
+                for (int side = -3; side <= 3 && best == null; side++) {
+                    int tx = tx0 + dv[0] * dist + (dv[0] == 0 ? side : 0), ty = ty0 + dv[1] * dist + (dv[1] == 0 ? side : 0);
+                    if (tx < 2 || ty < 2 || tx >= city.w - 2 || ty >= city.h - 2) continue;
+                    int dir = city.roadDirAt(tx, ty);
+                    // The road must run towards the zone (north-south above and below it, east-west to the sides).
+                    if (dir != (dv[0] == 0 ? 1 : 2)) continue;
+                    float x = tx * City.T + City.T / 2f, y = ty * City.T + City.T / 2f;
+                    boolean taken = false;
+                    for (int k = 0; k < vehicles.size() && !taken; k++)
+                        if (Math.hypot(vehicles.get(k).x - x, vehicles.get(k).y - y) < 24) taken = true;
+                    if (!taken) best = new float[]{x, y, dir};
+                }
+            if (best == null) continue;
+            int before = vehicles.size();
+            if (!send(Entity.COP, 1, precinct.x, precinct.y, best[0], best[1], null, null, city.placeName(best[0], best[1])))
+                continue;
+            for (int k = before; k < vehicles.size(); k++) {
+                Vehicle v = vehicles.get(k);
+                v.block = z;
+                v.blockDir = (int) best[2];
+                v.timer = 1 + sent * 2;
             }
-        java.util.Collections.shuffle(spots, w.rnd);
-        for (int k = 0; k < spots.size() && k < 4; k++) {
-            float[] s = spots.get(k);
-            Vehicle v = make(CRUISER);
-            v.x = s[0];
-            v.y = s[1];
-            v.angle = s[2] + (w.rnd.nextBoolean() ? 0 : (float) Math.PI) + (w.rnd.nextFloat() - 0.5f) * 0.3f;
-            v.parked = true;
-            v.state = BLOCK;
-            v.block = z;
-            v.place = city.placeName(s[0], s[1]);
-            vehicles.add(v);
+            sent++;
         }
+        return sent;
+    }
+
+    /** A roadblock car has arrived: it parks angled across the lane, lights on, and its officer takes post. */
+    private void setUpRoadblock(Vehicle v) {
+        float along = v.blockDir == 1 ? (float) Math.PI / 2 : 0;
+        v.angle = along + (w.rnd.nextBoolean() ? 1 : -1) * 0.75f;
+        v.parked = true;
+        v.state = BLOCK;
+        v.speed = 0;
+        v.cones = true;
+        float nx = (float) Math.cos(v.angle + 1.57f), ny = (float) Math.sin(v.angle + 1.57f);
+        float[] p = city.findWalkable(v.x + nx * 10, v.y + ny * 10);
+        if (p != null && v.passengers > 0) {
+            Entity cop = w.spawn(Entity.COP, p[0], p[1]);
+            if (cop != null) {
+                cop.task = Dispatch.T_POST;
+                cop.postX = p[0];
+                cop.postY = p[1];
+                v.guard = cop;
+            }
+        }
+        v.passengers = 0;
     }
 
     /** A tank parked here that holds the area for a few minutes. */
@@ -701,8 +730,14 @@ final class Fleet {
     private boolean updateWreck(Vehicle v, float dt) {
         v.speed = 0;
         if (v.block != null && !v.broken && v.block.removed) {
-            // The zone has closed: the roadblock packs up and drives off.
+            // The zone has closed: the officer gets back in, the cones come in and the car drives off.
             v.block = null;
+            v.cones = false;
+            if (v.guard != null && !v.guard.dead && Math.hypot(v.guard.x - v.x, v.guard.y - v.y) < 80) {
+                v.guard.dead = true;
+                v.guard.removed = true;
+            }
+            v.guard = null;
             v.parked = false;
             v.state = RETURN;
             float[] home = randomRoad();
@@ -767,6 +802,15 @@ final class Fleet {
         // Give up and stop where we are if the car hasn't made progress for a while.
         if (v.stuckTimer > 4) arrived = true;
         if (arrived) {
+            if (v.state == DRIVE && v.block != null) {
+                // A roadblock car: only set up if the zone still needs it and it got close to its spot.
+                if (v.block.removed || Math.hypot(v.x - v.tx, v.y - v.ty) > 90) {
+                    v.block = null;
+                } else {
+                    setUpRoadblock(v);
+                    return false;
+                }
+            }
             if (v.state == DRIVE) {
                 unload(v, true);
                 v.passengers = 0;

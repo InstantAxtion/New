@@ -164,9 +164,13 @@ final class CityConfig implements OptionSet {
     int shopShare() { return LANDMARKS[v[OPT_PRESET]][6]; }
 
     // Which maps have a railway line (with a station and passing trains).
-    private static final boolean[] RAIL = {true, true, false, true, false, true, true, false, true, false};
+    // Which maps have a railway line: 0 never, 1 about half the time (it depends on the city), 2 always.
+    private static final int[] RAIL = {1, 0, 0, 2, 0, 0, 1, 0, 2, 0};
 
-    boolean hasRail() { return RAIL[v[OPT_PRESET]]; }
+    boolean hasRail() {
+        int r = RAIL[v[OPT_PRESET]];
+        return r == 2 || (r == 1 && Math.abs(seed % 2) == 0);
+    }
 
     // Districts:  downtown, midtown, old town, suburb, industrial, campus, parkside (relative weights), then the
     // kind of district at the heart of town.

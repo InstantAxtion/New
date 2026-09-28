@@ -1031,6 +1031,21 @@ final class GameView extends View implements Menu.Host {
             float m = v.type == Fleet.TRAIN ? Fleet.TRAIN_LENGTH + 20 : 20;
             if (v.x < vx0 - m || v.x > vx1 + m || v.y < vy0 - m || v.y > vy1 + m) continue;
             drawVehicle(c, v);
+            if (v.cones) {
+                // A line of traffic cones across the road in front of the roadblock.
+                boolean vertical = v.blockDir == 1;
+                for (int k = -2; k <= 2; k++) {
+                    float cx = v.x + (vertical ? k * 6 : 14), cy = v.y + (vertical ? 14 : k * 6);
+                    fill.setColor(0x50000000);
+                    c.drawCircle(cx + 0.6f, cy + 0.8f, 2f, fill);
+                    fill.setColor(0xFFFF7A1A);
+                    c.drawCircle(cx, cy, 1.9f, fill);
+                    fill.setColor(0xFFF2F2F2);
+                    c.drawCircle(cx, cy, 1.1f, fill);
+                    fill.setColor(0xFFFF7A1A);
+                    c.drawCircle(cx, cy, 0.6f, fill);
+                }
+            }
         }
 
         if (detailed) {

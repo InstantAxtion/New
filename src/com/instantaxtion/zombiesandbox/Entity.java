@@ -90,6 +90,8 @@ final class Entity {
     City.Building home, errand;
     float errandTimer;
     boolean homeChecked;
+    /** Breath for sprinting (0 to 1): the living tire, the dead don't. */
+    float stamina = 1;
     /** Police and soldiers: when they last radioed a sighting to the others, and a retreat already called. */
     float shareCd;
     boolean retreatSaid;

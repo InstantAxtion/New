@@ -83,6 +83,11 @@ final class World {
     float statStep = 2f;
     private float statTimer;
     int shotsFired, cured, peakZombies, hiding;
+    /** Zombies shut inside buildings, out of sight. */
+    int lurking;
+    /** The power station or the hospital has been overrun. */
+    boolean blackout, hospitalLost;
+    private float powerThreat, hospitalThreat;
     /** Army checkpoints: bitten people turned away at the gate, and caught and treated in quarantine. */
     int turnedAway, quarantined;
     /** Recruitment: the most cops and soldiers there have been, how many civilians joined up or refused. */
@@ -124,7 +129,7 @@ final class World {
     final float[] dx = new float[MAXD], dy = new float[MAXD], dr = new float[MAXD];
     final int[] dcol = new int[MAXD];
     /** Decal shape: a round splat, a skid streak (dang = direction, dr = length) or a puddle. */
-    static final byte D_SPLAT = 0, D_SKID = 1, D_PUDDLE = 2, D_ACID = 3;
+    static final byte D_SPLAT = 0, D_SKID = 1, D_PUDDLE = 2, D_ACID = 3, D_GLASS = 4;
     final byte[] dkind = new byte[MAXD];
     final float[] dang = new float[MAXD];
     int dcount;
@@ -145,10 +150,170 @@ final class World {
     int humans, zombies, turned, zombiesKilled, civiliansLost;
     String message;
     float messageTime;
-    private boolean outbreak;
+    /** How fast sprinting uses up stamina (per second, out of 1). */
+    static float STAMINA_DRAIN = 0.14f;
+    /** Balance: how much of a gun's damage counts against zombies, and how likely a bite is to infect. */
+    static float GUN_DAMAGE = 0.3f, BITE_INFECT = 1.85f;
+    /** Chance any hit on a zombie is a headshot that drops it on the spot. */
+    static float HEADSHOT = 0.04f;
+    /** How far (in tiles of walking) idle zombies can smell the living. */
+    static int SCENT = 90;
+    /** Balance: how much health police and soldiers have compared to their base. */
+    static float ARMED_HP = 0.6f;
+    /** The city has fallen once fewer than this share of its people are left alive (and the dead outnumber them). */
+    static float FALLEN = 0.15f;
+
+    /** An outbreak is under way (zombies and people both on the map). */
+    boolean outbreak;
+
+    // ------------------------------------------------------------------ the strain and the war
+
+    static final int TR_FAST_TURN = 0, TR_SLOW_TURN = 1, TR_VIRULENT = 2, TR_WEAK_BITE = 3, TR_TOUGH = 4, TR_FRAIL = 5,
+            TR_SWIFT = 6, TR_RESTLESS = 7, TR_KEEN = 8, TR_DULL = 9, TR_COUNT = 10;
+    static final String[] TRAIT_NAMES = {"Fast-acting", "Slow-acting", "Virulent", "Weak bite", "Tough", "Frail",
+            "Swift", "Restless dead", "Keen senses", "Dull senses"};
+    private static final String[] TRAIT_REVEALS = {
+            "Doctors: the bitten are turning in seconds. There's almost no time to treat them.",
+            "Doctors: this infection takes its time. The bitten can still be saved if they're treated quickly.",
+            "Doctors: nearly every bite is infecting people.",
+            "Doctors: a lot of bites aren't infecting people at all.",
+            "Police: it takes far more bullets to put them down than it should.",
+            "Police: they go down easier than we feared.",
+            "Witnesses: they're faster than they look.",
+            "Reports: people who were never bitten are getting back up too.",
+            "Survivors: they can spot you from a long way off.",
+            "Survivors: they don't notice you until you're close.",
+    };
+    /** This outbreak's strain: a few hidden traits, found out one by one as the war goes on. */
+    final boolean[] trait = new boolean[TR_COUNT], traitKnown = new boolean[TR_COUNT];
+    String strainName;
+    int bites;
+    /** Share of the fighting strength on the people's side (0 to 1), and who is ahead: 1 people, -1 zombies. */
+    float warBalance = 0.5f;
+    int warLead;
+    /** How the last war ended: 0 not yet, 1 the city survived, 2 the city fell. */
+    int warResult;
+    /** A big announcement across the screen (the end of the war, a turning point) and how long it shows. */
+    String warBanner, warSub;
+    float warBannerTime;
+    int startHumans;
+
+    /** How ready the city is: 0 normal, 1 unprepared, 2 panicking, 3 a gun town, 4 well prepared. */
+    int readiness;
+    boolean readinessKnown;
+    static final String[] READINESS = {"Normal", "Unprepared", "Panicking", "Gun town", "Well prepared"};
+    private static final String[] READINESS_NEWS = {"",
+            "Police: we weren't ready for this. Ammunition is short and there are no reserves coming.",
+            "News: panic is sweeping the city. People are running instead of hiding.",
+            "News: half the town owns a gun, and they're using them.",
+            "Military: we've been preparing for this. Extra units are standing by."};
+
+    /** Rolls how ready the city is (a hidden factor, revealed on the radio once the outbreak is under way). */
+    private void applyReadiness() {
+        float r = rnd.nextFloat();
+        readiness = r < 0.2f ? 1 : r < 0.35f ? 2 : r < 0.5f ? 3 : r < 0.62f ? 4 : 0;
+        if (readiness == 1) {
+            dispatch.policeReserve = 0;
+            dispatch.squadReserve = 0;
+            for (Entity e : entities) if (e.isArmed()) e.reserve /= 2;
+        } else if (readiness == 3) {
+            for (Entity e : entities) if (e.type == Entity.CIVILIAN && !e.hasGun && rnd.nextFloat() < 0.2f) armCivilian(e, 12 + rnd.nextInt(3) * 6);
+        } else if (readiness == 4) {
+            dispatch.policeReserve += 1;
+            dispatch.squadReserve += 1;
+        }
+    }
+
+    private void rollStrain() {
+        int[][] pairs = {{TR_FAST_TURN, TR_SLOW_TURN}, {TR_VIRULENT, TR_WEAK_BITE}, {TR_TOUGH, TR_FRAIL}, {TR_KEEN, TR_DULL}};
+        for (int[] p : pairs) if (rnd.nextFloat() < 0.55f) trait[p[rnd.nextInt(2)]] = true;
+        if (rnd.nextFloat() < 0.3f) trait[TR_SWIFT] = true;
+        if (rnd.nextFloat() < 0.25f) trait[TR_RESTLESS] = true;
+        strainName = "Strain " + (char) ('A' + rnd.nextInt(26)) + "-" + (1 + rnd.nextInt(99));
+    }
+
+    /** How long a bite takes to turn someone, for this strain. */
+    float turnTime(float base) {
+        return base * (trait[TR_FAST_TURN] ? 0.45f : trait[TR_SLOW_TURN] ? 1.8f : 1f);
+    }
+
+    private void reveal(int t) {
+        if (!trait[t] || traitKnown[t]) return;
+        traitKnown[t] = true;
+        dispatch.say(Dispatch.WHO_INFO, null, TRAIT_REVEALS[t], city.worldW() / 2, city.worldH() / 2);
+    }
+
+    /** Once a second during an outbreak: who is winning, turning points, and what's been learned about the strain. */
+    private void updateWar() {
+        if (turned >= 3) {
+            reveal(TR_FAST_TURN);
+            reveal(TR_SLOW_TURN);
+        }
+        if (bites >= 10) {
+            reveal(TR_VIRULENT);
+            reveal(TR_WEAK_BITE);
+        }
+        if (zombiesKilled >= 15) {
+            reveal(TR_TOUGH);
+            reveal(TR_FRAIL);
+        }
+        if (outbreakTime >= 20) reveal(TR_SWIFT);
+        if (outbreakTime >= 25 && !readinessKnown) {
+            readinessKnown = true;
+            if (readiness > 0) dispatch.say(Dispatch.WHO_INFO, null, READINESS_NEWS[readiness], city.worldW() / 2, city.worldH() / 2);
+        }
+        if (outbreakTime >= 45) {
+            reveal(TR_KEEN);
+            reveal(TR_DULL);
+        }
+        float hs = 0, zs = 0;
+        for (int i = 0, n = entities.size(); i < n; i++) {
+            Entity e = entities.get(i);
+            if (e.dead) continue;
+            switch (e.type) {
+                case Entity.COP: hs += e.role == Entity.ROLE_RIOT ? 4 : 3; break;
+                case Entity.SOLDIER: hs += e.role == Entity.ROLE_COMMANDER ? 5 : 4; break;
+                case Entity.MEDIC: hs += 0.6f; break;
+                case Entity.CIVILIAN: hs += e.hasGun ? 1.2f : 0.15f; break;
+                case Entity.DOG: hs += 0.3f; break;
+                case Entity.ZOMBIE: case Entity.ZOMBIE_DOG: zs += 1; break;
+                case Entity.RUNNER: zs += 1.4f; break;
+                case Entity.BRUTE: zs += 4; break;
+                case Entity.CRAWLER: zs += 0.6f; break;
+                case Entity.SCREAMER: zs += 1.5f; break;
+                case Entity.SPITTER: case Entity.BLOATER: zs += 2; break;
+            }
+            if (e.infected) zs += 0.8f;
+        }
+        for (int i = 0, n = fleet.vehicles.size(); i < n; i++)
+            if (fleet.vehicles.get(i).type == Fleet.TANK && !fleet.vehicles.get(i).broken) hs += 12;
+        hs += hiding * 0.1f;
+        zs += lurking;
+        if (trait[TR_TOUGH]) zs *= 1.25f;
+        if (trait[TR_FRAIL]) zs *= 0.8f;
+        float b = hs + zs > 0 ? hs / (hs + zs) : 0.5f;
+        warBalance += (b - warBalance) * 0.25f;
+        if (warBalance > 0.62f && warLead != 1) {
+            if (warLead == -1) banner("THE TIDE IS TURNING", "People are fighting back. The dead are losing ground.");
+            warLead = 1;
+        } else if (warBalance < 0.38f && warLead != -1) {
+            if (warLead == 1) banner("THE DEAD ARE WINNING", "The city is slipping away. Every survivor counts now.");
+            else if (outbreakTime > 30) banner("THE CITY IS IN DANGER", "The dead outnumber the living.");
+            warLead = -1;
+        }
+    }
+
+    void banner(String title, String sub) {
+        warBanner = title;
+        warSub = sub;
+        warBannerTime = 6;
+        dispatch.say(Dispatch.WHO_INFO, null, title.charAt(0) + title.substring(1).toLowerCase() + ". " + sub,
+                city.worldW() / 2, city.worldH() / 2);
+    }
 
     World(CityConfig cfg) {
         city = new City(cfg);
+        rollStrain();
         dispatch = new Dispatch(this, cfg.reinforcements());
         fleet = new Fleet(this);
         burned = new boolean[city.w * city.h];
@@ -239,12 +404,22 @@ final class World {
                 best.postY = post[1];
             }
         }
+        applyReadiness();
         spawnBirds();
         fleet.trafficTarget = new int[]{0, 8, 16}[cfg.traffic()] * city.w / 96;
         fleet.spawnTraffic(fleet.trafficTarget);
         // Zombies start in a few small outbreaks rather than spread evenly.
         int left = cfg.zombies();
         while (left > 0) {
+            // Some zombies are shut inside buildings, waiting for someone to open the door.
+            if (left >= 4 && rnd.nextFloat() < 0.25f) {
+                City.Building b = city.buildings.get(rnd.nextInt(city.buildings.size()));
+                if (b.capacity > 0 && b.occupants.isEmpty() && b.lurkers == 0) {
+                    b.lurkers = Math.min(left, 2 + rnd.nextInt(4));
+                    left -= b.lurkers;
+                    continue;
+                }
+            }
             // Some outbreaks start indoors: people sheltering inside, one of them bitten.
             if (left >= 3 && rnd.nextFloat() < 0.3f) {
                 City.Building b = city.buildings.get(rnd.nextInt(city.buildings.size()));
@@ -500,7 +675,7 @@ final class World {
 
     int zombieCount() {
         return counts[Entity.ZOMBIE] + counts[Entity.RUNNER] + counts[Entity.BRUTE] + counts[Entity.CRAWLER]
-                + counts[Entity.SCREAMER] + counts[Entity.ZOMBIE_DOG];
+                + counts[Entity.SCREAMER] + counts[Entity.ZOMBIE_DOG] + counts[Entity.SPITTER] + counts[Entity.BLOATER];
     }
 
     int humanCount() {
@@ -687,7 +862,15 @@ final class World {
                 e.speed *= 1 + 0.05f * mutation;
                 e.runSpeed *= 1 + 0.05f * mutation;
             }
+            // The strain.
+            if (trait[TR_TOUGH]) e.hp *= 1.35f;
+            if (trait[TR_FRAIL]) e.hp *= 0.75f;
+            if (trait[TR_SWIFT]) {
+                e.speed *= 1.12f;
+                e.runSpeed *= 1.12f;
+            }
         }
+        if (type == Entity.COP || type == Entity.SOLDIER) e.hp *= ARMED_HP;
         e.maxHp = e.hp;
         e.ammo = e.magSize;
         e.flank = (rnd.nextFloat() - 0.5f) * 1.8f;
@@ -987,16 +1170,34 @@ final class World {
         peakZombies = Math.max(peakZombies, z);
         int rising = 0;
         for (int i = 0, n = corpses.size(); i < n; i++) if (corpses.get(i).rise > 0) rising++;
-        if (z > 0 && h > 0) outbreak = true;
-        if (outbreak && z == 0 && rising == 0 && h > 0) {
-            say("Outbreak contained!");
-            outbreak = false;
-        } else if (outbreak && h == 0 && z > 0) {
-            say("The city has fallen...");
-            outbreak = false;
+        lurking = 0;
+        for (int i = 0, n = city.buildings.size(); i < n; i++) lurking += city.buildings.get(i).lurkers;
+        if ((z > 0 || lurking > 0) && h > 0 && !outbreak) {
+            outbreak = true;
+            startHumans = h;
+            warLead = 0;
+            warBalance = 0.5f;
+        }
+        startHumans = Math.max(startHumans, h);
+        if (outbreak) {
+            int bitten = 0, armed = counts[Entity.COP] + counts[Entity.SOLDIER];
+            for (int i = 0, n = entities.size(); i < n; i++) if (entities.get(i).infected) bitten++;
+            if (z == 0 && rising == 0 && lurking == 0 && bitten == 0 && h > 0) {
+                outbreak = false;
+                warResult = 1;
+                int t = (int) outbreakTime;
+                banner(h < startHumans * 0.35f ? "THE CITY SURVIVES, BARELY" : "THE CITY SURVIVES", "The outbreak is over after "
+                        + t / 60 + ":" + (t % 60 < 10 ? "0" : "") + t % 60 + ". " + zombiesKilled + " zombies destroyed, "
+                        + civiliansLost + " civilians lost.");
+            } else if (h == 0 || (h <= startHumans * FALLEN && z > h) || (armed == 0 && h <= Math.max(5, startHumans / 12) && z > h)) {
+                outbreak = false;
+                warResult = 2;
+                banner("THE CITY HAS FALLEN", h == 0 ? "Nobody is left alive." : "Only " + h + (h == 1 ? " survivor is" : " survivors are")
+                        + " left, hiding in the ruins.");
+            }
         }
         humans = h;
-        zombies = z + rising;
+        zombies = z + rising + lurking;
     }
 
     void say(String msg) {
@@ -1163,11 +1364,12 @@ final class World {
         if (rnd.nextFloat() < dt * 0.03f) emit(z.type == Entity.BRUTE ? Sfx.GROAN_DEEP : Sfx.GROAN, z.x, z.y);
         // Senses: they see a long way in front, but only hear or smell what is close behind them. Once they
         // have spotted someone they keep track of them.
-        Entity t = nearest(z, 140, false, true);
+        float sight = trait[TR_KEEN] ? 180 : trait[TR_DULL] ? 100 : 140, near = trait[TR_KEEN] ? 75 : trait[TR_DULL] ? 35 : 55;
+        Entity t = nearest(z, sight, false, true);
         if (t != null && z.memory <= 0) {
             float ddx = t.x - z.x, ddy = t.y - z.y, d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
             float facing = ((float) Math.cos(z.angle) * ddx + (float) Math.sin(z.angle) * ddy) / d;
-            if (d > 55 && facing < 0.1f && t.want < t.runSpeed * 0.9f) t = null;
+            if (d > near && facing < 0.1f && t.want < t.runSpeed * 0.9f) t = null;
         }
         if (t != null) {
             z.lastX = t.x + t.vx * 0.8f;
@@ -1247,6 +1449,8 @@ final class World {
         }
         if (z.taskTimer <= 0) {
             z.taskTimer = 1.5f + rnd.nextFloat();
+            if (z.noiseTimer <= 0) mischief(z);
+            if (z.dead) return;
             thinkHorde(z);
             // Stop to feed on a fresh body.
             if (z.feedTimer <= 0 && z.noiseTimer <= 0 && rnd.nextFloat() < 0.4f) {
@@ -1289,6 +1493,7 @@ final class World {
                 float dps = z.type == Entity.BRUTE ? 22 : z.type == Entity.CRAWLER ? 3 : 7;
                 target.barricade -= dps * dt;
                 target.calmTimer = 0;
+                if (target.barricade < 70 && isShop(target)) smash(target);
                 if (rnd.nextFloat() < dt * 1.2f) emit(Sfx.THUD, target.doorX, target.doorY);
                 return;
             }
@@ -1329,8 +1534,9 @@ final class World {
                 return;
             }
         }
+        // Hunger draws the dead towards the living, from right across town.
         int dist = city.fieldAt(city.humanDist, z.x, z.y);
-        if (dist < 40 && followField(z, city.humanDist, z.speed)) return;
+        if (dist < SCENT && followField(z, city.humanDist, z.speed)) return;
         if (z.leadsHorde) {
             roam(z);
             return;
@@ -1350,6 +1556,36 @@ final class World {
             return;
         }
         wander(z, z.speed * 0.45f);
+    }
+
+    /**
+     * What an idle zombie gets up to around town: bumping into parked cars (setting off their alarms), putting in
+     * shop windows, and shuffling into an empty building to wait in the dark.
+     */
+    private void mischief(Entity z) {
+        for (int i = 0, n = fleet.vehicles.size(); i < n; i++) {
+            Fleet.Vehicle v = fleet.vehicles.get(i);
+            if (v.type != Fleet.CAR || !v.parked || v.broken || v.alarm > 0) continue;
+            if (Math.abs(v.x - z.x) < 14 && Math.abs(v.y - z.y) < 14 && rnd.nextFloat() < 0.3f) {
+                v.alarm = 18 + rnd.nextFloat() * 10;
+                noise(v.x, v.y, 220);
+                return;
+            }
+        }
+        for (int k = 0; k < 4; k++) {
+            City.Building b = city.buildingAt(z.x + (k == 0 ? City.T : k == 1 ? -City.T : 0), z.y + (k == 2 ? City.T : k == 3 ? -City.T : 0));
+            if (b == null || Math.abs(b.doorX - z.x) > 16 || Math.abs(b.doorY - z.y) > 16) continue;
+            if (isShop(b) && !b.smashed && rnd.nextFloat() < 0.12f) {
+                smash(b);
+                return;
+            }
+            if (b.capacity > 0 && b.occupants.isEmpty() && b.lurkers < 5 && z.type != Entity.BRUTE && rnd.nextFloat() < 0.035f) {
+                b.lurkers++;
+                z.dead = true;
+                z.removed = true;
+                return;
+            }
+        }
     }
 
     /** A hunting zombie's moan draws in idle zombies nearby that haven't found anyone yet. */
@@ -1390,8 +1626,9 @@ final class World {
             }
             if (size >= 15 && !z.hordeAnnounced) {
                 z.hordeAnnounced = true;
+                City.District dist = city.districtOf(z.x, z.y);
                 dispatch.say(Dispatch.WHO_INFO, null, "A horde of about " + (size / 5 * 5) + " zombies is moving through "
-                        + city.placeName(z.x, z.y) + ".", z.x, z.y);
+                        + (dist != null ? dist.name + " (" + city.placeName(z.x, z.y) + ")" : city.placeName(z.x, z.y)) + ".", z.x, z.y);
                 if (size >= 25) dispatch.heavyContact(null, z.x, z.y, size);
             }
             return;
@@ -1445,7 +1682,7 @@ final class World {
 
     /** A horde leader shambles towards a far-off spot, or towards people it can smell. */
     private void roam(Entity z) {
-        if (city.fieldAt(city.humanDist, z.x, z.y) < 70 && followField(z, city.humanDist, z.speed * 0.55f)) return;
+        if (city.fieldAt(city.humanDist, z.x, z.y) < SCENT * 1.7f && followField(z, city.humanDist, z.speed * 0.55f)) return;
         float ddx = z.roamX - z.x, ddy = z.roamY - z.y;
         float d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
         if (d < 30 || z.blocked) {
@@ -1509,9 +1746,11 @@ final class World {
         t.threatY = z.y;
         bloodBurst(t.x, t.y, 6, nx, ny);
         emit(Sfx.BITE, t.x, t.y);
-        if (!t.infected && t.type != Entity.DOG && rnd.nextFloat() < 0.4f) {
+        bites++;
+        float chance = (trait[TR_VIRULENT] ? 0.65f : trait[TR_WEAK_BITE] ? 0.22f : 0.4f) * BITE_INFECT;
+        if (!t.infected && t.type != Entity.DOG && rnd.nextFloat() < chance) {
             t.infected = true;
-            t.infectTimer = 12 + rnd.nextFloat() * 14;
+            t.infectTimer = turnTime(12 + rnd.nextFloat() * 14);
             t.cureTried = false;
         }
         if (z.type == Entity.BRUTE) tryMove(t, nx * 8, ny * 8);
@@ -1629,8 +1868,17 @@ final class World {
         }
         e.aiming = false;
 
-        // Out of bullets and it's quiet: restock at a supermarket.
-        if (e.hasGun && marketRun(e, threat)) return;
+        // Scared and unarmed, with a gun store round the corner: go and get a gun.
+        if (!e.hasGun && e.task == Dispatch.T_NONE && e.fear > 0 && threatDist > 40 && e.taskTimer <= 0 && e.leader == null) {
+            e.taskTimer = 2;
+            City.Building g = gunStoreNear(e, 220);
+            if (g != null && rnd.nextFloat() < 0.5f) {
+                e.task = Dispatch.T_RESUPPLY;
+                e.building = g;
+            }
+        }
+        // Out of bullets and it's quiet: restock at a supermarket or gun store.
+        if ((e.hasGun || e.task == Dispatch.T_RESUPPLY) && marketRun(e, threat)) return;
 
         // Someone dropped a gun nearby and it's quiet: go get it.
         if (!e.hasGun && e.task == Dispatch.T_NONE && threat == null && e.taskTimer <= 0) {
@@ -1669,7 +1917,8 @@ final class World {
         if (healSeeking(e, threat, dt)) return;
 
         // Hide indoors: run to a nearby building with room if the zombie isn't too close.
-        if (e.task == Dispatch.T_NONE && threat != null && threatDist > 30 && !e.hasGun && e.taskTimer <= 0) {
+        if (e.task == Dispatch.T_NONE && threat != null && threatDist > 30 && !e.hasGun && e.taskTimer <= 0
+                && (readiness != 2 || rnd.nextFloat() < 0.3f)) {
             e.taskTimer = 1.5f;
             City.Building b = shelterNear(e);
             // Home is where people run first, if it is close enough to reach.
@@ -1704,7 +1953,8 @@ final class World {
         boolean room = dispatch.hasRoom();
         if (e.task == Dispatch.T_SHELTER && dispatch.zones.isEmpty()) e.task = Dispatch.T_NONE;
         if (e.task == Dispatch.T_SEEK && (!room || e.refused)) e.task = Dispatch.T_NONE;
-        if (e.task == Dispatch.T_NONE && room && !e.refused && (e.fleeTimer > 0 || rnd.nextFloat() < dt * 0.03f))
+        // With the power out, nobody hears the broadcasts about safe zones any more.
+        if (e.task == Dispatch.T_NONE && room && !e.refused && (e.fleeTimer > 0 || (!blackout && readiness != 2 && rnd.nextFloat() < dt * 0.03f)))
             e.task = Dispatch.T_SEEK;
         if (e.task == Dispatch.T_SEEK) {
             Dispatch.SafeZone z = dispatch.zoneAt(e.x, e.y, 0.7f);
@@ -1967,7 +2217,7 @@ final class World {
                     o.threatY = y;
                     if (infect && !o.infected && o.type != Entity.DOG && rnd.nextFloat() < 0.35f * dmg) {
                         o.infected = true;
-                        o.infectTimer = 15 + rnd.nextFloat() * 15;
+                        o.infectTimer = turnTime(15 + rnd.nextFloat() * 15);
                         o.cureTried = false;
                     }
                 }
@@ -1991,6 +2241,10 @@ final class World {
 
     /** The emergency sirens: everyone out on the street heads indoors or for a safe zone. */
     void cityAlarm() {
+        if (blackout) {
+            say("No power: the sirens are dead");
+            return;
+        }
         emit(Sfx.ALARM, city.worldW() / 2, city.worldH() / 2);
         alarmTime = 6;
         int sent = 0;
@@ -2241,8 +2495,47 @@ final class World {
         b.calmTimer = 0;
     }
 
+    private City.Building powerStation;
+    private boolean powerChecked;
+
+    /** The power station and the hospital fall if zombies hold them for long enough, and come back once cleared. */
+    private void keyBuildings() {
+        if (!powerChecked) {
+            powerChecked = true;
+            for (City.Building b : city.buildings) if (b.kind == City.POWER) powerStation = b;
+        }
+        if (powerStation != null) {
+            City.Building p = powerStation;
+            boolean held = p.collapsed || countZombiesNear(p.doorX, p.doorY, 90) >= 6;
+            powerThreat = held ? powerThreat + 1 : Math.max(0, powerThreat - 2);
+            if (!blackout && powerThreat > 20) {
+                blackout = true;
+                dispatch.say(Dispatch.WHO_INFO, null, "The power station has been overrun. The power is out across the city: no more sirens or broadcasts.",
+                        p.doorX, p.doorY);
+            } else if (blackout && !p.collapsed && powerThreat == 0 && countZombiesNear(p.doorX, p.doorY, 200) == 0
+                    && peopleNear(p.doorX, p.doorY, 120)) {
+                blackout = false;
+                dispatch.say(Dispatch.WHO_INFO, null, "Engineers have the power station running again. The lights are back on.", p.doorX, p.doorY);
+            }
+        }
+        City.Facility h = city.nearestFacility(City.FACILITY_HOSPITAL, 0, 0);
+        if (h != null) {
+            boolean held = countZombiesNear(h.x, h.y, 110) >= 6;
+            hospitalThreat = held ? hospitalThreat + 1 : Math.max(0, hospitalThreat - 2);
+            if (!hospitalLost && hospitalThreat > 20) {
+                hospitalLost = true;
+                dispatch.say(Dispatch.WHO_INFO, null, "City Hospital has fallen. There's nowhere left to treat the wounded.", h.x, h.y);
+            } else if (hospitalLost && hospitalThreat == 0 && countZombiesNear(h.x, h.y, 220) == 0) {
+                hospitalLost = false;
+                dispatch.say(Dispatch.WHO_INFO, null, "City Hospital is open again.", h.x, h.y);
+            }
+        }
+    }
+
     /** Once a second: the infection evolves, and after it's over the city slowly recovers. */
     private void cityLife() {
+        keyBuildings();
+        if (outbreak) updateWar();
         int z = zombieCount();
         if (z > 0) {
             outbreakTime += 1;
@@ -2800,6 +3093,24 @@ final class World {
     }
 
     /** An armed civilian with no bullets left walks to the nearest supermarket that still has some. */
+    /** People who armed themselves at a gun store. */
+    int armedAtStores;
+
+    private City.Building gunStoreNear(Entity e, float radius) {
+        City.Building best = null;
+        float bd = radius * radius;
+        for (int i = 0, n = city.buildings.size(); i < n; i++) {
+            City.Building b = city.buildings.get(i);
+            if (b.kind != City.SHOP || b.shopType != 1 || b.stock <= 0 || b.collapsed || b.infestKnown) continue;
+            float d = (b.doorX - e.x) * (b.doorX - e.x) + (b.doorY - e.y) * (b.doorY - e.y);
+            if (d < bd) {
+                bd = d;
+                best = b;
+            }
+        }
+        return best;
+    }
+
     private boolean marketRun(Entity e, Entity threat) {
         if (e.task == Dispatch.T_NONE && threat == null && e.ammo + e.reserve <= 2 && e.taskTimer <= 0) {
             e.taskTimer = 3;
@@ -2807,7 +3118,8 @@ final class World {
             float bd = 1200 * 1200;
             for (int i = 0, n = city.buildings.size(); i < n; i++) {
                 City.Building b = city.buildings.get(i);
-                if (b.kind != City.MARKET || b.collapsed || b.stock <= 0) continue;
+                if (!(b.kind == City.MARKET || (b.kind == City.SHOP && b.shopType == 1)) || b.collapsed || b.stock <= 0
+                        || b.infestKnown) continue;
                 float d = (b.doorX - e.x) * (b.doorX - e.x) + (b.doorY - e.y) * (b.doorY - e.y);
                 if (d < bd) {
                     bd = d;
@@ -2821,7 +3133,8 @@ final class World {
         }
         if (e.task != Dispatch.T_RESUPPLY) return false;
         City.Building b = e.building;
-        if (b == null || b.stock <= 0 || b.collapsed || (threat != null && e.ammo > 0)) {
+        boolean close = threat != null && (threat.x - e.x) * (threat.x - e.x) + (threat.y - e.y) * (threat.y - e.y) < 25 * 25;
+        if (b == null || b.stock <= 0 || b.collapsed || (threat != null && e.ammo > 0) || (!e.hasGun && close)) {
             e.task = Dispatch.T_NONE;
             e.building = null;
             return false;
@@ -2831,7 +3144,15 @@ final class World {
         if (d < 10) {
             int take = Math.min(36, b.stock);
             b.stock -= take;
-            e.reserve += take;
+            if (e.hasGun) e.reserve += take;
+            else {
+                armCivilian(e, take);
+                armedAtStores++;
+            }
+            if (b.stock <= 0 && b.kind == City.SHOP && !b.looted) {
+                b.looted = true;
+                dispatch.say(Dispatch.WHO_INFO, null, b.name + " has been cleaned out: every gun is gone.", b.doorX, b.doorY);
+            }
             e.reload = 1.5f;
             e.task = Dispatch.T_NONE;
             e.building = null;
@@ -2941,7 +3262,7 @@ final class World {
 
     /** Hurt people walk to the hospital when nothing is chasing them, and heal there. */
     private boolean healSeeking(Entity e, Entity threat, float dt) {
-        City.Facility hospital = city.nearestFacility(City.FACILITY_HOSPITAL, e.x, e.y);
+        City.Facility hospital = hospitalLost ? null : city.nearestFacility(City.FACILITY_HOSPITAL, e.x, e.y);
         boolean needs = e.hp < e.maxHp * 0.45f || (e.infected && e.infectTimer > 6 && !e.cureTried);
         if (e.task == Dispatch.T_NONE && needs && threat == null) e.task = Dispatch.T_HEAL;
         if (e.task != Dispatch.T_HEAL) return false;
@@ -3332,6 +3653,16 @@ final class World {
         wander(e, e.speed * 0.6f);
     }
 
+    private static final String[] STREAK_LINES = {"That's %d! Keep them coming!", "%d down. I'm not done yet.",
+            "%d of them! Somebody count for me!", "Make that %d. This street is ours."};
+
+    /** A hero's milestone, called out on the radio. */
+    private void killStreak(Entity e) {
+        String line = String.format(STREAK_LINES[rnd.nextInt(STREAK_LINES.length)], e.kills);
+        if (e.isArmed()) dispatch.say(e.type == Entity.SOLDIER ? Dispatch.WHO_MILITARY : Dispatch.WHO_POLICE, e, line, e.x, e.y);
+        else dispatch.say(Dispatch.WHO_INFO, null, Names.person(e.nameSeed) + ": \"" + line + "\"", e.x, e.y);
+    }
+
     /** Radios a sighting: other police and soldiers nearby with nothing in view come to look. */
     private void shareSighting(Entity e, float x, float y) {
         float r = 180;
@@ -3551,9 +3882,23 @@ final class World {
         float hit = accuracy * (1 - (e.role == Entity.ROLE_SNIPER ? 0.1f : 0.4f) * d / range) + (t.type == Entity.BRUTE ? 0.1f : 0);
         if (t.type == Entity.CRAWLER) hit *= 0.6f;
         if (rnd.nextFloat() < hit) {
-            t.hp -= dmg;
+            // Only a hit to the head really stops a zombie; body shots just wear it down.
+            boolean headshot = t.isZombie() && t.type != Entity.BRUTE
+                    && rnd.nextFloat() < (e.role == Entity.ROLE_SNIPER ? 0.45f : HEADSHOT);
+            if (headshot) {
+                t.hp = 0;
+                t.gibbed = rnd.nextFloat() < 0.3f;
+                for (int k = 0; k < 6; k++)
+                    particle(t.x, t.y, rnd.nextFloat() * 70 - 35, rnd.nextFloat() * 70 - 35, 0.4f, 1.1f, 0xFF7A1010, P_DOT);
+                if (gore) decal(t.x + rnd.nextFloat() * 6 - 3, t.y + rnd.nextFloat() * 6 - 3, 2.5f + rnd.nextFloat() * 2, 0xAA5A0808);
+            } else {
+                t.hp -= t.isZombie() ? dmg * GUN_DAMAGE : dmg;
+            }
             t.hurt = 1;
-            if (t.hp <= 0 && t.isZombie()) e.kills++;
+            if (t.hp <= 0 && t.isZombie()) {
+                e.kills++;
+                if (e.kills == 10 || e.kills == 25 || e.kills == 50 || e.kills == 100) killStreak(e);
+            }
             if (t.type != Entity.RAIDER) t.killedByZombie = false;
             float nx = (t.x - e.x) / d, ny = (t.y - e.y) / d;
             bloodBurst(t.x, t.y, 4, nx, ny);
@@ -3610,6 +3955,28 @@ final class World {
     private void enterBuilding(Entity e, City.Building b) {
         e.task = Dispatch.T_NONE;
         e.building = null;
+        if (b.lurkers > 0) {
+            // Something was waiting inside.
+            e.hp -= 35 + rnd.nextFloat() * 40;
+            e.hurt = 1;
+            e.killedByZombie = true;
+            if (!e.infected && rnd.nextFloat() < 0.6f) {
+                e.infected = true;
+                e.infectTimer = turnTime(10 + rnd.nextFloat() * 12);
+                e.cureTried = false;
+            }
+            e.fleeTimer = 3;
+            e.threatX = b.doorX;
+            e.threatY = b.doorY;
+            emit(Sfx.SCREAM, e.x, e.y);
+            bloodBurst(e.x, e.y, 6, 0, 0);
+            if (!b.infestKnown) {
+                b.infestKnown = true;
+                dispatch.say(Dispatch.WHO_INFO, null, "Something was waiting inside a building on " + city.placeName(b.doorX, b.doorY)
+                        + "! Stay away from it.", b.doorX, b.doorY);
+            }
+            return;
+        }
         e.dead = true;
         e.removed = true;
         b.occupants.add(e);
@@ -3638,9 +4005,40 @@ final class World {
     private void updateBuildings(float dt) {
         for (int i = 0, n = city.buildings.size(); i < n; i++) {
             City.Building b = city.buildings.get(i);
+            if (b.lurkers > 0 && !b.collapsed) {
+                // Zombies inside burst out when someone comes close, or when they get restless.
+                boolean near = peopleNear(b.doorX, b.doorY, 32);
+                if ((near && rnd.nextFloat() < dt * 1.2f) || rnd.nextFloat() < dt / 100f) burstOut(b);
+            }
             if (b.occupants.isEmpty()) {
                 b.barricade = Math.min(100, b.barricade + dt * 4);
                 continue;
+            }
+            // Survivors eat what's in the building; when it runs out they have to go out and find more.
+            b.hunger += dt;
+            if (b.hunger > 20) {
+                b.hunger = 0;
+                int eat = (b.occupants.size() + 3) / 4;
+                b.food = Math.max(0, b.food - eat);
+            }
+            if (b.food <= 0) {
+                if (!b.outOfFood) {
+                    b.outOfFood = true;
+                    dispatch.say(Dispatch.WHO_INFO, null, "Survivors holed up on " + city.placeName(b.doorX, b.doorY)
+                            + " have run out of food. They're going out to find some.", b.doorX, b.doorY);
+                }
+                b.releaseTimer -= dt;
+                if (b.releaseTimer <= 0) {
+                    b.releaseTimer = 6;
+                    Entity o = b.occupants.remove(b.occupants.size() - 1);
+                    leaveBuilding(o, b, false);
+                    City.Building larder = foodNear(o, b);
+                    if (larder != null) {
+                        o.task = Dispatch.T_HIDE;
+                        o.building = larder;
+                    }
+                }
+                if (b.occupants.isEmpty()) continue;
             }
             // Someone infected turns inside: the building is lost.
             boolean turnedInside = false;
@@ -3655,11 +4053,21 @@ final class World {
                 if (turnedInside) spawn(Entity.ZOMBIE, b.doorX, b.doorY);
                 dispatch.say(Dispatch.WHO_INFO, null, "Zombies broke into a building on " + city.placeName(b.doorX, b.doorY)
                         + "! " + b.occupants.size() + (b.occupants.size() == 1 ? " person" : " people") + " fleeing.", b.doorX, b.doorY);
+                int lost = 0;
                 while (!b.occupants.isEmpty()) {
                     Entity o = b.occupants.remove(b.occupants.size() - 1);
                     if (o.infected && o.infectTimer <= 0) continue;
+                    // Not everyone gets out: some are caught inside and come back as zombies in there.
+                    if (rnd.nextFloat() < 0.2f && o.type == Entity.CIVILIAN) {
+                        lost++;
+                        civiliansLost++;
+                        turned++;
+                        continue;
+                    }
                     leaveBuilding(o, b, true);
                 }
+                b.lurkers += lost;
+                if (isShop(b)) smash(b);
                 b.barricade = 0;
                 continue;
             }
@@ -3678,6 +4086,60 @@ final class World {
                 }
             }
         }
+    }
+
+    /** Zombies shut inside a building smash their way out. */
+    void burstOut(City.Building b) {
+        int n = b.lurkers;
+        b.lurkers = 0;
+        for (int k = 0; k < n; k++) {
+            float[] p = city.findWalkable(b.doorX + rnd.nextFloat() * 12 - 6, b.doorY + rnd.nextFloat() * 12 - 6);
+            if (p == null) break;
+            Entity z = spawn(rnd.nextFloat() < 0.15f ? Entity.RUNNER : Entity.ZOMBIE, p[0], p[1]);
+            if (z != null) z.fresh = 0;
+        }
+        emit(Sfx.THUD, b.doorX, b.doorY);
+        emit(Sfx.GROAN, b.doorX, b.doorY);
+        for (int k = 0; k < 12; k++)
+            particle(b.doorX, b.doorY, rnd.nextFloat() * 80 - 40, rnd.nextFloat() * 80 - 40, 0.5f, 1.2f, 0xFF8A6238, P_DEBRIS);
+        if (isShop(b)) smash(b);
+        b.infestKnown = true;
+        dispatch.say(Dispatch.WHO_INFO, null, n + (n == 1 ? " zombie burst" : " zombies burst") + " out of "
+                + (b.name != null ? b.name : "a building") + " on " + city.placeName(b.doorX, b.doorY) + "!", b.doorX, b.doorY);
+    }
+
+    static boolean isShop(City.Building b) {
+        return b.kind == City.SHOP || b.kind == City.MARKET || b.kind == City.MALL || b.kind == City.PHARMACY || b.kind == City.KIOSK;
+    }
+
+    /** Shop windows put in: glass all over the pavement. */
+    void smash(City.Building b) {
+        if (b.smashed) return;
+        b.smashed = true;
+        for (int k = 0; k < 10; k++) {
+            float gx = b.doorX + rnd.nextFloat() * 20 - 10, gy = b.doorY + rnd.nextFloat() * 8 - 4;
+            decal(gx, gy, 0.8f + rnd.nextFloat() * 1.2f, 0xCCCFE8F2, D_GLASS, rnd.nextFloat() * TAU);
+        }
+        for (int k = 0; k < 8; k++)
+            particle(b.doorX, b.doorY, rnd.nextFloat() * 60 - 30, rnd.nextFloat() * 60 - 30, 0.4f, 0.8f, 0xFFCFE8F2, P_DOT);
+        emit(Sfx.CRASH, b.doorX, b.doorY);
+    }
+
+    /** The nearest building with food and room that isn't known to be full of zombies. */
+    private City.Building foodNear(Entity e, City.Building except) {
+        City.Building best = null;
+        float bd = 500 * 500;
+        for (int i = 0, n = city.buildings.size(); i < n; i++) {
+            City.Building b = city.buildings.get(i);
+            if (b == except || b.food < 10 || b.capacity == 0 || b.collapsed || b.infestKnown || b.occupants.size() >= b.capacity)
+                continue;
+            float d = (b.doorX - e.x) * (b.doorX - e.x) + (b.doorY - e.y) * (b.doorY - e.y);
+            if (d < bd) {
+                bd = d;
+                best = b;
+            }
+        }
+        return best;
     }
 
     private void leaveBuilding(Entity o, City.Building b, boolean panic) {
@@ -3858,6 +4320,17 @@ final class World {
     // ------------------------------------------------------------------ movement
 
     private void move(Entity e, float dt) {
+        // The living tire: a sprint lasts a few seconds, then they slow to a jog until they get their breath back.
+        // The dead never tire.
+        if (!e.isZombie() && e.type != Entity.DOG) {
+            if (e.want > e.speed * 1.35f) {
+                e.stamina -= dt * STAMINA_DRAIN;
+                if (e.stamina < 0.15f) e.want = Math.min(e.want, e.speed * 1.3f);
+            } else {
+                e.stamina = Math.min(1, e.stamina + dt * 0.05f);
+            }
+            if (e.stamina < 0) e.stamina = 0;
+        }
         float k = Math.min(1, dt * 10);
         e.vx += (e.mx * e.want - e.vx) * k;
         e.vy += (e.my * e.want - e.vy) * k;
@@ -3972,6 +4445,10 @@ final class World {
         c.origin = e.type;
         boolean turns = !e.isZombie() && !e.gibbed && (e.killedByZombie || e.infected)
                 && (e.type != Entity.DOG || rnd.nextFloat() < 0.6f);
+        if (!turns && trait[TR_RESTLESS] && !e.isZombie() && !e.gibbed && e.type != Entity.DOG && rnd.nextFloat() < 0.35f) {
+            turns = true;
+            reveal(TR_RESTLESS);
+        }
         c.rise = turns ? 2.5f + rnd.nextFloat() * 3f : -1;
         float roll = rnd.nextFloat();
         c.riseType = e.type == Entity.DOG ? Entity.ZOMBIE_DOG

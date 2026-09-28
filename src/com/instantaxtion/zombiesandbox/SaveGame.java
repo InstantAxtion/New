@@ -17,7 +17,7 @@ import java.util.ArrayList;
  * damaged or collapsed buildings.
  */
 final class SaveGame {
-    private static final int VERSION = 7;
+    private static final int VERSION = 8;
 
     private SaveGame() {
     }
@@ -159,6 +159,25 @@ final class SaveGame {
             for (int[] h : w.fallenHeroes) for (int k = 0; k < 4; k++) out.writeInt(h[k]);
             out.writeInt(w.medkits.size());
             for (float[] m : w.medkits) for (int k = 0; k < 3; k++) out.writeFloat(m[k]);
+
+            // Version 8: every building's supplies, hidden zombies and damage; the strain and the war.
+            out.writeInt(w.city.buildings.size());
+            for (City.Building b : w.city.buildings) {
+                out.writeInt(b.food);
+                out.writeInt(b.stock);
+                out.writeByte(b.lurkers);
+                out.writeByte((b.infestKnown ? 1 : 0) | (b.smashed ? 2 : 0) | (b.looted ? 4 : 0) | (b.outOfFood ? 8 : 0));
+            }
+            for (int t = 0; t < World.TR_COUNT; t++) out.writeByte((w.trait[t] ? 1 : 0) | (w.traitKnown[t] ? 2 : 0));
+            out.writeUTF(w.strainName);
+            out.writeInt(w.bites);
+            out.writeInt(w.warResult);
+            out.writeFloat(w.warBalance);
+            out.writeInt(w.warLead);
+            out.writeInt(w.startHumans);
+            out.writeBoolean(w.blackout);
+            out.writeBoolean(w.hospitalLost);
+            out.writeInt(w.armedAtStores);
         } finally {
             out.close();
         }
@@ -222,8 +241,8 @@ final class SaveGame {
         DataInputStream in = new DataInputStream(new BufferedInputStream(new FileInputStream(file)));
         try {
             int version = in.readInt();
-            // Cities are generated differently since version 7, so older saves can't be rebuilt.
-            if (version < 7 || version > VERSION) throw new IOException("Unsupported save version");
+            // Cities are generated differently since version 8 (districts), so older saves can't be rebuilt.
+            if (version < 8 || version > VERSION) throw new IOException("Unsupported save version");
             CityConfig cfg = new CityConfig();
             int n = in.readInt();
             for (int i = 0; i < n; i++) {
@@ -349,6 +368,33 @@ final class SaveGame {
             for (int i = 0; i < fallen; i++) w.fallenHeroes.add(new int[]{in.readInt(), in.readInt(), in.readInt(), in.readInt()});
             int kits = in.readInt();
             for (int i = 0; i < kits; i++) w.medkits.add(new float[]{in.readFloat(), in.readFloat(), in.readFloat()});
+            int nb = in.readInt();
+            for (int i = 0; i < nb; i++) {
+                int food = in.readInt(), stock = in.readInt(), lurkers = in.readByte(), flags = in.readByte();
+                if (i >= w.city.buildings.size()) continue;
+                City.Building b = w.city.buildings.get(i);
+                b.food = food;
+                b.stock = stock;
+                b.lurkers = lurkers;
+                b.infestKnown = (flags & 1) != 0;
+                b.smashed = (flags & 2) != 0;
+                b.looted = (flags & 4) != 0;
+                b.outOfFood = (flags & 8) != 0;
+            }
+            for (int t = 0; t < World.TR_COUNT; t++) {
+                int f = in.readByte();
+                w.trait[t] = (f & 1) != 0;
+                w.traitKnown[t] = (f & 2) != 0;
+            }
+            w.strainName = in.readUTF();
+            w.bites = in.readInt();
+            w.warResult = in.readInt();
+            w.warBalance = in.readFloat();
+            w.warLead = in.readInt();
+            w.startHumans = in.readInt();
+            w.blackout = in.readBoolean();
+            w.hospitalLost = in.readBoolean();
+            w.armedAtStores = in.readInt();
             d.copCount = copCount;
             d.soldierCount = soldierCount;
             w.afterLoad();

@@ -57,6 +57,8 @@ final class Fleet {
         float turret, cannonCd, idleTimer;
         /** Ambulances: the person they came for. */
         Entity patient;
+        /** A parked car's alarm going off (seconds left) after zombies bumped into it. */
+        float alarm;
         /** Police roadblocks: the safe zone this car is parked across the road for. */
         Dispatch.SafeZone block;
         /** A stopped car rolls over to the kerb. */
@@ -547,6 +549,15 @@ final class Fleet {
         }
         for (int i = vehicles.size() - 1; i >= 0; i--) {
             Vehicle v = vehicles.get(i);
+            if (v.alarm > 0) {
+                // Whoop, whoop: every zombie for streets around comes to see.
+                v.alarm -= dt;
+                if (v.broken || v.burnt) v.alarm = 0;
+                else if (((int) (v.alarm * 2)) != ((int) ((v.alarm + dt) * 2))) {
+                    w.emit(Sfx.HORN, v.x, v.y);
+                    if (((int) v.alarm) % 3 == 0) w.noise(v.x, v.y, 220);
+                }
+            }
             v.anim += dt;
             v.soundCd -= dt;
             v.crashCd -= dt;

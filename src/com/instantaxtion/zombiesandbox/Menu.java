@@ -421,6 +421,23 @@ final class Menu {
     }
 
     /** Humans vs zombies over time (and police and army), plus the totals and heroes of this game. */
+    /** What's been found out about the strain so far, with a "?" for each trait still unknown. */
+    private static String strainTraits(World world) {
+        StringBuilder sb = new StringBuilder();
+        int hidden = 0;
+        for (int t = 0; t < World.TR_COUNT; t++) {
+            if (!world.trait[t]) continue;
+            if (!world.traitKnown[t]) {
+                hidden++;
+                continue;
+            }
+            if (sb.length() > 0) sb.append(", ");
+            sb.append(World.TRAIT_NAMES[t]);
+        }
+        for (int i = 0; i < hidden; i++) sb.append(sb.length() > 0 ? ", ?" : "?");
+        return sb.length() == 0 ? "Nothing unusual" : sb.toString();
+    }
+
     private void drawStats(Canvas c, int w, int h) {
         float top = header(c, w, h, "Stats");
         World world = host.world();
@@ -498,6 +515,9 @@ final class Menu {
                 {"City", world.city.name + "  (" + world.city.cfg.code() + ")"},
                 {"Checkpoints: turned away / treated", world.turnedAway + " / " + world.quarantined},
                 {"Outbreak started", world.outbreakPlace == null ? "-" : world.outbreakPlace},
+                {world.strainName, strainTraits(world)},
+                {"Balance of power", world.warResult == 1 ? "The city survived" : world.warResult == 2 ? "The city fell"
+                        : "People " + (int) (world.warBalance * 100) + "%"},
         };
         java.util.ArrayList<int[]> heroes = world.heroes(3);
         String[][] withHeroes = new String[totals.length + heroes.size()][];

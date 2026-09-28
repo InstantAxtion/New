@@ -168,6 +168,7 @@ final class GameView extends View implements Menu.Host {
         world.gore = settings.gore();
         world.populate(cfg);
         follow = null;
+        inspectB = null;
         if (getWidth() > 0) centerCamera();
     }
 
@@ -250,6 +251,7 @@ final class GameView extends View implements Menu.Host {
         hasGame = true;
         follow = null;
         selection.clear();
+        inspectB = null;
         lastAction.clear();
         tool = TOOL_PAN;
         lastMessageCount = world.dispatch.messageCount;
@@ -862,6 +864,11 @@ final class GameView extends View implements Menu.Host {
                 fill.setColor(0x55E8FF7A);
                 c.drawCircle(x + r * 0.3f, y - r * 0.2f, r * 0.3f, fill);
                 c.drawCircle(x - r * 0.4f, y + r * 0.3f, r * 0.2f, fill);
+            } else if (kind == World.D_GLASS) {
+                stroke.setColor(world.dcol[i]);
+                stroke.setStrokeWidth(0.6f);
+                float ca = (float) Math.cos(world.dang[i]) * r, sa = (float) Math.sin(world.dang[i]) * r;
+                c.drawLine(x - ca, y - sa, x + ca, y + sa, stroke);
             } else if (kind == World.D_PUDDLE) {
                 fill.setColor(world.dcol[i]);
                 c.drawCircle(x, y, r, fill);
@@ -1285,57 +1292,223 @@ final class GameView extends View implements Menu.Host {
     }
 
     /** What you see through a see-through roof: the floor, rooms, furniture and anyone hiding inside. */
+    private int ihash;
+    private float ia;
+
+    /** The next number from the building's own sequence, 0 to 1 (so its furniture never moves). */
+    private float irand() {
+        ihash = ihash * 1103515245 + 12345;
+        return ((ihash >>> 8) & 0xFFFF) / 65535f;
+    }
+
+    private void box(Canvas c, float l, float t, float r, float b, int color) {
+        fill.setColor(alpha(color, ia));
+        c.drawRect(l, t, r, b, fill);
+    }
+
+    /**
+     * What you see through a see-through roof: the floor and furniture laid out for what the building is, the
+     * damage if it has been smashed or looted, and whoever (or whatever) is inside.
+     */
     private void drawInterior(Canvas c, City.Building b, float a) {
         float x0 = b.x0 + 1, y0 = b.y0 + 1, x1 = b.x1 - 1, y1 = b.y1 - 1, w = x1 - x0, h = y1 - y0;
-        int floorCol = b.kind == City.HOUSE ? 0xFFB8946A : b.kind == City.CHURCH || b.kind == City.SPIRE ? 0xFF9C8C76
-                : b.kind == City.MARKET || b.kind == City.KIOSK ? 0xFFD8D8D0 : b.kind == City.WAREHOUSE ? 0xFF8A8A84
-                : b.kind == City.BARRACKS || b.kind == City.TOWER ? 0xFF7E806E : 0xFFC4BFB4;
-        fill.setColor(alpha(floorCol, a));
-        c.drawRect(x0, y0, x1, y1, fill);
-        int hsh = b.seed * 69069 + 1;
-        int furn = City.darken(floorCol, 0.62f);
-        fill.setColor(alpha(furn, a));
-        if (b.kind == City.MARKET || b.kind == City.KIOSK) {
-            // Shelving aisles.
-            for (float yy = y0 + 6; yy < y1 - 6; yy += 9) c.drawRect(x0 + 5, yy, x1 - 5, yy + 2.5f, fill);
-        } else if (b.kind == City.CHURCH || b.kind == City.SPIRE) {
-            // Pews either side of the aisle.
-            boolean alongX = w >= h;
-            for (float t = 6; t < (alongX ? w : h) - 8; t += 5) {
-                if (alongX) {
-                    c.drawRect(x0 + t, y0 + 4, x0 + t + 2, y0 + h / 2 - 3, fill);
-                    c.drawRect(x0 + t, y0 + h / 2 + 3, x0 + t + 2, y1 - 4, fill);
+        ia = a;
+        ihash = b.seed * 69069 + 7;
+        boolean wide = w >= h;
+        int k = b.kind;
+        int floorCol;
+        switch (k) {
+            case City.HOUSE: case City.BARN: floorCol = 0xFFB8946A; break;
+            case City.APARTMENT: floorCol = 0xFFA88A6A; break;
+            case City.CHURCH: case City.SPIRE: case City.CRYPT: floorCol = 0xFF9C8C76; break;
+            case City.MARKET: case City.KIOSK: case City.PHARMACY: case City.MALL: floorCol = 0xFFDCDCD4; break;
+            case City.HOSPITAL: floorCol = 0xFFD8E2E6; break;
+            case City.WAREHOUSE: case City.POWER: case City.GARAGE: case City.FIRE_STATION: floorCol = 0xFF8A8A84; break;
+            case City.BARRACKS: case City.TOWER: floorCol = 0xFF7E806E; break;
+            case City.STATION: floorCol = 0xFFB4B8BE; break;
+            case City.SCHOOL: floorCol = 0xFFC8B89A; break;
+            case City.SHOP: floorCol = b.shopType == 2 ? 0xFFD8D0C0 : 0xFFC8C0B0; break;
+            default: floorCol = 0xFFC4BFB4; break;
+        }
+        box(c, x0, y0, x1, y1, floorCol);
+        int dark = City.darken(floorCol, 0.62f);
+        switch (k) {
+            case City.HOUSE: case City.APARTMENT: {
+                // Rooms: a kitchen, a living room with a sofa and rug, bedrooms, a bathroom.
+                float mx = x0 + w * (0.45f + irand() * 0.1f), my = y0 + h * (0.45f + irand() * 0.1f);
+                box(c, x0 + 2, y0 + 2, mx - 2, y0 + 5, 0xFFE8E4DA); // kitchen counter
+                box(c, x0 + 2, y0 + 2, x0 + 5, my - 2, 0xFFE8E4DA);
+                box(c, mx + 3, y0 + 3, Math.min(x1 - 3, mx + 12), y0 + 10, 0xFF8A3A3A); // rug
+                box(c, mx + 3, y0 + 2, Math.min(x1 - 3, mx + 12), y0 + 5, 0xFF4E5A7A); // sofa
+                box(c, x0 + 3, my + 3, x0 + 11, my + 13, 0xFFE8E8F0); // bed
+                box(c, x0 + 3, my + 3, x0 + 11, my + 6, 0xFFB0C0E0);
+                box(c, x1 - 9, y1 - 7, x1 - 2, y1 - 2, 0xFFF4F4F4); // bath
+                stroke.setColor(alpha(City.darken(b.wall, 0.7f), a));
+                stroke.setStrokeWidth(1.2f);
+                c.drawLine(mx, y0, mx, my - 4, stroke);
+                c.drawLine(mx, my + 4, mx, y1, stroke);
+                c.drawLine(x0, my, mx - 4, my, stroke);
+                c.drawLine(mx + 4, my, x1, my, stroke);
+                break;
+            }
+            case City.SHOP: case City.KIOSK: case City.PHARMACY: {
+                if (k == City.SHOP && b.shopType == 2) {
+                    // Diner: booths along the wall, a counter with stools.
+                    for (float t = 3; t < (wide ? w : h) - 8; t += 9) {
+                        float u = (wide ? x0 : y0) + t;
+                        if (wide) {
+                            box(c, u, y0 + 2, u + 7, y0 + 4, 0xFFB83A30);
+                            box(c, u + 1, y0 + 4, u + 6, y0 + 8, 0xFFE8E0D0);
+                            box(c, u, y0 + 8, u + 7, y0 + 10, 0xFFB83A30);
+                        } else {
+                            box(c, x0 + 2, u, x0 + 4, u + 7, 0xFFB83A30);
+                            box(c, x0 + 4, u + 1, x0 + 8, u + 6, 0xFFE8E0D0);
+                            box(c, x0 + 8, u, x0 + 10, u + 7, 0xFFB83A30);
+                        }
+                    }
+                    box(c, wide ? x0 + 3 : x1 - 6, wide ? y1 - 6 : y0 + 3, wide ? x1 - 3 : x1 - 3, wide ? y1 - 3 : y1 - 3, 0xFF6A4A30);
+                } else if (k == City.SHOP && b.shopType == 1) {
+                    // Gun store: display cases and racks of rifles on the walls.
+                    for (float t = 4; t < (wide ? w : h) - 4; t += 5) {
+                        float u = (wide ? x0 : y0) + t;
+                        if (b.stock > 0 || irand() < 0.2f) {
+                            if (wide) box(c, u, y0 + 2, u + 1, y0 + 9, 0xFF2A2A2A);
+                            else box(c, x0 + 2, u, x0 + 9, u + 1, 0xFF2A2A2A);
+                        }
+                    }
+                    box(c, x0 + w * 0.2f, y0 + h * 0.55f, x0 + w * 0.8f, y0 + h * 0.55f + 4, 0xFF9CC3D9);
                 } else {
-                    c.drawRect(x0 + 4, y0 + t, x0 + w / 2 - 3, y0 + t + 2, fill);
-                    c.drawRect(x0 + w / 2 + 3, y0 + t, x1 - 4, y0 + t + 2, fill);
+                    // Shelves round the walls, a counter and till by the door.
+                    int shelf = k == City.PHARMACY ? 0xFFF2F2F2 : dark;
+                    box(c, x0 + 2, y0 + 2, x1 - 2, y0 + 4, shelf);
+                    box(c, x0 + 2, y0 + 2, x0 + 4, y1 - 2, shelf);
+                    box(c, x1 - 4, y0 + 2, x1 - 2, y1 - 2, shelf);
+                    // Goods on the top shelf (fewer once the place has been looted).
+                    int[] goods = {0xFFE05050, 0xFF5080E0, 0xFFE0C050, 0xFF50B060};
+                    for (float u = x0 + 3; u < x1 - 3; u += 2.5f)
+                        if (!b.looted || irand() < 0.2f) box(c, u, y0 + 2.3f, u + 1.6f, y0 + 3.8f, goods[(int) (irand() * 4) % 4]);
+                    box(c, x0 + w * 0.3f, y1 - 7, x0 + w * 0.7f, y1 - 4, 0xFF6A4A30);
                 }
+                break;
             }
-        } else if (b.kind == City.WAREHOUSE) {
-            for (int k = 0; k < 6; k++) {
-                hsh = hsh * 69069 + 1;
-                float u = ((hsh >>> 8) & 255) / 255f, v = ((hsh >>> 16) & 255) / 255f;
-                c.drawRect(x0 + 3 + u * (w - 12), y0 + 3 + v * (h - 12), x0 + 9 + u * (w - 12), y0 + 9 + v * (h - 12), fill);
-            }
-        } else {
-            // Desks, tables and beds scattered about.
-            for (float yy = y0 + 5; yy < y1 - 6; yy += 11)
-                for (float xx = x0 + 5; xx < x1 - 6; xx += 12) {
-                    hsh = hsh * 69069 + 1;
-                    if (((hsh >>> 10) & 3) == 0) continue;
-                    c.drawRect(xx, yy, xx + 5, yy + 3, fill);
+            case City.MARKET: case City.MALL: {
+                // Aisles of colourful shelves, checkouts at the front. The mall has a fountain in its atrium.
+                int[] goods = {0xFFE05050, 0xFF5080E0, 0xFFE0C050, 0xFF50B060, 0xFFE08840};
+                for (float t = y0 + 8; t < y1 - 12; t += 9) {
+                    box(c, x0 + 8, t, x1 - 8, t + 3, dark);
+                    for (float u = x0 + 9; u < x1 - 9; u += 3)
+                        box(c, u, t + 0.5f, u + 2, t + 2.5f, goods[(int) (irand() * goods.length)]);
                 }
-            // Inner walls split big floors into rooms.
-            stroke.setColor(alpha(City.darken(b.wall, 0.75f), a));
-            stroke.setStrokeWidth(1.2f);
-            if (w > 40) {
-                float sx = x0 + w * (0.4f + ((b.seed >>> 3) & 7) / 40f);
-                c.drawLine(sx, y0, sx, y0 + h * 0.4f, stroke);
-                c.drawLine(sx, y0 + h * 0.4f + 7, sx, y1, stroke);
+                for (float u = x0 + 8; u < x1 - 10; u += 12) box(c, u, y1 - 9, u + 6, y1 - 6, 0xFF5A5E66);
+                if (k == City.MALL) {
+                    float cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+                    box(c, cx - 14, cy - 14, cx + 14, cy + 14, 0xFFE8E4DA);
+                    fill.setColor(alpha(0xFF6FA8DC, a));
+                    c.drawCircle(cx, cy, 8, fill);
+                }
+                break;
             }
-            if (h > 40) {
-                float sy = y0 + h * (0.4f + ((b.seed >>> 6) & 7) / 40f);
-                c.drawLine(x0, sy, x0 + w * 0.3f, sy, stroke);
-                c.drawLine(x0 + w * 0.3f + 7, sy, x1, sy, stroke);
+            case City.HOSPITAL: {
+                // Wards: rows of beds with blue sheets, a nurses' station.
+                for (float t = y0 + 4; t < y1 - 10; t += 11)
+                    for (float u = x0 + 4; u < x1 - 8; u += 10) {
+                        box(c, u, t, u + 6, t + 8, 0xFFF4F4F4);
+                        box(c, u, t + 3, u + 6, t + 8, 0xFF7AA8D8);
+                    }
+                box(c, x0 + w * 0.4f, y1 - 8, x0 + w * 0.6f, y1 - 3, 0xFFD83A3A);
+                break;
+            }
+            case City.STATION: {
+                // Desks up front, holding cells with bars at the back.
+                for (float u = x0 + 5; u < x1 - 8; u += 10) box(c, u, y1 - 12, u + 6, y1 - 8, dark);
+                float cy = y0 + h * 0.35f;
+                box(c, x0 + 2, y0 + 2, x1 - 2, cy, 0xFF9A9EA4);
+                stroke.setColor(alpha(0xFF3A3E44, a));
+                stroke.setStrokeWidth(0.6f);
+                for (float u = x0 + 3; u < x1 - 2; u += 2.5f) c.drawLine(u, cy - 2, u, cy, stroke);
+                for (float u = x0 + w / 3; u < x1 - 2; u += w / 3) c.drawLine(u, y0 + 2, u, cy, stroke);
+                break;
+            }
+            case City.SCHOOL: {
+                // Classrooms of little desks facing the board.
+                for (float t = y0 + 6; t < y1 - 6; t += 7)
+                    for (float u = x0 + 6; u < x1 - 6; u += 7) box(c, u, t, u + 4, t + 3, 0xFFB08A5A);
+                box(c, x0 + 3, y0 + 2, x0 + w * 0.5f, y0 + 3.5f, 0xFF2E4A36);
+                break;
+            }
+            case City.CHURCH: case City.SPIRE: {
+                for (float t = 6; t < (wide ? w : h) - 8; t += 5) {
+                    if (wide) {
+                        box(c, x0 + t, y0 + 4, x0 + t + 2, y0 + h / 2 - 3, dark);
+                        box(c, x0 + t, y0 + h / 2 + 3, x0 + t + 2, y1 - 4, dark);
+                    } else {
+                        box(c, x0 + 4, y0 + t, x0 + w / 2 - 3, y0 + t + 2, dark);
+                        box(c, x0 + w / 2 + 3, y0 + t, x1 - 4, y0 + t + 2, dark);
+                    }
+                }
+                box(c, wide ? x1 - 6 : x0 + w / 2 - 4, wide ? y0 + h / 2 - 4 : y1 - 6, wide ? x1 - 3 : x0 + w / 2 + 4,
+                        wide ? y0 + h / 2 + 4 : y1 - 3, 0xFFE8D24A);
+                break;
+            }
+            case City.WAREHOUSE: case City.BARN: {
+                // Pallets and crates (hay bales in a barn), and a forklift.
+                int crate = k == City.BARN ? 0xFFD8B860 : 0xFFA0784A;
+                for (float t = y0 + 4; t < y1 - 8; t += 9)
+                    for (float u = x0 + 4; u < x1 - 8; u += 9)
+                        if (irand() < 0.7f) box(c, u, t, u + 6, t + 6, crate);
+                box(c, x0 + w * 0.6f, y1 - 9, x0 + w * 0.6f + 5, y1 - 4, 0xFFE8B830);
+                break;
+            }
+            case City.BARRACKS: {
+                for (float t = y0 + 3; t < y1 - 6; t += 7)
+                    for (float u = x0 + 3; u < x1 - 9; u += 11) {
+                        box(c, u, t, u + 8, t + 4, 0xFF5B6B3A);
+                        box(c, u, t, u + 2, t + 4, 0xFFE8E8E0);
+                    }
+                break;
+            }
+            case City.POWER: {
+                for (int n = 0; n < 3; n++) {
+                    fill.setColor(alpha(0xFF6A7078, a));
+                    c.drawCircle(x0 + w * (0.2f + n * 0.3f), (y0 + y1) / 2, Math.min(w, h) * 0.14f, fill);
+                    fill.setColor(alpha(0xFF9AA0A8, a));
+                    c.drawCircle(x0 + w * (0.2f + n * 0.3f), (y0 + y1) / 2, Math.min(w, h) * 0.07f, fill);
+                }
+                break;
+            }
+            default: {
+                // Offices: desk clusters with glowing screens, a meeting room and a few plants.
+                for (float t = y0 + 5; t < y1 - 8; t += 12)
+                    for (float u = x0 + 5; u < x1 - 10; u += 13) {
+                        if (irand() < 0.2f) continue;
+                        box(c, u, t, u + 8, t + 4, dark);
+                        box(c, u + 1, t + 0.5f, u + 3, t + 1.5f, 0xFF7FB0D8);
+                        box(c, u + 5, t + 0.5f, u + 7, t + 1.5f, 0xFF7FB0D8);
+                    }
+                if (w > 30 && h > 30) {
+                    stroke.setColor(alpha(0xFF9CC3D9, a));
+                    stroke.setStrokeWidth(1f);
+                    c.drawRect(x1 - w * 0.3f, y0 + 2, x1 - 2, y0 + h * 0.3f, stroke);
+                }
+                for (int n = 0; n < 3; n++) {
+                    fill.setColor(alpha(0xFF3E8A34, a));
+                    c.drawCircle(x0 + 3 + irand() * (w - 6), y0 + 3 + irand() * (h - 6), 1.8f, fill);
+                }
+                break;
+            }
+        }
+        // Damage: overturned shelves and litter after looting, glass inside smashed shop windows, blood where
+        // zombies have been.
+        if (b.looted || b.smashed) {
+            for (int n = 0; n < 8; n++) {
+                float px = x0 + 3 + irand() * (w - 6), py = y0 + 3 + irand() * (h - 6);
+                box(c, px, py, px + 2 + irand() * 3, py + 1 + irand() * 2, n % 2 == 0 ? dark : 0xFFE0D8C8);
+            }
+        }
+        if (b.lurkers > 0 || b.infestKnown) {
+            for (int n = 0; n < 5; n++) {
+                fill.setColor(alpha(0x996E0A0A, a));
+                c.drawCircle(x0 + 3 + irand() * (w - 6), y0 + 3 + irand() * (h - 6), 1.5f + irand() * 2.5f, fill);
             }
         }
         stroke.setColor(alpha(City.darken(b.wall, 0.6f), a));
@@ -1353,6 +1526,16 @@ final class GameView extends View implements Menu.Host {
             o.angle = (i * 1.7f + b.seed) % 6.28f;
             o.aiming = false;
             drawEntity(c, o, false);
+        }
+        // Zombies waiting in the dark: only a close look through the roof gives them away.
+        for (int i = 0; i < b.lurkers; i++) {
+            float lx = x0 + 5 + ((b.seed * 31 + i * 57) % Math.max(1, (int) (w - 10)));
+            float ly = y0 + 5 + ((b.seed * 17 + i * 43) % Math.max(1, (int) (h - 10)));
+            float sway = (float) Math.sin(world.time * 1.5f + i) * 1.2f;
+            fill.setColor(alpha(0xFF3E5A2A, a * 0.75f));
+            c.drawCircle(lx + sway, ly, 3.4f, fill);
+            fill.setColor(alpha(0xFF7C9A5E, a * 0.75f));
+            c.drawCircle(lx + sway + 0.4f, ly, 2f, fill);
         }
     }
 
@@ -1943,6 +2126,22 @@ final class GameView extends View implements Menu.Host {
 
     private void drawMapLabels(Canvas c) {
         text.setTextAlign(Paint.Align.CENTER);
+        // Zoomed out: the names of the districts across the map.
+        float districtAlpha = Math.max(0, Math.min(1, (3.2f - scale) / 1.2f));
+        if (districtAlpha > 0) {
+            text.setTextSize(15 * dp);
+            for (int i = 0, n = world.city.districts.size(); i < n; i++) {
+                City.District d = world.city.districts.get(i);
+                if (d.tiles < 40) continue;
+                float sx = screenX(d.cx), sy = screenY(d.cy);
+                if (sx < -150 * dp || sx > getWidth() + 150 * dp || sy < 0 || sy > barTop) continue;
+                String label = d.name.toUpperCase();
+                text.setColor(alpha(0xFF000000, districtAlpha * 0.6f));
+                c.drawText(label, sx + 1.5f * dp, sy + 1.5f * dp, text);
+                text.setColor(alpha(0xFFF4EED8, districtAlpha * 0.85f));
+                c.drawText(label, sx, sy, text);
+            }
+        }
         text.setTextSize(11.5f * dp);
         text.setTextSize(10.5f * dp);
         for (int i = 0, n = world.city.facilities.size(); i < n; i++) {
@@ -2470,6 +2669,49 @@ final class GameView extends View implements Menu.Host {
 
     // ------------------------------------------------------------------ UI rendering
 
+    /**
+     * The tug of war under the stats panel: how much of the fighting strength is on the people's side. The
+     * marker slides as the battle swings, and a big banner marks turning points and the end of the war.
+     */
+    private void drawWarMeter(Canvas c) {
+        if (world.outbreak || world.warBannerTime > 0) {
+            float left = statsShown.left, right = Math.max(statsShown.right, left + 200 * dp), top = statsShown.bottom + 8 * dp;
+            float bh = 10 * dp, b = Math.max(0.03f, Math.min(0.97f, world.warBalance));
+            oval.set(left, top, right, top + bh + 18 * dp);
+            fill.setColor(0xB0101114);
+            c.drawRoundRect(oval, 8 * dp, 8 * dp, fill);
+            float bx0 = left + 10 * dp, bx1 = right - 10 * dp, by = top + 15 * dp, split = bx0 + (bx1 - bx0) * b;
+            fill.setColor(0xFF4F7BE0);
+            c.drawRect(bx0, by, split, by + bh * 0.6f, fill);
+            fill.setColor(0xFF6FB03A);
+            c.drawRect(split, by, bx1, by + bh * 0.6f, fill);
+            fill.setColor(0xFFFFFFFF);
+            c.drawRect(split - 1.5f * dp, by - 3 * dp, split + 1.5f * dp, by + bh * 0.6f + 3 * dp, fill);
+            text.setTextSize(10 * dp);
+            text.setTextAlign(Paint.Align.LEFT);
+            text.setColor(0xFFB8C8F0);
+            c.drawText("PEOPLE " + (int) (b * 100) + "%", bx0, top + 11 * dp, text);
+            text.setTextAlign(Paint.Align.RIGHT);
+            text.setColor(0xFFB8E09A);
+            c.drawText((int) ((1 - b) * 100) + "% ZOMBIES", bx1, top + 11 * dp, text);
+        }
+        if (world.warBannerTime > 0 && world.warBanner != null) {
+            world.warBannerTime -= 1 / 60f;
+            float a = Math.min(1, world.warBannerTime / 1.2f) * Math.min(1, (6 - world.warBannerTime) * 3);
+            float cy = barTop * 0.42f;
+            fill.setColor(alpha(0xC0000000, a));
+            c.drawRect(0, cy - 38 * dp, getWidth(), cy + 30 * dp, fill);
+            text.setTextAlign(Paint.Align.CENTER);
+            text.setTextSize(Math.min(30 * dp, getWidth() / 16f));
+            boolean good = world.warBanner.contains("SURVIVES") || world.warBanner.contains("TURNING");
+            text.setColor(alpha(good ? 0xFF8FB8FF : 0xFF9BE070, a));
+            c.drawText(world.warBanner, getWidth() / 2f, cy, text);
+            text.setTextSize(13 * dp);
+            text.setColor(alpha(0xFFE6E6E6, a));
+            if (world.warSub != null) c.drawText(world.warSub, getWidth() / 2f, cy + 20 * dp, text);
+        }
+    }
+
     private void drawUi(Canvas c) {
         int w = getWidth(), h = getHeight();
 
@@ -2530,6 +2772,7 @@ final class GameView extends View implements Menu.Host {
         // The feed goes first so map labels can keep out of its way.
         drawFeed(c);
         drawMinimap(c);
+        drawWarMeter(c);
         drawMapLabels(c);
         drawPopups(c);
         if (achievementTime > 0 && achievement != null) {
@@ -2621,6 +2864,8 @@ final class GameView extends View implements Menu.Host {
                     + ". Tap where to send them, or tap them again to release.", w / 2f, infoY);
         } else if (follow != null) {
             drawInspect(c, follow);
+        } else if (inspectB != null && tool == TOOL_PAN) {
+            drawBuildingInspect(c, inspectB);
         } else if (hintTime > 0) {
             drawBanner(c, "Pick a unit or tool below, then tap the city.  Use Move to drag around, pinch to zoom.",
                     w / 2f, infoY);
@@ -3114,6 +3359,7 @@ final class GameView extends View implements Menu.Host {
         if (tool == TOOL_PAN) {
             if (dragged) {
                 follow = null;
+                inspectB = null;
                 director = false;
                 camX -= (x - lastX) / scale;
                 camY -= (y - lastY) / scale;
@@ -3178,6 +3424,75 @@ final class GameView extends View implements Menu.Host {
             }
         }
         follow = pick;
+        // Nobody there: tap a building to see what it is and how it's doing.
+        inspectB = pick == null ? world.city.buildingAt(wx, wy) : null;
+    }
+
+    /** The building whose card is showing. */
+    private City.Building inspectB;
+    private static final String[] KIND_NAMES = {"Offices", "House", "Warehouse", "Police station", "Barracks",
+            "Watchtower", "Hospital", "Shop", "Church", "School", "Fire station", "Supermarket", "Gas station",
+            "Steeple", "Crypt", "Apartment block", "Parking garage", "Pharmacy", "Train station", "Shopping mall",
+            "Stadium", "Power station", "Barn", "Silo"};
+
+    /** The building card: what it is, where, who is inside, what's left in it, and what it does for the city. */
+    private void drawBuildingInspect(Canvas c, City.Building b) {
+        java.util.ArrayList<String> lines = new java.util.ArrayList<String>();
+        String kind = b.kind == City.SHOP ? (b.shopType == 1 ? "Gun store" : b.shopType == 2 ? "Diner" : "Shop")
+                : KIND_NAMES[Math.min(KIND_NAMES.length - 1, b.kind)];
+        City.District d = world.city.districtOf((b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2);
+        String title = (b.name != null ? b.name + "  -  " + kind : kind) + (d != null ? "  -  " + d.name : "");
+        if (b.collapsed) lines.add("Collapsed: just a pile of rubble now");
+        else if (b.infestKnown && b.lurkers > 0) lines.add("INFESTED: there are zombies inside. Keep out!");
+        else if (!b.occupants.isEmpty())
+            lines.add(b.occupants.size() + " hiding inside, door barricaded (" + Math.max(0, (int) b.barricade) + "%)");
+        else if (b.infestKnown) lines.add("Zombies were inside. Nobody has gone back in.");
+        else lines.add(b.capacity > 0 ? "Empty (room for " + b.capacity + " to hide)" : "Nobody can shelter here");
+        if (!b.collapsed) {
+            String supplies = "Food: " + b.food + (b.food == 0 && !b.occupants.isEmpty() ? " (they're starving)" : "");
+            if (b.kind == City.MARKET || (b.kind == City.SHOP && b.shopType == 1))
+                supplies += "   Ammo: " + b.stock + (b.shopType == 1 ? " rounds (arms anyone who comes in)" : " rounds");
+            if (b.kind == City.PHARMACY) supplies += "   Medicine: " + b.stock;
+            lines.add(supplies);
+            if (b.smashed || b.looted) lines.add((b.smashed ? "Windows smashed" : "") + (b.smashed && b.looted ? ", " : "")
+                    + (b.looted ? "shelves stripped bare" : ""));
+        }
+        String role = null;
+        switch (b.kind) {
+            case City.POWER: role = world.blackout ? "BLACKOUT: overrun. Clear the zombies out to get the power back." : "Keeps the lights, sirens and broadcasts on"; break;
+            case City.HOSPITAL: role = world.hospitalLost ? "FALLEN: nobody can be treated here until it's cleared" : "Heals the wounded and cures fresh bites"; break;
+            case City.STATION: role = "Police armoury: officers restock here"; break;
+            case City.BARRACKS: role = "Army barracks: soldiers restock at the base"; break;
+            case City.MARKET: role = "Food and hunting ammo; can become a safe zone"; break;
+            case City.MALL: role = "Plenty of food and room; can become a safe zone"; break;
+            case City.SCHOOL: case City.CHURCH: case City.STADIUM: role = "Can become a safe zone"; break;
+            case City.PHARMACY: role = "Patches people up and sometimes stops a bite"; break;
+            case City.FIRE_STATION: role = "Sends fire engines to burning wrecks"; break;
+            case City.HOUSE: case City.APARTMENT: role = "Home: the people who live here run back to it"; break;
+        }
+        if (role != null) lines.add(role);
+        text.setTextAlign(Paint.Align.LEFT);
+        text.setTextSize(14 * dp);
+        float lh = 18 * dp, cw = Math.min(getWidth() - 20 * dp, 460 * dp);
+        float ch = 30 * dp + lines.size() * lh + 8 * dp;
+        float left = (getWidth() - cw) / 2, top = barTop - ch - 8 * dp - (lastAction.isEmpty() ? 0 : 44 * dp);
+        oval.set(left, top, left + cw, top + ch);
+        fill.setColor(0xE8101216);
+        c.drawRoundRect(oval, 12 * dp, 12 * dp, fill);
+        fill.setColor(b.infestKnown && b.lurkers > 0 ? 0xFF7CC24E : !b.occupants.isEmpty() ? 0xFFB08A5A : 0xFF8A9099);
+        c.drawRect(left, top + 10 * dp, left + 4 * dp, top + ch - 10 * dp, fill);
+        text.setColor(0xFFFFFFFF);
+        c.drawText(title, left + 14 * dp, top + 22 * dp, text);
+        text.setTextSize(12.5f * dp);
+        for (int i = 0; i < lines.size(); i++) {
+            String l = lines.get(i);
+            text.setColor(l.startsWith("INFESTED") || l.startsWith("BLACKOUT") || l.startsWith("FALLEN") ? 0xFFFF8A6A : 0xFFB8BDC4);
+            c.drawText(l, left + 14 * dp, top + 22 * dp + (i + 1) * lh, text);
+        }
+        // Outline the building on the map so it's clear which one this is.
+        stroke.setColor(0xCCFFD24A);
+        stroke.setStrokeWidth(2 * dp);
+        c.drawRect(screenX(b.x0), screenY(b.y0), screenX(b.x1), screenY(b.y1), stroke);
     }
 
     /**

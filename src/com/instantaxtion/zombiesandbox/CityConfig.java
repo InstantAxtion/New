@@ -168,6 +168,27 @@ final class CityConfig implements OptionSet {
 
     boolean hasRail() { return RAIL[v[OPT_PRESET]]; }
 
+    // Districts:  downtown, midtown, old town, suburb, industrial, campus, parkside (relative weights), then the
+    // kind of district at the heart of town.
+    private static final int[][] DISTRICT_MIX = {
+            {3, 3, 2, 4, 2, 1, 2, 0},   // Classic
+            {6, 5, 2, 0, 1, 0, 1, 0},   // Downtown
+            {0, 1, 1, 8, 0, 1, 2, 1},   // Suburbs
+            {1, 1, 0, 2, 7, 0, 0, 4},   // Industrial
+            {1, 2, 1, 3, 0, 1, 6, 6},   // Parkland
+            {0, 2, 7, 2, 0, 0, 1, 2},   // Old Town
+            {0, 1, 3, 6, 0, 0, 2, 2},   // Small Town
+            {0, 2, 1, 3, 0, 6, 2, 5},   // Campus
+            {6, 5, 1, 1, 3, 0, 1, 0},   // Metropolis
+            {0, 0, 3, 6, 0, 0, 3, 2},   // Village
+    };
+
+    /** How likely each kind of district is on this map. */
+    int districtWeight(int type) { return DISTRICT_MIX[v[OPT_PRESET]][type]; }
+
+    /** The kind of district in the middle of town. */
+    int coreDistrict() { return DISTRICT_MIX[v[OPT_PRESET]][7]; }
+
     /** Percent of office lots that become apartments, garages and pharmacies. */
     int[] buildingMix() { return BUILDING_MIX[v[OPT_PRESET]]; }
 

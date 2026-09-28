@@ -25,6 +25,8 @@ final class City {
             BARN = 22, SILO = 23;
     static final int KIND_COUNT = 24;
     private static final int[] APARTMENT_WALLS = {0xFFC9B8A0, 0xFFB5A08A, 0xFFD4C8B8, 0xFFA89484, 0xFFBFB0C0};
+    private static final String[] GUN_STORES = {"Liberty Guns", "Ace Firearms", "Frontier Outfitters", "Hunter's Supply",
+            "Patriot Arms"};
     private static final String[] PHARMACIES = {"CityCare Pharmacy", "Main Street Drugs", "HealthPlus", "Corner Pharmacy"};
     /** Ground decorations drawn into the map: {kind, x0, y0, x1, y1, variant} in world units. */
     static final int D_COURT = 0, D_FIELD = 1, D_PLAYGROUND = 2, D_GARDEN = 3, D_GRAVE = 4, D_SKATE = 5,
@@ -93,8 +95,20 @@ final class City {
         boolean collapsed;
         /** Churches, schools and supermarkets have names (they can become safe zones). */
         String name;
-        /** Supermarkets: rounds of ammo left on the hunting shelf. */
+        /** Supermarkets and gun stores: rounds of ammo on the shelves; pharmacies: medicine left. */
         int stock;
+        /** Food for anyone sheltering here (and for foragers). */
+        int food;
+        /** Shops: 0 a general store, 1 a gun store, 2 a diner. */
+        int shopType;
+        /** Zombies shut inside, waiting. Nobody knows until they burst out (then {@link #infestKnown}). */
+        int lurkers;
+        boolean infestKnown;
+        /** Shop windows smashed in, and shelves stripped bare. */
+        boolean smashed, looted;
+        /** How long survivors inside have gone without food, and whether that's been reported. */
+        float hunger;
+        boolean outOfFood;
         /** Path to the door (made when someone first needs it). */
         int[] field;
         /** Bullet holes and scorch marks on the walls: {side, along, up, size} each, in a ring buffer. */
@@ -149,6 +163,143 @@ final class City {
     /** Which look the map bitmap was last drawn with. */
     boolean drawnRealistic;
     private final float detail;
+
+    // ------------------------------------------------------------------ districts
+
+    static final int DT_DOWNTOWN = 0, DT_MIDTOWN = 1, DT_OLDTOWN = 2, DT_SUBURB = 3, DT_INDUSTRIAL = 4, DT_CAMPUS = 5,
+            DT_PARKSIDE = 6, DT_COUNT = 7;
+    static final String[] DISTRICT_KINDS = {"Downtown", "Midtown", "Old Town", "Suburb", "Industrial", "University",
+            "Parkside"};
+    private static final String[] DISTRICT_WORDS = {"Oak", "Cedar", "Mill", "North", "South", "East", "West", "King's",
+            "Linden", "Ash", "Fox", "Hazel", "Stone", "Maple", "Willow", "Brook", "Elm", "High", "Rose", "Birch"};
+
+    /** A neighbourhood of the city with its own character: tall towers, shops, old streets, homes or industry. */
+    static final class District {
+        int type;
+        float x, y;
+        String name;
+        /** The middle of the district's area (world units) and how many tiles it covers. */
+        float cx, cy;
+        int tiles;
+    }
+
+    final List<District> districts = new ArrayList<District>();
+    /** Which district each tile belongs to. */
+    private byte[] districtAt;
+    /** The district of the block currently being filled in. */
+    private int curDistrict = DT_MIDTOWN;
+
+    /** Scatters district centres over the map, gives each a kind and a name, and assigns every tile to one. */
+    private void makeDistricts() {
+        int n = 3 + w / 32;
+        Random r = rnd;
+        List<String> words = new ArrayList<String>(Arrays.asList(DISTRICT_WORDS));
+        java.util.Collections.shuffle(words, r);
+        int word = 0;
+        boolean[] usedUnique = new boolean[DT_COUNT];
+        for (int k = 0; k < n; k++) {
+            District d = new District();
+            // The first district sits in the middle of town; the rest spread out with some space between them.
+            float bestX = w / 2f, bestY = h / 2f;
+            if (k > 0) {
+                float bestScore = -1;
+                for (int tries = 0; tries < 30; tries++) {
+                    float x = 6 + r.nextFloat() * (w - 12), y = 6 + r.nextFloat() * (h - 12);
+                    float near = Float.MAX_VALUE;
+                    for (District o : districts) near = Math.min(near, (float) Math.hypot(o.x - x, o.y - y));
+                    if (near > bestScore) {
+                        bestScore = near;
+                        bestX = x;
+                        bestY = y;
+                    }
+                }
+            }
+            d.x = bestX;
+            d.y = bestY;
+            float dist = (float) Math.hypot(d.x - w / 2f, d.y - h / 2f) / (w * 0.5f);
+            if (k == 0) d.type = cfg.coreDistrict();
+            else {
+                // Towers towards the middle, homes and parks towards the edge of town.
+                float[] wts = new float[DT_COUNT];
+                float total = 0;
+                for (int t = 0; t < DT_COUNT; t++) {
+                    float wt = cfg.districtWeight(t);
+                    if (t == DT_DOWNTOWN) wt *= Math.max(0.1f, 1.4f - dist * 1.5f);
+                    if (t == DT_SUBURB || t == DT_PARKSIDE) wt *= 0.4f + dist;
+                    if (t == DT_INDUSTRIAL) {
+                        float ang = (float) Math.atan2(d.y - h / 2f, d.x - w / 2f) - industryAngle;
+                        while (ang > Math.PI) ang -= Math.PI * 2;
+                        while (ang < -Math.PI) ang += Math.PI * 2;
+                        wt *= Math.abs(ang) < 1f ? 2.5f : 0.4f;
+                    }
+                    if ((t == DT_OLDTOWN || t == DT_CAMPUS) && usedUnique[t]) wt *= 0.3f;
+                    wts[t] = wt;
+                    total += wt;
+                }
+                float pick = r.nextFloat() * total;
+                int t = 0;
+                while (t < DT_COUNT - 1 && pick >= wts[t]) pick -= wts[t++];
+                d.type = t;
+            }
+            usedUnique[d.type] = true;
+            String wd = words.get(word++ % words.size());
+            switch (d.type) {
+                case DT_DOWNTOWN: d.name = usedUnique[DT_COUNT - 1] ? wd + " Center" : "Downtown"; break;
+                case DT_MIDTOWN: d.name = r.nextBoolean() ? wd + " Village" : wd + " Square"; break;
+                case DT_OLDTOWN: d.name = r.nextBoolean() ? "Old Town" : "The Old Quarter"; break;
+                case DT_SUBURB: d.name = wd + (new String[]{" Heights", " Hills", " Gardens", " Park", " Grove"})[r.nextInt(5)]; break;
+                case DT_INDUSTRIAL: d.name = r.nextBoolean() ? wd + " Industrial Estate" : wd + " Works"; break;
+                case DT_CAMPUS: d.name = "University District"; break;
+                default: d.name = wd + " Common"; break;
+            }
+            if (d.type == DT_DOWNTOWN) usedUnique[DT_COUNT - 1] = true;
+            for (District o : districts) if (o.name.equals(d.name)) d.name = wd + " " + DISTRICT_KINDS[d.type];
+            districts.add(d);
+        }
+        // Every tile belongs to its nearest centre, with wobbly borders.
+        districtAt = new byte[w * h];
+        float[] sx = new float[n], sy = new float[n];
+        for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++) {
+                float wx = x + (float) Math.sin(y * 0.21f + cfg.seed) * 3, wy = y + (float) Math.sin(x * 0.17f + cfg.seed * 0.7f) * 3;
+                int best = 0;
+                float bd = Float.MAX_VALUE;
+                for (int k = 0; k < n; k++) {
+                    District d = districts.get(k);
+                    // Downtown is compact; suburbs sprawl.
+                    float weight = d.type == DT_DOWNTOWN ? 1.25f : d.type == DT_SUBURB ? 0.85f : 1f;
+                    float dd = ((d.x - wx) * (d.x - wx) + (d.y - wy) * (d.y - wy)) * weight;
+                    if (dd < bd) {
+                        bd = dd;
+                        best = k;
+                    }
+                }
+                districtAt[y * w + x] = (byte) best;
+                sx[best] += x;
+                sy[best] += y;
+                districts.get(best).tiles++;
+            }
+        for (int k = 0; k < n; k++) {
+            District d = districts.get(k);
+            if (d.tiles == 0) continue;
+            d.cx = (sx[k] / d.tiles + 0.5f) * T;
+            d.cy = (sy[k] / d.tiles + 0.5f) * T;
+        }
+    }
+
+    /** The district at a world position. */
+    District districtOf(float x, float y) {
+        if (districtAt == null || districts.isEmpty()) return null;
+        return districts.get(districtAt[tileIndex(x, y)]);
+    }
+
+    /** The kind of district at a tile. */
+    private int districtType(int tx, int ty) {
+        if (districtAt == null) return DT_MIDTOWN;
+        tx = Math.max(0, Math.min(w - 1, tx));
+        ty = Math.max(0, Math.min(h - 1, ty));
+        return districts.get(districtAt[ty * w + tx]).type;
+    }
 
     /** A street: a band of road tiles {x0, y0, x1, y1} (x1/y1 exclusive) running one way, with its name. */
     static final class Street {
@@ -262,7 +413,18 @@ final class City {
             } else if (k == PHARMACY) {
                 b.name = PHARMACIES[nr.nextInt(PHARMACIES.length)];
                 b.stock = 60;
+            } else if (k == SHOP) {
+                // Some shops are gun stores or diners.
+                int roll = nr.nextInt(12);
+                b.shopType = roll == 0 ? 1 : roll < 3 ? 2 : 0;
+                if (b.shopType == 1) {
+                    b.name = GUN_STORES[nr.nextInt(GUN_STORES.length)];
+                    b.stock = 120;
+                }
             }
+            // Food in the cupboards and on the shelves.
+            b.food = k == MARKET ? 400 : k == MALL ? 300 : k == WAREHOUSE ? 150 : k == SHOP ? (b.shopType == 2 ? 120 : 40)
+                    : k == APARTMENT ? 60 : k == HOUSE ? 25 : k == SCHOOL ? 80 : k == BARN ? 120 : 12;
             for (int j = l[1]; j < l[1] + l[3]; j++)
                 for (int i = l[0]; i < l[0] + l[2]; i++) buildingAt[j * w + i] = buildings.size();
             buildings.add(b);
@@ -359,7 +521,20 @@ final class City {
         float cx = (x0 + x1) / 2f - w / 2f, cy = (y0 + y1) / 2f - h / 2f;
         float d = (float) Math.sqrt(cx * cx + cy * cy) / (w * 0.5f);
         boolean rural = cfg.density() == 0 && cfg.style() == CityConfig.STYLE_HOUSES;
-        int maxLeaf = d < 0.3f ? 11 + rnd.nextInt(4) : d < 0.65f ? 13 + rnd.nextInt(5) : 15 + rnd.nextInt(7);
+        // Each district has its own grain: small tight blocks downtown and in the old town, big ones in the
+        // suburbs, on campus and in the industrial estates.
+        int dt = districtType((x0 + x1) / 2, (y0 + y1) / 2);
+        int maxLeaf;
+        switch (dt) {
+            case DT_DOWNTOWN: maxLeaf = 9 + rnd.nextInt(3); break;
+            case DT_MIDTOWN: maxLeaf = 11 + rnd.nextInt(4); break;
+            case DT_OLDTOWN: maxLeaf = 8 + rnd.nextInt(5); break;
+            case DT_SUBURB: maxLeaf = 15 + rnd.nextInt(7); break;
+            case DT_INDUSTRIAL: maxLeaf = 15 + rnd.nextInt(6); break;
+            case DT_CAMPUS: maxLeaf = 15 + rnd.nextInt(5); break;
+            default: maxLeaf = 13 + rnd.nextInt(6); break;
+        }
+        if (d > 0.8f) maxLeaf += 2;
         if (rural) maxLeaf += 6;
         if (cfg.density() == 2) maxLeaf -= 2;
         if (bw <= maxLeaf && bh <= maxLeaf) {
@@ -386,6 +561,9 @@ final class City {
         int at = lo + rnd.nextInt(hi - lo + 1);
         // Carry on the neighbouring street now and then, so some roads run on straight.
         float align = cfg.layout() == 0 ? 0.75f : cfg.layout() == 1 ? 0.45f : 0.2f;
+        // Old streets wander; downtown is laid out on a grid.
+        if (dt == DT_OLDTOWN) align = 0.1f;
+        else if (dt == DT_DOWNTOWN) align = Math.max(align, 0.7f);
         int hint = vertical ? hintX : hintY;
         if (hint >= lo && hint <= hi && rnd.nextFloat() < align) at = hint;
         Street st = vertical ? new Street(at, y0, at + roadW, y1, true, big) : new Street(x0, at, x1, at + roadW, false, big);
@@ -405,6 +583,7 @@ final class City {
         origin = 0;
         Arrays.fill(tiles, SIDEWALK);
         industryAngle = rnd.nextFloat() * (float) Math.PI * 2;
+        makeDistricts();
         // A ring road around the edge of town.
         carve(new Street(0, 0, w, 3, false, false));
         carve(new Street(0, h - 3, w, h, false, false));
@@ -616,6 +795,8 @@ final class City {
             float fcx = (x0 + x1) / 2f - w / 2f, fcy = (y0 + y1) / 2f - h / 2f;
             float fd = (float) Math.sqrt(fcx * fcx + fcy * fcy) / (w * 0.5f);
             float farmChance = rural ? 0.4f : cfg.style() == CityConfig.STYLE_HOUSES || cfg.density() == 0 ? 0.25f : cfg.density() == 2 ? 0 : 0.1f;
+            curDistrict = districtType(ix + iw / 2, iy + ih / 2);
+            if (curDistrict != DT_SUBURB && curDistrict != DT_PARKSIDE && curDistrict != DT_OLDTOWN) farmChance = 0;
             if (fd > 0.8f && iw >= 7 && ih >= 7 && rnd.nextFloat() < farmChance) {
                 farm(ix, iy, iw, ih);
                 continue;
@@ -849,8 +1030,18 @@ final class City {
 
     /** Fills the inside of one city block according to the map settings. */
     private void block(int x, int y, int bw, int bh) {
+        curDistrict = districtType(x + bw / 2, y + bh / 2);
         float park = PARK_CHANCE[cfg.parks()];
         int style = cfg.style();
+        switch (curDistrict) {
+            case DT_DOWNTOWN: style = CityConfig.STYLE_OFFICES; park *= 0.5f; break;
+            case DT_MIDTOWN: style = rnd.nextFloat() < 0.75f ? CityConfig.STYLE_OFFICES : CityConfig.STYLE_HOUSES; break;
+            case DT_OLDTOWN: style = CityConfig.STYLE_OFFICES; break;
+            case DT_SUBURB: style = CityConfig.STYLE_HOUSES; break;
+            case DT_INDUSTRIAL: style = CityConfig.STYLE_WAREHOUSES; park *= 0.3f; break;
+            case DT_CAMPUS: style = CityConfig.STYLE_OFFICES; park = Math.max(park, 0.2f) * 1.6f; break;
+            default: style = CityConfig.STYLE_HOUSES; park = Math.max(park, 0.15f) * 2.5f; break;
+        }
         float plaza = style == CityConfig.STYLE_HOUSES ? 0.03f : 0.07f;
         if (cfg.parks() == 0) plaza *= 0.5f;
         float parking = style == CityConfig.STYLE_WAREHOUSES ? 0.15f : 0.05f;
@@ -883,22 +1074,23 @@ final class City {
             float ang = (float) Math.atan2(cy, cx) - industryAngle;
             while (ang > Math.PI) ang -= Math.PI * 2;
             while (ang < -Math.PI) ang += Math.PI * 2;
-            boolean industrialZone = d > 0.55f && Math.abs(ang) < 0.7f;
+            boolean industrialZone = curDistrict == DT_INDUSTRIAL;
             boolean mainRoad = onMainRoad(x - 1, y - 1, x + bw + 1, y + bh + 1);
             float r = rnd.nextFloat();
-            if (style == CityConfig.STYLE_MIXED) {
-                if (industrialZone && r < 0.8f) style = CityConfig.STYLE_WAREHOUSES;
-                else if (d < 0.32f) style = CityConfig.STYLE_OFFICES;
-                else if (d < 0.55f) style = r < 0.55f ? CityConfig.STYLE_OFFICES : CityConfig.STYLE_HOUSES;
-                else style = r < 0.12f ? CityConfig.STYLE_OFFICES : CityConfig.STYLE_HOUSES;
-            } else if (style == CityConfig.STYLE_HOUSES && d < 0.2f && cfg.density() > 0) {
-                // Even a town of houses has a little centre.
-                style = CityConfig.STYLE_OFFICES;
-            } else if (style == CityConfig.STYLE_OFFICES && industrialZone && r < 0.35f) {
-                style = CityConfig.STYLE_WAREHOUSES;
-            }
             // Shops line the main roads; side streets are mostly homes and offices.
             int shopChance = mainRoad ? cfg.shopShare() + 20 : cfg.shopShare() / 3;
+            if (curDistrict == DT_OLDTOWN) shopChance = Math.max(shopChance, 45);
+            if (curDistrict == DT_MIDTOWN && mainRoad) shopChance += 15;
+            if (curDistrict == DT_OLDTOWN && bw >= 5 && bh >= 5 && rnd.nextFloat() < 0.55f) {
+                terraces(x, y, bw, bh);
+                return;
+            }
+            if (curDistrict == DT_CAMPUS && bw >= 6 && bh >= 6) {
+                // Campus: halls on lawns.
+                fill(x, y, bw, bh, GRASS);
+                lots(x + 1, y + 1, bw - 2, bh - 2, 1);
+                return;
+            }
             if (style == CityConfig.STYLE_HOUSES && !mainRoad) shopChance = cfg.shopShare() / 6;
             if (style != CityConfig.STYLE_HOUSES && bw >= 6 && bh >= 6 && rnd.nextFloat() < 0.05f) constructionSite(x, y, bw, bh);
             else if (rnd.nextInt(100) < shopChance && bw >= 5 && bh >= 5 && style != CityConfig.STYLE_WAREHOUSES) shops(x, y, bw, bh);
@@ -1062,6 +1254,46 @@ final class City {
         openAreas.add(new float[]{(x + bw / 2f) * T, (y + bh / 2f) * T, 1});
     }
 
+    private static final int[] OLD_WALLS = {0xFFA8543A, 0xFFB86A48, 0xFFD8C8A8, 0xFF9A4A38, 0xFFC8B090, 0xFFE0D2B4};
+    private static final int[] OLD_ROOFS = {0xFF8A4A32, 0xFF6E4A3E, 0xFF5A5E66, 0xFF9A5838, 0xFF7A3E2E};
+    private static final int[] GLASS_WALLS = {0xFF6F8898, 0xFF7C94A4, 0xFF5E7686, 0xFF8898A4, 0xFF6A7E8C};
+
+    /**
+     * An old-town block: narrow terraced buildings shoulder to shoulder around the edge, shops on the ground
+     * floor, and a courtyard in the middle.
+     */
+    private void terraces(int x, int y, int bw, int bh) {
+        fill(x, y, bw, bh, PLAZA);
+        int depth = bh >= 8 && bw >= 8 ? 3 : 2;
+        for (int side = 0; side < 4; side++) {
+            boolean horizontal = side < 2;
+            int len = horizontal ? bw : bh - 2 * depth;
+            int i = 0;
+            boolean arch = !horizontal;
+            while (i < len) {
+                // An archway through the front and back rows into the courtyard.
+                if (!arch && i >= len / 2 - 1) {
+                    arch = true;
+                    i++;
+                    continue;
+                }
+                int uw = Math.min(2 + rnd.nextInt(2), len - i);
+                if (uw < 2) break;
+                int lx, ly, lw, lh;
+                if (side == 0) { lx = x + i; ly = y; lw = uw; lh = depth; }
+                else if (side == 1) { lx = x + i; ly = y + bh - depth; lw = uw; lh = depth; }
+                else if (side == 2) { lx = x; ly = y + depth + i; lw = depth; lh = uw; }
+                else { lx = x + bw - depth; ly = y + depth + i; lw = depth; lh = uw; }
+                if (rnd.nextFloat() < 0.45f) addFacilityLot(lx, ly, lw, lh, SHOP, 2 + rnd.nextInt(2));
+                else addLot(lx, ly, lw, lh, rnd.nextFloat() < 0.4f ? APARTMENT : OFFICE);
+                i += uw;
+            }
+        }
+        // A tree or two in the courtyard.
+        int cx = x + bw / 2, cy = y + bh / 2;
+        if (bw >= 7 && bh >= 7 && tiles[cy * w + cx] == PLAZA) tiles[cy * w + cx] = TREE;
+    }
+
     private void warehouses(int x, int y, int pw, int ph) {
         fill(x, y, pw, ph, LOT);
         int bx = x + 1, by = y + 1, bw = pw - 2, bh = ph - 2;
@@ -1124,6 +1356,23 @@ final class City {
             floors = Math.min(floors, 22);
             roof = ROOFS[rnd.nextInt(ROOFS.length)];
             wall = WALLS[rnd.nextInt(WALLS.length)];
+            if (curDistrict == DT_DOWNTOWN) {
+                // Downtown towers climb higher and many are clad in glass.
+                floors = Math.min(24, floors + 2 + rnd.nextInt(3));
+                if (rnd.nextFloat() < 0.55f) wall = GLASS_WALLS[rnd.nextInt(GLASS_WALLS.length)];
+            } else if (curDistrict == DT_OLDTOWN || curDistrict == DT_CAMPUS) {
+                // Old brick and stone, a few storeys high.
+                floors = 2 + rnd.nextInt(3);
+                wall = OLD_WALLS[rnd.nextInt(OLD_WALLS.length)];
+                roof = OLD_ROOFS[rnd.nextInt(OLD_ROOFS.length)];
+            } else if (curDistrict == DT_SUBURB || curDistrict == DT_PARKSIDE) {
+                floors = Math.min(floors, 5);
+            }
+        }
+        if (kind == APARTMENT && curDistrict == DT_OLDTOWN) {
+            floors = Math.min(floors, 5);
+            wall = OLD_WALLS[rnd.nextInt(OLD_WALLS.length)];
+            roof = OLD_ROOFS[rnd.nextInt(OLD_ROOFS.length)];
         }
         buildingLots.add(new int[]{x, y, lw, lh, roof, rnd.nextInt(100000), kind, floors, wall});
     }
@@ -2958,7 +3207,7 @@ final class City {
             p.setColor(0xFF7D8185);
             c.drawCircle(ux + uw / 2, uy + uh / 2, Math.min(uw, uh) * 0.3f, p);
         }
-        if (bw >= 64 && bh >= 64 && r.nextFloat() < 0.35f) {
+        if (bw >= 64 && bh >= 64 && b[7] >= 8 && r.nextFloat() < 0.35f) {
             float cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
             p.setColor(0xFF3F4347);
             c.drawCircle(cx, cy, 16, p);

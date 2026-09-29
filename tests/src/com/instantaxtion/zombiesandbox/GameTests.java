@@ -329,6 +329,64 @@ public final class GameTests {
                 check(trucks == 2, "the Guard comes only once");
             }
         });
+        test("people live in homes, towns grow organically, trains stop and air support takes time", new Check() {
+            public void run() {
+                CityConfig c = new CityConfig();
+                c.v[CityConfig.OPT_PRESET] = 8;
+                c.v[CityConfig.OPT_ZOMBIES] = 0;
+                c.seed = 4;
+                World w = new World(c);
+                w.populate(c);
+                check(w.city.totalResidents > 0, "the city's homes house people");
+                int civ = 0, homed = 0;
+                for (Entity e : w.entities)
+                    if (e.type == Entity.CIVILIAN) {
+                        civ++;
+                        if (e.home != null && e.home.residents > 0) homed++;
+                    }
+                check(civ <= w.city.totalResidents + 10 && civ > 0, "no more people than homes (" + civ + ")");
+                check(homed > civ * 9 / 10, "nearly everyone has a home (" + homed + "/" + civ + ")");
+                CityConfig none = new CityConfig();
+                none.v[CityConfig.OPT_CIVILIANS] = 0;
+                check(none.civilians(500) == 0, "None means no residents out");
+                check(w.city.crossings.size() >= 2, "the railway has level crossings");
+                // Trains stop at the station.
+                boolean stopped = false;
+                for (int i = 0; i < 30 * 150 && !stopped; i++) {
+                    w.update(1 / 30f);
+                    w.evCount = 0;
+                    for (Fleet.Vehicle v : w.fleet.vehicles) if (v.type == Fleet.TRAIN && v.state == 0) stopped = true;
+                }
+                check(stopped, "a train stopped at the station");
+                // Air support: approved at once, but it takes a while to arrive.
+                w.dispatch.tankReserve = 0;
+                w.dispatch.airSorties = 1;
+                float[] p = w.city.findWalkable(w.city.worldW() / 2, w.city.worldH() / 2);
+                w.dispatch.heavyContact(null, p[0], p[1], 30);
+                check(w.dispatch.airDelay > 30, "air support takes time to get ready");
+                boolean early = false, arrived = false;
+                for (int i = 0; i < 30 * 200; i++) {
+                    w.update(1 / 30f);
+                    w.evCount = 0;
+                    if (w.fleet.heliBusy() && i < 30 * 30) early = true;
+                    if (w.fleet.heliBusy()) arrived = true;
+                }
+                check(!early && arrived, "the helicopter comes, but not straight away");
+                // A massive map's town is not a square.
+                CityConfig mc = new CityConfig();
+                mc.v[CityConfig.OPT_SIZE] = 3;
+                mc.seed = 3;
+                City big = new City(mc, 0.1f);
+                int town = 0;
+                for (int y = big.townY0; y < big.townY1; y++)
+                    for (int x = big.townX0; x < big.townX1; x++) {
+                        byte t = big.tiles[y * big.w + x];
+                        if (t != City.GRASS && t != City.TREE && t != City.DIRT) town++;
+                    }
+                float fill = town / (float) ((big.townX1 - big.townX0) * (big.townY1 - big.townY0));
+                check(fill < 0.9f, "the town has a ragged edge (" + fill + ")");
+            }
+        });
         test("every screen draws", new Check() {
             public void run() throws Exception {
                 GameView v = new GameView(new android.app.Activity());

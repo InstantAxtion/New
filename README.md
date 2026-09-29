@@ -10,7 +10,7 @@ away from the middle of the screen as you pan, and the game plays in both portra
 ## Main menu
 
 - **New Game** opens the city setup, with a live preview of the city and 7 options: the map (Classic,
-  Downtown, Suburbs, Industrial, Parkland, Old Town, Small Town, Campus, Metropolis or Village), map size, how many civilians, cops, military and zombies there are at the
+  Downtown, Suburbs, Industrial, Parkland, Old Town, Small Town, Campus, Metropolis or Village), map size, how many of the residents are out and about (None, Few, Some, Most or All), cops, military and zombies at the
   start (map size: Small, Medium, Large or Massive), and how many reinforcements can be called in (Off, Low, Medium or High). Each map decides its
   own buildings, layout, parks, police stations and military base. **Randomize** rolls a random setup.
   **City code** replays a city: every city has a code like `12-483920` (shown in the pause menu and
@@ -34,8 +34,18 @@ on the phone, so the APK contains no audio files.
   zombies, crashes, gunfire and blasts, smoke when damaged and break down (sometimes burning) at zero.
 - **Traffic**: people fleeing wave down passing cars and get driven to a safe zone. Zombies chase cars.
 - **Fire engines** drive out from fire stations and hose down burning cars and gas pumps.
-- **Tanks** roll out for big hordes; **ambulances** fetch badly hurt people to the hospital. The
-  **helicopter** takes off from and lands on its helipad. Every vehicle shows a status label.
+- **Tanks** roll out for big hordes; **ambulances** fetch badly hurt people to the hospital.
+- **Air support takes time**: once approved, the crew is briefed and the aircraft readied (about a
+  minute from a helipad in town, nearly two from outside the city). The helicopter spins up for
+  16 seconds, climbs out slowly, slows for its approach, flies a wide orbit so the door gunner can
+  fire short bursts, and heads home after about 45 seconds on station. Every vehicle shows a status label.
+- **Residents**: everyone lives somewhere. Each house holds a family (1 to 5 people), apartment blocks
+  hold two people per flat on every floor, and some offices and shops have flats upstairs. The number
+  of people in a city comes from its homes, and people run home first when trouble starts.
+- **Trains** slow down and stop at the station, where commuters get off and on. The barriers at the
+  level crossings come down and the lights flash while a train is near. During an outbreak trains
+  become evacuation trains: people near the station run for the platform, and anyone who gets on is
+  safe (the Stats screen counts them). A train won't stop if there are zombies on the platform.
 - **Raiders, zombie dogs and evolution**: armed gangs rob and loot; dogs can rise as zombie dogs; a long
   outbreak makes new zombies tougher.
 - **Survivors and recovery**: supply runs, armed patrols, people escaping in abandoned cars; after the
@@ -112,10 +122,13 @@ classic parks, playgrounds, soccer fields, courts, community gardens, skateparks
 Traffic drives the streets, pigeons flock in the parks, and explosions leave burning wrecks.
 
 **Countryside:** Villages, small towns and every Massive map are surrounded by open country:
-winding dirt lanes out to the edge of the map, farms and lonely cabins along them, and woods. A
+winding dirt lanes out to the edge of the map, farms and lonely cabins along them, woods, and
+hamlets (a short street of cottages with a lane back to town). A town out in the country is never a
+square: it grows its own ragged outline, with roads running out of it into the fields. A
 Village is not a grid: it is a high street, a crossroad and a back lane, with cottages in gardens,
 a few shops and its police station, school, church and clinic strung along them. Only some maps
-have a railway (always Industrial and Metropolis, sometimes Classic and Small Town).
+have a railway (always Industrial and Metropolis, sometimes Classic and Small Town). Streets are
+carried across the line so there's a level crossing every so often, and country lanes cross it too.
 
 Varied and Organic layouts merge some blocks into superblocks (so streets have T-junctions), add
 tree-lined boulevards, and give parks curved paths. It is always daytime, and there is no water on

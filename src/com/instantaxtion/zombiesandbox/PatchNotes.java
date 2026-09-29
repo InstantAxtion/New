@@ -2,11 +2,24 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "5.1";
-    static final int VERSION_CODE = 19;
+    static final String VERSION = "5.2";
+    static final int VERSION_CODE = 20;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "5.2  -  Homes, towns and trains",
+                    "Everyone lives somewhere. Each house has a family of 1 to 5, apartment blocks have two people to a flat on every floor, and some offices and shops have flats upstairs. How many people a city has now comes from its homes, and the People option chooses how many of them are out and about (None, Few, Some, Most or All). New Game shows how many people the city's homes hold.",
+                    "People start at or near their own homes (some are out on errands, some out together as a family with the dog), and run home first when trouble starts.",
+                    "Towns out in the country (every Massive map, and small towns) are no longer a square: they grow a ragged, organic outline with roads running off into the fields. Blocks that only stray roads reached are gone.",
+                    "Hamlets: small clusters of cottages on a short street out in the country, each with its own name and a lane back to town.",
+                    "Railways: streets are carried across the line so the town isn't cut in two, with a level crossing every so often. Country lanes cross the tracks too.",
+                    "Level crossings have barriers and flashing red lights that come down while a train is near (and stay up otherwise).",
+                    "Trains slow down and stop at the station for a few seconds, and commuters get off and on.",
+                    "Evacuation trains: during an outbreak, trains wait at the station for 25 seconds. People nearby run for the platform, and everyone who gets on is safe. A train won't stop if zombies are on the platform. The Stats screen counts how many got away.",
+                    "Air support is realistic: once it's approved, the crew has to be briefed and the aircraft readied (about a minute from a helipad in town, nearly two if it's coming from outside the city), and the radio gives an ETA. The helicopter spins up for 16 seconds, climbs out slowly, slows for its approach, flies a wide orbit so the door gunner can fire short bursts, and heads home after about 45 seconds on station. Helicopters from outside the city are heard before they're seen.",
+                    "Fixed: old saves with more than 5 People settings are read correctly.",
+            },
             {
                     "5.1  -  Guard, firefighters and the countryside",
                     "National Guard: when the army has no reserve squads left and the war is going badly, the Governor calls out the Guard. Two trucks of guardsmen (tough, well stocked, olive drab) drive in from the edge of the map and reinforce the safe zones. You can also place them yourself from the Military picker.",

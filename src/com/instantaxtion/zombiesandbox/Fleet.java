@@ -27,6 +27,8 @@ final class Fleet {
     static final class Vehicle {
         int type, state;
         float x, y, angle, speed, timer, stuckTimer, lastDist, gunCd, soundCd, circle;
+        /** Rounds fired by the door gunner (it fires in short bursts). */
+        int burst;
         float tx, ty, homeX, homeY;
         int[] field;
         int passengerType, passengers;
@@ -503,7 +505,14 @@ final class Fleet {
         v.pad = hp != null && Math.hypot(hp[0] - fromX, hp[1] - fromY) < 10;
         v.state = v.pad ? SPOOL : FLY_IN;
         v.alt = v.pad ? 0 : 1;
-        v.timer = 2.5f;
+        // Engines and rotor take a while to come up to speed.
+        v.timer = 16;
+        if (!v.pad) {
+            // Coming from outside the city: it is heard before it is seen.
+            float dx = fromX - toX, dy = fromY - toY, d = Math.max(1, (float) Math.hypot(dx, dy));
+            fromX += dx / d * 500;
+            fromY += dy / d * 500;
+        }
         v.x = fromX;
         v.y = fromY;
         v.homeX = fromX;
@@ -1161,32 +1170,38 @@ final class Fleet {
             if (v.timer <= 0) v.state = FLY_IN;
             return false;
         }
-        float gx, gy, speed = 130;
+        float gx, gy, speed = 115;
         if (v.state == FLY_IN) {
-            v.alt = Math.min(1, v.alt + dt * 0.35f);
+            // A slow, careful climb out, then cruise, slowing down on the approach.
+            v.alt = Math.min(1, v.alt + dt * 0.12f);
             gx = v.tx;
             gy = v.ty;
-            // Climb before speeding off.
-            speed = 20 + 110 * v.alt;
-            if (Math.hypot(gx - v.x, gy - v.y) < 60) {
+            float d = (float) Math.hypot(gx - v.x, gy - v.y);
+            speed = Math.min(8 + 107 * v.alt * v.alt, 35 + d * 0.35f);
+            if (d < 140) {
                 v.state = CIRCLE;
-                v.timer = 25;
+                v.timer = 45;
                 v.circle = (float) Math.atan2(v.y - v.ty, v.x - v.tx);
+                w.dispatch.say(Dispatch.WHO_MILITARY, null, "Air 1: On station over " + (v.place != null ? v.place : "the target")
+                        + ". Door gunner is clear to engage.", v.x, v.y);
             }
         } else if (v.state == CIRCLE) {
             v.timer -= dt;
-            v.circle += dt * 0.7f;
-            gx = v.tx + (float) Math.cos(v.circle) * 80;
-            gy = v.ty + (float) Math.sin(v.circle) * 80;
-            speed = 70;
+            // A wide left-hand orbit, so the door gunner on that side faces the target.
+            v.circle += dt * 0.42f;
+            gx = v.tx + (float) Math.cos(v.circle) * 125;
+            gy = v.ty + (float) Math.sin(v.circle) * 125;
+            speed = 55;
             // Drops a little lower to give the gunner a better shot.
             v.alt += (0.75f - v.alt) * Math.min(1, dt);
             // Door gunner.
             v.gunCd -= dt;
             if (v.gunCd <= 0) {
-                Entity z = w.nearestZombie(v.x, v.y, 170);
+                Entity z = w.nearestZombie(v.x, v.y, 200);
                 if (z != null) {
-                    v.gunCd = 0.2f;
+                    // Short bursts, with a pause to re-aim.
+                    v.burst++;
+                    v.gunCd = v.burst % 6 == 0 ? 1.4f : 0.13f;
                     w.airShot(v.x, v.y, z);
                 } else {
                     v.gunCd = 0.5f;
@@ -1201,8 +1216,8 @@ final class Fleet {
             gx = v.homeX;
             gy = v.homeY;
             float d = (float) Math.hypot(gx - v.x, gy - v.y);
-            speed = Math.min(130, 25 + d * 0.8f);
-            if (d < 12) {
+            speed = Math.min(115, 20 + d * 0.5f);
+            if (d < 30) {
                 if (!v.pad) return true;
                 v.state = LAND;
             }
@@ -1210,18 +1225,18 @@ final class Fleet {
             // Settle onto the pad, then shut down.
             gx = v.homeX;
             gy = v.homeY;
-            speed = 8;
-            v.alt -= dt * 0.4f;
+            speed = 6;
+            v.alt -= dt * 0.18f;
             if (v.alt <= 0) return true;
         }
         float want = (float) Math.atan2(gy - v.y, gx - v.x);
         float diff = want - v.angle;
         while (diff > Math.PI) diff -= Math.PI * 2;
         while (diff < -Math.PI) diff += Math.PI * 2;
-        float turn = Math.max(-dt * 2.5f, Math.min(dt * 2.5f, diff));
+        float turn = Math.max(-dt * 1.2f, Math.min(dt * 1.2f, diff));
         v.angle += turn;
         v.bank += (turn / Math.max(dt, 0.001f) * 0.25f - v.bank) * Math.min(1, dt * 3);
-        v.speed += (speed - v.speed) * Math.min(1, dt * 1.5f);
+        v.speed += (speed - v.speed) * Math.min(1, dt * 0.6f);
         v.x += (float) Math.cos(v.angle) * v.speed * dt;
         v.y += (float) Math.sin(v.angle) * v.speed * dt;
         return false;

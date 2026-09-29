@@ -325,20 +325,10 @@ final class World {
     }
 
     void populate(CityConfig cfg) {
-        spawnRandom(Entity.CIVILIAN, cfg.civilians());
-        // Families and friends out together, and people walking their dogs.
-        for (int i = 0, n = entities.size(); i < n; i++) {
-            Entity e = entities.get(i);
-            if (e.type != Entity.CIVILIAN || e.leader != null || entities.size() >= maxEntities) continue;
-            float roll = rnd.nextFloat();
-            if (roll < 0.22f) {
-                int extra = 1 + rnd.nextInt(3);
-                for (int k = 0; k < extra; k++) follower(e, Entity.CIVILIAN);
-            }
-            if (roll > 0.9f) follower(e, Entity.DOG);
-        }
+        int people = Math.min(cfg.civilians(city.totalResidents), maxEntities * 3 / 5);
+        residents(people);
         // A few strays.
-        spawnRandom(Entity.DOG, cfg.civilians() / 60);
+        spawnRandom(Entity.DOG, people / 60);
         // A few civilians own a gun.
         for (int i = 0, n = entities.size(); i < n; i++) {
             Entity e = entities.get(i);
@@ -442,9 +432,54 @@ final class World {
         recount();
     }
 
-    private void follower(Entity leader, int type) {
+    private Entity follower(Entity leader, int type) {
         Entity f = spawn(type, leader.x + rnd.nextFloat() * 10 - 5, leader.y + rnd.nextFloat() * 10 - 5);
         if (f != null) f.leader = leader;
+        return f;
+    }
+
+    /**
+     * Everyone lives somewhere. People are taken household by household from the city's homes: some are at
+     * home, some out on errands, and some households out together (with the dog).
+     */
+    private void residents(int people) {
+        ArrayList<City.Building> homes = new ArrayList<City.Building>();
+        for (City.Building b : city.buildings) if (b.residents > 0) homes.add(b);
+        java.util.Collections.shuffle(homes, rnd);
+        int left = people;
+        // Take a share of every household rather than whole households, so the whole city is lived in.
+        float share = city.totalResidents > 0 ? Math.min(1f, people / (float) city.totalResidents) : 0;
+        for (int pass = 0; pass < 3 && left > 0; pass++) {
+            for (int h = 0; h < homes.size() && left > 0; h++) {
+                City.Building b = homes.get(h);
+                int n = pass == 0 ? Math.min(left, (int) (b.residents * share + rnd.nextFloat())) : Math.min(left, 1);
+                if (n <= 0) continue;
+                boolean together = n >= 2 && rnd.nextFloat() < 0.3f;
+                boolean out = rnd.nextFloat() < 0.4f;
+                float[] p = out ? city.randomWalkableInTown(rnd) : new float[]{b.doorX + rnd.nextFloat() * 16 - 8, b.doorY + rnd.nextFloat() * 16 - 8};
+                Entity leader = null;
+                for (int k = 0; k < n; k++) {
+                    Entity e;
+                    if (together && leader != null) e = follower(leader, Entity.CIVILIAN);
+                    else {
+                        float[] q = k == 0 || together ? p : rnd.nextFloat() < 0.4f ? city.randomWalkableInTown(rnd)
+                                : new float[]{b.doorX + rnd.nextFloat() * 16 - 8, b.doorY + rnd.nextFloat() * 16 - 8};
+                        e = spawn(Entity.CIVILIAN, q[0], q[1]);
+                    }
+                    if (e == null) {
+                        left--;
+                        continue;
+                    }
+                    e.home = b;
+                    e.homeChecked = true;
+                    if (leader == null) leader = e;
+                    left--;
+                }
+                if (leader != null && rnd.nextFloat() < 0.1f) follower(leader, Entity.DOG);
+            }
+        }
+        // A city with nowhere to live (or more people than homes): the rest find a place nearby.
+        if (left > 0) spawnRandom(Entity.CIVILIAN, left);
     }
 
     /** Flocks of pigeons in parks and plazas. */

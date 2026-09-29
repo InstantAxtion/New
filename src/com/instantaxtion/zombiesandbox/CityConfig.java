@@ -32,14 +32,17 @@ final class CityConfig implements OptionSet {
     private static final String[][] VALUES = {
             PRESETS,
             {"Small", "Medium", "Large", "Massive"},
-            {"0", "50", "100", "150", "250", "400", "600", "800"},
+            {"None", "Few", "Some", "Most", "All"},
             {"0", "5", "10", "20", "40", "60"},
             {"0", "5", "10", "20", "40"},
             {"0", "1", "5", "20", "50", "100", "200"},
             {"Off", "Low", "Medium", "High"},
     };
     private static final int[] SIZES = {96, 128, 160, 224};
-    private static final int[] CIVILIANS = {0, 50, 100, 150, 250, 400, 600, 800};
+    /** Share of the city's residents out and about when the game starts. */
+    private static final float[] RESIDENT_SHARE = {0, 0.2f, 0.45f, 0.7f, 1f};
+    /** The most civilians a city starts with, however many homes it has. */
+    static final int MAX_RESIDENTS = 800;
     private static final int[] COPS = {0, 5, 10, 20, 40, 60};
     private static final int[] SOLDIERS = {0, 5, 10, 20, 40};
     private static final int[] ZOMBIES = {0, 1, 5, 20, 50, 100, 200};
@@ -92,7 +95,7 @@ final class CityConfig implements OptionSet {
     };
 
     /** Current index into VALUES for each option. */
-    final int[] v = {0, 1, 3, 2, 1, 0, 2};
+    final int[] v = {0, 1, 2, 2, 1, 0, 2};
     long seed = new Random().nextInt(1000000);
     /** Start the next game on the city from {@link #code()} instead of a new random one. */
     boolean keepCity;
@@ -151,7 +154,10 @@ final class CityConfig implements OptionSet {
         if (massive()) f = Math.min(f, 0.62f) * (p == 9 ? 0.8f : 1f);
         return f;
     }
-    int civilians() { return CIVILIANS[v[OPT_CIVILIANS]]; }
+    /** How many of a city's residents (everyone its homes can house) are in the game. */
+    int civilians(int residents) {
+        return Math.min(MAX_RESIDENTS, Math.round(residents * RESIDENT_SHARE[v[OPT_CIVILIANS]]));
+    }
     int cops() { return COPS[v[OPT_COPS]]; }
     int soldiers() { return SOLDIERS[v[OPT_MILITARY]]; }
     int zombies() { return ZOMBIES[v[OPT_ZOMBIES]]; }
@@ -217,7 +223,7 @@ final class CityConfig implements OptionSet {
     void randomize(Random r) {
         for (int i = 0; i < v.length; i++) v[i] = r.nextInt(VALUES[i].length);
         v[OPT_SIZE] = 1;
-        if (v[OPT_CIVILIANS] == 0) v[OPT_CIVILIANS] = 3;
+        if (v[OPT_CIVILIANS] == 0) v[OPT_CIVILIANS] = 2;
         keepCity = false;
     }
 

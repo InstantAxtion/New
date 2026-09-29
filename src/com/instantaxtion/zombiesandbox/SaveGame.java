@@ -255,7 +255,7 @@ final class SaveGame {
             int n = in.readInt();
             for (int i = 0; i < n; i++) {
                 int v = in.readInt();
-                if (i < cfg.v.length) cfg.v[i] = v;
+                if (i < cfg.v.length) cfg.v[i] = Math.max(0, Math.min(cfg.values(i).length - 1, v));
             }
             cfg.seed = in.readLong();
             World w = new World(cfg);

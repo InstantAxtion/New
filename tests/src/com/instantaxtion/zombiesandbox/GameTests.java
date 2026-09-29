@@ -44,7 +44,7 @@ public final class GameTests {
         test("a busy outbreak runs for two minutes", new Check() {
             public void run() {
                 CityConfig c = new CityConfig();
-                c.v[CityConfig.OPT_CIVILIANS] = 5;
+                c.v[CityConfig.OPT_CIVILIANS] = 4;
                 c.v[CityConfig.OPT_COPS] = 3;
                 c.v[CityConfig.OPT_MILITARY] = 3;
                 c.v[CityConfig.OPT_ZOMBIES] = 4;

@@ -173,6 +173,7 @@ final class Dispatch {
 
     void update(float dt) {
         for (int i = 0; i < log.size(); i++) log.get(i).age += dt;
+        updateAir(dt);
         for (int i = arrivals.size() - 1; i >= 0; i--) {
             Arrival a = arrivals.get(i);
             a.time -= dt;
@@ -282,7 +283,7 @@ final class Dispatch {
                     + (tankReserve == 0 ? " It's the only one we have." : ""), x, y);
             return;
         }
-        if (airSorties > 0 && !w.fleet.heliBusy()) {
+        if (airSorties > 0 && !airBusy()) {
             if (commander != null) say(WHO_MILITARY, commander, "Heavy contact at " + place + ". Requesting air support!", x, y);
             requestAir(x, y, place);
         }
@@ -312,9 +313,49 @@ final class Dispatch {
                     best.x, best.y);
     }
 
+    /** Air support that has been approved but hasn't taken off yet: seconds to go, and where it's going. */
+    float airDelay;
+    private float airX, airY;
+    private String airPlace;
+    private boolean airPad;
+
+    boolean airBusy() {
+        return airDelay > 0 || w.fleet.heliBusy();
+    }
+
+    /**
+     * Air support takes time: the request goes up the chain, the crew is briefed and the aircraft is fuelled and
+     * armed. A helicopter on a pad in town is quicker than one flying in from outside the city.
+     */
     private void requestAir(float x, float y, String place) {
-        if (airSorties <= 0 || w.fleet.heliBusy()) return;
+        if (airSorties <= 0 || airBusy()) return;
         airSorties--;
+        airX = x;
+        airY = y;
+        airPlace = place;
+        airPad = city.nearestHelipad(x, y) != null || city.nearestFacility(City.FACILITY_BASE, x, y) != null;
+        airDelay = airPad ? 45 + w.rnd.nextFloat() * 25 : 75 + w.rnd.nextFloat() * 35;
+        int eta = Math.round((airDelay + (airPad ? 30 : 25)) / 60f);
+        say(WHO_MILITARY, null, "Military: Air support approved for " + place + ". The crew is " + (airPad ? "being briefed" : "lifting off from outside the city")
+                + ", ETA " + (eta <= 1 ? "one minute" : eta + " minutes") + "." + (airSorties == 0 ? " That's our last sortie." : ""), x, y);
+    }
+
+    private void updateAir(float dt) {
+        if (airDelay <= 0) return;
+        airDelay -= dt;
+        if (airDelay > 0) return;
+        airDelay = 0;
+        // Head for the worst of the fighting now, if it has moved.
+        Entity z = w.nearestZombie(airX, airY, 500);
+        float x = airX, y = airY;
+        if (z != null) {
+            x = z.x;
+            y = z.y;
+        }
+        launchAir(x, y, airPlace);
+    }
+
+    private void launchAir(float x, float y, String place) {
         float fx, fy;
         City.Facility base = city.nearestFacility(City.FACILITY_BASE, x, y);
         float[] pad = city.nearestHelipad(x, y);
@@ -330,8 +371,7 @@ final class Dispatch {
             fy = edge != null ? edge[1] : 0;
         }
         w.fleet.sendHeli(fx, fy, x, y, place);
-        say(WHO_MILITARY, null, "Military: Air support inbound to " + place + ". Stay clear of the area!"
-                + (airSorties == 0 ? " That's our last sortie." : ""), x, y);
+        say(WHO_MILITARY, null, "Military: Air 1 is " + (pad != null ? "spinning up" : "inbound") + " to " + place + ". Stay clear of the area!", x, y);
     }
 
     private static void release(Entity e) {

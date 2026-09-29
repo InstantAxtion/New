@@ -89,6 +89,8 @@ final class City {
         /** Civilians can hide inside homes, offices and warehouses: the door, room and barricade. */
         float doorX, doorY, barricade = 100, calmTimer, releaseTimer;
         int capacity;
+        /** How many people live here: families in houses, flats in apartment blocks, a flat over some shops. */
+        int residents;
         final List<Entity> occupants = new ArrayList<Entity>();
         /** Blast damage: a building knocked down to 0 collapses into rubble. */
         float hp, maxHp;
@@ -359,6 +361,8 @@ final class City {
     /** Building lots: {x, y, w, h, roof, seed, kind, floors, wall} in tiles. */
     private final List<int[]> buildingLots = new ArrayList<int[]>();
     final List<Building> buildings = new ArrayList<Building>();
+    /** Everyone the city's homes can house. */
+    int totalResidents;
     /** Which building stands on each tile (index into buildings), or -1. */
     final int[] buildingAt;
     /** Tree canopies as {x, y, radius}; drawn above the ground by GameView. */
@@ -418,6 +422,18 @@ final class City {
                     || k == BARN || (k == STADIUM && !stadiumNamed)) placeDoor(b, l);
             if (k == MALL) b.capacity = 40;
             if (k == APARTMENT) b.capacity = Math.max(8, Math.min(30, l[2] * l[3]));
+            Random rr = new Random(l[5] * 31L + 7);
+            if (b.capacity > 0) {
+                // Two people to a flat, a flat for every two tiles of floor, on every floor.
+                if (k == HOUSE) b.residents = 1 + rr.nextInt(4) + (l[2] * l[3] >= 6 ? 1 : 0);
+                else if (k == APARTMENT) b.residents = Math.min(160, l[2] * l[3] * Math.max(1, l[7]));
+                else if (k == SHOP && l[7] >= 2) b.residents = 1 + rr.nextInt(3);
+                // Some office blocks are flats (and some old buildings have flats upstairs).
+                else if (k == OFFICE && l[7] >= 2 && rr.nextFloat() < 0.3f) b.residents = Math.min(80, l[2] * l[3] * l[7] / 2);
+                // Home is somewhere the whole household can shelter.
+                b.capacity = Math.max(b.capacity, Math.min(b.residents, 40));
+                totalResidents += b.residents;
+            }
             // Bigger and taller buildings take more to bring down.
             b.maxHp = b.hp = 150 + l[2] * l[3] * 22 + l[7] * 60;
             Random nr = new Random(l[5]);

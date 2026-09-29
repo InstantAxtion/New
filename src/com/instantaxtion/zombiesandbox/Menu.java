@@ -99,6 +99,8 @@ final class Menu {
     /** A small picture of the city about to be played, built in the background whenever it changes. */
     private volatile Bitmap preview;
     private volatile String previewKey, buildingKey;
+    /** How many people the previewed city's homes house. */
+    private volatile int previewResidents;
 
     private static final class Row {
         final RectF r = new RectF(), prev = new RectF();
@@ -742,6 +744,7 @@ final class Menu {
                     City city = new City(copy, 360f / (copy.tiles() * City.T));
                     if (key.equals(buildingKey)) {
                         preview = city.bitmap;
+                        previewResidents = city.totalResidents;
                         previewKey = key;
                     }
                 } catch (Throwable ignored) {
@@ -865,7 +868,10 @@ final class Menu {
         }
         y += ((CityConfig.PRESETS.length + perRow - 1) / perRow) * (ch + gap) + 12 * dp;
         y = segRow(c, CityConfig.OPT_SIZE, "Map size", lx, y, lw);
-        y = segRow(c, CityConfig.OPT_CIVILIANS, "Civilians", lx, y, lw);
+        int homes = previewResidents;
+        y = segRow(c, CityConfig.OPT_CIVILIANS, homes > 0 && config.code().equals(previewKey)
+                ? "People: how many residents are about (this city has homes for " + homes + ", about " + config.civilians(homes) + " people)"
+                : "People: how many residents are about", lx, y, lw);
         y = segRow(c, CityConfig.OPT_COPS, "Cops", lx, y, lw);
         y = segRow(c, CityConfig.OPT_MILITARY, "Military", lx, y, lw);
         y = segRow(c, CityConfig.OPT_ZOMBIES, "Zombies", lx, y, lw);

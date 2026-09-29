@@ -3909,6 +3909,9 @@ final class City {
         return solidTile((int) Math.floor(x / T), (int) Math.floor(y / T));
     }
 
+    /** Radius of a tree trunk, for walking into. */
+    static final float TRUNK = 2.5f;
+
     /** True if a circle at (x, y) overlaps any solid tile or leaves the map. */
     boolean circleBlocked(float x, float y, float r) {
         int tx0 = (int) Math.floor((x - r) / T), tx1 = (int) Math.floor((x + r) / T);
@@ -3916,6 +3919,12 @@ final class City {
         for (int ty = ty0; ty <= ty1; ty++) {
             for (int tx = tx0; tx <= tx1; tx++) {
                 if (!solidTile(tx, ty)) continue;
+                if (tx >= 0 && ty >= 0 && tx < w && ty < h && tiles[ty * w + tx] == TREE) {
+                    // A tree is its trunk, not the whole tile: people slip between trees and slide round them.
+                    float dx = x - (tx * T + T / 2f), dy = y - (ty * T + T / 2f), rr = r + TRUNK;
+                    if (dx * dx + dy * dy < rr * rr) return true;
+                    continue;
+                }
                 float nx = Math.max(tx * T, Math.min(x, tx * T + T));
                 float ny = Math.max(ty * T, Math.min(y, ty * T + T));
                 float dx = x - nx, dy = y - ny;

@@ -93,6 +93,8 @@ final class Entity {
     City.Building home, errand;
     float errandTimer;
     boolean homeChecked;
+    /** Which way (1 or -1) this one steps round obstacles it walks straight into. */
+    float slideSide = 1;
     /** Breath for sprinting (0 to 1): the living tire, the dead don't. */
     float stamina = 1;
     /** Police and soldiers: when they last radioed a sighting to the others, and a retreat already called. */

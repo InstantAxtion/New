@@ -387,6 +387,45 @@ public final class GameTests {
                 check(fill < 0.9f, "the town has a ragged edge (" + fill + ")");
             }
         });
+        test("people and zombies don't get stuck among trees", new Check() {
+            public void run() {
+                CityConfig c = new CityConfig();
+                c.v[CityConfig.OPT_PRESET] = 9;
+                c.v[CityConfig.OPT_SIZE] = 3;
+                c.v[CityConfig.OPT_ZOMBIES] = 0;
+                c.v[CityConfig.OPT_CIVILIANS] = 0;
+                c.seed = 2;
+                World w = new World(c);
+                w.populate(c);
+                java.util.Random r = new java.util.Random(2);
+                java.util.ArrayList<Entity> test = new java.util.ArrayList<Entity>();
+                City city = w.city;
+                for (int tries = 0; test.size() < 60 && tries < 100000; tries++) {
+                    int tx = 1 + r.nextInt(city.w - 2), ty = 1 + r.nextInt(city.h - 2);
+                    if (city.tiles[ty * city.w + tx] != City.GRASS) continue;
+                    int trees = 0;
+                    for (int oy = -1; oy <= 1; oy++)
+                        for (int ox = -1; ox <= 1; ox++) if (city.tiles[(ty + oy) * city.w + tx + ox] == City.TREE) trees++;
+                    if (trees < 4) continue;
+                    Entity e = w.spawn(test.size() % 2 == 0 ? Entity.CIVILIAN : Entity.ZOMBIE, tx * City.T + 8, ty * City.T + 8);
+                    if (e != null) test.add(e);
+                }
+                float[] px = new float[test.size()], py = new float[test.size()];
+                for (int i = 0; i < test.size(); i++) {
+                    px[i] = test.get(i).x;
+                    py[i] = test.get(i).y;
+                }
+                for (int s = 0; s < 30 * 20; s++) {
+                    w.update(1 / 30f);
+                    w.evCount = 0;
+                }
+                int stuck = 0;
+                for (int i = 0; i < test.size(); i++)
+                    if (Math.hypot(test.get(i).x - px[i], test.get(i).y - py[i]) < City.T) stuck++;
+                check(test.size() >= 40, "found people in the woods");
+                check(stuck <= test.size() / 8, "they walk out of the woods (" + stuck + " of " + test.size() + " stuck)");
+            }
+        });
         test("every screen draws", new Check() {
             public void run() throws Exception {
                 GameView v = new GameView(new android.app.Activity());

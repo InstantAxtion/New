@@ -2,11 +2,15 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "5.2";
-    static final int VERSION_CODE = 20;
+    static final String VERSION = "5.2.1";
+    static final int VERSION_CODE = 21;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "5.2.1  -  Trees",
+                    "Fixed: people and zombies got stuck between trees, in the woods and beside street trees. A tree now only blocks the way at its trunk, so everyone can slip between trees and round them, and anyone who walks straight into a trunk steps off to one side.",
+            },
             {
                     "5.2  -  Homes, towns and trains",
                     "Everyone lives somewhere. Each house has a family of 1 to 5, apartment blocks have two people to a flat on every floor, and some offices and shops have flats upstairs. How many people a city has now comes from its homes, and the People option chooses how many of them are out and about (None, Few, Some, Most or All). New Game shows how many people the city's homes hold.",

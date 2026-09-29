@@ -4558,6 +4558,7 @@ final class World {
     /** Moves with wall sliding. Returns false if the move was (at least partly) blocked. */
     private boolean tryMove(Entity e, float sx, float sy) {
         boolean ok = true;
+        float bx0 = e.x, by0 = e.y;
         if (sx != 0) {
             if (!city.circleBlocked(e.x + sx, e.y, e.radius)) e.x += sx;
             else ok = false;
@@ -4565,6 +4566,22 @@ final class World {
         if (sy != 0) {
             if (!city.circleBlocked(e.x, e.y + sy, e.radius)) e.y += sy;
             else ok = false;
+        }
+        if (!ok && (sx != 0 || sy != 0) && e.x == bx0 && e.y == by0) {
+            // Walked straight into something round (a tree trunk): step off at an angle, whichever side is free,
+            // keeping to the side we last went round on so we don't dither.
+            float[] turns = {0.8f, -0.8f, 1.4f, -1.4f};
+            for (float t : turns) {
+                float a = t * e.slideSide;
+                float c = (float) Math.cos(a), s = (float) Math.sin(a);
+                float rx = sx * c - sy * s, ry = sx * s + sy * c;
+                if (!city.circleBlocked(e.x + rx, e.y + ry, e.radius)) {
+                    e.x += rx;
+                    e.y += ry;
+                    if (t < 0) e.slideSide = -e.slideSide;
+                    break;
+                }
+            }
         }
         return ok;
     }

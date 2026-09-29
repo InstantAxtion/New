@@ -148,6 +148,8 @@ final class World {
     private float fieldTimer, engineTimer;
     final int[] counts = new int[Entity.TYPE_COUNT];
     int humans, zombies, turned, zombiesKilled, civiliansLost;
+    /** People who got away on evacuation trains. */
+    int evacuated;
     String message;
     float messageTime;
     /** How fast sprinting uses up stamina (per second, out of 1). */
@@ -1968,6 +1970,20 @@ final class World {
                 } else {
                     steer(e, ddx / d, ddy / d, e.speed * 1.6f);
                 }
+                return;
+            }
+        }
+
+        // An evacuation train at the station: anyone nearby who can make it runs for the platform.
+        if (fleet.evacTrain != null && city.stationBuilding != null && (e.task == Dispatch.T_NONE || e.task == Dispatch.T_HIDE)
+                && e.leader == null && !e.hasGun) {
+            float sdx = city.stationX - e.x, sdy = city.stationY - e.y, sd = (float) Math.sqrt(sdx * sdx + sdy * sdy) + 0.001f;
+            if (sd < 420 && (threat == null || threatDist > 45)) {
+                e.task = Dispatch.T_NONE;
+                City.Building st = city.stationBuilding;
+                float ddx = st.doorX - e.x, ddy = st.doorY - e.y, d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
+                if (d > 28 && sd > 70) walkTo(e, st, ddx, ddy, d, e.runSpeed);
+                else steer(e, sdx / sd, sdy / sd, e.runSpeed);
                 return;
             }
         }

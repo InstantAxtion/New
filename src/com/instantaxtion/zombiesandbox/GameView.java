@@ -1035,6 +1035,7 @@ final class GameView extends View implements Menu.Host {
             stroke.setStrokeWidth(2f);
             c.drawCircle(sc[0], sc[1], 10 + sc[2] * 120, stroke);
         }
+        drawCrossings(c, vx0, vx1, vy0, vy1);
         // Emergency lights wash the road around them in red and blue.
         for (int i = 0, n = world.fleet.vehicles.size(); i < n; i++) {
             Fleet.Vehicle v = world.fleet.vehicles.get(i);
@@ -1903,6 +1904,42 @@ final class GameView extends View implements Menu.Host {
     }
 
     /** A passenger train: a locomotive pulling three carriages along the line. */
+    /** Level crossings: the barriers are up, or down with the red lights flashing while a train is near. */
+    private void drawCrossings(Canvas c, float vx0, float vx1, float vy0, float vy1) {
+        City city = world.city;
+        if (city.railY0 < 0 || city.crossings.isEmpty()) return;
+        float y0 = city.railY0 * City.T, y1 = (city.railY0 + city.railRows) * City.T;
+        if (y1 < vy0 - 20 || y0 > vy1 + 20) return;
+        boolean blink = ((int) (world.time * 3)) % 2 == 0;
+        for (int k = 0, n = city.crossings.size(); k < n; k++) {
+            int[] cr = city.crossings.get(k);
+            float x0 = cr[0] * City.T, x1 = cr[1] * City.T;
+            if (x1 < vx0 - 20 || x0 > vx1 + 20) continue;
+            boolean closed = world.fleet.crossingClosed((x0 + x1) / 2);
+            for (int side = 0; side < 2; side++) {
+                // A post on the kerb at each end, the arm across the road on the approach side.
+                float px = side == 0 ? x0 - 1.5f : x1 + 1.5f, py = side == 0 ? y0 - 2.5f : y1 + 2.5f, dir = side == 0 ? 1 : -1;
+                float len = closed ? x1 - x0 + 1 : 4;
+                for (float a = 0; a < len; a += 3) {
+                    fill.setColor(((int) (a / 3)) % 2 == 0 ? 0xFFD83A3A : 0xFFF2F2F2);
+                    float ax = px + dir * a, bx = px + dir * Math.min(len, a + 3);
+                    c.drawRect(Math.min(ax, bx), py - 0.8f, Math.max(ax, bx), py + 0.8f, fill);
+                }
+                fill.setColor(0xFF2C2C2E);
+                c.drawCircle(px, py, 1.8f, fill);
+                if (closed) {
+                    float ly = py - dir * 3;
+                    fill.setColor(blink ? 0xFFFF3A2A : 0xFF4A1414);
+                    c.drawCircle(px, ly, 1.3f, fill);
+                    if (blink) {
+                        fill.setColor(0x33FF3A2A);
+                        c.drawCircle(px, ly, 5, fill);
+                    }
+                }
+            }
+        }
+    }
+
     private void drawTrain(Canvas c, Fleet.Vehicle v) {
         float dir = (float) Math.cos(v.angle);
         for (int k = 0; k < 4; k++) {

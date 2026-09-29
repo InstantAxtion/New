@@ -188,6 +188,8 @@ final class City {
     final List<District> districts = new ArrayList<District>();
     /** Which district each tile belongs to. */
     private byte[] districtAt;
+    /** The countryside around a town, or -1. */
+    private int countryDistrict = -1;
     /** The district of the block currently being filled in. */
     private int curDistrict = DT_MIDTOWN;
 
@@ -267,6 +269,7 @@ final class City {
             d.type = DT_PARKSIDE;
             d.name = words.get(word++ % words.size()) + (r.nextBoolean() ? " Valley" : " Vale");
             country = districts.size();
+            countryDistrict = country;
             districts.add(d);
         }
         // Every tile belongs to its nearest centre, with wobbly borders.
@@ -439,7 +442,10 @@ final class City {
             Random nr = new Random(l[5]);
             if (k == CHURCH) b.name = SAINTS[nr.nextInt(SAINTS.length)] + " Church";
             else if (k == SCHOOL) b.name = SCHOOLS[nr.nextInt(SCHOOLS.length)];
-            else if (k == TRAIN_STATION) b.name = "Central Station";
+            else if (k == TRAIN_STATION) {
+                b.name = "Central Station";
+                stationBuilding = b;
+            }
             else if (k == MALL) b.name = name + " Mall";
             else if (k == STADIUM && !stadiumNamed) {
                 b.name = name + " Stadium";
@@ -516,6 +522,11 @@ final class City {
 
     /** The railway: tile rows it runs along, or -1 if the map has none. */
     int railY0 = -1, railRows;
+    /** Level crossings as {x0, x1} (tile columns), and the middle of the station platform (or -1). */
+    final List<int[]> crossings = new ArrayList<int[]>();
+    float stationX = -1, stationY;
+    Building stationBuilding;
+    String stationName;
 
     /** Where the industrial district is: an angle around the centre (maps with warehouses on the edge). */
     private float industryAngle;
@@ -633,26 +644,29 @@ final class City {
         if (m > 0) fill(0, 0, w, h, GRASS);
         // A ring road around the edge of town (a village just has its lanes).
         boolean village = cfg.density() == 0 && cfg.style() == CityConfig.STYLE_HOUSES;
-        if (!village) {
+        // A town out in the country grows its own shape instead of filling a square.
+        boolean organic = m > 0 && !village;
+        int in = organic ? 0 : 3;
+        if (m == 0) {
             carve(new Street(bx0, by0, bx1, by0 + 3, false, false));
             carve(new Street(bx0, by1 - 3, bx1, by1, false, false));
             carve(new Street(bx0, by0, bx0 + 3, by1, true, false));
             carve(new Street(bx1 - 3, by0, bx1, by1, true, false));
         }
-        if (m > 0) fill(bx0 + 3, by0 + 3, bx1 - bx0 - 6, by1 - by0 - 6, village ? GRASS : SIDEWALK);
+        if (m > 0) fill(bx0 + in, by0 + in, bx1 - bx0 - in * 2, by1 - by0 - in * 2, village ? GRASS : SIDEWALK);
         // The railway cuts straight across the middle third of the town; the streets are laid out on each side.
         if (cfg.hasRail()) {
             int th = by1 - by0;
             railY0 = by0 + th / 3 + rnd.nextInt(Math.max(1, th / 3));
             railRows = 3;
-            split(bx0 + 3, by0 + 3, bx1 - 3, railY0, 0, -1, -1);
-            split(bx0 + 3, railY0 + railRows, bx1 - 3, by1 - 3, 0, -1, -1);
+            split(bx0 + in, by0 + in, bx1 - in, railY0, 0, -1, -1);
+            split(bx0 + in, railY0 + railRows, bx1 - in, by1 - in, 0, -1, -1);
             for (int y = railY0; y < railY0 + railRows; y++)
                 for (int x = 0; x < w; x++) {
                     int i = y * w + x;
                     // Streets that reach the line from both sides get a level crossing.
                     boolean above = roadDir[(railY0 - 1) * w + x] == 1, below = roadDir[(railY0 + railRows) * w + x] == 1;
-                    if ((above && below) || (x >= bx0 && x < bx0 + 3) || (x >= bx1 - 3 && x < bx1)) {
+                    if ((above && below) || (m == 0 && ((x >= bx0 && x < bx0 + 3) || (x >= bx1 - 3 && x < bx1)))) {
                         tiles[i] = ROAD;
                         roadDir[i] = 1;
                     } else {
@@ -660,12 +674,18 @@ final class City {
                         roadDir[i] = 0;
                     }
                 }
+            ensureCrossings(bx0, bx1);
         } else if (village && m > 0) {
             villageCore(bx0, by0, bx1, by1);
         } else {
-            split(bx0 + 3, by0 + 3, bx1 - 3, by1 - 3, 0, -1, -1);
+            split(bx0 + in, by0 + in, bx1 - in, by1 - in, 0, -1, -1);
         }
-        if (m > 0) countryside(bx0, by0, bx1, by1);
+        if (organic) erodeTown(bx0, by0, bx1, by1);
+        if (m > 0) {
+            int n = w >= 200 ? 3 + rnd.nextInt(3) : w >= 150 ? 1 + rnd.nextInt(2) : rnd.nextInt(2);
+            hamlets(n);
+        }
+        if (m > 0) countryside(townX0, townY0, townX1, townY1);
         // Tree-lined medians down the main roads, open at the junctions.
         for (Street st : streets) {
             if (st.width != 5) continue;
@@ -689,6 +709,8 @@ final class City {
 
         // Pick blocks for the military base and police stations.
         boolean[] used = new boolean[blocks.size()];
+        // Hamlets out in the country are just homes, farms and the odd shop.
+        for (int k = 0; k < blocks.size(); k++) if (blocks.get(k).length > 4 && blocks.get(k)[4] == 2) used[k] = true;
         if (cfg.militaryBase()) {
             int best = -1, bestArea = 0;
             for (int k = 0; k < blocks.size(); k++) {
@@ -839,8 +861,9 @@ final class City {
         }
 
         for (int k = 0; k < blocks.size(); k++) {
-            if (used[k]) continue;
             int[] b = blocks.get(k);
+            boolean plot = b.length > 4;
+            if (used[k] && !(plot && b[4] == 2)) continue;
             int x0 = b[0], y0 = b[1], x1 = b[2], y1 = b[3];
             if (x1 - x0 < 1 || y1 - y0 < 1) continue;
             fill(x0, y0, x1 - x0, y1 - y0, SIDEWALK);
@@ -856,7 +879,7 @@ final class City {
                 farm(ix, iy, iw, ih);
                 continue;
             }
-            if (!villageEnds.isEmpty()) {
+            if (plot) {
                 // A village plot: a cottage or two in a garden, now and then a paddock or a shop.
                 float r = rnd.nextFloat();
                 if (r < 0.12f && iw >= 7 && ih >= 7) farm(ix, iy, iw, ih);
@@ -870,6 +893,13 @@ final class City {
             block(ix, iy, iw, ih);
         }
 
+        if (railY0 >= 0)
+            for (int x = 0; x < w; x++) {
+                if (tiles[railY0 * w + x] != ROAD) continue;
+                int x0 = x;
+                while (x < w && tiles[railY0 * w + x] == ROAD) x++;
+                crossings.add(new int[]{x0, x});
+            }
         // Abandoned cars on the roads (never at intersections, never next to each other).
         float carChance = CAR_CHANCE[cfg.traffic()];
         for (int y = 0; y < h; y++) {
@@ -1311,6 +1341,9 @@ final class City {
     /** A station building facing the street, a platform along the tracks and a small car park. */
     private void trainStation(int x, int y, int bw, int bh, boolean railBelow) {
         fill(x, y, bw, bh, PLAZA);
+        stationX = (x + bw / 2f) * T;
+        stationY = railBelow ? (y + bh - 0.5f) * T : (y + 0.5f) * T;
+        stationName = "Central Station";
         int sw = Math.min(bw - 2, Math.max(6, bw * 2 / 3)), sh = Math.max(2, Math.min(4, bh - 3));
         int sx = x + (bw - sw) / 2, sy = railBelow ? y + 1 : y + bh - 1 - sh;
         addFacilityLot(sx, sy, sw, sh, TRAIN_STATION, 2);
@@ -1703,7 +1736,7 @@ final class City {
      * centre line is added to lane as {x, y, vertical ? 1 : 0}.
      */
     private void dirtRoad(int x, int y, int dx, int dy, List<int[]> lane) {
-        boolean vertical = dx == 0;
+        boolean vertical = dx == 0, joined = false;
         int drift = 0;
         for (int step = 0; step < w * 2; step++) {
             x += dx;
@@ -1716,18 +1749,22 @@ final class City {
                 else y = Math.max(2, Math.min(h - 3, y + drift));
             }
             if (railY0 >= 0 && !vertical && y >= railY0 - 2 && y <= railY0 + railRows + 1) y = railY0 - 3;
-            // Lanes stay out of town.
-            if (step > 2 && x >= townX0 - 1 && x <= townX1 && y >= townY0 - 1 && y <= townY1) break;
             for (int t = 0; t < 2; t++) {
                 int ax = vertical ? x + t : x, ay = vertical ? y : y + t;
                 if (ax < 0 || ay < 0 || ax >= w || ay >= h) continue;
                 byte old = tiles[ay * w + ax];
-                if (old == GRASS || old == TREE || old == SIDEWALK) tiles[ay * w + ax] = DIRT;
+                if (old == GRASS || old == TREE) tiles[ay * w + ax] = DIRT;
+                else if (old == RAIL) {
+                    // A level crossing.
+                    tiles[ay * w + ax] = ROAD;
+                    roadDir[ay * w + ax] = 1;
+                } else if (step > 2 && old != DIRT) joined = true;
                 // A bend: fill the corner so the road stays connected.
                 if (vertical && ay > 0 && tiles[(ay - 1) * w + ax] != DIRT && tiles[(ay - 1) * w + ax] == GRASS) tiles[(ay - 1) * w + ax] = DIRT;
                 if (!vertical && ax > 0 && tiles[ay * w + ax - 1] != DIRT && tiles[ay * w + ax - 1] == GRASS) tiles[ay * w + ax - 1] = DIRT;
             }
             lane.add(new int[]{x, y, vertical ? 1 : 0});
+            if (joined) break;
         }
     }
 
@@ -1761,37 +1798,285 @@ final class City {
             own.add(back);
         }
         // Plots along both sides of each street, with gaps of open ground between them.
-        for (Street st : own) {
-            int from = st.vertical ? st.y0 : st.x0, to = st.vertical ? st.y1 : st.x1;
-            for (int side = -1; side <= 1; side += 2) {
-                int p = from + 1 + rnd.nextInt(3);
-                while (p < to - 6) {
-                    int pw = 8 + rnd.nextInt(3), pd = 8 + rnd.nextInt(3);
-                    int x0, y0, x1, y1;
-                    if (st.vertical) {
-                        y0 = p;
-                        y1 = p + pw;
-                        x0 = side < 0 ? st.x0 - pd : st.x1;
-                        x1 = side < 0 ? st.x0 : st.x1 + pd;
-                    } else {
-                        x0 = p;
-                        x1 = p + pw;
-                        y0 = side < 0 ? st.y0 - pd : st.y1;
-                        y1 = side < 0 ? st.y0 : st.y1 + pd;
-                    }
-                    if (x0 >= bx0 && y0 >= by0 && x1 <= bx1 && y1 <= by1 && allGrass(x0, y0, x1 - x0, y1 - y0)) {
-                        fill(x0, y0, x1 - x0, y1 - y0, SIDEWALK);
-                        blocks.add(new int[]{x0, y0, x1, y1});
-                        p += pw + 1 + (rnd.nextFloat() < 0.3f ? 3 + rnd.nextInt(5) : 0);
-                    } else p += 2;
-                }
-            }
-        }
+        for (Street st : own) plotsAlong(st, bx0, by0, bx1, by1, 1);
         // Hedgerows and garden trees on the open ground in between.
         for (int y = by0; y < by1; y++)
             for (int x = bx0; x < bx1; x++)
                 if (tiles[y * w + x] == GRASS && rnd.nextFloat() < 0.03f && !hasNeighbor(x, y, ROAD) && !hasNeighbor(x, y, SIDEWALK))
                     tiles[y * w + x] = TREE;
+    }
+
+    /** Plots along both sides of a street, with gaps of open ground between them. flag: 1 village, 2 hamlet. */
+    private int plotsAlong(Street st, int bx0, int by0, int bx1, int by1, int flag) {
+        int made = 0;
+        int from = st.vertical ? st.y0 : st.x0, to = st.vertical ? st.y1 : st.x1;
+        for (int side = -1; side <= 1; side += 2) {
+            int p = from + 1 + rnd.nextInt(3);
+            while (p < to - 6) {
+                int pw = 8 + rnd.nextInt(3), pd = 8 + rnd.nextInt(3);
+                int x0, y0, x1, y1;
+                if (st.vertical) {
+                    y0 = p;
+                    y1 = p + pw;
+                    x0 = side < 0 ? st.x0 - pd : st.x1;
+                    x1 = side < 0 ? st.x0 : st.x1 + pd;
+                } else {
+                    x0 = p;
+                    x1 = p + pw;
+                    y0 = side < 0 ? st.y0 - pd : st.y1;
+                    y1 = side < 0 ? st.y0 : st.y1 + pd;
+                }
+                if (x0 >= bx0 && y0 >= by0 && x1 <= bx1 && y1 <= by1 && allGrass(x0, y0, x1 - x0, y1 - y0)) {
+                    fill(x0, y0, x1 - x0, y1 - y0, SIDEWALK);
+                    blocks.add(new int[]{x0, y0, x1, y1, flag});
+                    made++;
+                    p += pw + 1 + (rnd.nextFloat() < 0.3f ? 3 + rnd.nextInt(5) : 0);
+                } else p += 2;
+            }
+        }
+        return made;
+    }
+
+    /**
+     * Gives a town in the country a ragged, organic edge: blocks outside a wobbly outline become fields again,
+     * and the roads that only served them go too. What's left is one connected town with streets running out
+     * of it, and the town bounds shrink to fit.
+     */
+    private void erodeTown(int bx0, int by0, int bx1, int by1) {
+        float cx = (bx0 + bx1) / 2f, cy = (by0 + by1) / 2f, rad = (bx1 - bx0) / 2f;
+        float[] amp = new float[4], ph = new float[4];
+        for (int k = 0; k < 4; k++) {
+            amp[k] = 0.04f + rnd.nextFloat() * (k == 0 ? 0.14f : 0.08f);
+            ph[k] = rnd.nextFloat() * (float) Math.PI * 2;
+        }
+        float stretch = 0.8f + rnd.nextFloat() * 0.4f;
+        List<int[]> kept = new ArrayList<int[]>();
+        for (int[] b : blocks) {
+            float x = (b[0] + b[2]) / 2f - cx, y = ((b[1] + b[3]) / 2f - cy) * stretch;
+            float a = (float) Math.atan2(y, x), d = (float) Math.sqrt(x * x + y * y) / rad;
+            // Big maps get a properly ragged edge; a small town just loses its corners.
+            float r = w >= 200 ? 0.86f : 1.02f;
+            for (int k = 0; k < 4; k++) r += amp[k] * (float) Math.sin((k + 2) * a + ph[k]);
+            boolean keep = d < r && !(d > r - 0.14f && rnd.nextFloat() < 0.3f);
+            if (keep) kept.add(b);
+            else fill(b[0], b[1], b[2] - b[0], b[3] - b[1], GRASS);
+        }
+        // Roads more than a few tiles from the town are dug up.
+        boolean[] near = new boolean[w * h];
+        for (int[] b : kept)
+            for (int y = Math.max(0, b[1] - 3); y < Math.min(h, b[3] + 3); y++)
+                for (int x = Math.max(0, b[0] - 3); x < Math.min(w, b[2] + 3); x++) near[y * w + x] = true;
+        for (int y = by0; y < by1; y++)
+            for (int x = bx0; x < bx1; x++) {
+                int i = y * w + x;
+                if ((tiles[i] == ROAD || tiles[i] == SIDEWALK) && !near[i]) unroad(i);
+            }
+        // Keep the big connected pieces of road network; stray bits (and the blocks only they reach) go.
+        int[] comp = new int[w * h];
+        Arrays.fill(comp, -1);
+        List<Integer> sizes = new ArrayList<Integer>();
+        int[] q = new int[w * h];
+        for (int s = 0; s < w * h; s++) {
+            if (tiles[s] != ROAD || comp[s] >= 0) continue;
+            int id = sizes.size(), head = 0, tail = 0;
+            q[tail++] = s;
+            comp[s] = id;
+            while (head < tail) {
+                int i = q[head++], x = i % w, y = i / w;
+                int[] nb = {x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, y > 0 ? i - w : -1, y < h - 1 ? i + w : -1};
+                for (int j : nb)
+                    if (j >= 0 && comp[j] < 0 && tiles[j] == ROAD) {
+                        comp[j] = id;
+                        q[tail++] = j;
+                    }
+            }
+            sizes.add(tail);
+        }
+        int biggest = 0;
+        for (int sz : sizes) biggest = Math.max(biggest, sz);
+        for (int i = 0; i < w * h; i++)
+            if (comp[i] >= 0 && sizes.get(comp[i]) < biggest / 5) unroad(i);
+        List<int[]> connected = new ArrayList<int[]>();
+        for (int[] b : kept) {
+            boolean touches = false;
+            for (int y = Math.max(0, b[1] - 1); y <= Math.min(h - 1, b[3]) && !touches; y++)
+                for (int x = Math.max(0, b[0] - 1); x <= Math.min(w - 1, b[2]) && !touches; x++)
+                    if (tiles[y * w + x] == ROAD) touches = true;
+            if (touches) connected.add(b);
+            else fill(b[0], b[1], b[2] - b[0], b[3] - b[1], GRASS);
+        }
+        blocks.clear();
+        blocks.addAll(connected);
+        for (int i = streets.size() - 1; i >= 0; i--) {
+            Street st = streets.get(i);
+            boolean any = false;
+            for (int y = st.y0; y < st.y1 && !any; y++)
+                for (int x = st.x0; x < st.x1 && !any; x++)
+                    if (x >= 0 && y >= 0 && x < w && y < h && tiles[y * w + x] == ROAD) any = true;
+            if (!any) streets.remove(i);
+        }
+        // Fields where town used to be belong to the countryside, and the districts' names move to what's left.
+        if (countryDistrict >= 0) {
+            float[] sx = new float[districts.size()], sy = new float[districts.size()];
+            for (District d : districts) d.tiles = 0;
+            for (int i = 0; i < w * h; i++) {
+                if (!near[i]) districtAt[i] = (byte) countryDistrict;
+                int id = districtAt[i];
+                districts.get(id).tiles++;
+                sx[id] += i % w;
+                sy[id] += i / w;
+            }
+            for (int k = 0; k < districts.size(); k++) {
+                District d = districts.get(k);
+                if (k == countryDistrict || d.tiles == 0) continue;
+                d.cx = (sx[k] / d.tiles + 0.5f) * T;
+                d.cy = (sy[k] / d.tiles + 0.5f) * T;
+            }
+        }
+        // The town is now as big as what's left.
+        int x0 = w, y0 = h, x1 = 0, y1 = 0;
+        for (int[] b : blocks) {
+            x0 = Math.min(x0, b[0]);
+            y0 = Math.min(y0, b[1]);
+            x1 = Math.max(x1, b[2]);
+            y1 = Math.max(y1, b[3]);
+        }
+        if (x1 > x0) {
+            townX0 = Math.max(0, x0 - 3);
+            townY0 = Math.max(0, y0 - 3);
+            townX1 = Math.min(w, x1 + 3);
+            townY1 = Math.min(h, y1 + 3);
+        }
+        // Lanes out into the country start from the ends of the roads on each side of town.
+        int[][] dirs = {{0, -1}, {0, 1}, {-1, 0}, {1, 0}};
+        for (int[] d : dirs) {
+            int best = -1;
+            float bestV = -Float.MAX_VALUE;
+            for (int i = 0; i < w * h; i++) {
+                if (tiles[i] != ROAD) continue;
+                int x = i % w, y = i / w;
+                if (railY0 >= 0 && y >= railY0 - 3 && y <= railY0 + railRows + 2) continue;
+                // Only a road end with open country ahead of it.
+                boolean clear = true;
+                for (int k = 1; k <= 8 && clear; k++)
+                    for (int t = 0; t < 2 && clear; t++) {
+                        int ax = x + d[0] * k + (d[0] == 0 ? t : 0), ay = y + d[1] * k + (d[1] == 0 ? t : 0);
+                        if (ax < 0 || ay < 0 || ax >= w || ay >= h) clear = false;
+                        else if (tiles[ay * w + ax] != GRASS && tiles[ay * w + ax] != TREE) clear = false;
+                    }
+                if (!clear) continue;
+                float v = x * d[0] + y * d[1] + rnd.nextFloat() * 4;
+                if (v > bestV) {
+                    bestV = v;
+                    best = i;
+                }
+            }
+            if (best >= 0) villageEnds.add(new int[]{best % w, best / w, d[0], d[1]});
+        }
+    }
+
+    private void unroad(int i) {
+        tiles[i] = GRASS;
+        roadDir[i] = 0;
+        mainRoad[i] = false;
+    }
+
+    private static final String[] HAMLET_ENDS = {" Green", " End", " Cross", " Hamlet", " Farm", " Corner", " Bridge", " Hollow"};
+
+    /**
+     * Hamlets out in the country: a short street of cottages and a farm or two, with a lane back to town.
+     * Each is a named place of its own.
+     */
+    private void hamlets(int count) {
+        float tcx = (townX0 + townX1) / 2f, tcy = (townY0 + townY1) / 2f;
+        List<float[]> made = new ArrayList<float[]>();
+        for (int k = 0; k < count; k++) {
+            for (int tries = 0; tries < 60; tries++) {
+                int cx = 18 + rnd.nextInt(Math.max(1, w - 36)), cy = 18 + rnd.nextInt(Math.max(1, h - 36));
+                if (cx > townX0 - 12 && cx < townX1 + 12 && cy > townY0 - 12 && cy < townY1 + 12) continue;
+                if (railY0 >= 0 && Math.abs(cy - railY0) < 16) continue;
+                boolean far = true;
+                for (float[] o : made) if (Math.hypot(o[0] - cx, o[1] - cy) < 45) far = false;
+                if (!far || !allOpen(cx - 13, cy - 13, 26, 26)) continue;
+                boolean vertical = rnd.nextBoolean();
+                int len = 16 + rnd.nextInt(12);
+                Street st = vertical ? new Street(cx - 1, cy - len / 2, cx + 2, cy + len / 2, true, false)
+                        : new Street(cx - len / 2, cy - 1, cx + len / 2, cy + 2, false, false);
+                carve(st);
+                plotsAlong(st, cx - 13, cy - 13, cx + 13, cy + 13, 2);
+                made.add(new float[]{cx, cy});
+                // A lane from the end nearer town, back to the nearest road.
+                int ex, ey;
+                if (vertical) {
+                    ex = cx;
+                    ey = tcy < cy ? st.y0 - 1 : st.y1;
+                } else {
+                    ex = tcx < cx ? st.x0 - 1 : st.x1;
+                    ey = cy;
+                }
+                laneTo(ex, ey, (int) tcx, (int) tcy);
+                nameHamlet(cx, cy);
+                break;
+            }
+        }
+    }
+
+    private boolean allOpen(int x, int y, int fw, int fh) {
+        for (int j = y; j < y + fh; j++)
+            for (int i = x; i < x + fw; i++) {
+                if (i < 1 || j < 1 || i >= w - 1 || j >= h - 1) return false;
+                byte t = tiles[j * w + i];
+                if (t != GRASS && t != TREE) return false;
+            }
+        return true;
+    }
+
+    /** A winding two-tile dirt lane from (x, y) towards (tx, ty), until it meets a road. */
+    private void laneTo(int x, int y, int tx, int ty) {
+        for (int step = 0; step < w * 3; step++) {
+            int dx = tx - x, dy = ty - y;
+            if (dx == 0 && dy == 0) break;
+            boolean alongX = Math.abs(dx) * (0.7f + rnd.nextFloat() * 0.6f) > Math.abs(dy);
+            if (alongX) x += Integer.signum(dx);
+            else y += Integer.signum(dy);
+            boolean hit = false;
+            for (int j = y; j < y + 2; j++)
+                for (int i = x; i < x + 2; i++) {
+                    if (i < 0 || j < 0 || i >= w || j >= h) continue;
+                    int k = j * w + i;
+                    if (tiles[k] == ROAD) hit = step > 2;
+                    else if (tiles[k] == RAIL) {
+                        // A level crossing.
+                        tiles[k] = ROAD;
+                        roadDir[k] = 1;
+                    } else if (tiles[k] == GRASS || tiles[k] == TREE) tiles[k] = DIRT;
+                    else if (tiles[k] != DIRT && step > 2) hit = true;
+                }
+            if (hit) break;
+        }
+    }
+
+    private void nameHamlet(int cx, int cy) {
+        if (districtAt == null) return;
+        District d = new District();
+        d.type = DT_PARKSIDE;
+        d.name = DISTRICT_WORDS[rnd.nextInt(DISTRICT_WORDS.length)] + HAMLET_ENDS[rnd.nextInt(HAMLET_ENDS.length)];
+        for (District o : districts) if (o.name.equals(d.name)) d.name = d.name + " Village";
+        d.x = cx;
+        d.y = cy;
+        d.cx = (cx + 0.5f) * T;
+        d.cy = (cy - 8) * T;
+        int id = districts.size();
+        if (id > 120) return;
+        districts.add(d);
+        for (int y = Math.max(0, cy - 16); y < Math.min(h, cy + 16); y++)
+            for (int x = Math.max(0, cx - 16); x < Math.min(w, cx + 16); x++) {
+                if ((x - cx) * (x - cx) + (y - cy) * (y - cy) > 16 * 16) continue;
+                District old = districts.get(districtAt[y * w + x]);
+                old.tiles--;
+                districtAt[y * w + x] = (byte) id;
+                d.tiles++;
+            }
     }
 
     private boolean allGrass(int x, int y, int fw, int fh) {
@@ -2948,15 +3233,48 @@ final class City {
         p.setColor(0xFFB8BCC0);
         c.drawRect(0, cy - 6, w * T, cy - 4.8f, p);
         c.drawRect(0, cy + 4.8f, w * T, cy + 6, p);
-        // Crossing barriers (red and white poles) at each road.
-        for (int x = 0; x < w; x++) {
-            if (tiles[railY0 * w + x] != ROAD) continue;
-            float x0 = x * T, x1 = x0 + T;
-            for (float bx = x0; bx < x1; bx += 4) {
-                p.setColor(((int) (bx / 4)) % 2 == 0 ? 0xFFD83A3A : 0xFFF2F2F2);
-                c.drawRect(bx, y0 + 1, bx + 4, y0 + 2.5f, p);
-                c.drawRect(bx, y1 - 2.5f, bx + 4, y1 - 1, p);
+    }
+
+    /**
+     * Makes sure the town isn't cut in two by the railway: streets that run up to the line from one side are
+     * carried across it (cutting through the block opposite) until there's a level crossing every so often.
+     */
+    private void ensureCrossings(int bx0, int bx1) {
+        List<Integer> xs = new ArrayList<Integer>();
+        for (int x = 0; x < w; x++)
+            if (tiles[railY0 * w + x] == ROAD && (x == 0 || tiles[railY0 * w + x - 1] != ROAD)) xs.add(x);
+        int want = Math.max(2, (bx1 - bx0) / 26);
+        List<Street> cands = new ArrayList<Street>();
+        for (Street st : streets) if (st.vertical && (st.y1 == railY0 || st.y0 == railY0 + railRows)) cands.add(st);
+        java.util.Collections.shuffle(cands, rnd);
+        for (Street st : cands) {
+            if (xs.size() >= want) break;
+            boolean close = false;
+            for (int x : xs) if (Math.abs(x - st.x0) < 14) close = true;
+            if (close) continue;
+            boolean fromAbove = st.y1 == railY0;
+            int dy = fromAbove ? 1 : -1, y = fromAbove ? railY0 + railRows : railY0 - 1;
+            // Carry on across the block beyond until meeting a road.
+            while (y > 0 && y < h - 1) {
+                boolean road = false;
+                for (int x = st.x0; x < st.x1; x++) if (tiles[y * w + x] == ROAD) road = true;
+                if (road) break;
+                y += dy;
             }
+            if (y <= 0 || y >= h - 1) continue;
+            int lo = fromAbove ? railY0 : y, hi = fromAbove ? y + 1 : railY0 + railRows;
+            carve(new Street(st.x0, lo, st.x1, hi, true, false));
+            for (int ry = railY0; ry < railY0 + railRows; ry++)
+                for (int x = st.x0; x < st.x1; x++) roadDir[ry * w + x] = 1;
+            // The block it cut through becomes two.
+            for (int k = blocks.size() - 1; k >= 0; k--) {
+                int[] b = blocks.get(k);
+                if (b[2] <= st.x0 || b[0] >= st.x1 || b[3] <= lo || b[1] >= hi) continue;
+                blocks.remove(k);
+                if (st.x0 - b[0] >= 3) blocks.add(new int[]{b[0], b[1], st.x0, b[3]});
+                if (b[2] - st.x1 >= 3) blocks.add(new int[]{st.x1, b[1], b[2], b[3]});
+            }
+            xs.add(st.x0);
         }
     }
 

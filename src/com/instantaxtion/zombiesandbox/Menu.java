@@ -510,6 +510,7 @@ final class Menu {
                 {"Zombies killed", String.valueOf(world.zombiesKilled)},
                 {"People turned", String.valueOf(world.turned)},
                 {"Civilians lost", String.valueOf(world.civiliansLost)},
+                {"Evacuated by train", String.valueOf(world.evacuated)},
                 {"Infections cured", String.valueOf(world.cured)},
                 {"911 calls", String.valueOf(world.dispatch.calls)},
                 {"Shots fired", String.valueOf(world.shotsFired)},

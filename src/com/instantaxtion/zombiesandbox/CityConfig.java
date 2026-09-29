@@ -151,7 +151,7 @@ final class CityConfig implements OptionSet {
     float coreFraction() {
         int p = v[OPT_PRESET];
         float f = p == 9 ? 0.55f : p == 6 ? 0.72f : 1f;
-        if (massive()) f = Math.min(f, 0.62f) * (p == 9 ? 0.8f : 1f);
+        if (massive()) f = p == 9 ? Math.min(f, 0.62f) * 0.8f : Math.min(f, 0.84f);
         return f;
     }
     /** How many of a city's residents (everyone its homes can house) are in the game. */

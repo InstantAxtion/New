@@ -17,7 +17,7 @@ import java.util.ArrayList;
  * damaged or collapsed buildings.
  */
 final class SaveGame {
-    private static final int VERSION = 9;
+    private static final int VERSION = 10;
 
     private SaveGame() {
     }
@@ -83,7 +83,7 @@ final class SaveGame {
                     e.y = v.y;
                     all.add(e);
                 }
-                if (Fleet.airborne(v) || v.passengers <= 0 || v.state > 1 || v.broken) continue;
+                if (Fleet.airborne(v) || v.type == Fleet.TRAIN || v.passengers <= 0 || v.state > 1 || v.broken) continue;
                 for (int i = 0; i < v.passengers; i++) {
                     Entity p = w.create(v.passengerType, v.x, v.y);
                     if (v.guardUnit) w.applyRole(p, Entity.ROLE_GUARD);
@@ -186,6 +186,7 @@ final class SaveGame {
             out.writeBoolean(w.hospitalLost);
             out.writeInt(w.armedAtStores);
             out.writeBoolean(w.guardCalled);
+            out.writeInt(w.evacuated);
         } finally {
             out.close();
         }
@@ -404,6 +405,7 @@ final class SaveGame {
             w.hospitalLost = in.readBoolean();
             w.armedAtStores = in.readInt();
             if (version >= 9) w.guardCalled = in.readBoolean();
+            if (version >= 10) w.evacuated = in.readInt();
             d.copCount = copCount;
             d.soldierCount = soldierCount;
             w.afterLoad();

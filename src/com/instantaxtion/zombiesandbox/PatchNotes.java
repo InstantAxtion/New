@@ -2,11 +2,16 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "5.3";
-    static final int VERSION_CODE = 22;
+    static final String VERSION = "5.4";
+    static final int VERSION_CODE = 23;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "5.4  -  Take control",
+                    "New: Take control of anyone. Tap someone with Move and press Take control on their card: a civilian, cop, soldier, medic, firefighter, raider, dog or even a zombie. Put your left thumb down anywhere on the left to walk (push further to run; the living get out of breath), and hold the red button to act. Armed people auto-aim at the zombie most in line with where they're facing, zombies bite, and everyone else shoves. The camera stays with them and their health and ammo are shown. Stop controlling (or picking another tool) hands them back to the AI; if they die, that's that.",
+                    "New: Outbreak replay. The Replay button on the Stats screen plays the whole game back on the city map: people in blue, the dead in green, and a red mark wherever someone turned (fresh ones bright). Watch the infection spread street by street, or drag the timeline to any moment. Saved games keep their replay.",
+            },
             {
                     "5.3  -  Crowds",
                     "No more limit of 800 people: a city has as many people as its homes hold, so a big city has thousands. The Max population setting has a new default, Auto, which makes room for everyone who lives in the city (and plenty of zombies). You can still pick a fixed limit.",

@@ -57,7 +57,7 @@ final class Menu {
     }
 
     static final int NONE = 0, MAIN = 1, SETUP = 2, SETTINGS = 3, NOTES = 4, PAUSE = 5, STATS = 6, TUTORIAL = 7, RECORDS = 8,
-            SAVES = 9, LOG = 10;
+            SAVES = 9, LOG = 10, REPLAY = 11;
     /** The save slot screen: saving (from the pause menu) or loading (from the main menu). */
     private boolean savingMode;
     Records records;
@@ -65,12 +65,12 @@ final class Menu {
     private static final int A_CONTINUE = 0, A_NEW = 1, A_SETTINGS = 2, A_NOTES = 3, A_QUIT = 4, A_RESUME = 5,
             A_MAIN_MENU = 6, A_BACK = 7, A_START = 8, A_RANDOM = 9, A_SAVE = 10, A_STATS = 11, A_HOW_TO = 12,
             A_TUT_NEXT = 13, A_TUT_PREV = 14, A_TUT_DONE = 15, A_CODE = 16, A_REROLL = 17, A_SHOT = 18, A_RECORDS = 19, A_SAVES = 20, A_LOAD = 21, A_LOG = 22, A_HUD = 23,
-            A_SLOT = 100, A_LOG_ROW = 200;
+            A_REPLAY = 24, A_REPLAY_PLAY = 25, A_SLOT = 100, A_LOG_ROW = 200;
 
     private static final String[][] TUTORIAL_PAGES = {
             {"Welcome to Zombie City", "A sandbox: set up a city, start an outbreak and watch what happens. There are no missions. Play however you like."},
             {"Spawning", "Pick a unit in the bottom bar and tap the city. Drag to paint a line of them, or use Brush (top) to spawn 5 or 10 at once. Buttons with a dot open a picker: People (civilians, medics, firefighters, dogs, raiders), Police, Military (soldiers, snipers, gunners, the National Guard) and Zombies. Tap a choice, then tap the city."},
-            {"Looking around", "Pinch to zoom and drag with two fingers. With Move selected you can drag with one finger, and tap anyone to follow them with the camera. Zoom right in to see through roofs. The View button switches between 3D and bird's-eye."},
+            {"Looking around", "Pinch to zoom and drag with two fingers. With Move selected you can drag with one finger, and tap anyone to follow them with the camera. Press Take control on their card to play them yourself: left thumb to move (push further to run), the red button to shoot, bite or shove. Zoom right in to see through roofs. The View button switches between 3D and bird's-eye."},
             {"The city fights back", "Civilians call 911, the police respond by car, and the military is called in when it gets bad. The radio feed shows what they say. Tap a message to jump there."},
             {"Safe zones and hiding", "Police and soldiers set up guarded safe zones and civilians run to them. Others barricade themselves in buildings until zombies break the door down. Use the Safe Zone tool to order a zone yourself."},
             {"Giving orders", "Pick Orders, tap a cop or soldier (a soldier brings their whole squad), then tap where to send them. They hold that spot. Tap them again to send them back to normal duty."},
@@ -188,6 +188,9 @@ final class Menu {
             case NONE:
                 open(PAUSE);
                 return true;
+            case REPLAY:
+                screen = STATS;
+                return true;
             default:
                 screen = returnTo;
                 scroll = 0;
@@ -215,6 +218,7 @@ final class Menu {
             case RECORDS: drawRecords(c, w, h); break;
             case SAVES: drawSaves(c, w, h); break;
             case LOG: drawLog(c, w, h); break;
+            case REPLAY: drawReplay(c, w, h, dt); break;
         }
         for (Button b : buttons) drawButton(c, b);
     }
@@ -443,6 +447,7 @@ final class Menu {
     private void drawStats(Canvas c, int w, int h) {
         float top = header(c, w, h, "Stats");
         World world = host.world();
+        button("Replay", A_REPLAY, true, w - 12 * dp - 110 * dp, 12 * dp, w - 12 * dp, 12 * dp + 42 * dp);
         boolean landscape = w > h;
         float side = 20 * dp;
         RectF chart = new RectF(side, top + 10 * dp, landscape ? w * 0.58f : w - side,
@@ -545,6 +550,108 @@ final class Menu {
             c.drawText(row[1], tx1, ty, text);
             ty += lh;
         }
+    }
+
+    // ------------------------------------------------------------------ outbreak replay
+
+    /** Where the replay is (0 to 1), whether it's playing, and the timeline's touch area. */
+    private float replayPos;
+    private boolean replayPlaying;
+    private final RectF replayBar = new RectF(), replayMap = new RectF();
+    /** A full replay lasts this many seconds, however long the game was. */
+    private static final float REPLAY_SECONDS = 24;
+
+    private void scrubReplay(float x) {
+        replayPos = Math.max(0, Math.min(1, (x - replayBar.left) / replayBar.width()));
+        replayPlaying = false;
+    }
+
+    /**
+     * The whole game played back on the city map: people in blue, the dead in green, and a red mark everywhere
+     * someone turned, building up as the infection spreads.
+     */
+    private void drawReplay(Canvas c, int w, int h, float dt) {
+        float top = header(c, w, h, "Outbreak replay");
+        World world = host.world();
+        java.util.ArrayList<float[]> meta = world.replayMeta;
+        int frames = meta.size();
+        if (replayPlaying && frames > 1) {
+            replayPos += dt / REPLAY_SECONDS;
+            if (replayPos >= 1) {
+                replayPos = 1;
+                replayPlaying = false;
+            }
+        }
+        float barH = 44 * dp, bottom = h - 16 * dp - barH - 56 * dp;
+        float size = Math.min(w - 32 * dp, bottom - top);
+        replayMap.set((w - size) / 2, top, (w + size) / 2, top + size);
+        City city = world.city;
+        fill.setColor(0xFF1C1F24);
+        c.drawRect(replayMap, fill);
+        bmpSrc.set(0, 0, city.bitmap.getWidth(), city.bitmap.getHeight());
+        bmpPaint.setAlpha(150);
+        c.drawBitmap(city.bitmap, bmpSrc, replayMap, bmpPaint);
+        bmpPaint.setAlpha(255);
+        if (frames == 0) {
+            text.setTextAlign(Paint.Align.CENTER);
+            text.setTextSize(15 * dp);
+            text.setColor(0xFFE6E6E6);
+            c.drawText("Play a little longer to see the replay.", replayMap.centerX(), replayMap.centerY(), text);
+            return;
+        }
+        int f = Math.min(frames - 1, (int) (replayPos * (frames - 1) + 0.5f));
+        float[] m = meta.get(f);
+        short[] dots = world.replayDots.get(f);
+        float sx = replayMap.width() / city.worldW(), sy = replayMap.height() / city.worldH();
+        float r = Math.max(1.4f * dp, size / 260);
+        // Where people turned, up to now: old marks fade.
+        for (int i = 0, n = world.turnEvents.size(); i < n; i++) {
+            float[] t = world.turnEvents.get(i);
+            if (t[0] > m[0]) break;
+            float age = m[0] - t[0];
+            fill.setColor(age < 20 ? 0xFFFF4A3A : 0x80B03028);
+            c.drawCircle(replayMap.left + t[1] * sx, replayMap.top + t[2] * sy, r * (age < 20 ? 2.2f : 1.3f), fill);
+        }
+        int zn = (int) m[3], k = 0;
+        for (int i = 0; i + 1 < dots.length; i += 2, k++) {
+            fill.setColor(k < zn ? 0xFF8BE05A : 0xFF6FA8FF);
+            c.drawCircle(replayMap.left + dots[i] * sx, replayMap.top + dots[i + 1] * sy, r, fill);
+        }
+        // Time and counts.
+        int secs = (int) m[0];
+        text.setTextAlign(Paint.Align.LEFT);
+        text.setTextSize(14 * dp);
+        text.setColor(0xFFFFFFFF);
+        float ly = replayMap.bottom + 22 * dp;
+        text.setTextAlign(Paint.Align.CENTER);
+        c.drawText(String.format("%d:%02d", secs / 60, secs % 60), replayMap.centerX(), ly, text);
+        ly += 22 * dp;
+        text.setTextSize(13 * dp);
+        text.setTextAlign(Paint.Align.RIGHT);
+        int turnedSoFar = 0;
+        for (int i = 0, n = world.turnEvents.size(); i < n && world.turnEvents.get(i)[0] <= m[0]; i++) turnedSoFar++;
+        text.setColor(0xFF6FA8FF);
+        String counts = "People " + (int) m[2];
+        float cx = (w + text.measureText(counts + "   Zombies " + (int) m[1] + "   Turned " + turnedSoFar)) / 2;
+        c.drawText(counts, cx - text.measureText("   Zombies " + (int) m[1] + "   Turned " + turnedSoFar), ly, text);
+        text.setColor(0xFF8BE05A);
+        c.drawText("   Zombies " + (int) m[1], cx - text.measureText("   Turned " + turnedSoFar), ly, text);
+        text.setColor(0xFFFF6A5A);
+        c.drawText("   Turned " + turnedSoFar, cx, ly, text);
+        // The timeline: drag it to scrub, the button plays and pauses.
+        float bw = 90 * dp;
+        float by = Math.min(h - 16 * dp - barH, ly + 18 * dp);
+        button(replayPlaying ? "Pause" : replayPos >= 1 ? "Again" : "Play", A_REPLAY_PLAY, true, replayMap.left, by, replayMap.left + bw, by + barH);
+        replayBar.set(replayMap.left + bw + 14 * dp, by, replayMap.right, by + barH);
+        float mid = replayBar.centerY();
+        fill.setColor(0xFF2A2E34);
+        tmp.set(replayBar.left, mid - 4 * dp, replayBar.right, mid + 4 * dp);
+        c.drawRoundRect(tmp, 4 * dp, 4 * dp, fill);
+        fill.setColor(0xFF3F8A3A);
+        tmp.set(replayBar.left, mid - 4 * dp, replayBar.left + replayBar.width() * replayPos, mid + 4 * dp);
+        c.drawRoundRect(tmp, 4 * dp, 4 * dp, fill);
+        fill.setColor(0xFFFFFFFF);
+        c.drawCircle(replayBar.left + replayBar.width() * replayPos, mid, 10 * dp, fill);
     }
 
     /** The How to Play cards. */
@@ -998,6 +1105,10 @@ final class Menu {
                 dragging = false;
                 break;
             case MotionEvent.ACTION_MOVE:
+                if (screen == REPLAY && replayBar.contains(downX, downY)) {
+                    scrubReplay(x);
+                    break;
+                }
                 if (!dragging && Math.abs(y - downY) > 10 * dp && listArea.contains(downX, downY)
                         && (screen == SETUP || screen == SETTINGS || screen == NOTES || screen == RECORDS || screen == LOG
                         || screen == SAVES)) dragging = true;
@@ -1022,6 +1133,10 @@ final class Menu {
     }
 
     private void tap(float x, float y) {
+        if (screen == REPLAY && replayBar.contains(x, y)) {
+            scrubReplay(x);
+            return;
+        }
         for (Button b : buttons) {
             if (b.r.contains(x, y)) {
                 host.click();
@@ -1125,6 +1240,15 @@ final class Menu {
                 break;
             case A_STATS:
                 open(STATS);
+                break;
+            case A_REPLAY:
+                screen = REPLAY;
+                replayPos = 0;
+                replayPlaying = true;
+                break;
+            case A_REPLAY_PLAY:
+                if (replayPos >= 1) replayPos = 0;
+                replayPlaying = !replayPlaying;
                 break;
             case A_RECORDS:
                 open(RECORDS);

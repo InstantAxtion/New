@@ -464,6 +464,61 @@ public final class GameTests {
                 check(Math.abs(alive(w) - start) <= start / 50 + 5, "nobody is lost going in and out (" + start + " -> " + alive(w) + ")");
             }
         });
+        test("take control of anyone, and the outbreak replay", new Check() {
+            public void run() throws Exception {
+                CityConfig c = new CityConfig();
+                c.v[CityConfig.OPT_ZOMBIES] = 3;
+                c.seed = 5;
+                World w = new World(c);
+                w.populate(c);
+                for (int i = 0; i < 30 * 20; i++) {
+                    w.update(1 / 30f);
+                    w.evCount = 0;
+                }
+                Entity soldier = null;
+                for (Entity e : w.entities) if (!e.dead && e.type == Entity.SOLDIER) soldier = e;
+                check(soldier != null, "a soldier to play");
+                w.controlled = soldier;
+                w.joyX = 1;
+                float x0 = soldier.x, y0 = soldier.y;
+                for (int i = 0; i < 30 * 2; i++) {
+                    w.update(1 / 30f);
+                    w.evCount = 0;
+                }
+                check(w.controlled != soldier || Math.hypot(soldier.x - x0, soldier.y - y0) > 20, "the stick moves them");
+                // Put a zombie in front and hold the attack button.
+                w.joyX = 0;
+                float[] p = w.city.findWalkable(soldier.x + 40, soldier.y);
+                Entity z = w.spawn(Entity.ZOMBIE, p[0], p[1]);
+                int shots = w.shotsFired;
+                w.ctrlAttack = true;
+                for (int i = 0; i < 30; i++) {
+                    w.update(1 / 30f);
+                    w.evCount = 0;
+                }
+                check(w.controlled != soldier || w.shotsFired > shots, "the attack button shoots");
+                // A zombie bites.
+                Entity civ = null;
+                for (Entity e : w.entities) if (!e.dead && e.type == Entity.CIVILIAN) civ = e;
+                Entity me = w.spawn(Entity.ZOMBIE, civ.x + 5, civ.y);
+                w.controlled = me;
+                w.joyX = 0;
+                w.ctrlAttack = true;
+                int bites = w.bites;
+                for (int i = 0; i < 20; i++) {
+                    w.update(1 / 30f);
+                    w.evCount = 0;
+                }
+                check(w.controlled != me || w.bites > bites || civ.dead, "a controlled zombie bites");
+                w.controlled = null;
+                check(!w.replayMeta.isEmpty() && w.replayMeta.size() == w.replayDots.size(), "the replay is recorded");
+                File f = File.createTempFile("zcs", ".dat");
+                SaveGame.save(w, f);
+                World l = SaveGame.load(f);
+                check(l.replayMeta.size() == w.replayMeta.size() && l.turnEvents.size() == w.turnEvents.size(), "the replay is saved");
+                f.delete();
+            }
+        });
         test("every screen draws", new Check() {
             public void run() throws Exception {
                 GameView v = new GameView(new android.app.Activity());
@@ -492,6 +547,11 @@ public final class GameTests {
                     m.open(Menu.STATS);
                     draw(v, size);
                     m.open(Menu.LOG);
+                    draw(v, size);
+                    m.open(Menu.STATS);
+                    java.lang.reflect.Method act = Menu.class.getDeclaredMethod("act", int.class);
+                    act.setAccessible(true);
+                    act.invoke(m, 24);
                     draw(v, size);
                     m.open(Menu.SAVES);
                     draw(v, size);

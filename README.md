@@ -195,6 +195,14 @@ military safe zone.
 - **Place** tool: cars, police cars, tanks, fire engines, barricades, supply crates, fires and medkits.
   **Events** tool: hordes, panic, indoor outbreaks, supply drops, raider gangs, airstrikes, the city
   alarm and Infect. **Undo** takes back the last one.
+- **Take control**: tap anyone with **Move**, then **Take control** on their card to play them yourself: a
+  civilian, cop, soldier, medic, firefighter, raider, dog or zombie. Put your left thumb down anywhere
+  on the left to move (push further to run; the living get out of breath), and hold the red button to
+  act: armed people auto-aim at the zombie most in line with where they're facing, zombies bite, and
+  anyone else shoves. **Stop controlling** (or picking another tool) hands them back to the AI.
+- **Outbreak replay**: the **Replay** button on the Stats screen plays the whole game back on the city
+  map: people in blue, the dead in green, and a red mark wherever someone turned. Drag the timeline to
+  scrub. Saved games keep their replay.
 - Tap anyone with **Move** to follow them and see who they are. The **minimap** jumps the camera;
   **Auto cam** follows the action. Take a **screenshot** from the pause menu.
 - Zoom right in and roofs turn see-through, so you can see who is hiding inside.

@@ -102,6 +102,7 @@ final class GameView extends View implements Menu.Host {
     private final java.util.ArrayList<Entity> selection = new java.util.ArrayList<Entity>();
     private float orderX, orderY, orderMarker;
     private Entity follow;
+    private boolean wasControlling;
     private float hintTime = 14f;
 
     // Layout.
@@ -516,6 +517,13 @@ final class GameView extends View implements Menu.Host {
         if (inGame && hintTime > 0) hintTime -= dt;
         if (orderMarker > 0) orderMarker -= dt;
         for (int i = selection.size() - 1; i >= 0; i--) if (selection.get(i).dead) selection.remove(i);
+        // The camera stays on whoever you control; if they die, say so.
+        if (world.controlled != null) follow = world.controlled;
+        else if (wasControlling) {
+            joyId = attackId = -1;
+            if (follow != null && follow.dead) world.say("You didn't make it");
+        }
+        wasControlling = world.controlled != null;
         if (menu.liveBackground()) driftCamera(dt);
         else if (director && follow == null && inGame) directCamera(dt);
         else if (follow != null) {
@@ -675,7 +683,8 @@ final class GameView extends View implements Menu.Host {
 
     /** The minimap: the whole city small, with zombies, people, safe zones, vehicles and the camera view. */
     private void drawMinimap(Canvas c) {
-        if (!settings.minimap()) {
+        // While you're controlling someone, the attack button goes where the minimap was.
+        if (!settings.minimap() || world.controlled != null) {
             miniRect.setEmpty();
         } else {
             float size = portrait ? Math.min(getWidth() - statsRect.right - 18 * dp, 120 * dp) : Math.min(130 * dp, getHeight() * 0.3f);
@@ -2959,6 +2968,8 @@ final class GameView extends View implements Menu.Host {
             drawBanner(c, lead == null ? "Orders: tap a cop or soldier to select them."
                     : "Selected " + Dispatch.name(lead) + (selection.size() > 1 ? " and " + (selection.size() - 1) + " more" : "")
                     + ". Tap where to send them, or tap them again to release.", w / 2f, infoY);
+        } else if (world.controlled != null) {
+            drawControls(c, world.controlled);
         } else if (follow != null) {
             drawInspect(c, follow);
         } else if (inspectB != null && tool == TOOL_PAN) {
@@ -3042,10 +3053,152 @@ final class GameView extends View implements Menu.Host {
         text.setTextSize(12.5f * dp);
         text.setColor(0xFFB8BDC4);
         for (int i = 0; i < lines.size(); i++) c.drawText(lines.get(i), left + 14 * dp, top + 22 * dp + (i + 1) * lh, text);
-        text.setTextSize(11 * dp);
-        text.setTextAlign(Paint.Align.RIGHT);
-        text.setColor(0xFF8A9099);
-        c.drawText("drag to stop following", left + cw - 12 * dp, top + 22 * dp, text);
+        // Take control of them.
+        float bw = 110 * dp, bh = 30 * dp;
+        takeRect.set(left + cw - bw - 10 * dp, top + 8 * dp, left + cw - 10 * dp, top + 8 * dp + bh);
+        fill.setColor(0xFF3A6EA5);
+        c.drawRoundRect(takeRect, 8 * dp, 8 * dp, fill);
+        text.setTextSize(12.5f * dp);
+        text.setTextAlign(Paint.Align.CENTER);
+        text.setColor(0xFFFFFFFF);
+        c.drawText("Take control", takeRect.centerX(), takeRect.centerY() + 4.5f * dp, text);
+    }
+
+    // ------------------------------------------------------------------ taking control
+
+    private final RectF takeRect = new RectF(), releaseRect = new RectF();
+    /** The stick (a floating one, wherever the left thumb goes down) and the attack button. */
+    private int joyId = -1, attackId = -1;
+    private float joyCX, joyCY, joyKX, joyKY, attackX, attackY, attackR;
+
+    private void takeControl(Entity e) {
+        world.controlled = e;
+        world.joyX = world.joyY = 0;
+        world.ctrlAttack = false;
+        joyId = attackId = -1;
+        follow = e;
+        tool = TOOL_PAN;
+        picker = -1;
+        selection.clear();
+        director = false;
+        scale = Math.max(scale, 2.6f * baseDp);
+        world.say("You are " + (e.isZombie() ? "a " + Entity.NAMES[e.type].toLowerCase() : e.type == Entity.DOG ? Names.dog(e.nameSeed)
+                : Names.person(e.nameSeed)));
+    }
+
+    private void releaseControl() {
+        world.controlled = null;
+        world.joyX = world.joyY = 0;
+        world.ctrlAttack = false;
+        joyId = attackId = -1;
+    }
+
+    /** While controlling someone: the left thumb steers, the right thumb attacks; taps on buttons still work. */
+    private boolean controlTouch(MotionEvent ev) {
+        int action = ev.getActionMasked();
+        int idx = ev.getActionIndex();
+        switch (action) {
+            case MotionEvent.ACTION_DOWN:
+            case MotionEvent.ACTION_POINTER_DOWN: {
+                float x = ev.getX(idx), y = ev.getY(idx);
+                int id = ev.getPointerId(idx);
+                if (Math.hypot(x - attackX, y - attackY) < attackR * 1.3f) {
+                    attackId = id;
+                    world.ctrlAttack = true;
+                } else if (action == MotionEvent.ACTION_DOWN && hitUi(x, y)) {
+                    mode = MODE_UI;
+                } else if (x < getWidth() * 0.55f && y < barTop && joyId < 0) {
+                    joyId = id;
+                    joyCX = joyKX = x;
+                    joyCY = joyKY = y;
+                } else if (y < barTop && attackId < 0) {
+                    attackId = id;
+                    world.ctrlAttack = true;
+                }
+                return true;
+            }
+            case MotionEvent.ACTION_MOVE:
+                for (int i = 0; i < ev.getPointerCount(); i++) {
+                    if (ev.getPointerId(i) != joyId) continue;
+                    float r = 55 * dp, dx = ev.getX(i) - joyCX, dy = ev.getY(i) - joyCY;
+                    float d = (float) Math.sqrt(dx * dx + dy * dy);
+                    if (d > r) {
+                        dx *= r / d;
+                        dy *= r / d;
+                    }
+                    joyKX = joyCX + dx;
+                    joyKY = joyCY + dy;
+                    world.joyX = dx / r;
+                    world.joyY = dy / r;
+                }
+                return true;
+            case MotionEvent.ACTION_POINTER_UP:
+            case MotionEvent.ACTION_UP:
+            case MotionEvent.ACTION_CANCEL: {
+                int id = action == MotionEvent.ACTION_CANCEL ? -2 : ev.getPointerId(idx);
+                if (id == joyId || id == -2) {
+                    joyId = -1;
+                    world.joyX = world.joyY = 0;
+                }
+                if (id == attackId || id == -2) {
+                    attackId = -1;
+                    world.ctrlAttack = false;
+                }
+                if (action != MotionEvent.ACTION_POINTER_UP) mode = MODE_NONE;
+                return true;
+            }
+        }
+        return true;
+    }
+
+    /** The stick, the attack button, what you're carrying and the way out. */
+    private void drawControls(Canvas c, Entity e) {
+        int w = getWidth();
+        // Stick: where the thumb is, or a faint hint of where to put it.
+        // (The idle hint is smaller and low down, clear of the panels.)
+        float jr = joyId >= 0 ? 55 * dp : 38 * dp;
+        float jx = joyId >= 0 ? joyCX : 60 * dp, jy = joyId >= 0 ? joyCY : barTop - 50 * dp;
+        fill.setColor(joyId >= 0 ? 0x40FFFFFF : 0x22FFFFFF);
+        c.drawCircle(jx, jy, jr, fill);
+        stroke.setColor(0x60FFFFFF);
+        stroke.setStrokeWidth(1.5f * dp);
+        c.drawCircle(jx, jy, jr, stroke);
+        fill.setColor(joyId >= 0 ? 0xC0FFFFFF : 0x50FFFFFF);
+        c.drawCircle(joyId >= 0 ? joyKX : jx, joyId >= 0 ? joyKY : jy, joyId >= 0 ? 22 * dp : 15 * dp, fill);
+        // Attack.
+        attackR = 38 * dp;
+        attackX = w - 70 * dp;
+        attackY = barTop - 80 * dp;
+        String verb = e.isZombie() ? "Bite" : e.canShoot() && e.ammo + e.reserve > 0 ? (e.reload > 0 ? "Reload" : "Shoot") : "Shove";
+        fill.setColor(world.ctrlAttack ? 0xF0D9534F : 0xB0D9534F);
+        c.drawCircle(attackX, attackY, attackR, fill);
+        stroke.setColor(0xA0FFFFFF);
+        c.drawCircle(attackX, attackY, attackR, stroke);
+        text.setTextAlign(Paint.Align.CENTER);
+        text.setTextSize(14 * dp);
+        text.setColor(0xFFFFFFFF);
+        c.drawText(verb, attackX, attackY + 5 * dp, text);
+        // Who you are, and the way out.
+        String who = e.isZombie() ? Entity.NAMES[e.type] : e.type == Entity.DOG ? Names.dog(e.nameSeed) : Names.person(e.nameSeed);
+        String info = who + "   Health " + Math.max(0, (int) e.hp) + "/" + (int) e.maxHp
+                + (e.canShoot() ? "   Ammo " + e.ammo + " + " + e.reserve : "")
+                + (e.infected ? "   BITTEN: " + Math.max(0, (int) e.infectTimer) + "s" : "")
+                + (!e.isZombie() && e.stamina < 0.3f ? "   Out of breath" : "");
+        text.setTextSize(13 * dp);
+        float tw = text.measureText(info) + 24 * dp, top = barTop - 34 * dp;
+        oval.set((w - tw) / 2, top, (w + tw) / 2, top + 26 * dp);
+        fill.setColor(0xD0101216);
+        c.drawRoundRect(oval, 8 * dp, 8 * dp, fill);
+        text.setColor(e.infected ? 0xFF9BE08A : 0xFFF2F2F2);
+        c.drawText(info, w / 2f, top + 18 * dp, text);
+        float bw = 150 * dp, bh = 34 * dp, by = top - bh - 10 * dp;
+        releaseRect.set((w - bw) / 2, by, (w + bw) / 2, by + bh);
+        fill.setColor(0xE0202227);
+        c.drawRoundRect(releaseRect, 9 * dp, 9 * dp, fill);
+        stroke.setColor(0x80FFFFFF);
+        c.drawRoundRect(releaseRect, 9 * dp, 9 * dp, stroke);
+        text.setColor(0xFFFFFFFF);
+        c.drawText("Stop controlling", releaseRect.centerX(), releaseRect.centerY() + 4.5f * dp, text);
     }
 
     /** What someone is up to, in plain words. */
@@ -3388,6 +3541,7 @@ final class GameView extends View implements Menu.Host {
             mode = MODE_NONE;
             return menu.onTouch(ev);
         }
+        if (world.controlled != null) return controlTouch(ev);
         int action = ev.getActionMasked();
         switch (action) {
             case MotionEvent.ACTION_DOWN: {
@@ -3432,6 +3586,16 @@ final class GameView extends View implements Menu.Host {
     }
 
     private boolean hitUi(float x, float y) {
+        if (world.controlled != null && releaseRect.contains(x, y)) {
+            click();
+            releaseControl();
+            return true;
+        }
+        if (world.controlled == null && follow != null && !follow.dead && takeRect.contains(x, y)) {
+            click();
+            takeControl(follow);
+            return true;
+        }
         if (picker >= 0 && y < barTop) {
             // Choosing from the open picker; a tap anywhere else just closes it.
             for (int k = 0; k < pickerCount; k++)
@@ -3451,6 +3615,7 @@ final class GameView extends View implements Menu.Host {
                     // Spawn buttons open their picker (tap again to close it).
                     if (hasPicker(i)) picker = picker == i ? -1 : i;
                     else picker = -1;
+                    if (world.controlled != null && i != TOOL_PAN) releaseControl();
                     if (i != TOOL_ORDER) selection.clear();
                     tool = i;
                     hintTime = Math.min(hintTime, 3);

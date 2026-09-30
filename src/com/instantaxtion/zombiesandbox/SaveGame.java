@@ -17,7 +17,7 @@ import java.util.ArrayList;
  * damaged or collapsed buildings.
  */
 final class SaveGame {
-    private static final int VERSION = 10;
+    private static final int VERSION = 11;
 
     private SaveGame() {
     }
@@ -194,6 +194,20 @@ final class SaveGame {
             out.writeInt(w.armedAtStores);
             out.writeBoolean(w.guardCalled);
             out.writeInt(w.evacuated);
+            // The outbreak replay.
+            out.writeInt(w.replayMeta.size());
+            for (int i = 0; i < w.replayMeta.size(); i++) {
+                for (float v : w.replayMeta.get(i)) out.writeFloat(v);
+                short[] dots = w.replayDots.get(i);
+                out.writeShort(dots.length);
+                for (short v : dots) out.writeShort(v);
+            }
+            out.writeInt(w.turnEvents.size());
+            for (float[] t : w.turnEvents) {
+                out.writeFloat(t[0]);
+                out.writeFloat(t[1]);
+                out.writeFloat(t[2]);
+            }
         } finally {
             out.close();
         }
@@ -413,6 +427,19 @@ final class SaveGame {
             w.armedAtStores = in.readInt();
             if (version >= 9) w.guardCalled = in.readBoolean();
             if (version >= 10) w.evacuated = in.readInt();
+            if (version >= 11) {
+                int frames = in.readInt();
+                for (int i = 0; i < frames; i++) {
+                    float[] m = new float[5];
+                    for (int k = 0; k < 5; k++) m[k] = in.readFloat();
+                    short[] dots = new short[in.readShort() & 0xFFFF];
+                    for (int k = 0; k < dots.length; k++) dots[k] = in.readShort();
+                    w.replayMeta.add(m);
+                    w.replayDots.add(dots);
+                }
+                int turns = in.readInt();
+                for (int i = 0; i < turns; i++) w.turnEvents.add(new float[]{in.readFloat(), in.readFloat(), in.readFloat()});
+            }
             d.copCount = copCount;
             d.soldierCount = soldierCount;
             w.afterLoad();

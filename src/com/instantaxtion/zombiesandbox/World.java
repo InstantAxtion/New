@@ -1161,6 +1161,12 @@ final class World {
             city.computeFields(entities);
         }
         dispatch.update(dt);
+        if (controlled != null && (controlled.dead || controlled.removed)) {
+            controlled = null;
+            joyX = joyY = 0;
+            ctrlAttack = false;
+        }
+        recordReplay(dt);
         for (int i = 0, n = entities.size(); i < n; i++) {
             Entity e = entities.get(i);
             if (!e.dead) think(e, dt);
@@ -1404,6 +1410,12 @@ final class World {
         if (e.stun > 0) {
             e.stun -= dt;
             steer(e, 0, 0, 0);
+            return;
+        }
+        if (e == controlled) {
+            e.stuckTime = 0;
+            e.unstick = 0;
+            thinkControlled(e, dt);
             return;
         }
         // Stuck on a corner or in a doorway (big brutes especially): step aside and try another way.
@@ -1874,6 +1886,132 @@ final class World {
         }
         e.angle = (float) Math.atan2(ddy, ddx);
         emit(Sfx.THUD, z.x, z.y);
+    }
+
+    // ------------------------------------------------------------------ taking control
+
+    /** The one the player is controlling (their AI is off), or null; and the stick and attack button. */
+    Entity controlled;
+    float joyX, joyY;
+    boolean ctrlAttack;
+
+    /** The player's hands: walk or run with the stick; the attack button shoots, bites or shoves. */
+    private void thinkControlled(Entity e, float dt) {
+        if (e.reload > 0) {
+            e.reload -= dt;
+            if (e.reload <= 0) {
+                int take = Math.min(e.magSize - e.ammo, e.reserve);
+                e.ammo += take;
+                e.reserve -= take;
+            }
+        }
+        e.task = Dispatch.T_NONE;
+        e.building = null;
+        e.errand = null;
+        e.aiming = false;
+        float mag = Math.min(1, (float) Math.sqrt(joyX * joyX + joyY * joyY));
+        if (mag < 0.12f) steer(e, 0, 0, 0);
+        else {
+            // Push the stick all the way to run.
+            float speed = mag > 0.85f ? e.runSpeed : e.speed * (0.35f + 0.65f * mag / 0.85f);
+            steer(e, joyX / mag, joyY / mag, speed);
+        }
+        if (!ctrlAttack) return;
+        if (e.isZombie()) {
+            Entity t = nearest(e, e.radius + 14, false, false);
+            if (t == null) return;
+            float ddx = t.x - e.x, ddy = t.y - e.y, d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
+            e.angle = (float) Math.atan2(ddy, ddx);
+            if (d < e.radius + t.radius + 4 && e.biteCd <= 0) bite(e, t, ddx / d, ddy / d);
+        } else if (e.canShoot() && e.ammo + e.reserve > 0) {
+            Entity t = aimTarget(e, 210);
+            if (t != null) {
+                float d = (float) Math.hypot(t.x - e.x, t.y - e.y);
+                aimAndFire(e, t, d, 210, dt);
+            }
+        } else {
+            Entity z = nearestInReach(e);
+            if (z != null && e.meleeCd <= 0)
+                shove(e, z, e.type == Entity.FIREFIGHTER || e.type == Entity.COP || e.type == Entity.SOLDIER || e.type == Entity.RAIDER);
+        }
+    }
+
+    /** Auto-aim for the player: the zombie (or raider) most in line with where they're facing, that they can see. */
+    private Entity aimTarget(Entity e, float range) {
+        float face = e.want > 1 ? (float) Math.atan2(e.my, e.mx) : e.angle;
+        float fx = (float) Math.cos(face), fy = (float) Math.sin(face);
+        Entity best = null;
+        float bestScore = Float.MAX_VALUE;
+        int cx0 = Math.max(0, (int) ((e.x - range) / CELL)), cx1 = Math.min(gw - 1, (int) ((e.x + range) / CELL));
+        int cy0 = Math.max(0, (int) ((e.y - range) / CELL)), cy1 = Math.min(gh - 1, (int) ((e.y + range) / CELL));
+        for (int cy = cy0; cy <= cy1; cy++)
+            for (int cx = cx0; cx <= cx1; cx++) {
+                int c = cy * gw + cx;
+                for (int k = cellStart[c], end = cellStart[c] + cellCount[c]; k < end; k++) {
+                    Entity o = sorted[k];
+                    if (o.dead || !(o.isZombie() || (o.type == Entity.RAIDER && e.type != Entity.RAIDER))) continue;
+                    float ddx = o.x - e.x, ddy = o.y - e.y, d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
+                    if (d > range) continue;
+                    float dot = (ddx * fx + ddy * fy) / d;
+                    float score = d * (1.6f - dot);
+                    if (score < bestScore && city.los(e.x, e.y, o.x, o.y)) {
+                        bestScore = score;
+                        best = o;
+                    }
+                }
+            }
+        return best;
+    }
+
+    // ------------------------------------------------------------------ outbreak replay
+
+    /** Snapshots every few seconds: {time, zombies, people, sampled zombies, sampled people} and dots as x,y pairs. */
+    final ArrayList<float[]> replayMeta = new ArrayList<float[]>();
+    final ArrayList<short[]> replayDots = new ArrayList<short[]>();
+    /** Where and when people turned: {time, x, y}. */
+    final ArrayList<float[]> turnEvents = new ArrayList<float[]>();
+    private float replayTimer, replayStep = 4;
+    private static final int REPLAY_SAMPLE = 250, REPLAY_FRAMES = 900;
+
+    private void recordReplay(float dt) {
+        replayTimer -= dt;
+        if (replayTimer > 0) return;
+        replayTimer = replayStep;
+        int z = 0, p = 0;
+        for (int i = 0, n = entities.size(); i < n; i++) {
+            Entity e = entities.get(i);
+            if (e.dead) continue;
+            if (e.isZombie()) z++;
+            else if (e.type != Entity.DOG) p++;
+        }
+        int zs = Math.max(1, (z + REPLAY_SAMPLE - 1) / REPLAY_SAMPLE), ps = Math.max(1, (p + REPLAY_SAMPLE - 1) / REPLAY_SAMPLE);
+        short[] dots = new short[(Math.min(z, REPLAY_SAMPLE) + Math.min(p, REPLAY_SAMPLE)) * 2 + 4];
+        int k = 0, zi = 0, pi = 0, zn = 0, pn = 0;
+        for (int pass = 0; pass < 2; pass++)
+            for (int i = 0, n = entities.size(); i < n; i++) {
+                Entity e = entities.get(i);
+                if (e.dead || e.type == Entity.DOG || e.isZombie() != (pass == 0)) continue;
+                if (pass == 0 ? zi++ % zs != 0 : pi++ % ps != 0) continue;
+                if (k + 2 > dots.length) break;
+                dots[k++] = (short) e.x;
+                dots[k++] = (short) e.y;
+                if (pass == 0) zn++;
+                else pn++;
+            }
+        replayMeta.add(new float[]{time, z, p + hiding + visiting + riding, zn, pn});
+        replayDots.add(k == dots.length ? dots : Arrays.copyOf(dots, k));
+        if (replayMeta.size() >= REPLAY_FRAMES) {
+            // A long game: keep every other snapshot and take them half as often from now on.
+            for (int i = replayMeta.size() - 1; i > 0; i -= 2) {
+                replayMeta.remove(i);
+                replayDots.remove(i);
+            }
+            replayStep *= 2;
+        }
+    }
+
+    private void noteTurn(float x, float y) {
+        if (turnEvents.size() < 6000) turnEvents.add(new float[]{time, x, y});
     }
 
     private Entity nearestInReach(Entity e) {
@@ -4401,6 +4539,7 @@ final class World {
                         lost++;
                         civiliansLost++;
                         turned++;
+                        noteTurn(b.doorX, b.doorY);
                         continue;
                     }
                     leaveBuilding(o, b, true);
@@ -4868,6 +5007,7 @@ final class World {
                     z.runSpeed *= 1.3f;
                     entities.add(z);
                     turned++;
+                    noteTurn(c.x, c.y);
                     bloodBurst(c.x, c.y, 5, 0, 0);
                     emit(Sfx.GROAN, c.x, c.y);
                 }

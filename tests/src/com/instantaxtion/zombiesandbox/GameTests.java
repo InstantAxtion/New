@@ -426,6 +426,44 @@ public final class GameTests {
                 check(stuck <= test.size() / 8, "they walk out of the woods (" + stuck + " of " + test.size() + " stuck)");
             }
         });
+        test("population matches the city, families are small and nobody queues at doors", new Check() {
+            public void run() {
+                CityConfig c = new CityConfig();
+                c.v[CityConfig.OPT_PRESET] = 0;
+                c.v[CityConfig.OPT_SIZE] = 2;
+                c.v[CityConfig.OPT_CIVILIANS] = 4;
+                c.v[CityConfig.OPT_ZOMBIES] = 0;
+                c.seed = 11;
+                World w = new World(c);
+                w.setMaxPopulation(0);
+                check(w.maxEntities >= w.city.totalResidents * 2, "Auto leaves room for everyone who lives here");
+                check(c.civilians(w.city.totalResidents) == w.city.totalResidents, "All means everyone, however big the city");
+                w.populate(c);
+                int[] followers = new int[1];
+                java.util.HashMap<Entity, Integer> groups = new java.util.HashMap<Entity, Integer>();
+                for (Entity e : w.entities) if (e.leader != null) groups.put(e.leader, groups.containsKey(e.leader) ? groups.get(e.leader) + 1 : 1);
+                for (int g : groups.values()) followers[0] = Math.max(followers[0], g);
+                check(followers[0] <= 5, "families are 1 to 5 people (" + followers[0] + " followers)");
+                int start = alive(w);
+                int worst = 0;
+                for (int s = 0; s < 30 * 90; s++) {
+                    w.update(1 / 30f);
+                    w.evCount = 0;
+                    if (s % 150 != 0 || s < 30 * 20) continue;
+                    for (City.Building b : w.city.buildings) {
+                        if (b.doorX == 0) continue;
+                        int n = 0;
+                        for (Entity e : w.entities) if (!e.dead && Math.abs(e.x - b.doorX) < 24 && Math.abs(e.y - b.doorY) < 24) n++;
+                        worst = Math.max(worst, n);
+                    }
+                }
+                int inside = 0;
+                for (City.Building b : w.city.buildings) inside += b.visitors.size();
+                check(inside > 0, "people go inside on errands and at home");
+                check(worst < 25, "no crowds at doors (" + worst + ")");
+                check(Math.abs(alive(w) - start) <= start / 50 + 5, "nobody is lost going in and out (" + start + " -> " + alive(w) + ")");
+            }
+        });
         test("every screen draws", new Check() {
             public void run() throws Exception {
                 GameView v = new GameView(new android.app.Activity());
@@ -473,6 +511,14 @@ public final class GameTests {
         });
         System.out.println(passed + " passed, " + failed + " failed");
         if (failed > 0) System.exit(1);
+    }
+
+    /** Everyone alive: out and about, inside on errands, sheltering, or riding in a vehicle. */
+    private static int alive(World w) {
+        int n = w.fleet.riderCount();
+        for (Entity e : w.entities) if (!e.dead && !e.isZombie()) n++;
+        for (City.Building b : w.city.buildings) n += b.visitors.size() + b.occupants.size();
+        return n;
     }
 
     interface Check {

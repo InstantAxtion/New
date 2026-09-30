@@ -105,6 +105,9 @@ final class City {
         int shopType;
         /** Zombies shut inside, waiting. Nobody knows until they burst out (then {@link #infestKnown}). */
         int lurkers;
+        /** People inside on an errand (shopping, at church, at school), and how many are on their way. */
+        final List<Entity> visitors = new ArrayList<Entity>();
+        int heading;
         boolean infestKnown;
         /** Shop windows smashed in, and shelves stripped bare. */
         boolean smashed, looted;

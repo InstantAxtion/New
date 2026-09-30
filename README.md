@@ -18,7 +18,7 @@ away from the middle of the screen as you pan, and the game plays in both portra
 - **Load Game**: three save slots plus the autosave (save from the pause menu).
 - **Records & Achievements**: best results across games and 15 achievements.
 - **Settings**: music and sound volume, view (3D or bird's-eye), minimap, text and button size, battery saver, blood, health bars, screen shake, FPS counter
-  max population, name tags and graphics (Realistic: textured ground, soft shadows and shading; or Classic). Saved between sessions.
+  max population (Auto, the default, makes room for everyone who lives in the city), name tags and graphics (Realistic: textured ground, soft shadows and shading; or Classic). Saved between sessions.
 - **Patch Notes**: what changed in each version.
 - In game, the **Menu** button (or the phone's back button) pauses and opens the pause menu: save/load,
   screenshot, the **Radio Log** (every message this game; tap one to go there), **Hide Buttons** for
@@ -41,7 +41,12 @@ on the phone, so the APK contains no audio files.
   fire short bursts, and heads home after about 45 seconds on station. Every vehicle shows a status label.
 - **Residents**: everyone lives somewhere. Each house holds a family (1 to 5 people), apartment blocks
   hold two people per flat on every floor, and some offices and shops have flats upstairs. The number
-  of people in a city comes from its homes, and people run home first when trouble starts.
+  of people in a city comes from its homes (there's no fixed limit: a big city has thousands), and
+  people run home first when trouble starts. Families go about together in groups of up to five.
+- **Errands**: people go into shops, the supermarket, pharmacies, churches, schools and their own homes
+  for a while, then come out and go somewhere else. A busy place puts people off, and a full one is
+  skipped rather than queued at, so nobody piles up at a door. If zombies turn up outside, the people
+  inside stay in and shelter. Zoom in to see them inside.
 - **Trains** slow down and stop at the station, where commuters get off and on. The barriers at the
   level crossings come down and the lights flash while a train is near. During an outbreak trains
   become evacuation trains: people near the station run for the platform, and anyone who gets on is
@@ -93,10 +98,12 @@ rising without a bite) and a hidden **city readiness** (unprepared, panicking, a
 prepared). Both are revealed on the radio as the war goes on, and the Stats screen lists what's known.
 
 People tire when they sprint and the dead never do; body shots only wear a zombie down while headshots
-drop it; police and soldiers can be overwhelmed; hunger draws the dead from right across town. A
+drop it; police and soldiers can be overwhelmed. Both sides have the same senses: they see a long way
+in front of them, notice only what's close behind, and hear gunfire; the dead can smell the living a few
+streets away, not across town. A
 tug-of-war bar under the stats shows who is ahead, banners mark the turning points, and the war ends with
 "The city survives" or "The city has fallen" (once 85% of its people are gone). In simulated games with
-the default city, 5 zombies take it about 1 time in 10, 20 zombies about 1 in 5, and 50 zombies about 2 in 5.
+default settings across all the maps, 20 zombies take the city about 1 time in 3, and 50 zombies about 3 in 5.
 
 ## Buildings
 

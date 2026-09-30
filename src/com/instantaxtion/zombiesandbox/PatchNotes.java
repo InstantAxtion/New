@@ -2,11 +2,22 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "5.2.1";
-    static final int VERSION_CODE = 21;
+    static final String VERSION = "5.3";
+    static final int VERSION_CODE = 22;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "5.3  -  Crowds",
+                    "No more limit of 800 people: a city has as many people as its homes hold, so a big city has thousands. The Max population setting has a new default, Auto, which makes room for everyone who lives in the city (and plenty of zombies). You can still pick a fixed limit.",
+                    "The simulation is about twice as fast with big crowds: looking for zombies no longer checks every person nearby, and people only bump into those they could actually touch.",
+                    "People go inside on errands: into shops, the supermarket, pharmacies, churches, schools and their own homes, stay a while, and come back out. Busy places put people off, and a full place is skipped rather than queued at, so crowds no longer pile up at doors. If zombies turn up outside, the people inside stay in and shelter. The building card shows who's inside.",
+                    "People who are at home when the game starts are indoors, and come out a few at a time.",
+                    "Families go about together in groups of 1 to 5 (a whole apartment block no longer walks around as one family).",
+                    "Less getting stuck on buildings: everyone looks a step ahead, and turns to walk along a wall or round a corner instead of pushing into it. Many more routes are planned each second, so people in big crowds find their way instead of heading straight for a wall.",
+                    "Fairer fights: both sides have the same senses. The dead can smell the living a few streets away, not from across town, and police and soldiers only spot distant zombies in front of them (anything close, they notice all round). In simulated wars, 50 zombies now win about 3 games in 5 instead of 4 in 5, and 20 zombies about 1 in 3, as before.",
+                    "Fixed: people leaving a building when the population limit was full could vanish.",
+            },
             {
                     "5.2.1  -  Trees",
                     "Fixed: people and zombies got stuck between trees, in the woods and beside street trees. A tree now only blocks the way at its trunk, so everyone can slip between trees and round them, and anyone who walks straight into a trunk steps off to one side.",

@@ -41,8 +41,6 @@ final class CityConfig implements OptionSet {
     private static final int[] SIZES = {96, 128, 160, 224};
     /** Share of the city's residents out and about when the game starts. */
     private static final float[] RESIDENT_SHARE = {0, 0.2f, 0.45f, 0.7f, 1f};
-    /** The most civilians a city starts with, however many homes it has. */
-    static final int MAX_RESIDENTS = 800;
     private static final int[] COPS = {0, 5, 10, 20, 40, 60};
     private static final int[] SOLDIERS = {0, 5, 10, 20, 40};
     private static final int[] ZOMBIES = {0, 1, 5, 20, 50, 100, 200};
@@ -156,7 +154,7 @@ final class CityConfig implements OptionSet {
     }
     /** How many of a city's residents (everyone its homes can house) are in the game. */
     int civilians(int residents) {
-        return Math.min(MAX_RESIDENTS, Math.round(residents * RESIDENT_SHARE[v[OPT_CIVILIANS]]));
+        return Math.round(residents * RESIDENT_SHARE[v[OPT_CIVILIANS]]);
     }
     int cops() { return COPS[v[OPT_COPS]]; }
     int soldiers() { return SOLDIERS[v[OPT_MILITARY]]; }

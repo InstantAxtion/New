@@ -77,6 +77,13 @@ final class SaveGame {
             java.util.HashSet<Entity> posted = new java.util.HashSet<Entity>();
             for (Fleet.Vehicle v : w.fleet.vehicles) if (v.guard != null) posted.add(v.guard);
             for (Entity e : w.entities) if (!e.dead && !posted.contains(e)) all.add(e);
+            // People inside on errands come back out at the door.
+            for (City.Building b : w.city.buildings)
+                for (Entity e : b.visitors) {
+                    e.x = b.doorX;
+                    e.y = b.doorY;
+                    all.add(e);
+                }
             for (Fleet.Vehicle v : w.fleet.vehicles) {
                 for (Entity e : v.riders) {
                     e.x = v.x;

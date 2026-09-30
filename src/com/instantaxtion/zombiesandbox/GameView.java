@@ -186,7 +186,7 @@ final class GameView extends View implements Menu.Host {
 
     private void loadWorld(CityConfig cfg) {
         world = new World(cfg);
-        world.maxEntities = settings.maxPopulation();
+        world.setMaxPopulation(settings.maxPopulation());
         world.gore = settings.gore();
         world.populate(cfg);
         follow = null;
@@ -201,7 +201,7 @@ final class GameView extends View implements Menu.Host {
             menu.setDp(dp);
             if (getWidth() > 0) onSizeChanged(getWidth(), getHeight(), getWidth(), getHeight());
         }
-        world.maxEntities = settings.maxPopulation();
+        world.setMaxPopulation(settings.maxPopulation());
         world.gore = settings.gore();
         sound.setVolumes(settings.music(), settings.sfx());
         realistic = settings.realistic();
@@ -1559,8 +1559,8 @@ final class GameView extends View implements Menu.Host {
         if (a < 0.5f) return;
         // The people hiding here, huddled away from the door.
         int cols = Math.max(1, (int) ((w - 8) / 9));
-        for (int i = 0, n = b.occupants.size(); i < n; i++) {
-            Entity o = b.occupants.get(i);
+        for (int i = 0, n = b.occupants.size() + b.visitors.size(); i < n; i++) {
+            Entity o = i < b.occupants.size() ? b.occupants.get(i) : b.visitors.get(i - b.occupants.size());
             int row = i / cols;
             o.x = x0 + 6 + (i % cols) * 9 + ((i * 7) % 3);
             o.y = y0 + 6 + (row % Math.max(1, (int) ((h - 8) / 9))) * 9;
@@ -3683,6 +3683,7 @@ final class GameView extends View implements Menu.Host {
         else if (b.infestKnown && b.lurkers > 0) lines.add("INFESTED: there are zombies inside. Keep out!");
         else if (!b.occupants.isEmpty())
             lines.add(b.occupants.size() + " hiding inside, door barricaded (" + Math.max(0, (int) b.barricade) + "%)");
+        if (!b.visitors.isEmpty()) lines.add(b.visitors.size() + (b.visitors.size() == 1 ? " person" : " people") + " inside on errands");
         else if (b.infestKnown) lines.add("Zombies were inside. Nobody has gone back in.");
         else lines.add(b.capacity > 0 ? "Empty (room for " + b.capacity + " to hide)" : "Nobody can shelter here");
         if (!b.collapsed) {

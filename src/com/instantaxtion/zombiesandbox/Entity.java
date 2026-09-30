@@ -93,6 +93,10 @@ final class Entity {
     City.Building home, errand;
     float errandTimer;
     boolean homeChecked;
+    /** The last place this one went on an errand (so they go somewhere else next). */
+    City.Building lastErrand;
+    /** Set to the world's grid frame when someone is following this one. */
+    int followerFrame;
     /** Which way (1 or -1) this one steps round obstacles it walks straight into. */
     float slideSide = 1;
     /** Breath for sprinting (0 to 1): the living tire, the dead don't. */

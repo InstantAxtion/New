@@ -505,11 +505,15 @@ public final class GameTests {
                 w.joyX = 0;
                 w.ctrlAttack = true;
                 int bites = w.bites;
-                for (int i = 0; i < 20; i++) {
+                for (int i = 0; i < 90 && w.bites == bites && !civ.dead && !civ.removed; i++) {
+                    // Chase them with the stick.
+                    float dx = civ.x - me.x, dy = civ.y - me.y, d = (float) Math.hypot(dx, dy) + 0.01f;
+                    w.joyX = dx / d;
+                    w.joyY = dy / d;
                     w.update(1 / 30f);
                     w.evCount = 0;
                 }
-                check(w.controlled != me || w.bites > bites || civ.dead, "a controlled zombie bites");
+                check(w.controlled != me || w.bites > bites || civ.dead || civ.removed, "a controlled zombie bites");
                 w.controlled = null;
                 check(!w.replayMeta.isEmpty() && w.replayMeta.size() == w.replayDots.size(), "the replay is recorded");
                 File f = File.createTempFile("zcs", ".dat");

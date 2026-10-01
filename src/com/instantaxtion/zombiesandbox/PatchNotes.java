@@ -2,11 +2,35 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "5.4";
-    static final int VERSION_CODE = 23;
+    static final String VERSION = "6.0";
+    static final int VERSION_CODE = 24;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "6.0  -  Twenty changes",
+                    "1. Drive anything. While you control someone, Get in a car, cruiser, truck, ambulance, fire engine or tank. Steer with the stick (pull back to reverse), sound the horn or siren (it draws the dead), fire the tank's cannon, run zombies over. Crashes damage the vehicle; your group rides with you.",
+                    "2. Weapons. Walk over a gun, bat or axe to pick it up or swap. Shotguns are deadly up close, rifles fire in bursts, bats stun, axes kill. Bats lie near houses, axes wait at fire stations, the fallen drop their guns, gun stores sell shotguns. Soldiers get a Grenade button.",
+                    "3. Go inside buildings: hide, Barricade the door, and Search once for food, medicine, shells or a pistol in a drawer (or something waiting in the dark).",
+                    "4. Rally: up to eight nearby civilians follow you, into cars and buildings too.",
+                    "5. The race for a cure. While the hospital holds, doctors work on a cure (bar under the war meter). When it's ready, every bitten person is saved, medics bring zombies back to life, and shots sometimes do too. A third way for the war to end.",
+                    "6. Escalation. When the city is being lost, the army seals off the worst district (barricades on every road out), and later announces an air strike with a 60-second countdown before firebombing it.",
+                    "7. Ammo runs out. Precincts and the base have limited armouries, safe zones keep their own stock, and army supply trucks carry ammo to zones that run low. Trucks can be lost.",
+                    "8. Fire spreads. Burning cars and blasts set buildings alight; fires grow, jump next door and burn buildings down unless fire engines put them out.",
+                    "9. Militias: armed residents band together, take over a building, hold the street and shelter their neighbours.",
+                    "10. Stampedes: panicking crowds knock people down. Groups that stick together don't.",
+                    "11. Hordes travel the lanes between the town and the hamlets on big maps.",
+                    "12. Brutes charge (bowling people over, smashing barricades and cars), crawlers lie in wait by cars and in the grass, and screamers bring the dead to gunfire.",
+                    "13. Deer and foxes in the countryside. Deer bolting from the woods means something is coming; a caught fox can come back as a zombie dog.",
+                    "14. Noise rings show how far gunfire, alarms, horns and screams carry.",
+                    "15. Who bit whom: cards show who bit someone and how many each zombie has turned; Stats shows the chain from patient zero. Zombies keep the name of the person they were.",
+                    "16. Highlights: the big moments are marked on the replay's timeline; tap near one to jump to it.",
+                    "17. Pins: star someone on their card; off screen they get a marker at the edge (tap to jump), and the pin follows them if they turn.",
+                    "18. City editor: the Build tool paints roads, pavement, grass, trees and walls and puts up houses and shops (Clear knocks one down). Edits go into the city code, so sharing the code shares your city, and saves keep them.",
+                    "19. Faster big cities: calm people far from any zombie make their decisions a third as often. The busiest test city needs about 40% less time per step.",
+                    "20. Feel: vibration when you shoot, get hurt, crash or a blast goes off nearby (Settings: Vibration), and bodies are thrown by blasts, cars and charging brutes.",
+                    "Fixed: a car pulled over against the kerb couldn't be driven away.",
+            },
             {
                     "5.4  -  Take control",
                     "New: Take control of anyone. Tap someone with Move and press Take control on their card: a civilian, cop, soldier, medic, firefighter, raider, dog or even a zombie. Put your left thumb down anywhere on the left to walk (push further to run; the living get out of breath), and hold the red button to act. Armed people auto-aim at the zombie most in line with where they're facing, zombies bite, and everyone else shoves. The camera stays with them and their health and ammo are shown. Stop controlling (or picking another tool) hands them back to the AI; if they die, that's that.",

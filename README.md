@@ -103,7 +103,33 @@ in front of them, notice only what's close behind, and hear gunfire; the dead ca
 streets away, not across town. A
 tug-of-war bar under the stats shows who is ahead, banners mark the turning points, and the war ends with
 "The city survives" or "The city has fallen" (once 85% of its people are gone). In simulated games with
-default settings across all the maps, 20 zombies take the city about 1 time in 3, and 50 zombies about 3 in 5.
+default settings across all the maps, 20 zombies take the city about half the time, and 50 zombies about 7 times in 10.
+
+## The war
+
+- **The cure**: while the hospital holds, doctors work on a cure (shown under the tug-of-war bar). When
+  it's ready every bitten person is saved, medics can bring zombies back to life, and soldiers' and
+  cops' shots sometimes do too. Lose the hospital and the work stops.
+- **Escalation**: if the city is being lost, the army seals off the worst district (barricades across
+  every road out) and, later, announces an air strike with a 60-second countdown. People run; then the
+  district is firebombed.
+- **Ammunition runs out**: precincts and the base have a limited armoury, safe zones keep their own
+  stock, and army supply trucks carry ammo to zones running low. Zombies can wreck a truck.
+- **Fire spreads**: burning cars and explosions set buildings alight; fires grow, jump to the building
+  next door, and burn buildings down unless fire engines put them out. People inside get out.
+- **Militias**: armed residents band together, take over a building, hold the street and shelter their
+  neighbours inside.
+- **Stampedes**: panicking crowds knock people down. Families and groups following someone stay together.
+- **Zombies**: brutes charge, bowling people over and smashing barricades and cars; crawlers lie in wait
+  beside cars and in the grass (hard to spot until you're close); screamers that hear gunfire bring the
+  neighbourhood's dead with them; on big maps hordes travel the lanes between the town and the hamlets.
+- **Wildlife**: deer and foxes live in the countryside. Deer bolting out of the woods mean something is
+  coming; a fox caught by the dead can come back as a zombie dog.
+- **Seeing what's going on**: noises show as rings spreading out (how far the dead can hear them);
+  cards say who bit whom and how many each zombie has turned; Stats shows the infection's chain from
+  patient zero; the replay marks the big moments on its timeline (tap near one to jump to it).
+- **Feel**: vibration when you shoot, get hurt, crash or a blast goes off nearby (Settings: Vibration);
+  bodies are thrown by blasts, cars and charging brutes.
 
 ## Buildings
 
@@ -200,6 +226,22 @@ military safe zone.
   on the left to move (push further to run; the living get out of breath), and hold the red button to
   act: armed people auto-aim at the zombie most in line with where they're facing, zombies bite, and
   anyone else shoves. **Stop controlling** (or picking another tool) hands them back to the AI.
+  While you're in control, buttons above the red one offer what you can do there:
+  - **Get in / Get out**: drive any car, cruiser, truck, ambulance, fire engine or tank. The stick
+    steers (pull back to reverse), the red button sounds the horn (or the siren, or fires the tank's
+    cannon). Run zombies over; crashes damage the vehicle. Your group rides with you.
+  - **Weapons**: walk over a gun, bat or axe to pick it up (a gun you already have gives you its ammo;
+    a different one is swapped). Shotguns are deadly up close, rifles fire in bursts, bats stun and axes
+    kill. Bats lie about near houses and axes wait at the fire stations; fallen cops and soldiers drop
+    their guns; gun stores sell shotguns. Soldiers get a **Grenade** button.
+  - **Go inside / Go out**: hide in a building, **Barricade** the door, and **Search** it once for food
+    (heals you), medicine, shotgun shells or something in a drawer (or something waiting in the dark).
+  - **Rally**: up to eight nearby civilians follow you, into cars and buildings too.
+- **Pins**: the star on someone's card pins them. Pinned people off screen get a marker at the edge of
+  the screen (tap it to jump to them); if they turn, the pin follows the zombie they became.
+- **Build** tool: drag to paint roads, pavement, grass, trees or walls; tap to put up a house or a shop;
+  Clear knocks a building down. Your changes are added to the city code (after a `~`), so sharing the
+  code shares your city, and saves keep them.
 - **Outbreak replay**: the **Replay** button on the Stats screen plays the whole game back on the city
   map: people in blue, the dead in green, and a red mark wherever someone turned. Drag the timeline to
   scrub. Saved games keep their replay.

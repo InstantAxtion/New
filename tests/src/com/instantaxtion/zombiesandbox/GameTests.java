@@ -708,6 +708,36 @@ public final class GameTests {
                 f.delete();
             }
         });
+        test("the Build tool, and its edits in the city code and saves", new Check() {
+            public void run() throws Exception {
+                CityConfig c = new CityConfig();
+                c.v[CityConfig.OPT_ZOMBIES] = 0;
+                c.seed = 77;
+                World w = new World(c);
+                w.populate(c);
+                int b0 = w.city.buildings.size();
+                float[] p = w.city.findWalkable(200, 200);
+                int ok = 0;
+                for (int k = 0; k < 10; k++) if (w.build(p[0] + k * 16, p[1], City.ED_ROAD)) ok++;
+                for (int k = 0; k < 40 && w.city.buildings.size() == b0; k++) w.build(p[0] + 30 + k * 40, p[1] + 90, City.ED_HOUSE);
+                check(ok > 0 && w.city.buildings.size() == b0 + 1, "roads and a house go in");
+                w.city.editsDone();
+                w.redrawCity();
+                CityConfig c2 = new CityConfig();
+                check(c2.applyCode(c.code()) && c2.edits.size() == c.edits.size(), "the city code carries the edits");
+                City again = new City(c2, 0.1f);
+                int diff = 0;
+                for (int i = 0; i < again.tiles.length; i++) if (again.tiles[i] != w.city.tiles[i]) diff++;
+                check(diff == 0 && again.buildings.size() == w.city.buildings.size(), "the same city is built from the code");
+                File f = File.createTempFile("zcs", ".dat");
+                SaveGame.save(w, f);
+                World l = SaveGame.load(f);
+                check(l.city.buildings.size() == w.city.buildings.size(), "a save keeps the edits");
+                f.delete();
+                CityConfig plain = new CityConfig();
+                check(plain.applyCode("12-48392") && plain.edits.isEmpty(), "plain codes still work");
+            }
+        });
         test("every screen draws", new Check() {
             public void run() throws Exception {
                 GameView v = new GameView(new android.app.Activity());
@@ -726,7 +756,7 @@ public final class GameTests {
                     // Every spawn picker opens and draws.
                     Field pk = GameView.class.getDeclaredField("picker");
                     pk.setAccessible(true);
-                    for (int t = 0; t < 9; t++) {
+                    for (int t = 0; t < 13; t++) {
                         pk.setInt(v, t);
                         draw(v, size);
                     }

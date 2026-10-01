@@ -93,6 +93,8 @@ final class Entity {
     City.Building home, errand;
     float errandTimer;
     boolean homeChecked;
+    /** The last hard knock (blast, car, charge), so the body flies the right way if it kills them. Fades fast. */
+    float knockX, knockY;
     /** Brutes: a charge in progress (seconds left), its direction and cooldown. Crawlers: lying in wait. */
     float charge, chargeCd, chargeX, chargeY;
     boolean hidden;

@@ -17,7 +17,7 @@ import java.util.ArrayList;
  * damaged or collapsed buildings.
  */
 final class SaveGame {
-    private static final int VERSION = 14;
+    private static final int VERSION = 15;
 
     private SaveGame() {
     }
@@ -31,6 +31,7 @@ final class SaveGame {
             out.writeInt(cfg.v.length);
             for (int v : cfg.v) out.writeInt(v);
             out.writeLong(cfg.seed);
+            out.writeUTF(cfg.editString());
 
             out.writeFloat(w.time);
             out.writeInt(w.turned);
@@ -317,6 +318,7 @@ final class SaveGame {
                 if (i < cfg.v.length) cfg.v[i] = Math.max(0, Math.min(cfg.values(i).length - 1, v));
             }
             cfg.seed = in.readLong();
+            if (version >= 15) cfg.setEdits(in.readUTF());
             World w = new World(cfg);
 
             w.time = in.readFloat();

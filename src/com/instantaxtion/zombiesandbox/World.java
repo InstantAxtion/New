@@ -19,6 +19,8 @@ final class World {
     static final class Corpse {
         float x, y, angle, radius, rise, age;
         int body, head, riseType, origin, nameSeed;
+        /** Thrown by a blast or a car: sliding (and spinning) to a stop. */
+        float vx, vy, spin;
         boolean zombie;
     }
 
@@ -113,6 +115,7 @@ final class World {
     private final int gw, gh;
     private final int[] cellStart, cellCount, cellFill, zCount, zFill;
     private Entity[] sorted = new Entity[512];
+    private int lodFrame;
     /** Counts up each time the grid is rebuilt; a leader marked with the current one has someone following. */
     private int hashFrame;
 
@@ -341,6 +344,36 @@ final class World {
         zFill = new int[gw * gh];
         cellCount = new int[gw * gh];
         cellFill = new int[gw * gh];
+    }
+
+    /** The Build tool: an edit that's remembered in the city code. */
+    boolean build(float x, float y, int kind) {
+        int tx = (int) (x / City.T), ty = (int) (y / City.T);
+        if (kind == City.ED_HOUSE || kind == City.ED_SHOP) {
+            tx -= kind == City.ED_HOUSE ? 1 : 1;
+            ty -= 1;
+        }
+        for (int i = 0, n = entities.size(); i < n && kind != City.ED_CLEAR && kind != City.ED_GRASS; i++) {
+            Entity e = entities.get(i);
+            // Not on top of anyone.
+            if (Math.abs(e.x - (tx * City.T + 8)) < 12 && Math.abs(e.y - (ty * City.T + 8)) < 12
+                    && (kind == City.ED_WALL || kind == City.ED_TREES)) return false;
+        }
+        int before = city.buildings.size();
+        byte old = city.tiles[Math.max(0, Math.min(city.tiles.length - 1, ty * city.w + tx))];
+        City.Building b = city.applyEdit(tx, ty, kind, true);
+        boolean changed = b != null || city.tiles[Math.max(0, Math.min(city.tiles.length - 1, ty * city.w + tx))] != old || kind == City.ED_CLEAR;
+        if (!changed) return false;
+        if (b != null) {
+            b.residents = kind == City.ED_HOUSE ? 3 : 0;
+            b.capacity = Math.max(b.capacity, 3);
+        }
+        city.cfg.edits.add(new int[]{tx, ty, kind});
+        // Old routes may run through what's changed.
+        for (City.Building d : doorPaths) d.field = null;
+        doorPaths.clear();
+        errandSpots = null;
+        return true;
     }
 
     void populate(CityConfig cfg) {
@@ -1192,9 +1225,17 @@ final class World {
             }
         }
         recordReplay(dt);
+        lodFrame++;
         for (int i = 0, n = entities.size(); i < n; i++) {
             Entity e = entities.get(i);
-            if (!e.dead) think(e, dt);
+            if (e.dead) continue;
+            // Far from any zombie and just going about their day: they decide what to do a third as often
+            // (but still move every frame), which lets a city of thousands run smoothly.
+            if (e.type == Entity.CIVILIAN && e.task == Dispatch.T_NONE && e.fleeTimer <= 0 && e != controlled && e.leader == null
+                    && city.fieldAt(city.zombieDist, e.x, e.y) > 30) {
+                if ((i + lodFrame) % 3 != 0) continue;
+                think(e, dt * 3);
+            } else think(e, dt);
         }
         for (int i = 0, n = entities.size(); i < n; i++) {
             Entity e = entities.get(i);
@@ -1416,6 +1457,12 @@ final class World {
 
     private void think(Entity e, float dt) {
         e.hurt = Math.max(0, e.hurt - dt * 4);
+        if (e.knockX != 0 || e.knockY != 0) {
+            float f = Math.max(0, 1 - dt * 4);
+            e.knockX *= f;
+            e.knockY *= f;
+            if (Math.abs(e.knockX) + Math.abs(e.knockY) < 3) e.knockX = e.knockY = 0;
+        }
         e.phoneTimer -= dt;
         e.talkTimer -= dt;
         e.callCd -= dt;
@@ -1851,6 +1898,8 @@ final class World {
                     o.hp -= 20;
                     o.hurt = 1;
                     o.killedByZombie = true;
+                    o.knockX = z.chargeX * 120 / o.mass;
+                    o.knockY = z.chargeY * 120 / o.mass;
                     tryMove(o, z.chargeX * 14 / o.mass, z.chargeY * 14 / o.mass);
                     emit(Sfx.THUD, o.x, o.y);
                 }
@@ -6056,6 +6105,9 @@ final class World {
         c.zombie = e.isZombie();
         c.origin = e.type;
         c.nameSeed = e.nameSeed;
+        c.vx = e.knockX;
+        c.vy = e.knockY;
+        c.spin = (e.knockX != 0 || e.knockY != 0) ? (rnd.nextFloat() - 0.5f) * 12 : 0;
         boolean turns = !e.isZombie() && !e.gibbed && (e.killedByZombie || e.infected)
                 && (e.type != Entity.DOG || rnd.nextFloat() < 0.6f);
         if (!turns && trait[TR_RESTLESS] && !e.isZombie() && !e.gibbed && e.type != Entity.DOG && rnd.nextFloat() < 0.35f) {
@@ -6081,6 +6133,25 @@ final class World {
     }
 
     private void updateCorpses(float dt) {
+        for (int i = corpses.size() - 1; i >= 0; i--) {
+            Corpse k = corpses.get(i);
+            if (k.vx != 0 || k.vy != 0) {
+                // Sliding to a stop; walls stop it dead.
+                float nx = k.x + k.vx * dt, ny = k.y + k.vy * dt;
+                if (city.circleBlocked(nx, ny, 3)) {
+                    k.vx = k.vy = 0;
+                } else {
+                    k.x = nx;
+                    k.y = ny;
+                    k.angle += k.spin * dt;
+                    float fr = Math.max(0, 1 - dt * 5);
+                    k.vx *= fr;
+                    k.vy *= fr;
+                    k.spin *= fr;
+                    if (Math.abs(k.vx) + Math.abs(k.vy) < 4) k.vx = k.vy = 0;
+                }
+            }
+        }
         for (int i = corpses.size() - 1; i >= 0; i--) {
             Corpse c = corpses.get(i);
             c.age += dt;
@@ -6133,6 +6204,8 @@ final class World {
                     o.hp -= speed * (o.type == Entity.BRUTE ? 0.3f : 0.9f);
                     o.hurt = 1;
                     o.stun = 1f;
+                    o.knockX = fx * speed * 0.9f / o.mass;
+                    o.knockY = fy * speed * 0.9f / o.mass;
                     o.killedByZombie = false;
                     bloodBurst(o.x, o.y, 8, fx, fy);
                     emit(Sfx.THUD, o.x, o.y);
@@ -6298,6 +6371,10 @@ final class World {
                     o.killedByZombie = false;
                     if (o.hp <= 0 && f > 0.4f) o.gibbed = true;
                     if (d > 0.01f) tryMove(o, ddx / d * 16 * f / o.mass, ddy / d * 16 * f / o.mass);
+                    if (d > 0.01f) {
+                        o.knockX = ddx / d * 180 * f / o.mass;
+                        o.knockY = ddy / d * 180 * f / o.mass;
+                    }
                     if (!o.isZombie()) {
                         o.fleeTimer = 3;
                         o.threatX = x;

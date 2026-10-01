@@ -9,13 +9,13 @@ final class Settings implements OptionSet {
     private static final String[] ON_OFF = {"Off", "On"};
     private static final String[] LABELS = {"Music", "Sound effects", "View", "Blood", "Health bars",
             "Screen shake", "Show FPS", "Max population", "Radio messages", "Minimap",
-            "Text & buttons", "Battery saver", "Name tags", "Graphics"};
+            "Text & buttons", "Battery saver", "Name tags", "Graphics", "Vibration"};
     private static final String[][] VALUES = {VOLUME, VOLUME, {"Bird's-eye", "3D"}, ON_OFF, ON_OFF, ON_OFF, ON_OFF,
             {"Auto", "2500", "5000", "8000", "12000"}, ON_OFF, ON_OFF, {"Small", "Normal", "Large"}, ON_OFF, ON_OFF,
-            {"Classic", "Realistic"}};
+            {"Classic", "Realistic"}, ON_OFF};
     private static final String[] KEYS = {"music", "sfx", "buildings3d", "gore", "healthBars", "shake", "fps",
-            "maxPop2", "radio", "minimap", "uiSize", "battery", "nameTags", "graphics"};
-    private static final int[] DEFAULTS = {2, 3, 1, 1, 1, 1, 0, 0, 1, 1, 1, 0, 1, 1};
+            "maxPop2", "radio", "minimap", "uiSize", "battery", "nameTags", "graphics", "vibration"};
+    private static final int[] DEFAULTS = {2, 3, 1, 1, 1, 1, 0, 0, 1, 1, 1, 0, 1, 1, 1};
     /** 0 is Auto: room for everyone who lives in the city, and plenty of zombies. */
     private static final int[] MAX_POP = {0, 2500, 5000, 8000, 12000};
 
@@ -40,6 +40,7 @@ final class Settings implements OptionSet {
     boolean shake() { return v[5] == 1; }
     boolean showFps() { return v[6] == 1; }
     int maxPopulation() { return MAX_POP[v[7]]; }
+    boolean vibration() { return v[14] == 1; }
     boolean radio() { return v[8] == 1; }
     boolean minimap() { return v[9] == 1; }
     /** How big the buttons and text are compared to normal. */

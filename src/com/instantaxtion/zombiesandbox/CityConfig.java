@@ -103,7 +103,35 @@ final class CityConfig implements OptionSet {
      * Share it and anyone can play the same streets.
      */
     String code() {
-        return CODE_MAPS.charAt(v[OPT_PRESET]) + "" + (v[OPT_SIZE] + 1) + "-" + seed;
+        return CODE_MAPS.charAt(v[OPT_PRESET]) + "" + (v[OPT_SIZE] + 1) + "-" + seed + (edits.isEmpty() ? "" : "~" + editString());
+    }
+
+    /** Changes made with the Build tool: {tile x, tile y, what}. They're part of the city code. */
+    final java.util.ArrayList<int[]> edits = new java.util.ArrayList<int[]>();
+    private static final String B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+
+    /** The edits packed into text: three bytes each, base64 (URL-safe). */
+    String editString() {
+        StringBuilder sb = new StringBuilder();
+        for (int[] e : edits) {
+            int bits = (e[0] & 0xFF) << 16 | (e[1] & 0xFF) << 8 | (e[2] & 0xFF);
+            for (int k = 3; k >= 0; k--) sb.append(B64.charAt((bits >> (k * 6)) & 63));
+        }
+        return sb.toString();
+    }
+
+    void setEdits(String text) {
+        edits.clear();
+        if (text == null) return;
+        for (int i = 0; i + 4 <= text.length(); i += 4) {
+            int bits = 0;
+            for (int k = 0; k < 4; k++) {
+                int d = B64.indexOf(text.charAt(i + k));
+                if (d < 0) return;
+                bits = bits << 6 | d;
+            }
+            edits.add(new int[]{bits >> 16 & 0xFF, bits >> 8 & 0xFF, bits & 0xFF});
+        }
     }
 
     /** The character for each map in a city code. */
@@ -113,6 +141,12 @@ final class CityConfig implements OptionSet {
     boolean applyCode(String text) {
         if (text == null) return false;
         String t = text.trim().replace(" ", "");
+        String ed = null;
+        int tilde = t.indexOf('~');
+        if (tilde > 0) {
+            ed = t.substring(tilde + 1);
+            t = t.substring(0, tilde);
+        }
         int dash = t.indexOf('-');
         if (dash != 2 || t.length() < 4 || t.length() > 22) return false;
         int preset = CODE_MAPS.indexOf(Character.toUpperCase(t.charAt(0))), size = t.charAt(1) - '1';
@@ -127,12 +161,14 @@ final class CityConfig implements OptionSet {
         v[OPT_PRESET] = preset;
         v[OPT_SIZE] = size;
         seed = s;
+        setEdits(ed);
         keepCity = true;
         return true;
     }
 
     /** Picks a new random city (keeping the options). */
     void newSeed(Random r) {
+        edits.clear();
         seed = r.nextInt(1000000);
     }
 

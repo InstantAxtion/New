@@ -423,12 +423,28 @@ final class City {
         buildingAt = new int[w * h];
         Arrays.fill(buildingAt, -1);
         generate();
+        for (int[] e : cfg.edits) applyEdit(e[0], e[1], e[2], false);
         for (int i = 0; i < tiles.length; i++) {
             byte t = tiles[i];
             solid[i] = t == BUILDING || t == TREE || t == CAR || t == STATUE || t == FENCE || t == PUMP;
             opaque[i] = t == BUILDING;
         }
-        for (int[] l : buildingLots) {
+        for (int[] l : buildingLots) createBuilding(l);
+        Arrays.fill(humanDist, FAR);
+        Arrays.fill(zombieDist, FAR);
+        for (Facility f : facilities) {
+            f.field = new int[w * h];
+            fieldFromPoints(f.field, new float[]{f.x}, new float[]{f.y}, 1);
+        }
+        // The big map uses 16-bit colour to keep memory down.
+        bitmap = Bitmap.createBitmap((int) (w * T * detail), (int) (h * T * detail),
+                w * detail > 140 ? Bitmap.Config.RGB_565 : Bitmap.Config.ARGB_8888);
+        redraw();
+    }
+
+    /** Builds a Building from a lot: its door, room for people, toughness, name, food and stock. */
+    private Building createBuilding(int[] l) {
+        {
             float height = l[7] * FLOOR + 3;
             maxHeight = Math.max(maxHeight, height);
             Building b = new Building(l[0] * T, l[1] * T, (l[0] + l[2]) * T, (l[1] + l[3]) * T, height,
@@ -486,17 +502,62 @@ final class City {
             for (int j = l[1]; j < l[1] + l[3]; j++)
                 for (int i = l[0]; i < l[0] + l[2]; i++) buildingAt[j * w + i] = buildings.size();
             buildings.add(b);
+            return b;
         }
-        Arrays.fill(humanDist, FAR);
-        Arrays.fill(zombieDist, FAR);
-        for (Facility f : facilities) {
-            f.field = new int[w * h];
-            fieldFromPoints(f.field, new float[]{f.x}, new float[]{f.y}, 1);
+    }
+
+    // ------------------------------------------------------------------ the Build tool
+
+    static final int ED_ROAD = 0, ED_PAVE = 1, ED_GRASS = 2, ED_TREES = 3, ED_WALL = 4, ED_HOUSE = 5, ED_SHOP = 6, ED_CLEAR = 7;
+
+    /**
+     * Changes the map: paints a tile, or puts up a house or a shop. While generating, before the buildings are
+     * made (live = false); or during a game (live = true), when the building is made at once. Returns the new
+     * building, or null.
+     */
+    Building applyEdit(int tx, int ty, int kind, boolean live) {
+        if (tx < 1 || ty < 1 || tx >= w - 1 || ty >= h - 1) return null;
+        int i = ty * w + tx;
+        if (kind == ED_HOUSE || kind == ED_SHOP) {
+            int lw = kind == ED_HOUSE ? 2 : 3, lh = 2;
+            if (tx + lw >= w || ty + lh >= h) return null;
+            for (int y = ty; y < ty + lh; y++)
+                for (int x = tx; x < tx + lw; x++) {
+                    byte t = tiles[y * w + x];
+                    if (t == BUILDING || t == ROAD || t == RAIL || t == BASE || buildingAt[y * w + x] >= 0) return null;
+                }
+            addLot(tx, ty, lw, lh, kind == ED_HOUSE ? HOUSE : SHOP);
+            if (!live) return null;
+            for (int y = ty; y < ty + lh; y++)
+                for (int x = tx; x < tx + lw; x++) {
+                    solid[y * w + x] = true;
+                    opaque[y * w + x] = true;
+                    roadDir[y * w + x] = 0;
+                }
+            return createBuilding(buildingLots.get(buildingLots.size() - 1));
         }
-        // The big map uses 16-bit colour to keep memory down.
-        bitmap = Bitmap.createBitmap((int) (w * T * detail), (int) (h * T * detail),
-                w * detail > 140 ? Bitmap.Config.RGB_565 : Bitmap.Config.ARGB_8888);
-        redraw();
+        if (buildingAt[i] >= 0 && !buildings.isEmpty()) {
+            // Only Clear touches a building: it knocks it down.
+            if (kind != ED_CLEAR || !live) return null;
+            Building b = buildings.get(buildingAt[i]);
+            if (!b.collapsed) collapse(b);
+            return null;
+        }
+        byte t = tiles[i];
+        if (t == BUILDING || t == RAIL || t == BASE) return null;
+        byte nt = kind == ED_ROAD ? ROAD : kind == ED_PAVE ? SIDEWALK : kind == ED_TREES ? TREE : kind == ED_WALL ? FENCE : GRASS;
+        tiles[i] = nt;
+        roadDir[i] = (byte) (nt == ROAD ? 3 : 0);
+        if (live) {
+            solid[i] = nt == TREE || nt == FENCE;
+            opaque[i] = false;
+        }
+        return null;
+    }
+
+    /** After live edits: routes to the police stations, base and hospital are worked out again. */
+    void editsDone() {
+        for (Facility f : facilities) fieldFromPoints(f.field, new float[]{f.x}, new float[]{f.y}, 1);
     }
 
     /** Draws (or redraws, after the Graphics setting changes) the ground bitmap. */

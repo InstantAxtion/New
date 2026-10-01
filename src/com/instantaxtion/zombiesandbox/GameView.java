@@ -16,12 +16,15 @@ import java.util.Random;
 /** Renders the world, runs the game loop and handles all touch input and on-screen buttons. */
 final class GameView extends View implements Menu.Host {
     private static final int TOOL_PAN = 0, TOOL_ORDER = 1, TOOL_CIV = 2, TOOL_MIL = 4, TOOL_ZOMBIE = 6, TOOL_PLACE = 7,
-            TOOL_EVENT = 8, TOOL_ZONE = 9, TOOL_BOMB = 10, TOOL_ERASE = 11;
+            TOOL_EVENT = 8, TOOL_ZONE = 9, TOOL_BOMB = 10, TOOL_ERASE = 11, TOOL_BUILD = 12;
     // Tool index -> entity type spawned (or -1). The zombie tool spawns the selected zombie variant.
     private static final int[] TOOL_TYPE = {-1, -1, Entity.CIVILIAN, Entity.COP, Entity.SOLDIER, Entity.MEDIC,
-            Entity.ZOMBIE, -1, -1, -1, -1, -1};
+            Entity.ZOMBIE, -1, -1, -1, -1, -1, -1};
     private static final String[] TOOL_NAMES = {"Move", "Orders", "People", "Police", "Military", "Medic", "Zombies",
-            "Place", "Events", "Safe Zone", "Bomb", "Erase"};
+            "Place", "Events", "Safe Zone", "Bomb", "Erase", "Build"};
+    private static final String[] BUILD_NAMES = {"Road", "Pavement", "Grass", "Trees", "Wall", "House", "Shop", "Clear"};
+    private static final String[] BUILD_INFO = {"Drag to lay a road", "Drag to pave", "Drag to grass over", "Drag to plant trees",
+            "Drag to build a wall nobody can cross", "Tap to put up a house", "Tap to put up a shop", "Grass over, or knock a building down"};
     /** The medic has moved into the People picker, so its old tool slot isn't shown. */
     private static final int TOOL_HIDDEN = 5;
     private static final String[] PLACE_NAMES = {"Car", "Police car", "Tank", "Fire engine", "Barricade", "Crate", "Fire",
@@ -89,7 +92,10 @@ final class GameView extends View implements Menu.Host {
     private long lastFrame;
     private int speedIdx, brushIdx;
     private int tool = TOOL_PAN;
-    private int zombieVariant, civVariant, milVariant, placeVariant, eventVariant, copVariant;
+    private int zombieVariant, civVariant, milVariant, placeVariant, eventVariant, copVariant, buildVariant;
+    /** The map changed under the Build tool: redraw it when the finger lifts. */
+    private boolean buildDirty;
+    private int lastBuildTile = -1;
     /** What the last tap (or drag) of a spawn or place tool created, so Undo can take it back. */
     private final java.util.ArrayList<Object> lastAction = new java.util.ArrayList<Object>();
     private final RectF undoRect = new RectF();
@@ -849,7 +855,38 @@ final class GameView extends View implements Menu.Host {
     }
 
     /** Plays the simulation's sound events that happened on (or near) the screen. */
+    // ------------------------------------------------------------------ haptics
+
+    private float lastHp = -1;
+    private int buzzShots;
+    private long lastBuzz;
+
+    /** A little buzz when you shoot, a hard one when you're hurt, and a thump for crashes and nearby blasts. */
+    private void haptics() {
+        if (!settings.vibration()) return;
+        Entity e = world.controlled;
+        int strength = 0;
+        if (e != null) {
+            if (lastHp >= 0 && e.hp < lastHp - 0.5f) strength = 2;
+            if (world.shotsFired > buzzShots && world.ctrlAttack) strength = Math.max(strength, 1);
+            lastHp = e.hp;
+        } else lastHp = -1;
+        buzzShots = world.shotsFired;
+        float vw = getWidth() / scale, vh = getHeight() / scale, cx = camX + vw / 2, cy = camY + vh / 2;
+        for (int i = 0; i < world.evCount; i++) {
+            int t = world.evType[i];
+            if (t != Sfx.EXPLOSION && t != Sfx.CRASH && t != Sfx.CANNON) continue;
+            if (Math.abs(world.evX[i] - cx) < vw * 0.6f && Math.abs(world.evY[i] - cy) < vh * 0.6f) strength = Math.max(strength, 2);
+        }
+        long now = System.currentTimeMillis();
+        if (strength == 0 || now - lastBuzz < (strength == 1 ? 90 : 160)) return;
+        lastBuzz = now;
+        performHapticFeedback(strength == 1 ? android.view.HapticFeedbackConstants.KEYBOARD_TAP
+                : android.view.HapticFeedbackConstants.LONG_PRESS);
+    }
+
     private void playSounds(float master) {
+        haptics();
         float vw = getWidth() / scale, vh = getHeight() / scale;
         float cx = camX + vw / 2, cy = camY + vh / 2, reach = Math.max(vw, vh) * 0.75f;
         for (int i = 0; i < world.evCount; i++) {
@@ -3031,7 +3068,8 @@ final class GameView extends View implements Menu.Host {
                     : i == TOOL_CIV ? Entity.NAMES[CIV_VARIANTS[civVariant]]
                     : i == TOOL_MIL ? MIL_NAMES[milVariant]
                     : i == TOOL_COP ? COP_NAMES[copVariant]
-                    : i == TOOL_PLACE ? PLACE_NAMES[placeVariant] : i == TOOL_EVENT ? EVENT_NAMES[eventVariant] : TOOL_NAMES[i];
+                    : i == TOOL_PLACE ? PLACE_NAMES[placeVariant] : i == TOOL_EVENT ? EVENT_NAMES[eventVariant]
+                    : i == TOOL_BUILD ? BUILD_NAMES[buildVariant] : TOOL_NAMES[i];
             float fit = text.measureText(name);
             if (fit > r.width() - 6 * dp) text.setTextSize(11.5f * dp * (r.width() - 6 * dp) / fit);
             c.drawText(name, cx, r.bottom - 7 * dp, text);
@@ -3065,11 +3103,11 @@ final class GameView extends View implements Menu.Host {
                     + ". Tap where to send them, or tap them again to release.", w / 2f, infoY);
         } else if (world.controlled != null) {
             drawControls(c, world.controlled);
-        } else if (follow != null) {
+        } else if (follow != null && picker < 0) {
             drawInspect(c, follow);
         } else if (inspectB != null && tool == TOOL_PAN) {
             drawBuildingInspect(c, inspectB);
-        } else if (hintTime > 0) {
+        } else if (hintTime > 0 && picker < 0) {
             drawBanner(c, "Pick a unit or tool below, then tap the city.  Use Move to drag around, pinch to zoom.",
                     w / 2f, infoY);
         } else if (simPaused) {
@@ -3206,7 +3244,8 @@ final class GameView extends View implements Menu.Host {
     private void drawPins(Canvas c) {
         pinCount = 0;
         int w = getWidth();
-        float top = topRects[0].bottom + 8 * dp, bottom = barTop - 8 * dp;
+        // (Below the radio feed, above the tool bar.)
+        float top = topRects[0].bottom + (portrait ? 150 : 115) * dp, bottom = barTop - 60 * dp;
         for (int i = 0; i < pinned.size(); i++) {
             Entity p = pinned.get(i);
             if (p.dead && world.controlled != p) continue;
@@ -3343,7 +3382,7 @@ final class GameView extends View implements Menu.Host {
         // Stick: where the thumb is, or a faint hint of where to put it.
         // (The idle hint is smaller and low down, clear of the panels.)
         float jr = joyId >= 0 ? 55 * dp : 38 * dp;
-        float jx = joyId >= 0 ? joyCX : 60 * dp, jy = joyId >= 0 ? joyCY : barTop - 50 * dp;
+        float jx = joyId >= 0 ? joyCX : w * 0.3f, jy = joyId >= 0 ? joyCY : barTop - 50 * dp;
         fill.setColor(joyId >= 0 ? 0x40FFFFFF : 0x22FFFFFF);
         c.drawCircle(jx, jy, jr, fill);
         stroke.setColor(0x60FFFFFF);
@@ -3486,7 +3525,7 @@ final class GameView extends View implements Menu.Host {
     private int pickerCount;
 
     private static boolean hasPicker(int t) {
-        return t == TOOL_CIV || t == TOOL_COP || t == TOOL_MIL || t == TOOL_ZOMBIE || t == TOOL_PLACE || t == TOOL_EVENT;
+        return t == TOOL_CIV || t == TOOL_COP || t == TOOL_MIL || t == TOOL_ZOMBIE || t == TOOL_PLACE || t == TOOL_EVENT || t == TOOL_BUILD;
     }
 
     private String[] optionNames(int t) {
@@ -3504,6 +3543,7 @@ final class GameView extends View implements Menu.Host {
                 return n;
             }
             case TOOL_PLACE: return PLACE_NAMES;
+            case TOOL_BUILD: return BUILD_NAMES;
             default: return EVENT_NAMES;
         }
     }
@@ -3515,6 +3555,7 @@ final class GameView extends View implements Menu.Host {
             case TOOL_MIL: return MIL_INFO;
             case TOOL_ZOMBIE: return ZOMBIE_INFO;
             case TOOL_PLACE: return PLACE_INFO;
+            case TOOL_BUILD: return BUILD_INFO;
             default: return EVENT_INFO;
         }
     }
@@ -3526,6 +3567,7 @@ final class GameView extends View implements Menu.Host {
             case TOOL_MIL: return milVariant;
             case TOOL_ZOMBIE: return zombieVariant;
             case TOOL_PLACE: return placeVariant;
+            case TOOL_BUILD: return buildVariant;
             default: return eventVariant;
         }
     }
@@ -3537,6 +3579,7 @@ final class GameView extends View implements Menu.Host {
             case TOOL_MIL: milVariant = v; break;
             case TOOL_ZOMBIE: zombieVariant = v; break;
             case TOOL_PLACE: placeVariant = v; break;
+            case TOOL_BUILD: buildVariant = v; break;
             default: eventVariant = v; break;
         }
     }
@@ -3654,6 +3697,62 @@ final class GameView extends View implements Menu.Host {
             c.drawLine(cx, cy + a, cx + hd, cy + a - hd, stroke);
         } else if (t == TOOL_PLACE) {
             drawPlaceIcon(c, cx, cy, size);
+        } else if (t == TOOL_BUILD) {
+            float a = size * 0.85f;
+            switch (buildVariant) {
+                case City.ED_ROAD:
+                    fill.setColor(0xFF3A3C40);
+                    c.drawRect(cx - a, cy - a, cx + a, cy + a, fill);
+                    fill.setColor(0xFFE8C547);
+                    for (int k = -1; k <= 1; k++) c.drawRect(cx - a * 0.08f, cy + k * a * 0.6f - a * 0.18f, cx + a * 0.08f, cy + k * a * 0.6f + a * 0.18f, fill);
+                    break;
+                case City.ED_PAVE:
+                    fill.setColor(0xFFB8B4AC);
+                    c.drawRect(cx - a, cy - a, cx + a, cy + a, fill);
+                    stroke.setColor(0xFF8A867E);
+                    stroke.setStrokeWidth(1 * dp);
+                    c.drawLine(cx, cy - a, cx, cy + a, stroke);
+                    c.drawLine(cx - a, cy, cx + a, cy, stroke);
+                    break;
+                case City.ED_GRASS:
+                    fill.setColor(0xFF5E9A3A);
+                    c.drawRect(cx - a, cy - a, cx + a, cy + a, fill);
+                    break;
+                case City.ED_TREES:
+                    fill.setColor(0xFF3E7A2A);
+                    c.drawCircle(cx - a * 0.35f, cy + a * 0.2f, a * 0.55f, fill);
+                    c.drawCircle(cx + a * 0.35f, cy - a * 0.2f, a * 0.6f, fill);
+                    break;
+                case City.ED_WALL:
+                    fill.setColor(0xFFC0643C);
+                    for (int row = 0; row < 3; row++)
+                        for (int k = 0; k < 3; k++) {
+                            float bx = cx - size * 0.9f + k * size * 0.62f + (row % 2) * size * 0.3f, by = cy - size * 0.6f + row * size * 0.45f;
+                            c.drawRect(bx, by, bx + size * 0.55f, by + size * 0.38f, fill);
+                        }
+                    break;
+                case City.ED_HOUSE:
+                case City.ED_SHOP: {
+                    boolean shop = buildVariant == City.ED_SHOP;
+                    fill.setColor(shop ? 0xFFE8E2D4 : 0xFFE0C8A0);
+                    c.drawRect(cx - a * 0.75f, cy - a * 0.1f, cx + a * 0.75f, cy + a * 0.85f, fill);
+                    fill.setColor(shop ? 0xFF4F7BE0 : 0xFFB0442A);
+                    android.graphics.Path roof = new android.graphics.Path();
+                    roof.moveTo(cx - a * 0.95f, cy - a * 0.05f);
+                    roof.lineTo(cx, cy - a * 0.85f);
+                    roof.lineTo(cx + a * 0.95f, cy - a * 0.05f);
+                    roof.close();
+                    if (shop) c.drawRect(cx - a * 0.9f, cy - a * 0.4f, cx + a * 0.9f, cy - a * 0.05f, fill);
+                    else c.drawPath(roof, fill);
+                    break;
+                }
+                default:
+                    stroke.setColor(0xFFE05A4A);
+                    stroke.setStrokeWidth(2.4f * dp);
+                    c.drawLine(cx - a * 0.7f, cy - a * 0.7f, cx + a * 0.7f, cy + a * 0.7f, stroke);
+                    c.drawLine(cx + a * 0.7f, cy - a * 0.7f, cx - a * 0.7f, cy + a * 0.7f, stroke);
+                    break;
+            }
         } else if (t == TOOL_EVENT) {
             // A warning triangle.
             fill.setColor(0xFFFFC24A);
@@ -3788,6 +3887,12 @@ final class GameView extends View implements Menu.Host {
             case MotionEvent.ACTION_UP:
                 if (mode == MODE_WORLD) worldUp(ev.getX(), ev.getY());
                 mode = MODE_NONE;
+                if (buildDirty) {
+                    // Redraw the map once the stroke is done.
+                    buildDirty = false;
+                    world.city.editsDone();
+                    world.redrawCity();
+                }
                 return true;
             case MotionEvent.ACTION_CANCEL:
                 mode = MODE_NONE;
@@ -3963,6 +4068,9 @@ final class GameView extends View implements Menu.Host {
             place(wx, wy);
         } else if (tool == TOOL_EVENT) {
             event(wx, wy);
+        } else if (tool == TOOL_BUILD) {
+            lastBuildTile = -1;
+            buildAt(wx, wy);
         } else if (tool == TOOL_ORDER) {
             // Tap or drag a box: decided when the finger lifts.
             boxX0 = wx;
@@ -3982,6 +4090,14 @@ final class GameView extends View implements Menu.Host {
         lastSpawnY = wy;
     }
 
+    /** One Build stroke: each tile once per drag. */
+    private void buildAt(float wx, float wy) {
+        int tile = world.city.tileIndex(wx, wy);
+        if (tile == lastBuildTile) return;
+        lastBuildTile = tile;
+        if (world.build(wx, wy, buildVariant)) buildDirty = true;
+    }
+
     private void worldMove(float x, float y) {
         if (Math.abs(x - downX) > 8 * dp || Math.abs(y - downY) > 8 * dp) dragged = true;
         float wx = worldX(x), wy = worldY(y);
@@ -3996,6 +4112,8 @@ final class GameView extends View implements Menu.Host {
             }
         } else if (tool == TOOL_ERASE) {
             world.erase(wx, wy, 22);
+        } else if (tool == TOOL_BUILD) {
+            if (buildVariant != City.ED_HOUSE && buildVariant != City.ED_SHOP) buildAt(wx, wy);
         } else if (tool == TOOL_ORDER) {
             boxX1 = wx;
             boxY1 = wy;
@@ -4007,7 +4125,7 @@ final class GameView extends View implements Menu.Host {
                 lastSpawnX = wx;
                 lastSpawnY = wy;
             }
-        } else if (tool != TOOL_BOMB && tool != TOOL_ZONE && tool != TOOL_ORDER && tool != TOOL_EVENT) {
+        } else if (tool != TOOL_BOMB && tool != TOOL_ZONE && tool != TOOL_ORDER && tool != TOOL_EVENT && tool != TOOL_BUILD) {
             float ddx = wx - lastSpawnX, ddy = wy - lastSpawnY;
             float spacing = BRUSHES[brushIdx] > 1 ? 22 : 12;
             if (ddx * ddx + ddy * ddy > spacing * spacing) {

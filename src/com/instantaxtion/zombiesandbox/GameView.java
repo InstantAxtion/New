@@ -536,6 +536,7 @@ final class GameView extends View implements Menu.Host {
             }
         }
         if (inGame) updateMood(dt);
+        if (inGame && ((int) (world.time * 2)) != ((int) ((world.time - dt) * 2))) updatePins();
         if (hasGame && inGame) {
             recordTimer -= dt;
             if (recordTimer <= 0) {
@@ -1086,6 +1087,15 @@ final class GameView extends View implements Menu.Host {
             c.drawCircle(sc[0], sc[1], 10 + sc[2] * 120, stroke);
         }
         drawCrossings(c, vx0, vx1, vy0, vy1);
+        // What the dead can hear: rings spreading out from gunfire, alarms, horns and screams.
+        stroke.setStrokeWidth(1.5f / Math.max(0.5f, scale) * 2);
+        for (int i = 0, n = world.noiseRings.size(); i < n; i++) {
+            float[] r = world.noiseRings.get(i);
+            float t = r[3] / 1.4f, rad = r[2] * Math.min(1, t * 1.6f);
+            if (r[0] + rad < vx0 || r[0] - rad > vx1 || r[1] + rad < vy0 || r[1] - rad > vy1) continue;
+            stroke.setColor(alpha(0xFFFFE8B0, 0.35f * (1 - t)));
+            c.drawCircle(r[0], r[1], rad, stroke);
+        }
         if (world.firebombTime > 0) {
             // The target area, pulsing.
             float pulse = 0.5f + 0.5f * (float) Math.sin(world.time * 6);
@@ -3046,8 +3056,9 @@ final class GameView extends View implements Menu.Host {
             c.drawText(world.message, w / 2f, h * 0.3f, text);
         }
         float infoY = barTop - 12 * dp;
+        drawPins(c);
         text.setTextSize(13 * dp);
- if (tool == TOOL_ORDER && follow == null) {
+        if (tool == TOOL_ORDER && follow == null) {
             Entity lead = selection.isEmpty() ? null : selection.get(0);
             drawBanner(c, lead == null ? "Orders: tap a cop or soldier to select them."
                     : "Selected " + Dispatch.name(lead) + (selection.size() > 1 ? " and " + (selection.size() - 1) + " more" : "")
@@ -3122,6 +3133,12 @@ final class GameView extends View implements Menu.Host {
         if (followers > 0 && !e.isArmed()) lines.add((e.task == Dispatch.T_PATROL ? "Leading a patrol of " : "Looking after ")
                 + followers + (followers == 1 ? " other" : " others"));
         if (e.leadsHorde) lines.add("Leading a horde of about " + e.hordeSize);
+        // Who bit whom.
+        Integer biter = world.bitBy.get(e.nameSeed);
+        if (biter != null) lines.add((e.isZombie() ? "Turned by " : "Bitten by ") + Names.person(biter));
+        Integer turnedN = world.victims.get(e.nameSeed);
+        if (e.isZombie() && turnedN != null) lines.add("Has turned " + turnedN + (turnedN == 1 ? " person" : " people"));
+        if (e.nameSeed == world.patientZeroSeed && world.patientZeroSeed != 0) lines.add("PATIENT ZERO");
         text.setTextAlign(Paint.Align.LEFT);
         text.setTextSize(14 * dp);
         float lh = 18 * dp, cw = Math.min(getWidth() - 20 * dp, 420 * dp);
@@ -3137,9 +3154,17 @@ final class GameView extends View implements Menu.Host {
         text.setTextSize(12.5f * dp);
         text.setColor(0xFFB8BDC4);
         for (int i = 0; i < lines.size(); i++) c.drawText(lines.get(i), left + 14 * dp, top + 22 * dp + (i + 1) * lh, text);
-        // Take control of them.
+        // Pin them (a star), and take control of them.
         float bw = 110 * dp, bh = 30 * dp;
         takeRect.set(left + cw - bw - 10 * dp, top + 8 * dp, left + cw - 10 * dp, top + 8 * dp + bh);
+        pinRect.set(takeRect.left - bh - 8 * dp, takeRect.top, takeRect.left - 8 * dp, takeRect.bottom);
+        boolean isPinned = pinned.contains(e);
+        fill.setColor(isPinned ? 0xFFE8C547 : 0xFF2A2E34);
+        c.drawRoundRect(pinRect, 8 * dp, 8 * dp, fill);
+        text.setTextAlign(Paint.Align.CENTER);
+        text.setTextSize(16 * dp);
+        text.setColor(isPinned ? 0xFF1A1A1A : 0xFFE8C547);
+        c.drawText("\u2605", pinRect.centerX(), pinRect.centerY() + 6 * dp, text);
         fill.setColor(0xFF3A6EA5);
         c.drawRoundRect(takeRect, 8 * dp, 8 * dp, fill);
         text.setTextSize(12.5f * dp);
@@ -3150,7 +3175,75 @@ final class GameView extends View implements Menu.Host {
 
     // ------------------------------------------------------------------ taking control
 
-    private final RectF takeRect = new RectF(), releaseRect = new RectF();
+    private final RectF takeRect = new RectF(), releaseRect = new RectF(), pinRect = new RectF();
+    /** Pinned characters: an icon at the edge of the screen points to each one that's off screen. */
+    final java.util.ArrayList<Entity> pinned = new java.util.ArrayList<Entity>();
+    private final RectF[] pinRects = {new RectF(), new RectF(), new RectF(), new RectF(), new RectF(), new RectF()};
+    private final Entity[] pinIcons = new Entity[6];
+    private int pinCount;
+
+    /** Keeps pins on the right people: someone who turned is followed as the zombie they became. */
+    private void updatePins() {
+        for (int i = pinned.size() - 1; i >= 0; i--) {
+            Entity p = pinned.get(i);
+            if (!p.dead || world.controlled == p) continue;
+            Entity now = null;
+            for (int k = 0, n = world.entities.size(); k < n && now == null; k++) {
+                Entity o = world.entities.get(k);
+                if (!o.dead && o.nameSeed == p.nameSeed && o != p) now = o;
+            }
+            if (now != null) {
+                pinned.set(i, now);
+                if (now.isZombie()) world.say(Names.person(p.nameSeed) + " has turned");
+            } else if (!p.removed) {
+                // Dead for good (or gone into a building and not out yet: keep them a while).
+                pinned.remove(i);
+            }
+        }
+    }
+
+    /** Stars over pinned people on screen, and arrows at the edge pointing to those off it. */
+    private void drawPins(Canvas c) {
+        pinCount = 0;
+        int w = getWidth();
+        float top = topRects[0].bottom + 8 * dp, bottom = barTop - 8 * dp;
+        for (int i = 0; i < pinned.size(); i++) {
+            Entity p = pinned.get(i);
+            if (p.dead && world.controlled != p) continue;
+            float sx = screenX(p.x), sy = screenY(p.y);
+            boolean on = sx > 0 && sx < w && sy > top && sy < bottom;
+            text.setTextAlign(Paint.Align.CENTER);
+            if (on) {
+                text.setTextSize(14 * dp);
+                text.setColor(0xFFE8C547);
+                c.drawText("\u2605", sx, sy - 14 * dp, text);
+                continue;
+            }
+            float cx = w / 2f, cy = (top + bottom) / 2, dx = sx - cx, dy = sy - cy;
+            float k = Math.min(Math.abs((w / 2f - 26 * dp) / (dx == 0 ? 0.001f : dx)), Math.abs(((bottom - top) / 2 - 26 * dp) / (dy == 0 ? 0.001f : dy)));
+            float ix = cx + dx * k, iy = cy + dy * k;
+            RectF r = pinRects[pinCount];
+            r.set(ix - 20 * dp, iy - 20 * dp, ix + 20 * dp, iy + 20 * dp);
+            pinIcons[pinCount++] = p;
+            fill.setColor(p.isZombie() ? 0xE04F7A2F : 0xE0202227);
+            c.drawCircle(ix, iy, 18 * dp, fill);
+            stroke.setColor(0xFFE8C547);
+            stroke.setStrokeWidth(2 * dp);
+            c.drawCircle(ix, iy, 18 * dp, stroke);
+            String name = Names.person(p.nameSeed);
+            String init = name.length() > 0 ? name.substring(0, 1) : "?";
+            int sp = name.indexOf(' ');
+            if (sp > 0 && sp + 1 < name.length()) init += name.charAt(sp + 1);
+            text.setTextSize(12 * dp);
+            text.setColor(0xFFFFFFFF);
+            c.drawText(init, ix, iy + 4 * dp, text);
+            // A little arrow towards them.
+            float a = (float) Math.atan2(dy, dx);
+            fill.setColor(0xFFE8C547);
+            c.drawCircle(ix + (float) Math.cos(a) * 21 * dp, iy + (float) Math.sin(a) * 21 * dp, 4 * dp, fill);
+            if (pinCount >= pinRects.length) break;
+        }
+    }
     private final RectF[] ctxRects = {new RectF(), new RectF(), new RectF(), new RectF(), new RectF(), new RectF()};
     private final int[] ctxActions = new int[6];
     private int ctxCount;
@@ -3709,6 +3802,22 @@ final class GameView extends View implements Menu.Host {
             releaseControl();
             return true;
         }
+        if (world.controlled == null && follow != null && !follow.dead && pinRect.contains(x, y)) {
+            click();
+            if (!pinned.remove(follow)) {
+                if (pinned.size() >= 6) pinned.remove(0);
+                pinned.add(follow);
+            }
+            return true;
+        }
+        for (int k = 0; k < pinCount; k++)
+            if (pinRects[k].contains(x, y)) {
+                click();
+                follow = pinIcons[k];
+                inspectB = null;
+                director = false;
+                return true;
+            }
         if (world.controlled == null && follow != null && !follow.dead && takeRect.contains(x, y)) {
             click();
             takeControl(follow);

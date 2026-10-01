@@ -18,7 +18,7 @@ final class World {
 
     static final class Corpse {
         float x, y, angle, radius, rise, age;
-        int body, head, riseType, origin;
+        int body, head, riseType, origin, nameSeed;
         boolean zombie;
     }
 
@@ -319,6 +319,8 @@ final class World {
     }
 
     void banner(String title, String sub) {
+        highlight(title.charAt(0) + title.substring(1).toLowerCase(), controlled != null ? controlled.x : city.worldW() / 2,
+                controlled != null ? controlled.y : city.worldH() / 2);
         warBanner = title;
         warSub = sub;
         warBannerTime = 6;
@@ -1207,6 +1209,11 @@ final class World {
         updateHazards(dt);
         if (alarmTime > 0) alarmTime -= dt;
         updateBirds(dt);
+        for (int i = noiseRings.size() - 1; i >= 0; i--) {
+            float[] r = noiseRings.get(i);
+            r[3] += dt;
+            if (r[3] > 1.4f) noiseRings.remove(i);
+        }
         updateWildlife(dt);
         updateGrenades(dt);
         cleanup();
@@ -1480,6 +1487,12 @@ final class World {
     /** Makes zombies within a radius head for a noise (gunfire, explosions, a screamer). */
     void noise(float x, float y, float radius) {
         scareBirds(x, y, radius);
+        boolean near = false;
+        for (int i = 0; i < noiseRings.size() && !near; i++) {
+            float[] r = noiseRings.get(i);
+            if (r[3] < 0.5f && Math.abs(r[0] - x) < 40 && Math.abs(r[1] - y) < 40) near = true;
+        }
+        if (!near && noiseRings.size() < 60) noiseRings.add(new float[]{x, y, radius, 0});
         int cx0 = Math.max(0, (int) ((x - radius) / CELL)), cx1 = Math.min(gw - 1, (int) ((x + radius) / CELL));
         int cy0 = Math.max(0, (int) ((y - radius) / CELL)), cy1 = Math.min(gh - 1, (int) ((y + radius) / CELL));
         for (int cy = cy0; cy <= cy1; cy++)
@@ -2100,6 +2113,7 @@ final class World {
         bloodBurst(t.x, t.y, 6, nx, ny);
         emit(Sfx.BITE, t.x, t.y);
         bites++;
+        if (!bitBy.containsKey(t.nameSeed) && bitBy.size() < 20000) bitBy.put(t.nameSeed, z.nameSeed);
         float chance = (trait[TR_VIRULENT] ? 0.65f : trait[TR_WEAK_BITE] ? 0.22f : 0.4f) * BITE_INFECT;
         if (!t.infected && t.type != Entity.DOG && rnd.nextFloat() < chance) {
             t.infected = true;
@@ -3207,8 +3221,64 @@ final class World {
 
     void markPatientZero(Entity e) {
         patientZero = e;
+        patientZeroSeed = e.nameSeed;
         outbreakPlace = city.placeName(e.x, e.y);
+        highlight("Patient zero: " + Names.person(e.nameSeed), e.x, e.y);
     }
+
+    // ------------------------------------------------------------------ the infection's family tree
+
+    /** Who bit whom (by person), how many each one has turned, and patient zero. */
+    final java.util.HashMap<Integer, Integer> bitBy = new java.util.HashMap<Integer, Integer>();
+    final java.util.HashMap<Integer, Integer> victims = new java.util.HashMap<Integer, Integer>();
+    int patientZeroSeed;
+
+    /** How many people the infection has passed through from patient zero, and how many generations deep. */
+    int[] chainFromPatientZero() {
+        if (patientZeroSeed == 0) return new int[]{0, 0};
+        java.util.HashMap<Integer, java.util.ArrayList<Integer>> kids = new java.util.HashMap<Integer, java.util.ArrayList<Integer>>();
+        for (java.util.Map.Entry<Integer, Integer> en : bitBy.entrySet()) {
+            java.util.ArrayList<Integer> l = kids.get(en.getValue());
+            if (l == null) kids.put(en.getValue(), l = new java.util.ArrayList<Integer>());
+            l.add(en.getKey());
+        }
+        int people = 0, depth = 0;
+        java.util.ArrayList<Integer> level = new java.util.ArrayList<Integer>();
+        java.util.HashSet<Integer> seen = new java.util.HashSet<Integer>();
+        level.add(patientZeroSeed);
+        seen.add(patientZeroSeed);
+        while (!level.isEmpty() && depth < 500) {
+            java.util.ArrayList<Integer> next = new java.util.ArrayList<Integer>();
+            for (int p : level) {
+                java.util.ArrayList<Integer> l = kids.get(p);
+                if (l == null) continue;
+                for (int k : l) if (seen.add(k)) next.add(k);
+            }
+            if (next.isEmpty()) break;
+            people += next.size();
+            depth++;
+            level = next;
+        }
+        return new int[]{people, depth};
+    }
+
+    // ------------------------------------------------------------------ highlights and noise
+
+    /** Big moments, for the replay: {time, x, y} and what happened. */
+    final ArrayList<float[]> highlightAt = new ArrayList<float[]>();
+    final ArrayList<String> highlightText = new ArrayList<String>();
+
+    void highlight(String text, float x, float y) {
+        if (highlightAt.size() >= 400) return;
+        // Not the same thing twice in a row within a few seconds.
+        int n = highlightAt.size();
+        if (n > 0 && highlightText.get(n - 1).equals(text) && time - highlightAt.get(n - 1)[0] < 10) return;
+        highlightAt.add(new float[]{time, x, y});
+        highlightText.add(text);
+    }
+
+    /** Sounds spreading out, so you can see what the dead are hearing: {x, y, radius, age}. */
+    final ArrayList<float[]> noiseRings = new ArrayList<float[]>();
 
     private City.Building shelterWithin(Entity e, float radius) {
         City.Building best = null;
@@ -4725,6 +4795,7 @@ final class World {
 
     /** A hero's milestone, called out on the radio. */
     private void killStreak(Entity e) {
+        highlight(Names.person(e.nameSeed) + ": " + e.kills + " kills", e.x, e.y);
         String line = String.format(STREAK_LINES[rnd.nextInt(STREAK_LINES.length)], e.kills);
         if (e.isArmed()) dispatch.say(e.type == Entity.SOLDIER ? Dispatch.WHO_MILITARY : Dispatch.WHO_POLICE, e, line, e.x, e.y);
         else dispatch.say(Dispatch.WHO_INFO, null, Names.person(e.nameSeed) + ": \"" + line + "\"", e.x, e.y);
@@ -4926,6 +4997,7 @@ final class World {
             else ignite(x, y, 20 + rnd.nextFloat() * 20);
         }
         emit(Sfx.JET, firebombX, firebombY);
+        highlight("Firebombing of " + firebombPlace, firebombX, firebombY);
         dispatch.say(Dispatch.WHO_MILITARY, null, "Military: Bombs away on " + firebombPlace + ".", firebombX, firebombY);
     }
 
@@ -5983,6 +6055,7 @@ final class World {
         c.head = e.head;
         c.zombie = e.isZombie();
         c.origin = e.type;
+        c.nameSeed = e.nameSeed;
         boolean turns = !e.isZombie() && !e.gibbed && (e.killedByZombie || e.infected)
                 && (e.type != Entity.DOG || rnd.nextFloat() < 0.6f);
         if (!turns && trait[TR_RESTLESS] && !e.isZombie() && !e.gibbed && e.type != Entity.DOG && rnd.nextFloat() < 0.35f) {
@@ -6018,6 +6091,10 @@ final class World {
                     if (entities.size() >= maxEntities) continue;
                     Entity z = make(c.riseType, c.x, c.y, c.origin, c.body);
                     z.angle = c.angle;
+                    // Same person, now one of them: who bit them gets the credit.
+                    z.nameSeed = c.nameSeed;
+                    Integer by = bitBy.get(c.nameSeed);
+                    if (by != null) victims.put(by, victims.containsKey(by) ? victims.get(by) + 1 : 1);
                     // Freshly turned: fast and hungry for a while.
                     z.fresh = 45;
                     z.speed *= 1.2f;
@@ -6369,6 +6446,7 @@ final class World {
         float h = b.height;
         city.collapse(b);
         collapsedCount++;
+        highlight("A building collapsed", cx, cy);
         dispatch.say(Dispatch.WHO_INFO, null, "A building collapsed on " + city.placeName(cx, cy) + "!"
                 + (inside > 0 ? " People were trapped inside." : ""), cx, cy);
         // Anyone standing next to it gets hit by falling debris.

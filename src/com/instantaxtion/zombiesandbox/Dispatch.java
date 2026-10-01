@@ -864,6 +864,7 @@ final class Dispatch {
         }
         if (overrun) {
             say(WHO_INFO, null, "The " + z.place + " safe zone has been overrun!", z.x, z.y);
+            w.highlight(z.place + " safe zone overrun", z.x, z.y);
             SafeZone fallback = null;
             for (int i = 0; i < zones.size(); i++) if (zones.get(i).military) fallback = zones.get(i);
             if (!z.military && fallback != null) {

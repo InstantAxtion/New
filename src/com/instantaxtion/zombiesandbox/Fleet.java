@@ -627,6 +627,7 @@ final class Fleet {
             if (v.timer <= 0 || w.countZombiesNear(mid, v.y, 80) > 2) {
                 v.state = DRIVE;
                 w.emit(Sfx.HORN, v.x, v.y);
+                if (v.passengers > 0) w.highlight("Evacuation train: " + v.passengers + " escaped", mid, v.y);
                 if (v.passengers > 0)
                     w.dispatch.say(Dispatch.WHO_INFO, null, "The evacuation train has left " + city.stationName + " with " + v.passengers
                             + (v.passengers == 1 ? " person" : " people") + " aboard.", mid, v.y);

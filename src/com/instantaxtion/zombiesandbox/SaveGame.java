@@ -17,7 +17,7 @@ import java.util.ArrayList;
  * damaged or collapsed buildings.
  */
 final class SaveGame {
-    private static final int VERSION = 13;
+    private static final int VERSION = 14;
 
     private SaveGame() {
     }
@@ -223,6 +223,26 @@ final class SaveGame {
             for (City.Facility f : w.city.facilities) out.writeInt(f.ammo);
             out.writeInt(d.zones.size());
             for (Dispatch.SafeZone z : d.zones) out.writeInt(z.ammo);
+            // Who bit whom, and the big moments.
+            out.writeInt(w.patientZeroSeed);
+            out.writeInt(w.bitBy.size());
+            for (java.util.Map.Entry<Integer, Integer> en : w.bitBy.entrySet()) {
+                out.writeInt(en.getKey());
+                out.writeInt(en.getValue());
+            }
+            out.writeInt(w.victims.size());
+            for (java.util.Map.Entry<Integer, Integer> en : w.victims.entrySet()) {
+                out.writeInt(en.getKey());
+                out.writeInt(en.getValue());
+            }
+            out.writeInt(w.highlightAt.size());
+            for (int i = 0; i < w.highlightAt.size(); i++) {
+                float[] h = w.highlightAt.get(i);
+                out.writeFloat(h[0]);
+                out.writeFloat(h[1]);
+                out.writeFloat(h[2]);
+                out.writeUTF(w.highlightText.get(i));
+            }
         } finally {
             out.close();
         }
@@ -482,6 +502,18 @@ final class SaveGame {
                 }
             } else {
                 w.stockArmouries();
+            }
+            if (version >= 14) {
+                w.patientZeroSeed = in.readInt();
+                int count14 = in.readInt();
+                for (int i = 0; i < count14; i++) w.bitBy.put(in.readInt(), in.readInt());
+                count14 = in.readInt();
+                for (int i = 0; i < count14; i++) w.victims.put(in.readInt(), in.readInt());
+                count14 = in.readInt();
+                for (int i = 0; i < count14; i++) {
+                    w.highlightAt.add(new float[]{in.readFloat(), in.readFloat(), in.readFloat()});
+                    w.highlightText.add(in.readUTF());
+                }
             }
             d.copCount = copCount;
             d.soldierCount = soldierCount;

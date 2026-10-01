@@ -683,6 +683,31 @@ public final class GameTests {
                 check(hid, "a crawler lies in wait");
             }
         });
+        test("noise rings, who bit whom, and highlights", new Check() {
+            public void run() throws Exception {
+                CityConfig c = new CityConfig();
+                c.v[CityConfig.OPT_ZOMBIES] = 3;
+                c.seed = 14;
+                World w = new World(c);
+                w.populate(c);
+                w.noise(100, 100, 200);
+                check(!w.noiseRings.isEmpty(), "a noise shows a ring");
+                for (int s = 0; s < 30 * 120; s++) {
+                    w.update(1 / 30f);
+                    w.evCount = 0;
+                }
+                check(!w.bitBy.isEmpty(), "bites are traced");
+                check(w.turned == 0 || !w.victims.isEmpty(), "the turned are credited to whoever bit them");
+                int[] chain = w.chainFromPatientZero();
+                check(w.patientZeroSeed != 0 && chain[0] >= 0, "patient zero is known");
+                check(!w.highlightAt.isEmpty(), "big moments are noted");
+                File f = File.createTempFile("zcs", ".dat");
+                SaveGame.save(w, f);
+                World l = SaveGame.load(f);
+                check(l.bitBy.size() == w.bitBy.size() && l.highlightAt.size() == w.highlightAt.size(), "and saved");
+                f.delete();
+            }
+        });
         test("every screen draws", new Check() {
             public void run() throws Exception {
                 GameView v = new GameView(new android.app.Activity());

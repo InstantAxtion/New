@@ -523,6 +523,7 @@ final class Menu {
                 {"City", world.city.name + "  (" + world.city.cfg.code() + ")"},
                 {"Checkpoints: turned away / treated", world.turnedAway + " / " + world.quarantined},
                 {"Outbreak started", world.outbreakPlace == null ? "-" : world.outbreakPlace},
+                {"Infection chain", chainText(world)},
                 {world.strainName, strainTraits(world)},
                 {"Balance of power", world.warResult == 1 ? "The city survived" : world.warResult == 2 ? "The city fell"
                         : "People " + (int) (world.warBalance * 100) + "%"},
@@ -561,9 +562,37 @@ final class Menu {
     /** A full replay lasts this many seconds, however long the game was. */
     private static final float REPLAY_SECONDS = 24;
 
+    private static String chainText(World w) {
+        if (w.patientZeroSeed == 0) return "-";
+        int[] ch = w.chainFromPatientZero();
+        Integer most = null;
+        int mostN = 0;
+        for (java.util.Map.Entry<Integer, Integer> en : w.victims.entrySet())
+            if (en.getValue() > mostN) {
+                mostN = en.getValue();
+                most = en.getKey();
+            }
+        return "Patient zero " + Names.person(w.patientZeroSeed) + ": " + ch[0] + " people, " + ch[1] + " generations"
+                + (most != null ? ". Worst: " + Names.person(most) + " (" + mostN + ")" : "");
+    }
+
     private void scrubReplay(float x) {
         replayPos = Math.max(0, Math.min(1, (x - replayBar.left) / replayBar.width()));
         replayPlaying = false;
+        // Snap to a big moment if one is close.
+        World w = host.world();
+        if (w.replayMeta.size() > 1) {
+            float t0 = w.replayMeta.get(0)[0], t1 = w.replayMeta.get(w.replayMeta.size() - 1)[0];
+            float best = 14 * dp;
+            for (float[] h : w.highlightAt) {
+                if (h[0] < t0 || h[0] > t1) continue;
+                float hx = replayBar.left + replayBar.width() * (h[0] - t0) / (t1 - t0);
+                if (Math.abs(hx - x) < best) {
+                    best = Math.abs(hx - x);
+                    replayPos = (h[0] - t0) / (t1 - t0);
+                }
+            }
+        }
     }
 
     /**
@@ -650,6 +679,34 @@ final class Menu {
         fill.setColor(0xFF3F8A3A);
         tmp.set(replayBar.left, mid - 4 * dp, replayBar.left + replayBar.width() * replayPos, mid + 4 * dp);
         c.drawRoundRect(tmp, 4 * dp, 4 * dp, fill);
+        // The big moments, as ticks on the timeline; tap near one to jump to it.
+        float t0 = meta.get(0)[0], t1 = meta.get(frames - 1)[0];
+        java.util.ArrayList<float[]> hl = world.highlightAt;
+        String showing = null;
+        for (int i = 0; i < hl.size(); i++) {
+            float ht = hl.get(i)[0];
+            if (ht < t0 || ht > t1 || t1 <= t0) continue;
+            float hx = replayBar.left + replayBar.width() * (ht - t0) / (t1 - t0);
+            fill.setColor(0xFFE8C547);
+            c.drawRect(hx - 1.5f * dp, mid - 12 * dp, hx + 1.5f * dp, mid - 5 * dp, fill);
+            if (Math.abs(ht - m[0]) < Math.max(6, (t1 - t0) / 60)) {
+                showing = world.highlightText.get(i);
+                float[] at = hl.get(i);
+                stroke.setColor(0xFFE8C547);
+                stroke.setStrokeWidth(2 * dp);
+                c.drawCircle(replayMap.left + at[1] * sx, replayMap.top + at[2] * sy, 12 * dp, stroke);
+            }
+        }
+        if (showing != null) {
+            text.setTextAlign(Paint.Align.CENTER);
+            text.setTextSize(14 * dp);
+            float tw = text.measureText(showing) + 24 * dp;
+            tmp.set(replayMap.centerX() - tw / 2, replayMap.top + 8 * dp, replayMap.centerX() + tw / 2, replayMap.top + 34 * dp);
+            fill.setColor(0xE0101216);
+            c.drawRoundRect(tmp, 8 * dp, 8 * dp, fill);
+            text.setColor(0xFFE8C547);
+            c.drawText(showing, replayMap.centerX(), replayMap.top + 26 * dp, text);
+        }
         fill.setColor(0xFFFFFFFF);
         c.drawCircle(replayBar.left + replayBar.width() * replayPos, mid, 10 * dp, fill);
     }

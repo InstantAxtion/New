@@ -50,6 +50,9 @@ final class City {
         final float x, y, r, gateX, gateY;
         String name;
         int[] field;
+        /** Rounds of ammunition in the armoury. */
+        int ammo;
+        boolean dryAnnounced;
         /** Guard posts (station entrance, base gates) as {x, y}. */
         final List<float[]> posts = new ArrayList<float[]>();
 
@@ -105,6 +108,8 @@ final class City {
         int shopType;
         /** Zombies shut inside, waiting. Nobody knows until they burst out (then {@link #infestKnown}). */
         int lurkers;
+        /** On fire: the flames firefighters hose (null if not burning). */
+        World.Fire fire;
         /** People inside on an errand (shopping, at church, at school), and how many are on their way. */
         final List<Entity> visitors = new ArrayList<Entity>();
         int heading;
@@ -318,6 +323,12 @@ final class City {
     }
 
     /** The district at a world position. */
+    /** Which district a world position is in (an index into districts), or -1. */
+    int districtIndex(float x, float y) {
+        if (districtAt == null) return -1;
+        return districtAt[tileIndex(x, y)];
+    }
+
     District districtOf(float x, float y) {
         if (districtAt == null || districts.isEmpty()) return null;
         return districts.get(districtAt[tileIndex(x, y)]);

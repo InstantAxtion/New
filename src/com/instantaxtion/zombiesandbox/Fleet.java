@@ -71,6 +71,8 @@ final class Fleet {
         int blockDir;
         boolean cones;
         Entity guard;
+        /** A supply truck: rounds of ammunition it's carrying to a safe zone. */
+        int supply;
         /** The player's character, at the wheel. */
         Entity player;
         /** A stopped car rolls over to the kerb. */
@@ -264,6 +266,15 @@ final class Fleet {
             v.lastDist = Float.MAX_VALUE;
             vehicles.add(v);
         }
+        return true;
+    }
+
+    /** An army truck carrying ammunition from an armoury to a safe zone. */
+    boolean sendSupply(City.Facility from, Dispatch.SafeZone z, int rounds) {
+        int before = vehicles.size();
+        if (!send(Entity.SOLDIER, 0, from.x, from.y, z.x, z.y, null, z, z.place) || vehicles.size() == before) return false;
+        Vehicle v = vehicles.get(vehicles.size() - 1);
+        v.supply = rounds;
         return true;
     }
 
@@ -753,6 +764,12 @@ final class Fleet {
             pullOver(v);
         }
         dropRiders(v, true);
+        if (v.supply > 0) {
+            w.dispatch.say(Dispatch.WHO_MILITARY, null, "Military: We've lost the supply truck on " + city.placeName(v.x, v.y)
+                    + ". The ammo's gone.", v.x, v.y);
+            if (v.zone != null) v.zone.supplyComing = false;
+            v.supply = 0;
+        }
         if (v.type == FIRE_ENGINE)
             w.dispatch.say(Dispatch.WHO_FIRE, null, "Fire Dept: Engine " + v.number + " is out of action on "
                     + city.placeName(v.x, v.y) + ".", v.x, v.y);
@@ -920,6 +937,20 @@ final class Fleet {
                     setUpRoadblock(v);
                     return false;
                 }
+            }
+            if (v.state == DRIVE && v.supply > 0 && v.zone != null) {
+                // The ammo gets through (if the truck reached the zone).
+                Dispatch.SafeZone z = v.zone;
+                z.supplyComing = false;
+                if (!z.removed && Math.hypot(v.x - z.x, v.y - z.y) < z.r + 90) {
+                    z.ammo += v.supply;
+                    w.dispatch.say(Dispatch.WHO_MILITARY, null, "Military: Supply truck at " + z.place + ". " + v.supply
+                            + " rounds delivered.", v.x, v.y);
+                } else {
+                    w.dispatch.say(Dispatch.WHO_MILITARY, null, "Military: The supply truck couldn't get through to "
+                            + z.place + ". Turning back.", v.x, v.y);
+                }
+                v.supply = 0;
             }
             if (v.state == DRIVE) {
                 unload(v, true);

@@ -576,6 +576,57 @@ public final class GameTests {
                 w.controlled = null;
             }
         });
+        test("fires spread, the cure, quarantine, supplies and militias", new Check() {
+            public void run() throws Exception {
+                CityConfig c = new CityConfig();
+                c.v[CityConfig.OPT_ZOMBIES] = 0;
+                c.seed = 21;
+                World w = new World(c);
+                w.populate(c);
+                int ammo = 0;
+                for (City.Facility f : w.city.facilities) ammo += f.ammo;
+                check(ammo > 0, "armouries are stocked");
+                // A building left to burn comes down.
+                City.Building b = null;
+                for (City.Building o : w.city.buildings) if (o.kind == City.HOUSE && o.doorX > 0) b = o;
+                w.igniteBuilding(b);
+                check(b.fire != null, "the house catches fire");
+                java.lang.reflect.Method m = World.class.getDeclaredMethod("updateBuildingFires", float.class);
+                m.setAccessible(true);
+                for (int i = 0; i < 30 * 150 && !b.collapsed; i++) {
+                    b.fire.life += 1 / 30f;
+                    m.invoke(w, 1 / 30f);
+                }
+                check(b.collapsed, "an unchecked fire burns it down");
+                // The cure.
+                Entity bitten = null;
+                for (Entity e : w.entities) if (e.type == Entity.CIVILIAN && !e.dead) bitten = e;
+                bitten.infected = true;
+                bitten.infectTimer = 100;
+                w.outbreak = true;
+                w.cureProgress = 0.999f;
+                java.lang.reflect.Method cure = World.class.getDeclaredMethod("updateCure");
+                cure.setAccessible(true);
+                cure.invoke(w);
+                check(w.cureReady && !bitten.infected, "the cure saves the bitten");
+                float[] p = w.city.findWalkable(bitten.x + 20, bitten.y);
+                Entity z = w.spawn(Entity.ZOMBIE, p[0], p[1]);
+                java.lang.reflect.Method revive = World.class.getDeclaredMethod("revive", Entity.class);
+                revive.setAccessible(true);
+                check((Boolean) revive.invoke(w, z) && z.dead, "the cure brings a zombie back");
+                // Quarantine.
+                java.lang.reflect.Method seal = World.class.getDeclaredMethod("sealDistrict", int.class);
+                seal.setAccessible(true);
+                int before = w.barriers.size();
+                seal.invoke(w, 0);
+                check(w.barriers.size() > before, "roads out of a district are barricaded");
+                File f = File.createTempFile("zcs", ".dat");
+                SaveGame.save(w, f);
+                World l = SaveGame.load(f);
+                check(l.cureReady && l.city.facilities.get(0).ammo == w.city.facilities.get(0).ammo, "the war's state is saved");
+                f.delete();
+            }
+        });
         test("every screen draws", new Check() {
             public void run() throws Exception {
                 GameView v = new GameView(new android.app.Activity());

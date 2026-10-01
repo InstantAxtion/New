@@ -17,7 +17,7 @@ import java.util.ArrayList;
  * damaged or collapsed buildings.
  */
 final class SaveGame {
-    private static final int VERSION = 12;
+    private static final int VERSION = 13;
 
     private SaveGame() {
     }
@@ -210,6 +210,19 @@ final class SaveGame {
                 out.writeFloat(t[1]);
                 out.writeFloat(t[2]);
             }
+            // The war: the cure, the army's escalation, ammunition.
+            out.writeFloat(w.cureProgress);
+            out.writeBoolean(w.cureReady);
+            out.writeInt(w.escalation);
+            out.writeFloat(w.firebombTime);
+            out.writeFloat(w.firebombX);
+            out.writeFloat(w.firebombY);
+            out.writeUTF(w.firebombPlace == null ? "" : w.firebombPlace);
+            out.writeInt(w.trampled);
+            out.writeInt(w.city.facilities.size());
+            for (City.Facility f : w.city.facilities) out.writeInt(f.ammo);
+            out.writeInt(d.zones.size());
+            for (Dispatch.SafeZone z : d.zones) out.writeInt(z.ammo);
         } finally {
             out.close();
         }
@@ -447,6 +460,28 @@ final class SaveGame {
                 }
                 int turns = in.readInt();
                 for (int i = 0; i < turns; i++) w.turnEvents.add(new float[]{in.readFloat(), in.readFloat(), in.readFloat()});
+            }
+            if (version >= 13) {
+                w.cureProgress = in.readFloat();
+                w.cureReady = in.readBoolean();
+                w.escalation = in.readInt();
+                w.firebombTime = in.readFloat();
+                w.firebombX = in.readFloat();
+                w.firebombY = in.readFloat();
+                w.firebombPlace = in.readUTF();
+                w.trampled = in.readInt();
+                int facs = in.readInt();
+                for (int i = 0; i < facs; i++) {
+                    int ammo = in.readInt();
+                    if (i < w.city.facilities.size()) w.city.facilities.get(i).ammo = ammo;
+                }
+                int zs = in.readInt();
+                for (int i = 0; i < zs; i++) {
+                    int ammo = in.readInt();
+                    if (i < d.zones.size()) d.zones.get(i).ammo = ammo;
+                }
+            } else {
+                w.stockArmouries();
             }
             d.copCount = copCount;
             d.soldierCount = soldierCount;

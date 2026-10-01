@@ -93,6 +93,8 @@ final class Entity {
     City.Building home, errand;
     float errandTimer;
     boolean homeChecked;
+    /** Armed residents holding a building together. */
+    boolean militia;
     /** The gun they carry if it isn't their standard issue (pistol, shotgun or rifle), and a bat or axe. */
     int weapon, melee;
     static final int W_STD = 0, W_PISTOL = 1, W_SHOTGUN = 2, W_RIFLE = 3;

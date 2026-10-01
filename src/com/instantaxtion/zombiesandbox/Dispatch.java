@@ -37,6 +37,9 @@ final class Dispatch {
         boolean military, removed, full, fullAnnounced;
         String place;
         int guards, sheltered, wantGuards, capacity;
+        /** Ammunition the zone has on hand for its guards, and whether a supply truck is on its way. */
+        int ammo = 300;
+        boolean supplyComing;
     }
 
     static final class Message {

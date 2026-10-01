@@ -1062,6 +1062,15 @@ final class GameView extends View implements Menu.Host {
             c.drawCircle(sc[0], sc[1], 10 + sc[2] * 120, stroke);
         }
         drawCrossings(c, vx0, vx1, vy0, vy1);
+        if (world.firebombTime > 0) {
+            // The target area, pulsing.
+            float pulse = 0.5f + 0.5f * (float) Math.sin(world.time * 6);
+            fill.setColor(alpha(0xFFFF2A1A, 0.08f + 0.08f * pulse));
+            c.drawCircle(world.firebombX, world.firebombY, 230, fill);
+            stroke.setColor(alpha(0xFFFF3A2A, 0.6f + 0.4f * pulse));
+            stroke.setStrokeWidth(3f);
+            c.drawCircle(world.firebombX, world.firebombY, 230, stroke);
+        }
         // Emergency lights wash the road around them in red and blue.
         for (int i = 0, n = world.fleet.vehicles.size(); i < n; i++) {
             Fleet.Vehicle v = world.fleet.vehicles.get(i);
@@ -2292,7 +2301,7 @@ final class GameView extends View implements Menu.Host {
             float sx = screenX(z.x), sy = screenY(z.y - z.r) - 10 * dp;
             if (sx < -100 * dp || sx > getWidth() + 100 * dp || sy < 0 || sy > barTop) continue;
             String label = (z.military ? "MILITARY" : "POLICE") + " SAFE ZONE  -  " + z.sheltered + "/" + z.capacity
-                    + (z.full ? "  FULL" : "");
+                    + (z.full ? "  FULL" : "") + "  -  ammo " + z.ammo + (z.supplyComing ? " (truck coming)" : "");
             float tw = text.measureText(label);
             oval.set(sx - tw / 2 - 8 * dp, sy - 14 * dp, sx + tw / 2 + 8 * dp, sy + 5 * dp);
             if (uiCovers(oval)) continue;
@@ -2814,6 +2823,33 @@ final class GameView extends View implements Menu.Host {
             text.setTextAlign(Paint.Align.RIGHT);
             text.setColor(0xFFB8E09A);
             c.drawText((int) ((1 - b) * 100) + "% ZOMBIES", bx1, top + 11 * dp, text);
+            // The race for a cure.
+            if (world.cureProgress > 0) {
+                float cy = top + bh + 22 * dp;
+                oval.set(left, cy, right, cy + 20 * dp);
+                fill.setColor(0xB0101114);
+                c.drawRoundRect(oval, 8 * dp, 8 * dp, fill);
+                fill.setColor(0xFF2A3A2A);
+                c.drawRect(bx0, cy + 13 * dp, bx1, cy + 16 * dp, fill);
+                fill.setColor(world.cureReady ? 0xFF63E06B : 0xFF3FA84A);
+                c.drawRect(bx0, cy + 13 * dp, bx0 + (bx1 - bx0) * world.cureProgress, cy + 16 * dp, fill);
+                text.setTextAlign(Paint.Align.LEFT);
+                text.setColor(0xFF9BE08A);
+                c.drawText(world.cureReady ? "CURE READY" : world.hospitalLost ? "CURE  (hospital lost: no progress)"
+                        : "CURE " + (int) (world.cureProgress * 100) + "%", bx0, cy + 10 * dp, text);
+            }
+        }
+        // An air strike is coming.
+        if (world.firebombTime > 0) {
+            String msg = "AIR STRIKE ON " + world.firebombPlace.toUpperCase() + " IN " + (int) Math.ceil(world.firebombTime) + "s";
+            text.setTextAlign(Paint.Align.CENTER);
+            text.setTextSize(16 * dp);
+            float tw = text.measureText(msg) + 30 * dp, ty = topRects[0].bottom + 54 * dp;
+            oval.set((getWidth() - tw) / 2, ty - 22 * dp, (getWidth() + tw) / 2, ty + 10 * dp);
+            fill.setColor(((int) (world.time * 3)) % 2 == 0 ? 0xE0B02020 : 0xE0701010);
+            c.drawRoundRect(oval, 8 * dp, 8 * dp, fill);
+            text.setColor(0xFFFFFFFF);
+            c.drawText(msg, getWidth() / 2f, ty, text);
         }
         if (world.warBannerTime > 0 && world.warBanner != null) {
             world.warBannerTime -= 1 / 60f;
@@ -2823,7 +2859,7 @@ final class GameView extends View implements Menu.Host {
             c.drawRect(0, cy - 38 * dp, getWidth(), cy + 30 * dp, fill);
             text.setTextAlign(Paint.Align.CENTER);
             text.setTextSize(Math.min(30 * dp, getWidth() / 16f));
-            boolean good = world.warBanner.contains("SURVIVES") || world.warBanner.contains("TURNING");
+            boolean good = world.warBanner.contains("SURVIVES") || world.warBanner.contains("TURNING") || world.warBanner.contains("CURE");
             text.setColor(alpha(good ? 0xFF8FB8FF : 0xFF9BE070, a));
             c.drawText(world.warBanner, getWidth() / 2f, cy, text);
             text.setTextSize(13 * dp);

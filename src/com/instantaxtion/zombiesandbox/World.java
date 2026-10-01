@@ -33,6 +33,8 @@ final class World {
     /** A burning car or gas pump. */
     static final class Fire {
         float x, y, life;
+        /** The building this fire is burning, if any. */
+        City.Building building;
         /** The fire engine on its way to (or fighting) this fire. */
         Fleet.Vehicle engine;
     }
@@ -341,6 +343,7 @@ final class World {
 
     void populate(CityConfig cfg) {
         scatterWeapons();
+        stockArmouries();
         int people = Math.min(cfg.civilians(city.totalResidents), maxEntities * 4 / 5);
         residents(people);
         // A few strays.
@@ -716,7 +719,13 @@ final class World {
         f.y = y;
         f.life = life;
         fires.add(f);
-        if (fires.size() > 40) fires.remove(0);
+        // Keep the fires of burning buildings when trimming.
+        if (fires.size() > 80)
+            for (int i = 0; i < fires.size(); i++)
+                if (fires.get(i).building == null) {
+                    fires.remove(i);
+                    break;
+                }
     }
 
     /** Anyone standing just ahead of a car (so drivers can brake). */
@@ -1188,8 +1197,11 @@ final class World {
             if (!e.dead) move(e, dt);
         }
         separate();
+        stampedeNews(dt);
         fleet.update(dt);
         updateFires(dt);
+        updateBuildingFires(dt);
+        updateFirebomb(dt);
         updateHazards(dt);
         if (alarmTime > 0) alarmTime -= dt;
         updateBirds(dt);
@@ -2060,6 +2072,14 @@ final class World {
         say("Picked up a " + Entity.WEAPON_NAMES[kind].toLowerCase());
     }
 
+    /** Every precinct and base starts with a limited supply of ammunition. */
+    void stockArmouries() {
+        for (City.Facility f : city.facilities) {
+            if (f.kind == City.FACILITY_POLICE) f.ammo = 3000;
+            else if (f.kind == City.FACILITY_BASE) f.ammo = 9000;
+        }
+    }
+
     /** Bats lying about near homes, and axes at the fire stations. */
     private void scatterWeapons() {
         int n = 0;
@@ -2370,6 +2390,10 @@ final class World {
     }
 
     private void thinkCivilian(Entity e, float dt) {
+        if (e.militia) {
+            thinkMilitia(e, dt);
+            if (e.militia) return;
+        }
         Entity threat = nearest(e, 100, true, true);
         if (threat == null) threat = nearest(e, 26, true, false);
         // Raiders are frightening too (unless you're following one).
@@ -3211,6 +3235,10 @@ final class World {
     private void cityLife() {
         keyBuildings();
         callNationalGuard();
+        updateCure();
+        escalate();
+        supplies();
+        militias();
         if (outbreak) updateWar();
         int z = zombieCount();
         if (z > 0) {
@@ -4024,7 +4052,7 @@ final class World {
 
     private void tryCure(Entity e, float chance) {
         e.cureTried = true;
-        if (e.infectTimer > 4 && rnd.nextFloat() < chance) {
+        if (cureReady || (e.infectTimer > 4 && rnd.nextFloat() < chance)) {
             e.infected = false;
             cured++;
         }
@@ -4148,7 +4176,11 @@ final class World {
         Entity threat = nearest(e, 60, true, true);
         if (e.meleeCd <= 0) {
             Entity z = nearestInReach(e);
-            if (z != null) shove(e, z, false);
+            if (z != null) {
+                // With the cure, a medic can bring the dead back.
+                if (cureReady && revive(z)) e.meleeCd = 1.5f;
+                else shove(e, z, false);
+            }
         }
         if (threat != null) {
             e.fleeTimer = 2;
@@ -4220,9 +4252,17 @@ final class World {
         // Out of ammo: head back to the precinct or base to resupply.
         if (dry && e.task != Dispatch.T_RESUPPLY) {
             City.Facility f = supplyPoint(e);
-            if (f != null && (f.x - e.x) * (f.x - e.x) + (f.y - e.y) * (f.y - e.y) < f.r * f.r * 2) {
+            if (f != null && (f.x - e.x) * (f.x - e.x) + (f.y - e.y) * (f.y - e.y) < f.r * f.r * 2 && draw(f, e)) {
                 // Already at the armoury (guards on a post): restock on the spot.
-                e.reserve = fullReserve(e);
+                e.reload = 2;
+                dry = false;
+            }
+            // Guarding a safe zone that has ammo: restock there.
+            if (dry && e.zone != null && !e.zone.removed && e.zone.ammo > 0
+                    && (e.zone.x - e.x) * (e.zone.x - e.x) + (e.zone.y - e.y) * (e.zone.y - e.y) < e.zone.r * e.zone.r * 1.5f) {
+                int take = Math.min(e.zone.ammo, fullReserve(e));
+                e.zone.ammo -= take;
+                e.reserve = take;
                 e.reload = 2;
                 dry = false;
             }
@@ -4246,8 +4286,10 @@ final class World {
             } else {
                 float ddx = f.x - e.x, ddy = f.y - e.y;
                 if (ddx * ddx + ddy * ddy < f.r * f.r) {
-                    e.reserve = fullReserve(e);
-                    e.ammo = e.magSize;
+                    if (draw(f, e)) {
+                        e.ammo = Math.min(e.magSize, e.reserve);
+                        e.reserve -= e.ammo;
+                    }
                     e.task = Dispatch.T_NONE;
                     e.outOfAmmoSaid = false;
                 } else {
@@ -4272,8 +4314,11 @@ final class World {
         // Standing at a supply point quietly tops up spare ammo.
         if (e.reserve < fullReserve(e) && rnd.nextFloat() < dt) {
             City.Facility f = supplyPoint(e);
-            if (f != null && (f.x - e.x) * (f.x - e.x) + (f.y - e.y) * (f.y - e.y) < f.r * f.r * 1.5f)
-                e.reserve = Math.min(fullReserve(e), e.reserve + e.magSize);
+            if (f != null && (f.x - e.x) * (f.x - e.x) + (f.y - e.y) * (f.y - e.y) < f.r * f.r * 1.5f && f.ammo > 0) {
+                int take = Math.min(f.ammo, Math.min(e.magSize, fullReserve(e) - e.reserve));
+                f.ammo -= take;
+                e.reserve += take;
+            }
         }
 
         Entity t = e.ammo > 0 || e.reserve > 0 ? pickTarget(e, range) : null;
@@ -4506,7 +4551,361 @@ final class World {
         return best;
     }
 
-    /** Where this unit can get more ammo: the base for soldiers, a precinct for cops (or either). */
+    /** Takes a full load from an armoury, if it has any left. Returns false if it's empty. */
+    private boolean draw(City.Facility f, Entity e) {
+        if (f.ammo <= 0) {
+            if (!f.dryAnnounced) {
+                f.dryAnnounced = true;
+                dispatch.say(e.type == Entity.SOLDIER ? Dispatch.WHO_MILITARY : Dispatch.WHO_POLICE, null, f.name
+                        + " has run out of ammunition.", f.x, f.y);
+            }
+            return false;
+        }
+        int take = Math.min(f.ammo, fullReserve(e) - e.reserve);
+        f.ammo -= take;
+        e.reserve += take;
+        return true;
+    }
+
+    // ------------------------------------------------------------------ the war: supplies, cure, escalation
+
+    /** Supply trucks: the army keeps safe zones in ammunition, while its own armoury lasts. */
+    private void supplies() {
+        if (!outbreak || ((int) time) % 15 != 0) return;
+        for (int i = 0; i < dispatch.zones.size(); i++) {
+            Dispatch.SafeZone z = dispatch.zones.get(i);
+            if (z.removed || z.supplyComing || z.ammo > 150) continue;
+            City.Facility best = null;
+            float bd = Float.MAX_VALUE;
+            for (City.Facility f : city.facilities) {
+                if ((f.kind != City.FACILITY_BASE && f.kind != City.FACILITY_POLICE) || f.ammo < 600) continue;
+                float d = (f.x - z.x) * (f.x - z.x) + (f.y - z.y) * (f.y - z.y);
+                if (d < bd) {
+                    bd = d;
+                    best = f;
+                }
+            }
+            if (best == null) continue;
+            if (fleet.sendSupply(best, z, 500)) {
+                best.ammo -= 500;
+                z.supplyComing = true;
+                dispatch.say(Dispatch.WHO_MILITARY, null, "Military: " + z.place + " is running low. A supply truck is leaving "
+                        + best.name + ".", z.x, z.y);
+            }
+        }
+    }
+
+    /** The hospital works on a cure for as long as it holds out. */
+    float cureProgress;
+    boolean cureReady;
+    private int cureSaid;
+    private static final float CURE_SECONDS = 600;
+
+    private void updateCure() {
+        if (!outbreak || cureReady || hospitalLost) return;
+        City.Facility h = city.nearestFacility(City.FACILITY_HOSPITAL, 0, 0);
+        if (h == null) return;
+        // More medics on hand (and no zombies at the door) means faster work.
+        int medics = counts[Entity.MEDIC];
+        cureProgress += (1 + Math.min(3, medics) * 0.15f) / CURE_SECONDS;
+        int stage = (int) (cureProgress * 4);
+        if (stage > cureSaid && stage < 4) {
+            cureSaid = stage;
+            String[] lines = {"", "Hospital: We've isolated the infection. Work on a cure has begun. Keep this hospital safe.",
+                    "Hospital: The cure is halfway there. Whatever happens, don't let them get in here.",
+                    "Hospital: We're close to a cure. A few more minutes!"};
+            dispatch.say(Dispatch.WHO_INFO, null, lines[stage], h.x, h.y);
+        }
+        if (cureProgress >= 1) {
+            cureProgress = 1;
+            cureReady = true;
+            int saved = 0;
+            for (int i = 0, n = entities.size(); i < n; i++) {
+                Entity e = entities.get(i);
+                if (!e.dead && e.infected) {
+                    e.infected = false;
+                    saved++;
+                }
+            }
+            cured += saved;
+            banner("A CURE!", "Every bitten person is saved, medics can bring back the turned, and every shot might too.");
+            dispatch.say(Dispatch.WHO_INFO, null, "Hospital: WE HAVE A CURE! " + saved + " bitten people treated. Medics and soldiers "
+                    + "are carrying it into the streets.", h.x, h.y);
+        }
+    }
+
+    /** With the cure, the dead can be brought back: a person again, weak but alive. */
+    private boolean revive(Entity z) {
+        if (!cureReady || !z.isZombie() || z.type == Entity.BRUTE || z.type == Entity.BLOATER || z.dead) return false;
+        Entity p = spawn(Entity.CIVILIAN, z.x, z.y);
+        if (p == null) return false;
+        p.hp = p.maxHp * 0.4f;
+        p.nameSeed = z.nameSeed;
+        z.dead = true;
+        z.removed = true;
+        cured++;
+        for (int k = 0; k < 8; k++)
+            particle(z.x, z.y, rnd.nextFloat() * 40 - 20, rnd.nextFloat() * 40 - 20, 0.6f, 1.4f, 0xFF63E06B, P_DOT);
+        return true;
+    }
+
+    /** The army escalates as the city is lost: first it seals off the worst district, then it bombs it. */
+    int escalation;
+    float firebombTime, firebombX, firebombY;
+    String firebombPlace;
+
+    private void escalate() {
+        if (!outbreak) return;
+        boolean army = city.nearestFacility(City.FACILITY_BASE, 0, 0) != null || counts[Entity.SOLDIER] > 0;
+        if (!army) return;
+        if (escalation == 0 && outbreakTime > 240 && warBalance < 0.42f) {
+            int d = worstDistrict();
+            if (d >= 0 && sealDistrict(d) > 0) escalation = 1;
+            else escalation = 1;
+        } else if (escalation == 1 && outbreakTime > 420 && warBalance < 0.3f) {
+            escalation = 2;
+            // Aim at the thickest crowd of the dead.
+            float bx = 0, by = 0;
+            int best = 0;
+            for (int i = 0, n = entities.size(); i < n; i += Math.max(1, n / 300)) {
+                Entity z = entities.get(i);
+                if (z.dead || !z.isZombie()) continue;
+                int c = countZombiesNear(z.x, z.y, 120);
+                if (c > best) {
+                    best = c;
+                    bx = z.x;
+                    by = z.y;
+                }
+            }
+            if (best < 8) return;
+            firebombX = bx;
+            firebombY = by;
+            firebombTime = 60;
+            firebombPlace = city.placeName(bx, by);
+            banner("AIR STRIKE IN 60 SECONDS", "The army is going to bomb " + firebombPlace + ". Get everyone out!");
+            dispatch.say(Dispatch.WHO_MILITARY, null, "Military: We're losing the city. In 60 seconds we firebomb " + firebombPlace
+                    + ". Anyone still there, get out now!", bx, by);
+        }
+    }
+
+    private void updateFirebomb(float dt) {
+        if (firebombTime <= 0) return;
+        float before = firebombTime;
+        firebombTime -= dt;
+        // People in the target area run.
+        if (((int) before) != ((int) firebombTime))
+            for (int i = 0, n = entities.size(); i < n; i++) {
+                Entity e = entities.get(i);
+                if (e.dead || e.isZombie() || e == controlled) continue;
+                if ((e.x - firebombX) * (e.x - firebombX) + (e.y - firebombY) * (e.y - firebombY) > 320 * 320) continue;
+                e.fleeTimer = 3;
+                e.threatX = firebombX;
+                e.threatY = firebombY;
+            }
+        if (firebombTime > 0) return;
+        firebombTime = 0;
+        for (int k = 0; k < 14; k++) {
+            float a = rnd.nextFloat() * TAU, r = (float) Math.sqrt(rnd.nextFloat()) * 230;
+            float x = firebombX + (float) Math.cos(a) * r, y = firebombY + (float) Math.sin(a) * r;
+            blastLater(x, y, 70, 500, k * 0.25f);
+            City.Building b = city.buildingAt(x, y);
+            if (b != null && rnd.nextFloat() < 0.5f) igniteBuilding(b);
+            else ignite(x, y, 20 + rnd.nextFloat() * 20);
+        }
+        emit(Sfx.JET, firebombX, firebombY);
+        dispatch.say(Dispatch.WHO_MILITARY, null, "Military: Bombs away on " + firebombPlace + ".", firebombX, firebombY);
+    }
+
+    private int worstDistrict() {
+        int[] z = new int[city.districts.size()];
+        for (int i = 0, n = entities.size(); i < n; i++) {
+            Entity e = entities.get(i);
+            if (e.dead || !e.isZombie()) continue;
+            int d = city.districtIndex(e.x, e.y);
+            if (d >= 0) z[d]++;
+        }
+        int best = -1;
+        for (int d = 0; d < z.length; d++) if (z[d] > 5 && (best < 0 || z[d] > z[best])) best = d;
+        return best;
+    }
+
+    /** Quarantine: barricades across every road out of a district. */
+    private int sealDistrict(int d) {
+        int placed = 0, w = city.w;
+        for (int ty = 1; ty < city.h - 1 && placed < 70; ty++)
+            for (int tx = 1; tx < w - 1 && placed < 70; tx++) {
+                int i = ty * w + tx;
+                if (city.tiles[i] != City.ROAD) continue;
+                float x = tx * City.T + City.T / 2f, y = ty * City.T + City.T / 2f;
+                if (city.districtIndex(x, y) != d) continue;
+                boolean edge = false;
+                int[] nb = {i - 1, i + 1, i - w, i + w};
+                for (int j : nb) {
+                    if (city.tiles[j] != City.ROAD) continue;
+                    if (city.districtIndex((j % w) * City.T + 8, (j / w) * City.T + 8) != d) edge = true;
+                }
+                if (edge && placeBarricade(x, y) != null) placed++;
+            }
+        if (placed > 0) {
+            City.District dd = city.districts.get(d);
+            banner("QUARANTINE", "The army has sealed off " + dd.name + ".");
+            dispatch.say(Dispatch.WHO_MILITARY, null, "Military: We're sealing off " + dd.name + ". Every road out is blocked. "
+                    + "Nobody in or out.", dd.cx, dd.cy);
+        }
+        return placed;
+    }
+
+    /** Armed residents band together and hold a building, with their neighbours sheltering inside. */
+    private void militias() {
+        if (!outbreak || ((int) time) % 10 != 0) return;
+        for (int i = 0, n = entities.size(); i < n; i++) {
+            Entity e = entities.get(i);
+            if (e.dead || e.type != Entity.CIVILIAN || !e.hasGun || e.militia || e.ammo + e.reserve < 6 || e == controlled) continue;
+            java.util.ArrayList<Entity> group = new java.util.ArrayList<Entity>();
+            for (int k = 0; k < n && group.size() < 6; k++) {
+                Entity o = entities.get(k);
+                if (o.dead || o.type != Entity.CIVILIAN || !o.hasGun || o.militia || o == controlled || o.ammo + o.reserve < 6) continue;
+                if ((o.x - e.x) * (o.x - e.x) + (o.y - e.y) * (o.y - e.y) < 140 * 140) group.add(o);
+            }
+            if (group.size() < 3) continue;
+            City.Building b = shelterWithin(e, 200);
+            if (b == null || b.fire != null) continue;
+            b.barricade = 100;
+            for (int k = 0; k < group.size(); k++) {
+                Entity o = group.get(k);
+                o.militia = true;
+                o.task = Dispatch.T_NONE;
+                o.leader = null;
+                float a = k * TAU / group.size();
+                float[] p = city.findWalkable(b.doorX + (float) Math.cos(a) * 18, b.doorY + (float) Math.sin(a) * 18);
+                o.postX = p != null ? p[0] : b.doorX;
+                o.postY = p != null ? p[1] : b.doorY;
+                o.building = b;
+            }
+            // Neighbours shelter behind them.
+            for (int k = 0; k < n; k++) {
+                Entity o = entities.get(k);
+                if (o.dead || o.type != Entity.CIVILIAN || o.hasGun || o.task != Dispatch.T_NONE) continue;
+                if ((o.x - b.doorX) * (o.x - b.doorX) + (o.y - b.doorY) * (o.y - b.doorY) > 200 * 200) continue;
+                o.task = Dispatch.T_HIDE;
+                o.building = b;
+            }
+            dispatch.say(Dispatch.WHO_INFO, null, group.size() + " armed residents have taken over a building on "
+                    + city.placeName(b.doorX, b.doorY) + " and are holding the street.", b.doorX, b.doorY);
+            return;
+        }
+    }
+
+    /** A militia member: hold the post, shoot what comes, and give up once the bullets are gone. */
+    private void thinkMilitia(Entity e, float dt) {
+        if (e.ammo + e.reserve <= 0 && e.reload <= 0 || e.building == null || e.building.collapsed) {
+            e.militia = false;
+            return;
+        }
+        if (e.reload > 0) {
+            e.reload -= dt;
+            if (e.reload <= 0) {
+                int take = Math.min(e.magSize - e.ammo, e.reserve);
+                e.ammo += take;
+                e.reserve -= take;
+            }
+        }
+        e.fear = 5;
+        Entity t = pickTarget(e, 150);
+        if (t != null) {
+            float d = (float) Math.hypot(t.x - e.x, t.y - e.y);
+            if (d < 14) {
+                float ax = e.x - t.x, ay = e.y - t.y;
+                flee(e, ax / (d + 0.01f), ay / (d + 0.01f), e.runSpeed);
+            } else steer(e, 0, 0, 0);
+            aimAndFire(e, t, d, 150, dt);
+            return;
+        }
+        standAt(e, e.postX, e.postY, 1);
+    }
+
+    // ------------------------------------------------------------------ buildings on fire
+
+    /** Sets a building alight: flames on its edge that grow, spread and (unless put out) bring it down. */
+    void igniteBuilding(City.Building b) {
+        if (b.fire != null || b.collapsed) return;
+        float cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2;
+        float[] p = city.findWalkable(cx, cy);
+        if (p == null) return;
+        Fire f = new Fire();
+        f.x = p[0];
+        f.y = p[1];
+        f.life = 8;
+        f.building = b;
+        fires.add(f);
+        b.fire = f;
+        b.lurkers = 0;
+        // Everyone inside gets out.
+        while (!b.occupants.isEmpty()) leaveBuilding(b.occupants.remove(b.occupants.size() - 1), b, true);
+        while (!b.visitors.isEmpty()) leaveBuilding(b.visitors.remove(b.visitors.size() - 1), b, true);
+        if (b.name != null || b.kind == City.HOSPITAL || b.kind == City.STATION)
+            dispatch.say(Dispatch.WHO_FIRE, null, "Fire Dept: " + (b.name != null ? b.name : "A building") + " on "
+                    + city.placeName(f.x, f.y) + " is on fire!", f.x, f.y);
+    }
+
+    private float spreadTimer;
+
+    private void updateBuildingFires(float dt) {
+        spreadTimer -= dt;
+        boolean spread = spreadTimer <= 0;
+        if (spread) spreadTimer = 1;
+        for (int i = 0, n = city.buildings.size(); i < n; i++) {
+            City.Building b = city.buildings.get(i);
+            Fire f = b.fire;
+            if (f == null) continue;
+            if (!fires.contains(f) || b.collapsed) {
+                // Put out (or nothing left to burn).
+                b.fire = null;
+                continue;
+            }
+            // A building fire grows unless it's being hosed down (the hose takes it faster than it grows).
+            f.life = Math.min(40, f.life + dt * 1.8f);
+            float heat = f.life / 40;
+            b.hp -= dt * heat * b.maxHp / 70;
+            if (rnd.nextFloat() < dt * 30 * heat) {
+                float x = b.x0 + rnd.nextFloat() * (b.x1 - b.x0), y = b.y0 + rnd.nextFloat() * (b.y1 - b.y0);
+                particle(x, y, rnd.nextFloat() * 8 - 4, -10 - rnd.nextFloat() * 10, 0.5f + rnd.nextFloat() * 0.4f, 2 + rnd.nextFloat() * 2.5f,
+                        rnd.nextBoolean() ? 0xFFFFB030 : 0xFFFF6A1A, P_FIRE);
+            }
+            if (rnd.nextFloat() < dt * 8 * heat) {
+                float x = b.x0 + rnd.nextFloat() * (b.x1 - b.x0), y = b.y0 + rnd.nextFloat() * (b.y1 - b.y0);
+                particle(x, y, 6 + rnd.nextFloat() * 6, -12 - rnd.nextFloat() * 8, 3 + rnd.nextFloat() * 2, 4 + rnd.nextFloat() * 4,
+                        0xFF2E2E2E, P_SMOKE);
+            }
+            if (b.hp <= 0) {
+                fires.remove(f);
+                b.fire = null;
+                collapseBuilding(b);
+                continue;
+            }
+            if (spread && heat > 0.4f) {
+                // Sparks catch the buildings next door.
+                for (int k = 0; k < n; k++) {
+                    City.Building o = city.buildings.get(k);
+                    if (o == b || o.fire != null || o.collapsed) continue;
+                    float gx = Math.max(0, Math.max(o.x0 - b.x1, b.x0 - o.x1)), gy = Math.max(0, Math.max(o.y0 - b.y1, b.y0 - o.y1));
+                    if (gx > 20 || gy > 20) continue;
+                    if (rnd.nextFloat() < 0.05f * heat) igniteBuilding(o);
+                }
+            }
+        }
+        // Burning cars and fires right against a wall set it alight.
+        if (spread)
+            for (int i = 0; i < fires.size(); i++) {
+                Fire f = fires.get(i);
+                if (f.building != null) continue;
+                City.Building b = city.buildingAt(f.x + 10, f.y);
+                if (b == null) b = city.buildingAt(f.x - 10, f.y);
+                if (b == null) b = city.buildingAt(f.x, f.y + 10);
+                if (b == null) b = city.buildingAt(f.x, f.y - 10);
+                if (b != null && rnd.nextFloat() < 0.08f) igniteBuilding(b);
+            }
+    }
     private City.Facility supplyPoint(Entity e) {
         City.Facility f = city.nearestFacility(e.type == Entity.SOLDIER ? City.FACILITY_BASE : City.FACILITY_POLICE, e.x, e.y);
         if (f == null) f = city.nearestFacility(e.type == Entity.SOLDIER ? City.FACILITY_POLICE : City.FACILITY_BASE, e.x, e.y);
@@ -4732,6 +5131,7 @@ final class World {
                 if (e.kills == 10 || e.kills == 25 || e.kills == 50 || e.kills == 100) killStreak(e);
             }
             if (t.type != Entity.RAIDER) t.killedByZombie = false;
+            if (cureReady && t.hp > 0 && rnd.nextFloat() < 0.12f && revive(t)) return;
             float nx = (t.x - e.x) / d, ny = (t.y - e.y) / d;
             bloodBurst(t.x, t.y, 4, nx, ny);
             tracer(mx, my, t.x + rnd.nextFloat() * 2 - 1, t.y + rnd.nextFloat() * 2 - 1);
@@ -5250,6 +5650,29 @@ final class World {
         return ok;
     }
 
+    /** People knocked down in the crush, and when that was last reported. */
+    int trampled;
+    private int trampledSaid;
+    private float stampedeCd;
+
+    private void stampedeNews(float dt) {
+        stampedeCd -= dt;
+        if (stampedeCd > 0) return;
+        stampedeCd = 6;
+        if (trampled - trampledSaid >= 6) {
+            // Where is the crush?
+            Entity at = null;
+            for (int i = 0, n = entities.size(); i < n && at == null; i++) {
+                Entity e = entities.get(i);
+                if (!e.dead && e.stun > 0 && e.type == Entity.CIVILIAN) at = e;
+            }
+            if (at != null)
+                dispatch.say(Dispatch.WHO_INFO, null, "Stampede on " + city.placeName(at.x, at.y) + "! People are being trampled in the panic.",
+                        at.x, at.y);
+        }
+        trampledSaid = trampled;
+    }
+
     private void separate() {
         for (int i = 0, n = entities.size(); i < n; i++) {
             Entity e = entities.get(i);
@@ -5275,6 +5698,14 @@ final class World {
                             ddx = rnd.nextFloat() - 0.5f;
                             ddy = rnd.nextFloat() - 0.5f;
                             d = 0.5f;
+                        }
+                        // A panicking crowd tramples people (but not a group that's sticking together).
+                        if (e.type == Entity.CIVILIAN && o.type == Entity.CIVILIAN && e.fleeTimer > 0 && e.want > e.speed * 1.3f
+                                && o.stun <= 0 && e.leader == null && o.leader != e && e.leader != o && rnd.nextFloat() < 0.012f) {
+                            o.stun = 1.4f;
+                            o.hp -= 4;
+                            o.hurt = 1;
+                            trampled++;
                         }
                         float share = o.mass / (e.mass + o.mass);
                         float overlap = (min - d) * share * 0.5f;
@@ -5696,7 +6127,17 @@ final class World {
         b.mark(side, along(b, side, nx, ny), 1 + rnd.nextFloat() * 8, 3 + f * 5);
         b.barricade -= damage * f * 0.3f;
         b.hp -= damage * f;
-        if (b.hp > 0) return;
+        if (b.hp > 0) {
+            // A big blast can set it alight.
+            if (f > 0.4f && damage > 100 && rnd.nextFloat() < 0.2f) igniteBuilding(b);
+            return;
+        }
+        collapseBuilding(b);
+    }
+
+    /** Brings a building down (blasted or burnt out): some inside get out, rubble and dust everywhere. */
+    void collapseBuilding(City.Building b) {
+        if (b.collapsed) return;
         // Down it comes.
         int inside = b.occupants.size();
         for (int i = 0; i < inside; i++) {

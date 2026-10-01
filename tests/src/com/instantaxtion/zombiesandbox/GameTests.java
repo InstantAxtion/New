@@ -627,6 +627,34 @@ public final class GameTests {
                 f.delete();
             }
         });
+        test("hordes roam between settlements, brutes charge, crawlers hide, wildlife", new Check() {
+            public void run() {
+                CityConfig c = new CityConfig();
+                c.v[CityConfig.OPT_SIZE] = 3;
+                c.v[CityConfig.OPT_ZOMBIES] = 3;
+                c.seed = 6;
+                World w = new World(c);
+                w.populate(c);
+                check(w.city.settlements.size() > 1, "a massive map has a town and hamlets");
+                check(!w.animals.isEmpty(), "deer and foxes in the country");
+                for (int i = 0; i < 6; i++) {
+                    float[] p = w.city.randomWalkableInTown(w.rnd);
+                    w.spawn(Entity.BRUTE, p[0], p[1]);
+                    w.spawn(Entity.CRAWLER, p[0] + 40, p[1]);
+                }
+                boolean charged = false, hid = false;
+                for (int s = 0; s < 30 * 120 && !(charged && hid); s++) {
+                    w.update(1 / 30f);
+                    w.evCount = 0;
+                    for (Entity e : w.entities) {
+                        if (e.charge > 0) charged = true;
+                        if (e.hidden) hid = true;
+                    }
+                }
+                check(charged, "a brute charges");
+                check(hid, "a crawler lies in wait");
+            }
+        });
         test("every screen draws", new Check() {
             public void run() throws Exception {
                 GameView v = new GameView(new android.app.Activity());

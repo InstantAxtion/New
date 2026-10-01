@@ -93,6 +93,9 @@ final class Entity {
     City.Building home, errand;
     float errandTimer;
     boolean homeChecked;
+    /** Brutes: a charge in progress (seconds left), its direction and cooldown. Crawlers: lying in wait. */
+    float charge, chargeCd, chargeX, chargeY;
+    boolean hidden;
     /** Armed residents holding a building together. */
     boolean militia;
     /** The gun they carry if it isn't their standard issue (pistol, shotgun or rifle), and a bat or axe. */

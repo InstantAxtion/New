@@ -1784,6 +1784,8 @@ final class City {
 
     /** Where a village's streets end, as {x, y, dx, dy}: the lanes out into the country start there. */
     private final List<int[]> villageEnds = new ArrayList<int[]>();
+    /** The town's centre and each hamlet's, in world units: where hordes wander between on big maps. */
+    final List<float[]> settlements = new ArrayList<float[]>();
 
     /**
      * A village: one high street across the middle, a crossroad and a back lane, with plots strung along
@@ -2003,6 +2005,7 @@ final class City {
      */
     private void hamlets(int count) {
         float tcx = (townX0 + townX1) / 2f, tcy = (townY0 + townY1) / 2f;
+        settlements.add(new float[]{tcx * T, tcy * T});
         List<float[]> made = new ArrayList<float[]>();
         for (int k = 0; k < count; k++) {
             for (int tries = 0; tries < 60; tries++) {
@@ -2019,6 +2022,7 @@ final class City {
                 carve(st);
                 plotsAlong(st, cx - 13, cy - 13, cx + 13, cy + 13, 2);
                 made.add(new float[]{cx, cy});
+                settlements.add(new float[]{(cx + 0.5f) * T, (cy + 0.5f) * T});
                 // A lane from the end nearer town, back to the nearest road.
                 int ex, ey;
                 if (vertical) {

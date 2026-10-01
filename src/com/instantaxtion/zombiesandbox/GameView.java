@@ -983,6 +983,30 @@ final class GameView extends View implements Menu.Host {
                 c.drawLine(p.x - 2.5f, p.y, p.x - 3, p.y + 2.2f, stroke);
             }
         }
+        // Deer and foxes.
+        for (int i = 0, n = world.animals.size(); i < n; i++) {
+            World.Animal a = world.animals.get(i);
+            if (a.x < vx0 - 10 || a.x > vx1 + 10 || a.y < vy0 - 10 || a.y > vy1 + 10) continue;
+            c.save();
+            c.translate(a.x, a.y);
+            c.rotate((float) Math.toDegrees(a.angle));
+            boolean deer = a.kind == 0;
+            fill.setColor(0x33000000);
+            oval.set(-4 + 1.5f, -2 + 1.5f, 4 + 1.5f, 2 + 1.5f);
+            c.drawOval(oval, fill);
+            fill.setColor(deer ? 0xFF8A6238 : 0xFFC8682A);
+            oval.set(deer ? -4.5f : -3.5f, deer ? -2 : -1.5f, deer ? 3.5f : 2.5f, deer ? 2 : 1.5f);
+            c.drawOval(oval, fill);
+            c.drawCircle(deer ? 4.2f : 3.2f, 0, deer ? 1.4f : 1.2f, fill);
+            if (deer) {
+                fill.setColor(0xFFF2E8D8);
+                c.drawCircle(-4.3f, 0, 0.8f, fill);
+            } else {
+                fill.setColor(0xFFF2E8D8);
+                c.drawCircle(-4.2f, 0, 0.9f, fill);
+            }
+            c.restore();
+        }
         for (int i = 0, n = world.birds.size(); i < n; i++) {
             World.Bird b = world.birds.get(i);
             if (b.flying || b.x < vx0 || b.x > vx1 || b.y < vy0 || b.y > vy1) continue;
@@ -2551,6 +2575,13 @@ final class GameView extends View implements Menu.Host {
     }
 
     private void drawEntity(Canvas c, Entity e, boolean healthBar) {
+        if (e.hidden && scale < 5f) {
+            // A crawler lying low: just a dark shape in the grass, if you look closely.
+            fill.setColor(0x40263018);
+            oval.set(e.x - e.radius * 1.3f, e.y - e.radius * 0.7f, e.x + e.radius * 1.3f, e.y + e.radius * 0.7f);
+            c.drawOval(oval, fill);
+            return;
+        }
         if (e.type == Entity.DOG || e.type == Entity.ZOMBIE_DOG) {
             drawDog(c, e, healthBar);
             return;

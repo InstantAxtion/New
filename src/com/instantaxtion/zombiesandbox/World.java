@@ -419,6 +419,7 @@ final class World {
         }
         applyReadiness();
         spawnBirds();
+        spawnWildlife();
         fleet.trafficTarget = new int[]{0, 8, 16}[cfg.traffic()] * city.w / 96;
         fleet.spawnTraffic(fleet.trafficTarget);
         // Zombies start in a few small outbreaks rather than spread evenly.
@@ -1085,6 +1086,7 @@ final class World {
     void afterLoad() {
         fieldTimer = 0;
         spawnBirds();
+        spawnWildlife();
         fleet.trafficTarget = new int[]{0, 8, 16}[city.cfg.traffic()] * city.w / 96;
         fleet.spawnTraffic(fleet.trafficTarget);
         buildHash();
@@ -1205,6 +1207,7 @@ final class World {
         updateHazards(dt);
         if (alarmTime > 0) alarmTime -= dt;
         updateBirds(dt);
+        updateWildlife(dt);
         updateGrenades(dt);
         cleanup();
         updateCorpses(dt);
@@ -1374,6 +1377,7 @@ final class World {
                     Entity o = sorted[k];
                     if (o.dead || o.isZombie() != wantZombie || o == from) continue;
                     float ddx = o.x - from.x, ddy = o.y - from.y, d2 = ddx * ddx + ddy * ddy;
+                    if (o.hidden && d2 > 22 * 22) continue;
                     if (d2 < best && (!needLos || city.los(from.x, from.y, o.x, o.y))) {
                         best = d2;
                         res = o;
@@ -1495,6 +1499,11 @@ final class World {
 
     private void thinkZombie(Entity z, float dt) {
         if (z.blocked && !barriers.isEmpty()) bashBarrier(z, dt);
+        z.chargeCd -= dt;
+        if (z.charge > 0) {
+            charging(z, dt);
+            return;
+        }
         z.noiseTimer -= dt;
         z.screamCd -= dt;
         z.feedTimer -= dt;
@@ -1512,6 +1521,19 @@ final class World {
             if (d > near && facing < 0.1f && t.want < t.runSpeed * 0.9f) t = null;
         }
         if (t != null) {
+            z.hidden = false;
+            // A brute lowers its head and charges.
+            if (z.type == Entity.BRUTE && z.chargeCd <= 0) {
+                float cdx = t.x - z.x, cdy = t.y - z.y, cd = (float) Math.sqrt(cdx * cdx + cdy * cdy) + 0.001f;
+                if (cd > 35 && cd < 130 && city.los(z.x, z.y, t.x, t.y)) {
+                    z.charge = 1.3f;
+                    z.chargeCd = 7 + rnd.nextFloat() * 4;
+                    z.chargeX = cdx / cd;
+                    z.chargeY = cdy / cd;
+                    emit(Sfx.GROAN_DEEP, z.x, z.y);
+                    return;
+                }
+            }
             z.lastX = t.x + t.vx * 0.8f;
             z.lastY = t.y + t.vy * 0.8f;
             z.memory = 7;
@@ -1661,6 +1683,13 @@ final class World {
             }
             return;
         }
+        if (z.noiseTimer > 0 && z.type == Entity.SCREAMER && z.screamCd <= 0) {
+            // A screamer that hears gunfire shrieks, and the whole neighbourhood of the dead comes with it.
+            z.screamCd = 12;
+            noise(z.noiseX, z.noiseY, 380);
+            emit(Sfx.SHRIEK, z.x, z.y);
+            screams.add(new float[]{z.x, z.y, 0});
+        }
         if (z.noiseTimer > 0) {
             float ddx = z.noiseX - z.x, ddy = z.noiseY - z.y;
             float d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
@@ -1680,6 +1709,13 @@ final class World {
         if (z.leadsHorde) {
             roam(z);
             return;
+        }
+        if (z.type == Entity.CRAWLER && z.hordeLeader == null) {
+            if (!z.hidden && rnd.nextFloat() < dt * 0.3f && coverAt(z.x, z.y)) z.hidden = true;
+            if (z.hidden) {
+                steer(z, 0, 0, 0);
+                return;
+            }
         }
         Entity lead = z.hordeLeader;
         if (lead != null) {
@@ -1783,6 +1819,155 @@ final class World {
         }
     }
 
+    /** A brute's charge: straight ahead, bowling people over, until it hits something. */
+    private void charging(Entity z, float dt) {
+        z.charge -= dt;
+        steer(z, z.chargeX, z.chargeY, z.runSpeed * 2.4f);
+        z.angle = (float) Math.atan2(z.chargeY, z.chargeX);
+        int cx0 = Math.max(0, (int) ((z.x - 14) / CELL)), cx1 = Math.min(gw - 1, (int) ((z.x + 14) / CELL));
+        int cy0 = Math.max(0, (int) ((z.y - 14) / CELL)), cy1 = Math.min(gh - 1, (int) ((z.y + 14) / CELL));
+        for (int cy = cy0; cy <= cy1; cy++)
+            for (int cx = cx0; cx <= cx1; cx++) {
+                int c = cy * gw + cx;
+                for (int k = cellStart[c] + zCount[c], end = cellStart[c] + cellCount[c]; k < end; k++) {
+                    Entity o = sorted[k];
+                    if (o.dead || o.stun > 0) continue;
+                    float r = z.radius + o.radius + 2;
+                    if ((o.x - z.x) * (o.x - z.x) + (o.y - z.y) * (o.y - z.y) > r * r) continue;
+                    o.stun = 1.5f;
+                    o.hp -= 20;
+                    o.hurt = 1;
+                    o.killedByZombie = true;
+                    tryMove(o, z.chargeX * 14 / o.mass, z.chargeY * 14 / o.mass);
+                    emit(Sfx.THUD, o.x, o.y);
+                }
+            }
+        if (z.blocked) {
+            // Slammed into something: barricades and cars take a beating; the brute is dazed for a moment.
+            z.blocked = false;
+            z.charge = 0;
+            z.stun = 0.6f;
+            if (!barriers.isEmpty()) for (int k = 0; k < 6; k++) bashBarrier(z, 0.5f);
+            Fleet.Vehicle car = carFor(z, 20);
+            if (car != null) fleet.damage(car, 40, false);
+            shake = Math.max(shake, 0.3f);
+            emit(Sfx.CRASH, z.x, z.y);
+        }
+    }
+
+    /** Somewhere a crawler can lie low: beside a parked car, or in long grass and under trees. */
+    private boolean coverAt(float x, float y) {
+        int tx = (int) (x / City.T), ty = (int) (y / City.T);
+        for (int oy = -1; oy <= 1; oy++)
+            for (int ox = -1; ox <= 1; ox++) {
+                int i = (ty + oy) * city.w + tx + ox;
+                if (i < 0 || i >= city.tiles.length) continue;
+                byte t = city.tiles[i];
+                if (t == City.CAR || t == City.TREE) return true;
+            }
+        byte t = city.tiles[Math.max(0, Math.min(city.tiles.length - 1, ty * city.w + tx))];
+        return t == City.GRASS && rnd.nextFloat() < 0.5f;
+    }
+
+    // ------------------------------------------------------------------ wildlife
+
+    /** Deer and foxes out in the country: they bolt when the dead come, and foxes can be infected. */
+    static final class Animal {
+        float x, y, vx, vy, angle, timer, flee;
+        int kind;
+        boolean dead;
+    }
+
+    final ArrayList<Animal> animals = new ArrayList<Animal>();
+    private float wildlifeSaidCd;
+
+    void spawnWildlife() {
+        animals.clear();
+        if (city.settlements.isEmpty() && city.townX0 <= 0) return;
+        int herds = city.w * city.h / 2600;
+        for (int h = 0; h < herds; h++) {
+            float[] p = null;
+            for (int t = 0; t < 30 && p == null; t++) {
+                int tx = rnd.nextInt(city.w), ty = rnd.nextInt(city.h);
+                if (tx >= city.townX0 && tx < city.townX1 && ty >= city.townY0 && ty < city.townY1) continue;
+                if (city.tiles[ty * city.w + tx] != City.GRASS) continue;
+                p = new float[]{tx * City.T + 8, ty * City.T + 8};
+            }
+            if (p == null) continue;
+            boolean fox = rnd.nextFloat() < 0.35f;
+            int n = fox ? 1 : 2 + rnd.nextInt(4);
+            for (int k = 0; k < n; k++) {
+                Animal a = new Animal();
+                a.kind = fox ? 1 : 0;
+                a.x = p[0] + rnd.nextFloat() * 20 - 10;
+                a.y = p[1] + rnd.nextFloat() * 20 - 10;
+                a.angle = rnd.nextFloat() * TAU;
+                animals.add(a);
+            }
+        }
+    }
+
+    private void updateWildlife(float dt) {
+        wildlifeSaidCd -= dt;
+        for (int i = animals.size() - 1; i >= 0; i--) {
+            Animal a = animals.get(i);
+            if (a.dead) {
+                animals.remove(i);
+                continue;
+            }
+            a.timer -= dt;
+            a.flee -= dt;
+            // Anything coming? The dead from a long way off, people closer.
+            Entity z = nearestZombie(a.x, a.y, 130);
+            if (z != null) {
+                float dx = a.x - z.x, dy = a.y - z.y, d = (float) Math.sqrt(dx * dx + dy * dy) + 0.001f;
+                if (d < 6) {
+                    // Caught. A fox comes back as one of them.
+                    a.dead = true;
+                    if (a.kind == 1 && rnd.nextFloat() < 0.6f) spawn(Entity.ZOMBIE_DOG, a.x, a.y);
+                    else bloodBurst(a.x, a.y, 4, 0, 0);
+                    continue;
+                }
+                if (a.flee <= 0 && a.kind == 0 && wildlifeSaidCd <= 0) {
+                    // Deer bolting: an early warning.
+                    wildlifeSaidCd = 60;
+                    City.District dd = city.districtOf(a.x, a.y);
+                    dispatch.say(Dispatch.WHO_INFO, null, "Deer are bolting out of the woods near " + (dd != null ? dd.name : city.placeName(a.x, a.y))
+                            + ". Something is coming.", a.x, a.y);
+                }
+                a.flee = 3;
+                a.vx = dx / d;
+                a.vy = dy / d;
+            } else if (a.flee <= 0 && rnd.nextFloat() < dt * 0.5f && peopleNear(a.x, a.y, 50)) {
+                a.flee = 1.5f;
+                a.angle = rnd.nextFloat() * TAU;
+                a.vx = (float) Math.cos(a.angle);
+                a.vy = (float) Math.sin(a.angle);
+            }
+            float speed;
+            if (a.flee > 0) speed = a.kind == 0 ? 95 : 70;
+            else {
+                // Grazing: a few steps now and then.
+                if (a.timer <= 0) {
+                    a.timer = 2 + rnd.nextFloat() * 5;
+                    float ang = rnd.nextFloat() * TAU;
+                    a.vx = rnd.nextFloat() < 0.5f ? 0 : (float) Math.cos(ang);
+                    a.vy = a.vx == 0 ? 0 : (float) Math.sin(ang);
+                }
+                speed = a.kind == 0 ? 8 : 12;
+            }
+            float nx = a.x + a.vx * speed * dt, ny = a.y + a.vy * speed * dt;
+            if (!city.circleBlocked(nx, ny, 3) && nx > 4 && ny > 4 && nx < city.worldW() - 4 && ny < city.worldH() - 4) {
+                a.x = nx;
+                a.y = ny;
+            } else {
+                a.vx = -a.vx;
+                a.vy = -a.vy;
+            }
+            if (a.vx != 0 || a.vy != 0) a.angle = (float) Math.atan2(a.vy, a.vx);
+        }
+    }
+
     private void join(Entity z, Entity lead) {
         z.hordeLeader = lead;
         float a = rnd.nextFloat() * TAU, r = 8 + rnd.nextFloat() * 30;
@@ -1811,7 +1996,35 @@ final class World {
         return best;
     }
 
+    private float hordeLaneSaid;
+
     private void pickRoam(Entity z) {
+        if (z.leadsHorde && city.settlements.size() > 1 && rnd.nextFloat() < 0.5f) {
+            // Off down the lanes to another settlement.
+            float[] here = null, there;
+            float bd = Float.MAX_VALUE;
+            for (float[] s : city.settlements) {
+                float d = (s[0] - z.x) * (s[0] - z.x) + (s[1] - z.y) * (s[1] - z.y);
+                if (d < bd) {
+                    bd = d;
+                    here = s;
+                }
+            }
+            do there = city.settlements.get(rnd.nextInt(city.settlements.size()));
+            while (there == here);
+            float[] p = city.findWalkable(there[0] + rnd.nextFloat() * 60 - 30, there[1] + rnd.nextFloat() * 60 - 30);
+            if (p != null) {
+                z.roamX = p[0];
+                z.roamY = p[1];
+                if (z.hordeSize >= 8 && time > hordeLaneSaid) {
+                    hordeLaneSaid = time + 45;
+                    City.District d = city.districtOf(p[0], p[1]);
+                    dispatch.say(Dispatch.WHO_INFO, null, "A horde of about " + Math.max(5, z.hordeSize / 5 * 5) + " is heading out along the lanes towards "
+                            + (d != null ? d.name : city.placeName(p[0], p[1])) + ".", z.x, z.y);
+                }
+                return;
+            }
+        }
         float a = rnd.nextFloat() * TAU, r = 200 + rnd.nextFloat() * 400;
         float[] p = city.findWalkable(Math.max(20, Math.min(city.worldW() - 20, z.x + (float) Math.cos(a) * r)),
                 Math.max(20, Math.min(city.worldH() - 20, z.y + (float) Math.sin(a) * r)));
@@ -4956,6 +5169,7 @@ final class World {
                     float ddx = o.x - e.x, ddy = o.y - e.y, d2 = ddx * ddx + ddy * ddy;
                     if (d2 > range * range) continue;
                     float score = (float) Math.sqrt(d2);
+                    if (o.hidden && score > 22) continue;
                     // The same senses as the dead: they see a long way in front, but only notice what's close behind
                     // them (unless they're already on alert).
                     if (e.fear <= 0 && score > 60) {

@@ -51,6 +51,9 @@ final class World {
         /** A supply crate: guns for several people, and ammo for anyone passing. Drops by parachute. */
         int uses;
         float drop;
+        /** A particular gun (Entity.W_*), or a bat or axe (Entity.M_*), and when the player may pick it up again. */
+        int weapon, melee;
+        float lockUntil;
     }
 
     /** A barricade on a tile: {x, y, hp, tile index, the tile it replaced}. */
@@ -337,6 +340,7 @@ final class World {
     }
 
     void populate(CityConfig cfg) {
+        scatterWeapons();
         int people = Math.min(cfg.civilians(city.totalResidents), maxEntities * 4 / 5);
         residents(people);
         // A few strays.
@@ -1161,10 +1165,18 @@ final class World {
             city.computeFields(entities);
         }
         dispatch.update(dt);
-        if (controlled != null && (controlled.dead || controlled.removed)) {
-            controlled = null;
-            joyX = joyY = 0;
-            ctrlAttack = false;
+        if (controlled != null) {
+            Fleet.Vehicle car = controlledCar;
+            if (car != null && (!fleet.vehicles.contains(car) || car.player != controlled || !controlled.removed)) {
+                if (car.player == controlled) car.player = null;
+                controlledCar = null;
+            }
+            if (controlledIn != null && !controlledIn.occupants.contains(controlled)) controlledIn = null;
+            if (controlledCar == null && controlledIn == null && (controlled.dead || controlled.removed)) {
+                controlled = null;
+                joyX = joyY = 0;
+                ctrlAttack = false;
+            }
         }
         recordReplay(dt);
         for (int i = 0, n = entities.size(); i < n; i++) {
@@ -1916,6 +1928,9 @@ final class World {
             float speed = mag > 0.85f ? e.runSpeed : e.speed * (0.35f + 0.65f * mag / 0.85f);
             steer(e, joyX / mag, joyY / mag, speed);
         }
+        // Walk over something to pick it up.
+        Pickup p = nearestPlayerPickup(e);
+        if (p != null) takePickup(e, p);
         if (!ctrlAttack) return;
         if (e.isZombie()) {
             Entity t = nearest(e, e.radius + 14, false, false);
@@ -1931,9 +1946,342 @@ final class World {
             }
         } else {
             Entity z = nearestInReach(e);
-            if (z != null && e.meleeCd <= 0)
-                shove(e, z, e.type == Entity.FIREFIGHTER || e.type == Entity.COP || e.type == Entity.SOLDIER || e.type == Entity.RAIDER);
+            if (z == null && e.melee > 0) z = nearest(e, e.radius + 12, true, false);
+            if (z != null && e.meleeCd <= 0) {
+                if (e.melee > 0 || e.type == Entity.FIREFIGHTER) swing(e, z);
+                else shove(e, z, e.type == Entity.COP || e.type == Entity.SOLDIER || e.type == Entity.RAIDER);
+            }
         }
+    }
+
+    // ------------------------------------------------------------------ weapons
+
+    static int magFor(int kind) {
+        return kind == Entity.W_SHOTGUN ? 6 : kind == Entity.W_RIFLE ? 30 : 12;
+    }
+
+    /** Puts a particular gun in someone's hands. */
+    void setGun(Entity e, int kind, int rounds) {
+        if (!e.isArmed()) e.hasGun = true;
+        e.weapon = kind;
+        e.magSize = magFor(kind);
+        e.ammo = Math.min(e.magSize, rounds);
+        e.reserve = Math.max(0, rounds - e.ammo);
+        e.reload = 0;
+    }
+
+    /** A bat or an axe: a hard blow that stuns, and sometimes splits a skull. */
+    private void swing(Entity e, Entity z) {
+        boolean axe = e.melee == Entity.M_AXE || (e.melee == Entity.M_NONE && e.type == Entity.FIREFIGHTER);
+        e.meleeCd = axe ? 0.8f : 0.6f;
+        float ddx = z.x - e.x, ddy = z.y - e.y, d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
+        e.angle = (float) Math.atan2(ddy, ddx);
+        if (z.isZombie() && z.type != Entity.BRUTE && rnd.nextFloat() < (axe ? 0.25f : 0.1f)) z.hp = 0;
+        else z.hp -= axe ? 36 : 22;
+        z.hurt = 1;
+        z.stun = Math.max(z.stun, z.type == Entity.BRUTE ? 0.2f : axe ? 0.4f : 0.8f);
+        tryMove(z, ddx / d * (axe ? 5 : 9) / z.mass, ddy / d * (axe ? 5 : 9) / z.mass);
+        bloodBurst(z.x, z.y, 3, ddx / d, ddy / d);
+        emit(Sfx.THUD, z.x, z.y);
+        if (z.hp <= 0 && z.isZombie()) e.kills++;
+    }
+
+    /** Shotgun pellets catch whoever is standing next to the target too. */
+    private void pellets(Entity e, Entity t, float dmg) {
+        int cx0 = Math.max(0, (int) ((t.x - 16) / CELL)), cx1 = Math.min(gw - 1, (int) ((t.x + 16) / CELL));
+        int cy0 = Math.max(0, (int) ((t.y - 16) / CELL)), cy1 = Math.min(gh - 1, (int) ((t.y + 16) / CELL));
+        for (int cy = cy0; cy <= cy1; cy++)
+            for (int cx = cx0; cx <= cx1; cx++) {
+                int c = cy * gw + cx;
+                for (int k = cellStart[c], end = cellStart[c] + zCount[c]; k < end; k++) {
+                    Entity o = sorted[k];
+                    if (o == t || o.dead) continue;
+                    if ((o.x - t.x) * (o.x - t.x) + (o.y - t.y) * (o.y - t.y) > 16 * 16) continue;
+                    o.hp -= dmg * 0.4f * GUN_DAMAGE;
+                    o.hurt = 1;
+                    if (o.hp <= 0) e.kills++;
+                }
+            }
+    }
+
+    private void dropMelee(Entity e, int kind) {
+        Pickup p = new Pickup();
+        p.x = e.x + rnd.nextFloat() * 6 - 3;
+        p.y = e.y + rnd.nextFloat() * 6 - 3;
+        p.melee = kind;
+        p.lockUntil = time + 2;
+        pickups.add(p);
+    }
+
+    private Pickup nearestPlayerPickup(Entity e) {
+        if (e.isZombie() || e.type == Entity.DOG) return null;
+        for (int i = 0, n = pickups.size(); i < n; i++) {
+            Pickup p = pickups.get(i);
+            if (p.drop > 0 || p.lockUntil > time) continue;
+            if ((p.x - e.x) * (p.x - e.x) + (p.y - e.y) * (p.y - e.y) < 10 * 10) return p;
+        }
+        return null;
+    }
+
+    /** The player picks something up: ammo for the gun they have, or swaps for what's lying there. */
+    private void takePickup(Entity e, Pickup p) {
+        if (p.uses > 0) {
+            // A supply crate: ammo (and a gun if they have none).
+            if (!e.canShoot()) setGun(e, Entity.W_PISTOL, 30);
+            else e.reserve += 30;
+            p.lockUntil = time + 4;
+            if (--p.uses <= 0) pickups.remove(p);
+            say("Ammo from the crate");
+            return;
+        }
+        pickups.remove(p);
+        if (p.melee > 0) {
+            if (e.melee > 0) dropMelee(e, e.melee);
+            e.melee = p.melee;
+            say("Picked up " + (p.melee == Entity.M_AXE ? "an axe" : "a bat"));
+            return;
+        }
+        int kind = p.weapon == Entity.W_STD ? Entity.W_PISTOL : p.weapon;
+        if (e.canShoot() && e.gunKind() == kind) {
+            e.reserve += p.rounds;
+            say("+" + p.rounds + " rounds");
+            return;
+        }
+        if (e.canShoot() && e.ammo + e.reserve > 0) {
+            Pickup old = new Pickup();
+            old.x = e.x;
+            old.y = e.y;
+            old.rounds = e.ammo + e.reserve;
+            old.weapon = e.gunKind();
+            old.lockUntil = time + 2;
+            pickups.add(old);
+        }
+        setGun(e, kind, Math.max(p.rounds, magFor(kind)));
+        say("Picked up a " + Entity.WEAPON_NAMES[kind].toLowerCase());
+    }
+
+    /** Bats lying about near homes, and axes at the fire stations. */
+    private void scatterWeapons() {
+        int n = 0;
+        for (City.Building b : city.buildings) {
+            if (b.doorX == 0) continue;
+            boolean fire = b.kind == City.FIRE_STATION;
+            if (!fire && (b.kind != City.HOUSE || rnd.nextFloat() > 0.14f)) continue;
+            for (int k = 0; k < (fire ? 2 : 1); k++) {
+                float[] q = city.findWalkable(b.doorX + rnd.nextFloat() * 16 - 8, b.doorY + rnd.nextFloat() * 16 - 8);
+                if (q == null) continue;
+                Pickup p = new Pickup();
+                p.x = q[0];
+                p.y = q[1];
+                p.melee = fire ? Entity.M_AXE : Entity.M_BAT;
+                pickups.add(p);
+            }
+            if (++n > 80) break;
+        }
+    }
+
+    // ------------------------------------------------------------------ the player's options
+
+    /** Where the player's character is when they aren't on foot. */
+    Fleet.Vehicle controlledCar;
+    City.Building controlledIn;
+    /** Search each place once. */
+    private final java.util.HashSet<City.Building> searched = new java.util.HashSet<City.Building>();
+    static final int CA_ENTER_CAR = 0, CA_EXIT_CAR = 1, CA_ENTER = 2, CA_EXIT = 3, CA_BARRICADE = 4, CA_SEARCH = 5,
+            CA_RALLY = 6, CA_GRENADE = 7;
+    static final String[] CA_NAMES = {"Get in", "Get out", "Go inside", "Go out", "Barricade", "Search", "Rally", "Grenade"};
+
+    /** What the player can do right now, besides moving and attacking. */
+    int ctrlOptions(int[] out) {
+        Entity e = controlled;
+        if (e == null) return 0;
+        int n = 0;
+        if (controlledCar != null) {
+            out[n++] = CA_EXIT_CAR;
+            return n;
+        }
+        if (controlledIn != null) {
+            out[n++] = CA_EXIT;
+            out[n++] = CA_BARRICADE;
+            if (!searched.contains(controlledIn)) out[n++] = CA_SEARCH;
+            return n;
+        }
+        if (e.isZombie() || e.type == Entity.DOG) return 0;
+        if (carToEnter(e) != null) out[n++] = CA_ENTER_CAR;
+        if (doorToEnter(e) != null) out[n++] = CA_ENTER;
+        out[n++] = CA_RALLY;
+        if (e.grenades > 0 && e.grenadeCd <= 0) out[n++] = CA_GRENADE;
+        return n;
+    }
+
+    private Fleet.Vehicle carToEnter(Entity e) {
+        for (int i = 0, n = fleet.vehicles.size(); i < n; i++) {
+            Fleet.Vehicle v = fleet.vehicles.get(i);
+            if (Fleet.airborne(v) || v.type == Fleet.TRAIN || v.broken || v.player != null || v.block != null) continue;
+            float r = v.length() * 0.7f + 10;
+            if ((v.x - e.x) * (v.x - e.x) + (v.y - e.y) * (v.y - e.y) < r * r) return v;
+        }
+        return null;
+    }
+
+    private City.Building doorToEnter(Entity e) {
+        for (int i = 0, n = city.buildings.size(); i < n; i++) {
+            City.Building b = city.buildings.get(i);
+            if (b.doorX == 0 || b.collapsed || b.capacity <= 0) continue;
+            if ((b.doorX - e.x) * (b.doorX - e.x) + (b.doorY - e.y) * (b.doorY - e.y) < 16 * 16) return b;
+        }
+        return null;
+    }
+
+    void ctrlAction(int a) {
+        Entity e = controlled;
+        if (e == null) return;
+        switch (a) {
+            case CA_ENTER_CAR: {
+                Fleet.Vehicle v = carToEnter(e);
+                if (v == null) return;
+                fleet.takeWheel(v, e);
+                controlledCar = v;
+                e.dead = true;
+                e.removed = true;
+                // The group piles in too.
+                for (int i = 0, n = entities.size(); i < n && v.riders.size() < Fleet.SEATS; i++) {
+                    Entity o = entities.get(i);
+                    if (o.dead || o.leader != e || o.type == Entity.DOG) continue;
+                    if ((o.x - v.x) * (o.x - v.x) + (o.y - v.y) * (o.y - v.y) > 60 * 60) continue;
+                    o.dead = true;
+                    o.removed = true;
+                    v.riders.add(o);
+                }
+                break;
+            }
+            case CA_EXIT_CAR: {
+                Fleet.Vehicle v = controlledCar;
+                if (v == null) return;
+                fleet.leaveWheel(v, e);
+                controlledCar = null;
+                break;
+            }
+            case CA_ENTER: {
+                City.Building b = doorToEnter(e);
+                if (b == null) return;
+                if (b.lurkers > 0) {
+                    enterBuilding(e, b);
+                    return;
+                }
+                e.dead = true;
+                e.removed = true;
+                b.occupants.add(e);
+                b.calmTimer = 0;
+                controlledIn = b;
+                for (int i = 0, n = entities.size(); i < n; i++) {
+                    Entity o = entities.get(i);
+                    if (o.dead || o.leader != e) continue;
+                    if ((o.x - b.doorX) * (o.x - b.doorX) + (o.y - b.doorY) * (o.y - b.doorY) > 60 * 60) continue;
+                    o.dead = true;
+                    o.removed = true;
+                    b.occupants.add(o);
+                }
+                break;
+            }
+            case CA_EXIT: {
+                City.Building b = controlledIn;
+                if (b == null) return;
+                b.occupants.remove(e);
+                controlledIn = null;
+                leaveBuilding(e, b, false);
+                // The group comes with you.
+                for (int i = b.occupants.size() - 1; i >= 0; i--) {
+                    Entity o = b.occupants.get(i);
+                    if (o.leader != e) continue;
+                    b.occupants.remove(i);
+                    leaveBuilding(o, b, false);
+                }
+                break;
+            }
+            case CA_BARRICADE: {
+                City.Building b = controlledIn;
+                if (b == null) return;
+                b.barricade = Math.min(100, b.barricade + 20);
+                emit(Sfx.THUD, b.doorX, b.doorY);
+                say("Barricade " + (int) b.barricade + "%");
+                break;
+            }
+            case CA_SEARCH:
+                search(e, controlledIn);
+                break;
+            case CA_RALLY: {
+                int have = 0;
+                for (int i = 0, n = entities.size(); i < n; i++) if (entities.get(i).leader == e) have++;
+                int got = 0;
+                for (int i = 0, n = entities.size(); i < n && have + got < 8; i++) {
+                    Entity o = entities.get(i);
+                    if (o.dead || o == e || o.leader != null || o.isArmed() || o.isZombie()) continue;
+                    if (o.type != Entity.CIVILIAN && o.type != Entity.DOG && o.type != Entity.MEDIC) continue;
+                    if ((o.x - e.x) * (o.x - e.x) + (o.y - e.y) * (o.y - e.y) > 110 * 110) continue;
+                    if (hasFollowers(o)) continue;
+                    o.leader = e;
+                    o.task = Dispatch.T_NONE;
+                    o.errand = null;
+                    got++;
+                }
+                say(got == 0 ? (have > 0 ? have + " with you" : "Nobody near enough to join you")
+                        : (have + got) + (have + got == 1 ? " person is" : " people are") + " with you");
+                break;
+            }
+            case CA_GRENADE: {
+                if (e.grenades <= 0 || e.grenadeCd > 0) return;
+                Entity t = aimTarget(e, 170);
+                float face = e.want > 1 ? (float) Math.atan2(e.my, e.mx) : e.angle;
+                float tx = t != null ? t.x : e.x + (float) Math.cos(face) * 90, ty = t != null ? t.y : e.y + (float) Math.sin(face) * 90;
+                throwGrenade(e, tx, ty);
+                break;
+            }
+        }
+    }
+
+    /** Searching a building: food and medicine patch you up, gun stores and homes may have something, and some
+     *  places have something waiting. */
+    private void search(Entity e, City.Building b) {
+        if (b == null || !searched.add(b)) return;
+        if (b.lurkers > 0) {
+            e.hp -= 30;
+            e.hurt = 1;
+            b.lurkers--;
+            spawn(Entity.ZOMBIE, b.doorX, b.doorY);
+            say("Something was in here!");
+            return;
+        }
+        if (b.kind == City.SHOP && b.shopType == 1 && b.stock > 0) {
+            int take = Math.min(40, b.stock);
+            b.stock -= take;
+            if (e.canShoot() && e.gunKind() == Entity.W_SHOTGUN) e.reserve += take;
+            else setGun(e, Entity.W_SHOTGUN, take);
+            say("Found a shotgun and " + take + " shells");
+        } else if (b.kind == City.PHARMACY && b.stock > 0) {
+            b.stock = Math.max(0, b.stock - 10);
+            e.hp = e.maxHp;
+            say("Patched yourself up with what was on the shelves");
+        } else if (b.food > 0) {
+            int eat = Math.min(10, b.food);
+            b.food -= eat;
+            e.hp = Math.min(e.maxHp, e.hp + 25);
+            e.stamina = 1;
+            if (b.kind == City.HOUSE && e.melee == 0 && rnd.nextFloat() < 0.4f) {
+                e.melee = rnd.nextFloat() < 0.3f ? Entity.M_AXE : Entity.M_BAT;
+                say("Ate something, and found " + (e.melee == Entity.M_AXE ? "an axe" : "a bat"));
+            } else if (b.kind == City.HOUSE && !e.canShoot() && rnd.nextFloat() < 0.15f) {
+                setGun(e, Entity.W_PISTOL, 18);
+                say("Ate something, and found a pistol in a drawer");
+            } else say("Found something to eat");
+        } else say("Nothing left in here");
+    }
+
+    /** The last person in the building who isn't the player's character. */
+    private Entity popOccupant(City.Building b) {
+        for (int i = b.occupants.size() - 1; i >= 0; i--)
+            if (b.occupants.get(i) != controlled) return b.occupants.remove(i);
+        return null;
     }
 
     /** Auto-aim for the player: the zombie (or raider) most in line with where they're facing, that they can see. */
@@ -2057,11 +2405,12 @@ final class World {
             }
         }
 
-        // Anyone grabbed can try to shove the zombie off.
+        // Anyone grabbed can try to shove the zombie off (or hit it, with something to hit it with).
         if (e.meleeCd <= 0) {
             Entity z = nearestInReach(e);
             if (z != null) {
-                if (rnd.nextFloat() < 0.4f) shove(e, z, false);
+                if (e.melee > 0) swing(e, z);
+                else if (rnd.nextFloat() < 0.4f) shove(e, z, false);
                 else e.meleeCd = 0.8f;
             }
         }
@@ -2143,6 +2492,7 @@ final class World {
                 float d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
                 if (d < 6 && p.drop <= 0) {
                     armCivilian(e, p.rounds);
+                    if (p.weapon != Entity.W_STD) setGun(e, p.weapon, p.rounds);
                     if (p.uses > 0) {
                         if (--p.uses <= 0) pickups.remove(p);
                     } else pickups.remove(p);
@@ -3472,6 +3822,7 @@ final class World {
             if (e.hasGun) e.reserve += take;
             else {
                 armCivilian(e, take);
+                if (rnd.nextFloat() < 0.4f) setGun(e, Entity.W_SHOTGUN, take);
                 armedAtStores++;
             }
             if (b.stock <= 0 && b.kind == City.SHOP && !b.looted) {
@@ -4331,6 +4682,22 @@ final class World {
             e.cooldown = e.hasGun ? 0.8f : 0.55f;
             dmg = 10;
         }
+        // Picked-up guns.
+        if (e.weapon == Entity.W_SHOTGUN) {
+            e.cooldown = 0.9f;
+            dmg = d < 45 ? 34 : d < 80 ? 20 : 9;
+            accuracy = 0.92f;
+        } else if (e.weapon == Entity.W_RIFLE && !soldier) {
+            e.burst++;
+            e.cooldown = e.burst % 3 == 0 ? 0.45f : 0.11f;
+            dmg = 16;
+            accuracy = 0.55f;
+        } else if (e.weapon == Entity.W_PISTOL) {
+            e.cooldown = 0.55f;
+            dmg = 10;
+            accuracy = 0.7f;
+        }
+        if (e.weapon == Entity.W_SHOTGUN && d < 60) pellets(e, t, dmg);
         // Soldiers near their commander fight better.
         if (soldier && e.role != Entity.ROLE_COMMANDER && !commanders.isEmpty() && commanded(e)) accuracy += 0.12f;
         if (e.ammo <= 0 && e.reserve > 0) e.reload = soldier ? (e.role == Entity.ROLE_GUNNER ? 4f : 2.2f) : 1.6f;
@@ -4348,7 +4715,8 @@ final class World {
         if (rnd.nextFloat() < hit) {
             // Only a hit to the head really stops a zombie; body shots just wear it down.
             boolean headshot = t.isZombie() && t.type != Entity.BRUTE
-                    && rnd.nextFloat() < (e.role == Entity.ROLE_SNIPER ? 0.45f : HEADSHOT);
+                    && rnd.nextFloat() < (e.role == Entity.ROLE_SNIPER ? 0.45f
+                    : e.weapon == Entity.W_SHOTGUN && d < 45 ? 0.3f : HEADSHOT);
             if (headshot) {
                 t.hp = 0;
                 t.gibbed = rnd.nextFloat() < 0.3f;
@@ -4507,7 +4875,8 @@ final class World {
                 b.releaseTimer -= dt;
                 if (b.releaseTimer <= 0) {
                     b.releaseTimer = 6;
-                    Entity o = b.occupants.remove(b.occupants.size() - 1);
+                    Entity o = popOccupant(b);
+                    if (o == null) continue;
                     leaveBuilding(o, b, false);
                     City.Building larder = foodNear(o, b);
                     if (larder != null) {
@@ -4560,7 +4929,8 @@ final class World {
                 b.releaseTimer -= dt;
                 if (b.releaseTimer <= 0) {
                     b.releaseTimer = 1.5f;
-                    leaveBuilding(b.occupants.remove(b.occupants.size() - 1), b, false);
+                    Entity o = popOccupant(b);
+                    if (o != null) leaveBuilding(o, b, false);
                 }
             }
         }
@@ -4644,7 +5014,7 @@ final class World {
         float bd = radius * radius;
         for (int i = 0, n = pickups.size(); i < n; i++) {
             Pickup p = pickups.get(i);
-            if (p.claimed || p.drop > 0) continue;
+            if (p.claimed || p.drop > 0 || p.melee > 0) continue;
             float d = (p.x - x) * (p.x - x) + (p.y - y) * (p.y - y);
             if (d < bd) {
                 bd = d;
@@ -4945,9 +5315,11 @@ final class World {
             p.x = e.x + rnd.nextFloat() * 6 - 3;
             p.y = e.y + rnd.nextFloat() * 6 - 3;
             p.rounds = Math.min(60, e.ammo + e.reserve);
+            p.weapon = e.gunKind();
             pickups.add(p);
-            if (pickups.size() > 60) pickups.remove(0);
+            if (pickups.size() > 200) pickups.remove(0);
         }
+        if (e.melee > 0) dropMelee(e, e.melee);
         // Blown-apart zombies sometimes keep crawling.
         if (e.isZombie() && e.gibbed && e.type != Entity.CRAWLER && e.type != Entity.BRUTE && rnd.nextFloat() < 0.35f
                 && entities.size() < maxEntities) {

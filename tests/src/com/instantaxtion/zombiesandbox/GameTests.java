@@ -519,6 +519,63 @@ public final class GameTests {
                 f.delete();
             }
         });
+        test("drive, pick up weapons, go inside and lead a group", new Check() {
+            public void run() {
+                CityConfig c = new CityConfig();
+                c.v[CityConfig.OPT_ZOMBIES] = 0;
+                c.seed = 8;
+                World w = new World(c);
+                w.populate(c);
+                int melee = 0;
+                for (World.Pickup p : w.pickups) if (p.melee > 0) melee++;
+                check(melee > 0, "bats and axes are lying about");
+                Fleet.Vehicle car = null;
+                for (Fleet.Vehicle v : w.fleet.vehicles) if (v.type == Fleet.CAR && !v.broken) car = v;
+                Entity e = null;
+                for (Entity o : w.entities) if (o.type == Entity.CIVILIAN && !o.dead && o.leader == null) e = o;
+                float[] p = w.city.findWalkable(car.x + 8, car.y + 8);
+                e.x = p[0];
+                e.y = p[1];
+                w.controlled = e;
+                w.ctrlAction(World.CA_RALLY);
+                w.ctrlAction(World.CA_ENTER_CAR);
+                check(w.controlledCar == car && car.player == e, "gets behind the wheel");
+                float x0 = car.x, y0 = car.y;
+                w.joyX = (float) Math.cos(car.angle);
+                w.joyY = (float) Math.sin(car.angle);
+                for (int i = 0; i < 90; i++) {
+                    w.update(1 / 30f);
+                    w.evCount = 0;
+                }
+                check(Math.hypot(car.x - x0, car.y - y0) > 40, "the car drives");
+                check(w.controlled == e, "still in control while driving");
+                w.joyX = w.joyY = 0;
+                w.ctrlAction(World.CA_EXIT_CAR);
+                check(w.controlledCar == null && w.entities.contains(e) && !e.dead, "gets out");
+                City.Building house = null;
+                for (City.Building b : w.city.buildings) if (b.kind == City.HOUSE && b.doorX > 0 && b.lurkers == 0 && b.capacity > 0) house = b;
+                e.x = house.doorX;
+                e.y = house.doorY;
+                w.ctrlAction(World.CA_ENTER);
+                check(w.controlledIn == house && house.occupants.contains(e), "goes inside");
+                for (int i = 0; i < 30 * 30; i++) {
+                    w.update(1 / 30f);
+                    w.evCount = 0;
+                }
+                check(w.controlledIn == house && w.controlled == e, "the player isn't let out on their own");
+                w.ctrlAction(World.CA_EXIT);
+                check(w.controlledIn == null && w.entities.contains(e), "comes out");
+                World.Pickup sg = new World.Pickup();
+                sg.x = e.x + 3;
+                sg.y = e.y;
+                sg.weapon = Entity.W_SHOTGUN;
+                sg.rounds = 12;
+                w.pickups.add(sg);
+                w.update(1 / 30f);
+                check(e.canShoot() && e.gunKind() == Entity.W_SHOTGUN, "picks up the shotgun by walking over it");
+                w.controlled = null;
+            }
+        });
         test("every screen draws", new Check() {
             public void run() throws Exception {
                 GameView v = new GameView(new android.app.Activity());

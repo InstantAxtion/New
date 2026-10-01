@@ -527,7 +527,7 @@ final class GameView extends View implements Menu.Host {
         if (menu.liveBackground()) driftCamera(dt);
         else if (director && follow == null && inGame) directCamera(dt);
         else if (follow != null) {
-            if (follow.dead) follow = null;
+            if (follow.dead && follow != world.controlled) follow = null;
             else {
                 float tx = follow.x - getWidth() / scale / 2, ty = follow.y - (barTop / 2) / scale;
                 float k = Math.min(1, dt * 6);
@@ -958,13 +958,30 @@ final class GameView extends View implements Menu.Host {
                 c.drawRect(p.x - 3, cy - 0.8f, p.x + 3, cy + 0.8f, fill);
                 continue;
             }
-            // A dropped gun, gently pulsing so it can be spotted.
+            // A dropped weapon, gently pulsing so it can be spotted.
             fill.setColor(alpha(0xFFFFE27A, 0.25f + 0.15f * (float) Math.sin(world.time * 4)));
-            c.drawCircle(p.x, p.y, 5, fill);
-            stroke.setColor(0xFF1A1A1A);
+            c.drawCircle(p.x, p.y, 5.5f, fill);
             stroke.setStrokeWidth(1.4f);
-            c.drawLine(p.x - 3, p.y, p.x + 3.5f, p.y - 1, stroke);
-            c.drawLine(p.x - 2.5f, p.y, p.x - 3, p.y + 2.2f, stroke);
+            if (p.melee == Entity.M_BAT) {
+                stroke.setColor(0xFF9A6A3A);
+                stroke.setStrokeWidth(1.8f);
+                c.drawLine(p.x - 4, p.y + 2, p.x + 4, p.y - 2, stroke);
+            } else if (p.melee == Entity.M_AXE) {
+                stroke.setColor(0xFF7A5030);
+                c.drawLine(p.x - 4, p.y + 2, p.x + 3, p.y - 2, stroke);
+                fill.setColor(0xFFC8302A);
+                c.drawRect(p.x + 2, p.y - 4, p.x + 4.5f, p.y, fill);
+            } else if (p.weapon == Entity.W_SHOTGUN || p.weapon == Entity.W_RIFLE) {
+                stroke.setColor(0xFF1A1A1A);
+                c.drawLine(p.x - 4.5f, p.y + 1, p.x + 5, p.y - 1, stroke);
+                stroke.setColor(p.weapon == Entity.W_SHOTGUN ? 0xFF8A5A30 : 0xFF3A4430);
+                stroke.setStrokeWidth(2f);
+                c.drawLine(p.x - 4.5f, p.y + 1, p.x - 2, p.y + 0.5f, stroke);
+            } else {
+                stroke.setColor(0xFF1A1A1A);
+                c.drawLine(p.x - 3, p.y, p.x + 3.5f, p.y - 1, stroke);
+                c.drawLine(p.x - 2.5f, p.y, p.x - 3, p.y + 2.2f, stroke);
+            }
         }
         for (int i = 0, n = world.birds.size(); i < n; i++) {
             World.Bird b = world.birds.get(i);
@@ -3067,6 +3084,9 @@ final class GameView extends View implements Menu.Host {
     // ------------------------------------------------------------------ taking control
 
     private final RectF takeRect = new RectF(), releaseRect = new RectF();
+    private final RectF[] ctxRects = {new RectF(), new RectF(), new RectF(), new RectF(), new RectF(), new RectF()};
+    private final int[] ctxActions = new int[6];
+    private int ctxCount;
     /** The stick (a floating one, wherever the left thumb goes down) and the attack button. */
     private int joyId = -1, attackId = -1;
     private float joyCX, joyCY, joyKX, joyKY, attackX, attackY, attackR;
@@ -3102,7 +3122,13 @@ final class GameView extends View implements Menu.Host {
             case MotionEvent.ACTION_POINTER_DOWN: {
                 float x = ev.getX(idx), y = ev.getY(idx);
                 int id = ev.getPointerId(idx);
-                if (Math.hypot(x - attackX, y - attackY) < attackR * 1.3f) {
+                for (int k = 0; k < ctxCount; k++)
+                    if (ctxRects[k].contains(x, y)) {
+                        click();
+                        world.ctrlAction(ctxActions[k]);
+                        return true;
+                    }
+                if (world.controlledIn == null && Math.hypot(x - attackX, y - attackY) < attackR * 1.3f) {
                     attackId = id;
                     world.ctrlAttack = true;
                 } else if (action == MotionEvent.ACTION_DOWN && hitUi(x, y)) {
@@ -3165,23 +3191,48 @@ final class GameView extends View implements Menu.Host {
         c.drawCircle(jx, jy, jr, stroke);
         fill.setColor(joyId >= 0 ? 0xC0FFFFFF : 0x50FFFFFF);
         c.drawCircle(joyId >= 0 ? joyKX : jx, joyId >= 0 ? joyKY : jy, joyId >= 0 ? 22 * dp : 15 * dp, fill);
-        // Attack.
+        // Attack (there's nothing to attack from inside a building).
         attackR = 38 * dp;
         attackX = w - 70 * dp;
         attackY = barTop - 80 * dp;
-        String verb = e.isZombie() ? "Bite" : e.canShoot() && e.ammo + e.reserve > 0 ? (e.reload > 0 ? "Reload" : "Shoot") : "Shove";
-        fill.setColor(world.ctrlAttack ? 0xF0D9534F : 0xB0D9534F);
-        c.drawCircle(attackX, attackY, attackR, fill);
-        stroke.setColor(0xA0FFFFFF);
-        c.drawCircle(attackX, attackY, attackR, stroke);
+        Fleet.Vehicle car = world.controlledCar;
+        String verb = car != null ? (car.type == Fleet.TANK ? "Fire" : car.type == Fleet.CRUISER ? "Siren" : "Horn")
+                : e.isZombie() ? "Bite" : e.canShoot() && e.ammo + e.reserve > 0 ? (e.reload > 0 ? "Reload" : "Shoot")
+                : e.melee > 0 || e.type == Entity.FIREFIGHTER ? "Swing" : "Shove";
         text.setTextAlign(Paint.Align.CENTER);
-        text.setTextSize(14 * dp);
-        text.setColor(0xFFFFFFFF);
-        c.drawText(verb, attackX, attackY + 5 * dp, text);
+        if (world.controlledIn == null) {
+            fill.setColor(world.ctrlAttack ? 0xF0D9534F : 0xB0D9534F);
+            c.drawCircle(attackX, attackY, attackR, fill);
+            stroke.setColor(0xA0FFFFFF);
+            c.drawCircle(attackX, attackY, attackR, stroke);
+            text.setTextSize(14 * dp);
+            text.setColor(0xFFFFFFFF);
+            c.drawText(verb, attackX, attackY + 5 * dp, text);
+        }
+        // What else you can do here, stacked above the attack button.
+        ctxCount = world.ctrlOptions(ctxActions);
+        float cbw = 118 * dp, cbh = 38 * dp, cby = attackY - attackR - 12 * dp - cbh;
+        text.setTextSize(13 * dp);
+        for (int k = 0; k < ctxCount; k++) {
+            RectF r = ctxRects[k];
+            r.set(attackX + attackR - cbw, cby - k * (cbh + 8 * dp), attackX + attackR, cby - k * (cbh + 8 * dp) + cbh);
+            fill.setColor(0xE02F5E2B);
+            c.drawRoundRect(r, 9 * dp, 9 * dp, fill);
+            stroke.setColor(0x909BE08A);
+            c.drawRoundRect(r, 9 * dp, 9 * dp, stroke);
+            text.setColor(0xFFFFFFFF);
+            String label = World.CA_NAMES[ctxActions[k]] + (ctxActions[k] == World.CA_GRENADE ? " (" + e.grenades + ")" : "");
+            c.drawText(label, r.centerX(), r.centerY() + 4.5f * dp, text);
+        }
         // Who you are, and the way out.
         String who = e.isZombie() ? Entity.NAMES[e.type] : e.type == Entity.DOG ? Names.dog(e.nameSeed) : Names.person(e.nameSeed);
-        String info = who + "   Health " + Math.max(0, (int) e.hp) + "/" + (int) e.maxHp
-                + (e.canShoot() ? "   Ammo " + e.ammo + " + " + e.reserve : "")
+        String gun = e.canShoot() ? "   " + Entity.WEAPON_NAMES[e.gunKind()] + " " + e.ammo + " + " + e.reserve : "";
+        String place = car != null ? "   Driving (" + Math.max(0, (int) (100 * car.hp / car.maxHp)) + "%)"
+                : world.controlledIn != null ? "   Inside: barricade " + (int) world.controlledIn.barricade + "%, food " + world.controlledIn.food : "";
+        int group = 0;
+        for (int i = 0, n = world.entities.size(); i < n; i++) if (world.entities.get(i).leader == e) group++;
+        String info = who + "   Health " + Math.max(0, (int) e.hp) + "/" + (int) e.maxHp + gun
+                + (e.melee > 0 ? "   " + Entity.MELEE_NAMES[e.melee] : "") + place + (group > 0 ? "   Group " + group : "")
                 + (e.infected ? "   BITTEN: " + Math.max(0, (int) e.infectTimer) + "s" : "")
                 + (!e.isZombie() && e.stamina < 0.3f ? "   Out of breath" : "");
         text.setTextSize(13 * dp);

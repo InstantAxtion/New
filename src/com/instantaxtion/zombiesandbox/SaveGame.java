@@ -17,7 +17,7 @@ import java.util.ArrayList;
  * damaged or collapsed buildings.
  */
 final class SaveGame {
-    private static final int VERSION = 11;
+    private static final int VERSION = 12;
 
     private SaveGame() {
     }
@@ -120,6 +120,8 @@ final class SaveGame {
                 out.writeFloat(p.y);
                 out.writeInt(p.rounds);
                 out.writeInt(p.uses);
+                out.writeByte(p.weapon);
+                out.writeByte(p.melee);
             }
             out.writeInt(w.barriers.size());
             for (float[] b : w.barriers) {
@@ -265,6 +267,8 @@ final class SaveGame {
         out.writeInt(e.nameSeed);
         out.writeInt(e.kills);
         out.writeFloat(e.fresh);
+        out.writeByte(e.weapon);
+        out.writeByte(e.melee);
     }
 
     static World load(File file) throws IOException {
@@ -346,6 +350,10 @@ final class SaveGame {
                 p.y = in.readFloat();
                 p.rounds = in.readInt();
                 p.uses = in.readInt();
+                if (version >= 12) {
+                    p.weapon = in.readByte();
+                    p.melee = in.readByte();
+                }
                 w.pickups.add(p);
             }
             int barriers = in.readInt();
@@ -486,6 +494,10 @@ final class SaveGame {
             e.nameSeed = in.readInt();
             e.kills = in.readInt();
             e.fresh = in.readFloat();
+        }
+        if (version >= 12) {
+            e.weapon = in.readByte();
+            e.melee = in.readByte();
         }
         if (zone >= 0 && zone < d.zones.size()) e.zone = d.zones.get(zone);
         return e;

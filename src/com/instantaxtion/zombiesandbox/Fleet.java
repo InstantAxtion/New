@@ -1139,7 +1139,8 @@ final class Fleet {
         v.speed += (target - v.speed) * Math.min(1, dt * (Math.abs(target) < Math.abs(v.speed) ? 2.5f : 1.4f));
         float nx = v.x + (float) Math.cos(v.angle) * v.speed * dt, ny = v.y + (float) Math.sin(v.angle) * v.speed * dt;
         float r = v.type == TANK ? 8 : 5.5f;
-        if (city.circleBlocked(nx, ny, r)) {
+        // (A car pulled over against the kerb may start out touching something: let it drive away.)
+        if (!city.circleBlocked(v.x, v.y, r) && city.circleBlocked(nx, ny, r)) {
             if (Math.abs(v.speed) > 35 && v.crashCd <= 0) {
                 v.crashCd = 0.5f;
                 damage(v, Math.abs(v.speed) * (v.type == TANK ? 0.03f : 0.25f), false);

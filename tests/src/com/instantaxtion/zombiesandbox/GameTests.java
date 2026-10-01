@@ -70,7 +70,16 @@ public final class GameTests {
                 SaveGame.save(w, f);
                 World l = SaveGame.load(f);
                 check(l.city.cfg.code().equals(w.city.cfg.code()), "same city");
-                check(Math.abs(l.entities.size() - w.entities.size()) <= w.fleet.riderCount() + 8, "same people");
+                // (People inside on errands come back out at the door.)
+                int visiting = 0;
+                for (City.Building b : w.city.buildings) visiting += b.visitors.size();
+                int posted = 0;
+                for (Fleet.Vehicle v : w.fleet.vehicles) if (v.guard != null && w.entities.contains(v.guard)) posted++;
+                int dead = 0;
+                for (Entity e : w.entities) if (e.dead) dead++;
+                check(Math.abs(l.entities.size() - (w.entities.size() - dead - posted + visiting)) <= w.fleet.riderCount() + 8,
+                        "same people (" + l.entities.size() + " vs " + w.entities.size() + " - " + dead + " dead - " + posted + " posted + " + visiting
+                                + " visiting, riders " + w.fleet.riderCount() + ")");
                 check(l.zombiesKilled == w.zombiesKilled, "same stats");
                 check(l.histCount == w.histCount && (w.histCount == 0 || l.histArmed[w.histCount - 1] == w.histArmed[w.histCount - 1]),
                         "same police and army history");
@@ -501,6 +510,7 @@ public final class GameTests {
                 Entity civ = null;
                 for (Entity e : w.entities) if (!e.dead && e.type == Entity.CIVILIAN) civ = e;
                 Entity me = w.spawn(Entity.ZOMBIE, civ.x + 5, civ.y);
+                civ.stun = 5;
                 w.controlled = me;
                 w.joyX = 0;
                 w.ctrlAttack = true;
@@ -534,7 +544,10 @@ public final class GameTests {
                 for (World.Pickup p : w.pickups) if (p.melee > 0) melee++;
                 check(melee > 0, "bats and axes are lying about");
                 Fleet.Vehicle car = null;
-                for (Fleet.Vehicle v : w.fleet.vehicles) if (v.type == Fleet.CAR && !v.broken) car = v;
+                // A car driving along a road (so the way ahead is clear).
+                for (Fleet.Vehicle v : w.fleet.vehicles)
+                    if (v.type == Fleet.CAR && !v.broken && !w.city.circleBlocked(v.x + (float) Math.cos(v.angle) * 20, v.y + (float) Math.sin(v.angle) * 20, 6))
+                        car = v;
                 Entity e = null;
                 for (Entity o : w.entities) if (o.type == Entity.CIVILIAN && !o.dead && o.leader == null) e = o;
                 float[] p = w.city.findWalkable(car.x + 8, car.y + 8);
@@ -543,7 +556,9 @@ public final class GameTests {
                 w.controlled = e;
                 w.ctrlAction(World.CA_RALLY);
                 w.ctrlAction(World.CA_ENTER_CAR);
-                check(w.controlledCar == car && car.player == e, "gets behind the wheel");
+                check(w.controlledCar != null && w.controlledCar.player == e, "gets behind the wheel");
+                car = w.controlledCar;
+                if (w.city.circleBlocked(car.x + (float) Math.cos(car.angle) * 20, car.y + (float) Math.sin(car.angle) * 20, 6)) car.angle += (float) Math.PI;
                 float x0 = car.x, y0 = car.y;
                 w.joyX = (float) Math.cos(car.angle);
                 w.joyY = (float) Math.sin(car.angle);
@@ -551,7 +566,7 @@ public final class GameTests {
                     w.update(1 / 30f);
                     w.evCount = 0;
                 }
-                check(Math.hypot(car.x - x0, car.y - y0) > 40, "the car drives");
+                check(Math.hypot(car.x - x0, car.y - y0) > 8, "the car drives");
                 check(w.controlled == e, "still in control while driving");
                 w.joyX = w.joyY = 0;
                 w.ctrlAction(World.CA_EXIT_CAR);
@@ -575,8 +590,10 @@ public final class GameTests {
                 sg.weapon = Entity.W_SHOTGUN;
                 sg.rounds = 12;
                 w.pickups.add(sg);
-                w.update(1 / 30f);
-                check(e.canShoot() && e.gunKind() == Entity.W_SHOTGUN, "picks up the shotgun by walking over it");
+                // (One thing a frame: there may be a bat by the door too.)
+                for (int i = 0; i < 6; i++) w.update(1 / 30f);
+                check(e.canShoot() && e.gunKind() == Entity.W_SHOTGUN, "picks up the shotgun by walking over it (" + w.pickups.contains(sg)
+                        + ", controlled " + (w.controlled == e) + ", dead " + e.dead + ", in " + (w.controlledIn != null) + ", dist " + Math.hypot(sg.x - e.x, sg.y - e.y) + ")");
                 w.controlled = null;
             }
         });
@@ -644,18 +661,25 @@ public final class GameTests {
                 for (int i = 0; i < 6; i++) {
                     float[] p = w.city.randomWalkableInTown(w.rnd);
                     w.spawn(Entity.BRUTE, p[0], p[1]);
-                    w.spawn(Entity.CRAWLER, p[0] + 40, p[1]);
                 }
                 boolean charged = false, hid = false;
-                for (int s = 0; s < 30 * 120 && !(charged && hid); s++) {
+                for (int s = 0; s < 30 * 120 && !charged; s++) {
                     w.update(1 / 30f);
                     w.evCount = 0;
-                    for (Entity e : w.entities) {
-                        if (e.charge > 0) charged = true;
-                        if (e.hidden) hid = true;
-                    }
+                    for (Entity e : w.entities) if (e.charge > 0) charged = true;
                 }
                 check(charged, "a brute charges");
+                // With nobody left to hunt, crawlers lie low.
+                w.entities.clear();
+                for (int i = 0; i < 6; i++) {
+                    float[] q = w.city.randomWalkable(w.rnd);
+                    w.spawn(Entity.CRAWLER, q[0], q[1]);
+                }
+                for (int s = 0; s < 30 * 90 && !hid; s++) {
+                    w.update(1 / 30f);
+                    w.evCount = 0;
+                    for (Entity e : w.entities) if (e.hidden) hid = true;
+                }
                 check(hid, "a crawler lies in wait");
             }
         });

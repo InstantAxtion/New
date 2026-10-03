@@ -572,6 +572,28 @@ final class City {
 
     private boolean stadiumNamed;
 
+    /**
+     * Emergency services spread across town: a block well away from every police station, base, hospital and
+     * fire station already placed (or the furthest there is).
+     */
+    private int spreadOut(List<Integer> options, int fallback) {
+        float want = Math.max(28, w / 4f) * T;
+        List<Integer> far = new ArrayList<Integer>();
+        int best = fallback;
+        float bestD = -1;
+        for (int k : options) {
+            int[] b = blocks.get(k);
+            float cx = (b[0] + b[2]) / 2f * T, cy = (b[1] + b[3]) / 2f * T, d = Float.MAX_VALUE;
+            for (Facility f : facilities) d = Math.min(d, (float) Math.hypot(f.x - cx, f.y - cy));
+            if (d >= want) far.add(k);
+            if (d > bestD) {
+                bestD = d;
+                best = k;
+            }
+        }
+        return far.isEmpty() ? best : far.get(rnd.nextInt(far.size()));
+    }
+
     /** Puts the door in the middle of the first side that opens onto walkable ground. */
     private void placeDoor(Building b, int[] l) {
         int x = l[0], y = l[1], lw = l[2], lh = l[3];
@@ -659,6 +681,8 @@ final class City {
             default: maxLeaf = 13 + rnd.nextInt(6); break;
         }
         if (d > 0.8f) maxLeaf += 2;
+        // Bigger blocks: fewer, longer streets, as in a real town.
+        maxLeaf += 3;
         if (rural) maxLeaf += 6;
         if (cfg.density() == 2) maxLeaf -= 2;
         if (bw <= maxLeaf && bh <= maxLeaf) {
@@ -666,7 +690,7 @@ final class City {
             return -1;
         }
         boolean big = Math.max(bw, bh) > (w > 110 ? 42 : 34) && depth < 3 && !rural;
-        int roadW = big ? 5 : 3, minSide = 6;
+        int roadW = big ? 5 : 3, minSide = 8;
         boolean vertical;
         if (bw > bh * 1.3f) vertical = true;
         else if (bh > bw * 1.3f) vertical = false;
@@ -684,9 +708,10 @@ final class City {
         if (hi < lo) hi = lo;
         int at = lo + rnd.nextInt(hi - lo + 1);
         // Carry on the neighbouring street now and then, so some roads run on straight.
-        float align = cfg.layout() == 0 ? 0.75f : cfg.layout() == 1 ? 0.45f : 0.2f;
+        // Streets carry on across junctions far more often than not (a jog at every crossing makes no sense).
+        float align = cfg.layout() == 0 ? 0.92f : cfg.layout() == 1 ? 0.8f : 0.6f;
         // Old streets wander; downtown is laid out on a grid.
-        if (dt == DT_OLDTOWN) align = 0.1f;
+        if (dt == DT_OLDTOWN) align = 0.45f;
         else if (dt == DT_DOWNTOWN) align = Math.max(align, 0.7f);
         int hint = vertical ? hintX : hintY;
         if (hint >= lo && hint <= hi && rnd.nextFloat() < align) at = hint;
@@ -764,7 +789,8 @@ final class City {
         // Tree-lined medians down the main roads, open at the junctions.
         for (Street st : streets) {
             if (st.width != 5) continue;
-            if (rnd.nextFloat() < 0.35f) continue;
+            // Only the long avenues get a median.
+            if ((st.vertical ? st.y1 - st.y0 : st.x1 - st.x0) < 30 || rnd.nextFloat() < 0.35f) continue;
             int n = st.vertical ? st.y1 - st.y0 : st.x1 - st.x0;
             for (int k = 0; k < n; k++) {
                 boolean clear = true;
@@ -812,7 +838,8 @@ final class City {
                 float cx = (b[0] + b[2]) / 2f * T, cy = (b[1] + b[3]) / 2f * T;
                 boolean near = false;
                 for (Facility f : facilities)
-                    if (f.kind == FACILITY_POLICE && Math.hypot(f.x - cx, f.y - cy) < w * T / 3f) near = true;
+                    if ((f.kind == FACILITY_POLICE && Math.hypot(f.x - cx, f.y - cy) < w * T / 3f)
+                            || Math.hypot(f.x - cx, f.y - cy) < Math.max(20, w / 6f) * T) near = true;
                 if (!near) options.add(k);
             }
             if (options.isEmpty()) break;
@@ -857,6 +884,7 @@ final class City {
                 }
                 if (options.isEmpty()) break;
                 int k = options.get(rnd.nextInt(options.size()));
+                if (kind == 2) k = spreadOut(options, k);
                 used[k] = true;
                 int[] b = blocks.get(k);
                 fill(b[0], b[1], b[2] - b[0], b[3] - b[1], SIDEWALK);

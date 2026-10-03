@@ -2097,9 +2097,10 @@ final class City {
         settlements.add(new float[]{tcx * T, tcy * T});
         List<float[]> made = new ArrayList<float[]>();
         for (int k = 0; k < count; k++) {
-            for (int tries = 0; tries < 60; tries++) {
+            for (int tries = 0; tries < 250; tries++) {
                 int cx = 18 + rnd.nextInt(Math.max(1, w - 36)), cy = 18 + rnd.nextInt(Math.max(1, h - 36));
-                if (cx > townX0 - 12 && cx < townX1 + 12 && cy > townY0 - 12 && cy < townY1 + 12) continue;
+                // Clear of the town's own (eroded, irregular) edge rather than its bounding box.
+                if (!allOpen(cx - 17, cy - 17, 34, 34)) continue;
                 if (railY0 >= 0 && Math.abs(cy - railY0) < 16) continue;
                 boolean far = true;
                 for (float[] o : made) if (Math.hypot(o[0] - cx, o[1] - cy) < 45) far = false;

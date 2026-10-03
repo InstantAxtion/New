@@ -718,7 +718,8 @@ public final class GameTests {
                 int b0 = w.city.buildings.size();
                 float[] p = w.city.findWalkable(200, 200);
                 int ok = 0;
-                for (int k = 0; k < 10; k++) if (w.build(p[0] + k * 16, p[1], City.ED_ROAD)) ok++;
+                for (int r = 0; r < 12 && ok == 0; r++)
+                    for (int k = 0; k < 10; k++) if (w.build(p[0] + k * 16, p[1] + r * 32, City.ED_ROAD)) ok++;
                 for (int k = 0; k < 40 && w.city.buildings.size() == b0; k++) w.build(p[0] + 30 + k * 40, p[1] + 90, City.ED_HOUSE);
                 check(ok > 0 && w.city.buildings.size() == b0 + 1, "roads and a house go in");
                 w.city.editsDone();

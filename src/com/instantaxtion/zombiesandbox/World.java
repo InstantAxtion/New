@@ -372,6 +372,7 @@ final class World {
         }
         city.cfg.edits.add(new int[]{tx, ty, kind});
         // Old routes may run through what's changed.
+        city.walkCost = null;
         for (City.Building d : doorPaths) d.field = null;
         doorPaths.clear();
         errandSpots = null;
@@ -4194,7 +4195,7 @@ final class World {
         }
         if (b.field == null) {
             b.field = new int[city.w * city.h];
-            city.fieldFromPoints(b.field, new float[]{b.doorX}, new float[]{b.doorY}, 1);
+            city.walkFieldFromPoints(b.field, new float[]{b.doorX}, new float[]{b.doorY}, 1);
         }
         if (!followField(e, b.field, e.speed * 1.4f)) steer(e, ddx / d, ddy / d, e.speed * 1.4f);
         return true;
@@ -4259,8 +4260,10 @@ final class World {
             return true;
         }
         if (b.field == null && pathBudget < 1) {
-            // Too many new routes this second: head straight there for now and plan properly later.
-            steer(e, ddx / d, ddy / d, speed);
+            // Too many new routes this second: head straight there for now and plan properly later
+            // (someone in no hurry strolls along the pavement meanwhile instead of cutting across the road).
+            if (keepsRules(e)) wander(e, speed * 0.7f);
+            else steer(e, ddx / d, ddy / d, speed);
             return false;
         }
         if (b.field == null) {
@@ -4268,7 +4271,7 @@ final class World {
             // Keep a limited number of these around.
             if (doorPaths.size() >= 140) doorPaths.remove(0).field = null;
             b.field = new int[city.w * city.h];
-            city.fieldFromPoints(b.field, new float[]{b.doorX}, new float[]{b.doorY}, 1);
+            city.walkFieldFromPoints(b.field, new float[]{b.doorX}, new float[]{b.doorY}, 1);
             doorPaths.add(b);
         }
         e.blocked = false;
@@ -5828,8 +5831,47 @@ final class World {
                 e.paused = false;
             }
         }
+        if (!e.paused && keepsRules(e)) {
+            // Strolling people stay on the pavement: they turn back at the kerb unless it's a crossing,
+            // and wait there while a car goes by.
+            int tx = (int) (e.x / City.T), ty = (int) (e.y / City.T);
+            float ax = e.x + (float) Math.cos(e.wanderAngle) * City.T * 0.8f, ay = e.y + (float) Math.sin(e.wanderAngle) * City.T * 0.8f;
+            int nx = (int) (ax / City.T), ny = (int) (ay / City.T);
+            if ((nx != tx || ny != ty) && city.tileIndex(ax, ay) >= 0 && city.tiles[city.tileIndex(ax, ay)] == City.ROAD
+                    && city.tiles[city.tileIndex(e.x, e.y)] != City.ROAD) {
+                if (!city.crosswalk(nx, ny)) {
+                    e.wanderAngle += (float) Math.PI + (rnd.nextFloat() - 0.5f) * 1.2f;
+                } else if (carComing(ax, ay)) {
+                    steer(e, 0, 0, 0);
+                    return;
+                }
+            }
+        }
         if (e.paused) steer(e, 0, 0, 0);
         else steer(e, (float) Math.cos(e.wanderAngle), (float) Math.sin(e.wanderAngle), speed);
+    }
+
+    /** Ordinary folk going about their day mind the traffic; anyone running for their life doesn't. */
+    private boolean keepsRules(Entity e) {
+        return e.type == Entity.CIVILIAN && e.fleeTimer <= 0 && e.fear <= 0 && e.task != Dispatch.T_SEEK && e != controlled;
+    }
+
+    /** A vehicle on the ground heading for this spot and close enough that stepping out would be a mistake. */
+    private boolean carComing(float x, float y) {
+        for (int i = 0, n = fleet.vehicles.size(); i < n; i++) {
+            Fleet.Vehicle v = fleet.vehicles.get(i);
+            if (Fleet.airborne(v) || v.broken || Math.abs(v.speed) < 8) continue;
+            float dx = x - v.x, dy = y - v.y;
+            float reach = 36 + Math.abs(v.speed) * 1.6f;
+            if (dx * dx + dy * dy > reach * reach) continue;
+            float d = (float) Math.sqrt(dx * dx + dy * dy) + 0.001f;
+            float s = v.speed < 0 ? -1 : 1;
+            // In its path: ahead of it, and not far to one side.
+            float along = ((float) Math.cos(v.angle) * dx + (float) Math.sin(v.angle) * dy) * s;
+            if (along > -10 && Math.abs((float) Math.cos(v.angle) * dy - (float) Math.sin(v.angle) * dx) < 26) return true;
+            if (d < 22) return true;
+        }
+        return false;
     }
 
     /** Walks one tile downhill in a distance field. Returns false if there is nowhere lower to go. */
@@ -5854,6 +5896,12 @@ final class World {
             }
         }
         if (bx < 0) return false;
+        // Calm people wait at the kerb for traffic to pass.
+        if (keepsRules(e) && city.tiles[by * w + bx] == City.ROAD && city.tiles[ty * w + tx] != City.ROAD
+                && carComing(bx * City.T + City.T / 2f, by * City.T + City.T / 2f)) {
+            steer(e, 0, 0, 0);
+            return true;
+        }
         float gx = bx * City.T + City.T / 2f - e.x, gy = by * City.T + City.T / 2f - e.y;
         float d = (float) Math.sqrt(gx * gx + gy * gy) + 0.001f;
         steer(e, gx / d, gy / d, speed);

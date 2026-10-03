@@ -434,7 +434,7 @@ final class City {
         Arrays.fill(zombieDist, FAR);
         for (Facility f : facilities) {
             f.field = new int[w * h];
-            fieldFromPoints(f.field, new float[]{f.x}, new float[]{f.y}, 1);
+            walkFieldFromPoints(f.field, new float[]{f.x}, new float[]{f.y}, 1);
         }
         // The big map uses 16-bit colour to keep memory down.
         bitmap = Bitmap.createBitmap((int) (w * T * detail), (int) (h * T * detail),
@@ -563,6 +563,7 @@ final class City {
     /** Draws (or redraws, after the Graphics setting changes) the ground bitmap. */
     void redraw() {
         trees.clear();
+        computeJunctions();
         Canvas canvas = new Canvas(bitmap);
         if (detail != 1f) canvas.scale(detail, detail);
         drawnRealistic = realistic;
@@ -800,6 +801,12 @@ final class City {
                         if (x < 0 || y < 0 || x >= w || y >= h || roadDir[y * w + x] != (st.vertical ? 1 : 2)) clear = false;
                     }
                 }
+                // A side street joining from either side leaves a gap so traffic can turn across.
+                for (int a = -1; a <= 5 && clear; a += 6)
+                    for (int e = -2; e <= 2 && clear; e++) {
+                        int x = st.vertical ? st.x0 + a : st.x0 + k + e, y = st.vertical ? st.y0 + k + e : st.y0 + a;
+                        if (isRoad(x, y)) clear = false;
+                    }
                 if (!clear) continue;
                 int x = st.vertical ? st.x0 + 2 : st.x0 + k, y = st.vertical ? st.y0 + k : st.y0 + 2;
                 tiles[y * w + x] = k % 2 == 0 ? TREE : GRASS;
@@ -3471,7 +3478,7 @@ final class City {
             for (int k = 1; k < n; k++) {
                 int ax = st.vertical ? st.x0 : st.x0 + k - 1, ay = st.vertical ? st.y0 + k - 1 : st.y0;
                 int bx = st.vertical ? st.x0 : st.x0 + k, by = st.vertical ? st.y0 + k : st.y0;
-                boolean ja = roadDir[ay * w + ax] == 3, jb = roadDir[by * w + bx] == 3;
+                boolean ja = junctionAt(ax, ay), jb = junctionAt(bx, by);
                 if (ja == jb) continue;
                 // The crossing sits on the non-junction tile, against the junction.
                 int cx = ja ? bx : ax, cy = ja ? by : ay;
@@ -4268,6 +4275,107 @@ final class City {
             }
         }
         return true;
+    }
+
+    /**
+     * What a step onto each tile costs someone on foot who keeps to the rules: pavement, grass and zebra
+     * crossings 1, a junction 3 (cut across only if there's no crossing), the middle of a road 8.
+     */
+    byte[] walkCost;
+    private int[][] walkBuckets;
+
+    /** Where roads meet: paved both ways for further than any one road is wide. */
+    private boolean[] junction;
+
+    private void computeJunctions() {
+        junction = new boolean[w * h];
+        int[] run = new int[w * h];
+        for (int y = 0; y < h; y++) {
+            int x = 0;
+            while (x < w) {
+                if (!paved(x, y)) { x++; continue; }
+                int s = x;
+                while (x < w && paved(x, y)) x++;
+                for (int k = s; k < x; k++) run[y * w + k] = x - s;
+            }
+        }
+        for (int x = 0; x < w; x++) {
+            int y = 0;
+            while (y < h) {
+                if (!paved(x, y)) { y++; continue; }
+                int s = y;
+                while (y < h && paved(x, y)) y++;
+                for (int k = s; k < y; k++) if (y - s >= 7 && run[k * w + x] >= 7) junction[k * w + x] = true;
+            }
+        }
+    }
+
+    boolean junctionAt(int x, int y) {
+        if (junction == null) computeJunctions();
+        return x >= 0 && y >= 0 && x < w && y < h && junction[y * w + x];
+    }
+
+    /** A road tile with zebra stripes: next to a junction but not in it. */
+    boolean crosswalk(int x, int y) {
+        if (x < 0 || y < 0 || x >= w || y >= h || tiles[y * w + x] != ROAD || junctionAt(x, y)) return false;
+        return junctionAt(x - 1, y) || junctionAt(x + 1, y) || junctionAt(x, y - 1) || junctionAt(x, y + 1);
+    }
+
+    private void computeWalkCost() {
+        computeJunctions();
+        walkCost = new byte[w * h];
+        for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++) {
+                int i = y * w + x;
+                byte t = tiles[i];
+                walkCost[i] = (byte) (t != ROAD ? 1 : junction[i] ? 3 : crosswalk(x, y) ? 1 : 8);
+            }
+    }
+
+    /**
+     * Like fieldFromPoints, but for walking the way people really do: along the pavement, across at the
+     * zebra crossings. Roads without a pavement (country lanes) still get used when there's no other way.
+     */
+    void walkFieldFromPoints(int[] dist, float[] xs, float[] ys, int n) {
+        if (walkCost == null) computeWalkCost();
+        Arrays.fill(dist, FAR);
+        if (walkBuckets == null) walkBuckets = new int[9][w * h];
+        int[] sizes = new int[9];
+        int pending = 0;
+        for (int i = 0; i < n; i++) {
+            int t = tileIndex(xs[i], ys[i]);
+            if (dist[t] != 0) {
+                dist[t] = 0;
+                walkBuckets[0][sizes[0]++] = t;
+                pending++;
+            }
+        }
+        for (int d = 0; pending > 0; d++) {
+            int bi = d % 9;
+            int[] bk = walkBuckets[bi];
+            int size = sizes[bi];
+            for (int k = 0; k < size; k++) {
+                int t = bk[k];
+                if (dist[t] != d) continue;
+                int tx = t % w, ty = t / w;
+                for (int q = 0; q < 4; q++) {
+                    int nb;
+                    if (q == 0) { if (tx == 0) continue; nb = t - 1; }
+                    else if (q == 1) { if (tx == w - 1) continue; nb = t + 1; }
+                    else if (q == 2) { if (ty == 0) continue; nb = t - w; }
+                    else { if (ty == h - 1) continue; nb = t + w; }
+                    if (solid[nb]) continue;
+                    int nd = d + walkCost[nb];
+                    if (nd >= dist[nb]) continue;
+                    dist[nb] = nd;
+                    int b2 = nd % 9;
+                    walkBuckets[b2][sizes[b2]++] = nb;
+                    pending++;
+                }
+            }
+            pending -= size;
+            sizes[bi] = 0;
+        }
     }
 
     /** Distance field (in tiles) to the nearest of the given points. */

@@ -2,11 +2,23 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "6.0";
-    static final int VERSION_CODE = 24;
+    static final String VERSION = "7.0";
+    static final int VERSION_CODE = 25;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "7.0  -  Countries, safe zones and city life",
+                    "Countries: pick USA, Australia, Japan, France or Mexico on the New Game screen. Each has its own buildings and colours, pavements, street, town and people's names, road lines and police cars. In Australia and Japan traffic drives on the left. The country is part of the city code.",
+                    "Safe zones reworked: they're never set up near the dead, take time to build (the guards arrive and the sandbags go up section by section; it opens when they're done), and their border is a living line that grows as people arrive and guards join, stops at walls and pulls back where the dead push. Lose too much ground and the zone falls.",
+                    "Pedestrians follow the rules: they keep to the pavement, cross at the zebra crossings (now at every junction) and wait at the kerb for cars. Running for your life is the exception.",
+                    "Roads make more sense: bigger blocks, streets that carry on straight across junctions, medians only on long avenues and open wherever a side street joins.",
+                    "Fire stations, police stations, the hospital and the base are spread across town instead of next to each other.",
+                    "Everyone who lives in the city is out and about by default, and the number of police and soldiers is set by the size of the city. The Cops and Military options are gone.",
+                    "Each Reinforcements setting now says exactly who comes: how many waves of police backup, army squads, tanks and helicopter sorties.",
+                    "The civilian count no longer jumps around as people go in and out of buildings, and the People row on the New Game screen fits on tall phone screens.",
+                    "Removed: the Orders, Place, Events and Build tools, and evacuation trains (trains still run).",
+            },
             {
                     "6.0  -  Twenty changes",
                     "1. Drive anything. While you control someone, Get in a car, cruiser, truck, ambulance, fire engine or tank. Steer with the stick (pull back to reverse), sound the horn or siren (it draws the dead), fire the tank's cannon, run zombies over. Crashes damage the vehicle; your group rides with you.",

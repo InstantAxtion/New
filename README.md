@@ -9,12 +9,20 @@ away from the middle of the screen as you pan, and the game plays in both portra
 
 ## Main menu
 
-- **New Game** opens the city setup, with a live preview of the city and 7 options: the map (Classic,
-  Downtown, Suburbs, Industrial, Parkland, Old Town, Small Town, Campus, Metropolis or Village), map size, how many of the residents are out and about (None, Few, Some, Most or All), cops, military and zombies at the
-  start (map size: Small, Medium, Large or Massive), and how many reinforcements can be called in (Off, Low, Medium or High). Each map decides its
+- **New Game** opens the city setup, with a live preview of the city and these options: the map (Classic,
+  Downtown, Suburbs, Industrial, Parkland, Old Town, Small Town, Campus, Metropolis or Village), map size
+  (Small, Medium, Large or Massive), the **country** (USA, Australia, Japan, France or Mexico), how many of
+  the residents are out and about (All by default), zombies at the start, and how many reinforcements can
+  be called in (Off, Low, Medium or High, each spelled out: waves of police backup, army squads, tanks
+  and helicopter sorties). Police and soldiers on duty are set by the size of the city (about one officer
+  per 80 residents plus two per station; a garrison at the base if the map has one). Each map decides its
   own buildings, layout, parks, police stations and military base. **Randomize** rolls a random setup.
-  **City code** replays a city: every city has a code like `12-483920` (shown in the pause menu and
-  stats), so you can play the same streets again or share them with a friend.
+  **City code** replays a city: every city has a code like `12-483920` (or `12-483920@2` for a city
+  outside the USA; shown in the pause menu and stats), so you can play the same streets again or share
+  them with a friend.
+- **Countries**: each has its own building colours, pavements, grass, street names (Oak St, Acacia
+  Crescent, Sakura-dori, Rue de la Paix, Calle Hidalgo), town and people's names, churches or temples,
+  shops, road lines and police car livery. In Australia and Japan traffic drives on the left.
 - **Load Game**: three save slots plus the autosave (save from the pause menu).
 - **Records & Achievements**: best results across games and 15 achievements.
 - **Settings**: music and sound volume, view (3D or bird's-eye), minimap, text and button size, battery saver, blood, health bars, screen shake, FPS counter
@@ -47,10 +55,11 @@ on the phone, so the APK contains no audio files.
   for a while, then come out and go somewhere else. A busy place puts people off, and a full one is
   skipped rather than queued at, so nobody piles up at a door. If zombies turn up outside, the people
   inside stay in and shelter. Zoom in to see them inside.
-- **Trains** slow down and stop at the station, where commuters get off and on. The barriers at the
-  level crossings come down and the lights flash while a train is near. During an outbreak trains
-  become evacuation trains: people near the station run for the platform, and anyone who gets on is
-  safe (the Stats screen counts them). A train won't stop if there are zombies on the platform.
+- **Trains** slow down and stop at the station for a few seconds. The barriers at the level crossings
+  come down and the lights flash while a train is near.
+- **Pedestrians keep to the rules**: people out on errands walk on the pavement, cross at the zebra
+  crossings by the junctions and wait at the kerb while a car goes by. Anyone running from zombies
+  crosses wherever they like.
 - **Raiders, zombie dogs and evolution**: armed gangs rob and loot; dogs can rise as zombie dogs; a long
   outbreak makes new zombies tougher.
 - **Survivors and recovery**: supply runs, armed patrols, people escaping in abandoned cars; after the
@@ -87,7 +96,6 @@ on the phone, so the APK contains no audio files.
 - **Checkpoints and roadblocks**: soldiers screen people entering a military safe zone for bites;
   police park cruisers across the roads around their safe zones.
 - **Riot police** block bites with their shields; **K9 units** bring a police dog.
-- **Orders**: select a cop or a soldier's squad with the Orders tool and tap where to send them.
 - **Save/load**, a **Stats** screen (people vs zombies over time) and a **How to Play** tutorial.
 
 ## Who wins?
@@ -181,10 +189,15 @@ military safe zone.
   under attack make police request military support. The military sends a free squad, or one of its
   limited reserve squads. Police get backup officers from the precinct when every unit is busy.
   Reserves never refill; the stats panel shows how many are left.
-- **Safe zones**: police and military set up guarded zones (sandbags, a tent and guards on posts
-  around the edge) in parks, plazas and parking lots. Civilians run there when scared or when they
-  hear about one, and shelter inside. Each zone has a capacity (25 to 60 people); a full zone turns
-  people away. A zone with no guards left is overrun; police then fall back
+- **Safe zones**: police and military pick a spot with no zombies within about 250 units (a station,
+  the base, a school, a park or a plaza) and send guards there. Nothing happens instantly: the zone is
+  set up first, the sandbag line going up a section at a time as the guards arrive, and it only opens
+  (and only lets people in) once it's finished. If the dead get there first, the setup is abandoned.
+  Its border is an irregular line, not a circle: it grows as people arrive and more guards take the
+  line, stops at building walls, and pulls back on the side the dead are pushing ("falling back").
+  Capacity follows how far the line can stretch with the guards it has; a full zone turns people
+  away. Civilians run there when scared or when they hear about one, and shelter inside. A zone with
+  no guards left, or with more zombies inside the line than the guards can hold, is overrun; police then fall back
   to a military zone. When a zone has been quiet for a while (or empty of people for 90 seconds),
   it packs up; once the outbreak is over, zones close within half a minute of the last zombie.
 - **Roadblocks**: when a zone opens, police cars from the nearest precinct drive to the roads
@@ -209,8 +222,8 @@ military safe zone.
     Guard.
   - **Zombies**: zombie (slow shambler), runner (fast, fragile), brute (huge, knocks people back),
     crawler (low and hard to hit), screamer (calls the horde), zombie dog, spitter and bloater.
-  - **Orders**: tap a cop or soldier (or drag a box round a group), then tap where to send them.
-  - **Safe Zone**: orders police or military to set up a guarded safe zone where you tap.
+  - **Safe Zone**: orders police or military to set up a guarded safe zone where you tap (not with
+    zombies close by).
   - **Bomb**: explosion at the tap point.
   - **Erase**: removes people, zombies and corpses under your finger. Tap a safe zone's centre to
     close it.
@@ -218,9 +231,6 @@ military safe zone.
 - **Pinch** to zoom and **drag with two fingers** to pan, whichever tool is selected.
 - Top buttons: **Pause/Play**, **Speed** (1x/2x/4x/8x), **Brush** (spawn 1/5/10 at a time),
   **View** (3D or bird's-eye), **Clear** (choose what to clear), **Menu**.
-- **Place** tool: cars, police cars, tanks, fire engines, barricades, supply crates, fires and medkits.
-  **Events** tool: hordes, panic, indoor outbreaks, supply drops, raider gangs, airstrikes, the city
-  alarm and Infect. **Undo** takes back the last one.
 - **Take control**: tap anyone with **Move**, then **Take control** on their card to play them yourself: a
   civilian, cop, soldier, medic, firefighter, raider, dog or zombie. Put your left thumb down anywhere
   on the left to move (push further to run; the living get out of breath), and hold the red button to
@@ -239,9 +249,6 @@ military safe zone.
   - **Rally**: up to eight nearby civilians follow you, into cars and buildings too.
 - **Pins**: the star on someone's card pins them. Pinned people off screen get a marker at the edge of
   the screen (tap it to jump to them); if they turn, the pin follows the zombie they became.
-- **Build** tool: drag to paint roads, pavement, grass, trees or walls; tap to put up a house or a shop;
-  Clear knocks a building down. Your changes are added to the city code (after a `~`), so sharing the
-  code shares your city, and saves keep them.
 - **Outbreak replay**: the **Replay** button on the Stats screen plays the whole game back on the city
   map: people in blue, the dead in green, and a red mark wherever someone turned. Drag the timeline to
   scrub. Saved games keep their replay.
@@ -275,7 +282,8 @@ install as updates over older ones. GitHub Actions also builds the APK on every 
 Code layout (`src/com/instantaxtion/zombiesandbox/`):
 
 - `CityConfig.java`: map presets and custom city options.
-- `City.java`: city generation (building styles and heights, layouts, stations and bases), the pre-rendered map, line of sight and BFS flow fields.
+- `Country.java`: the five country themes (names, colours, police cars, which side of the road traffic keeps to).
+- `City.java`: city generation (building styles and heights, layouts, stations and bases), the pre-rendered map, line of sight, BFS flow fields and pedestrian routes that prefer pavements and crossings.
 - `World.java`: simulation (AI, shooting, infection, explosions, particles).
 - `Dispatch.java`: 911 calls, incidents, police/military radio, reinforcements, orders and safe zones.
 - `Fleet.java`: cruisers, army trucks, fire engines, traffic, vehicle damage and the helicopter.

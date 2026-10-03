@@ -542,13 +542,30 @@ final class World {
                 }
             }
         }
-        // Whoever is at home is indoors, and they come out over the next few minutes, a few at a time.
+        // Everyone gets a life. Many start the day at work or at home, indoors; the rest are out doing
+        // their thing, and those indoors come and go over the next few minutes.
         for (int i = 0, n = entities.size(); i < n; i++) {
             Entity e = entities.get(i);
-            if (e.dead || e.type != Entity.CIVILIAN || e.home == null || e.leader != null) continue;
+            if (e.dead || e.type != Entity.CIVILIAN) continue;
+            assignJob(e);
+            if (e.leader != null) continue;
+            boolean worker = e.job == Entity.J_WORKER || e.job == Entity.J_SHOPKEEPER || e.job == Entity.J_STUDENT;
+            if (worker && e.work != null && rnd.nextFloat() < 0.55f) {
+                e.x = e.work.doorX;
+                e.y = e.work.doorY;
+                e.lastErrand = e.work;
+                goInside(e, e.work, 10 + rnd.nextFloat() * (e.job == Entity.J_SHOPKEEPER ? 400 : 260));
+                continue;
+            }
             City.Building b = e.home;
-            if ((e.x - b.doorX) * (e.x - b.doorX) + (e.y - b.doorY) * (e.y - b.doorY) > 20 * 20) continue;
-            goInside(e, b, 5 + rnd.nextFloat() * 240);
+            if (b == null) continue;
+            boolean near = (e.x - b.doorX) * (e.x - b.doorX) + (e.y - b.doorY) * (e.y - b.doorY) <= 20 * 20;
+            if (e.job == Entity.J_HOMEBODY && rnd.nextFloat() < 0.8f) near = true;
+            if (!near) continue;
+            e.x = b.doorX;
+            e.y = b.doorY;
+            e.lastErrand = b;
+            goInside(e, b, 5 + rnd.nextFloat() * (e.job == Entity.J_HOMEBODY ? 500 : 240));
         }
         // A city with nowhere to live (or more people than homes): the rest find a place nearby.
         if (left > 0) spawnRandom(Entity.CIVILIAN, left);
@@ -2945,10 +2962,18 @@ final class World {
             e.building = home;
             return false;
         }
+        if (e.job == Entity.J_NONE) assignJob(e);
+        else if (e.work == null && (e.job == Entity.J_WORKER || e.job == Entity.J_SHOPKEEPER || e.job == Entity.J_STUDENT)) {
+            // Back from a save: find the workplace again.
+            e.work = e.job == Entity.J_WORKER ? pickWorkplace(e) : e.job == Entity.J_SHOPKEEPER ? pickShop(e) : nearestOfKind(e, City.SCHOOL);
+            if (e.work == null) e.job = Entity.J_ERRANDS;
+        }
+        if (chatting(e, dt)) return true;
         e.errandTimer -= dt;
+        if (e.errand == null && e.errandTimer <= 0 && outing(e, dt, home)) return true;
         if (e.errand == null || e.errand.collapsed) {
             if (e.errandTimer > 0) return false;
-            e.errand = home != null && e.lastErrand != home && rnd.nextFloat() < 0.35f ? home : pickErrand(e, home);
+            e.errand = nextPlace(e, home);
             e.lastErrand = e.errand;
             e.errandTimer = 0;
             if (e.errand != null) e.errand.heading++;
@@ -2978,13 +3003,15 @@ final class World {
             enterBuilding(e, b);
             return;
         }
-        boolean home = b == e.home;
-        if ((!home && b.visitors.size() + b.occupants.size() >= Math.max(4, b.capacity)) || b.collapsed) {
+        boolean home = b == e.home, work = b == e.work;
+        if ((!home && !work && b.visitors.size() + b.occupants.size() >= Math.max(4, b.capacity)) || b.collapsed) {
             e.errandTimer = 1 + rnd.nextFloat() * 3;
             return;
         }
-        float stay = home ? 40 + rnd.nextFloat() * 120 : b.kind == City.SCHOOL || b.kind == City.CHURCH ? 40 + rnd.nextFloat() * 50
-                : 15 + rnd.nextFloat() * 35;
+        float stay = work ? (e.job == Entity.J_SHOPKEEPER ? 220 + rnd.nextFloat() * 300 : e.job == Entity.J_STUDENT
+                ? 120 + rnd.nextFloat() * 150 : 120 + rnd.nextFloat() * 220)
+                : home ? (e.job == Entity.J_HOMEBODY ? 180 + rnd.nextFloat() * 400 : 80 + rnd.nextFloat() * 180)
+                : b.kind == City.SCHOOL || b.kind == City.CHURCH ? 40 + rnd.nextFloat() * 50 : 15 + rnd.nextFloat() * 35;
         goInside(e, b, stay);
     }
 
@@ -3036,6 +3063,389 @@ final class World {
             o.errandTimer = 2 + rnd.nextFloat() * 8;
             if (k > b.visitors.size()) k = b.visitors.size();
         }
+    }
+
+    // ------------------------------------------------------------------ everyday life
+
+    /** Places people work: offices, warehouses, the hospital, schools, the mall and supermarkets. */
+    private ArrayList<City.Building> workplaces;
+
+    /** Gives someone a life: a job and somewhere to do it, or a way of spending the day. */
+    void assignJob(Entity e) {
+        if (e.job != Entity.J_NONE) return;
+        City.Building home = homeOf(e);
+        // Children in a family go to school.
+        boolean child = e.leader != null && e.leader.type == Entity.CIVILIAN && (e.nameSeed & 3) != 0;
+        if (child) {
+            e.job = Entity.J_STUDENT;
+            e.work = nearestOfKind(e, City.SCHOOL);
+            if (e.work == null) e.job = Entity.J_HOMEBODY;
+            return;
+        }
+        boolean dog = false;
+        for (int i = 0, n = entities.size(); i < n && !dog; i++)
+            if (entities.get(i).leader == e && entities.get(i).type == Entity.DOG) dog = true;
+        if (dog) {
+            e.job = Entity.J_PARK;
+            return;
+        }
+        int posties = 0, vendors = 0, civs = 0;
+        for (int i = 0, n = entities.size(); i < n; i++) {
+            Entity o = entities.get(i);
+            if (o.type != Entity.CIVILIAN) continue;
+            civs++;
+            if (o.job == Entity.J_POSTIE) posties++;
+            if (o.job == Entity.J_VENDOR) vendors++;
+        }
+        float r = rnd.nextFloat();
+        if (posties < 1 + civs / 250 && r < 0.03f) e.job = Entity.J_POSTIE;
+        else if (vendors < 1 + civs / 300 && r < 0.05f && !city.openAreas.isEmpty()) e.job = Entity.J_VENDOR;
+        else if (r < 0.36f) e.job = Entity.J_WORKER;
+        else if (r < 0.52f) e.job = Entity.J_HOMEBODY;
+        else if (r < 0.70f) e.job = Entity.J_ERRANDS;
+        else if (r < 0.79f) e.job = Entity.J_SHOPKEEPER;
+        else if (r < 0.88f) e.job = Entity.J_JOGGER;
+        else if (r < 0.95f) e.job = Entity.J_PARK;
+        else e.job = Entity.J_STUDENT;
+        if (e.job == Entity.J_WORKER) e.work = pickWorkplace(e);
+        else if (e.job == Entity.J_SHOPKEEPER) e.work = pickShop(e);
+        else if (e.job == Entity.J_STUDENT) e.work = nearestOfKind(e, City.SCHOOL);
+        if ((e.job == Entity.J_WORKER || e.job == Entity.J_SHOPKEEPER || e.job == Entity.J_STUDENT) && e.work == null)
+            e.job = Entity.J_ERRANDS;
+    }
+
+    private City.Building nearestOfKind(Entity e, int kind) {
+        City.Building best = null;
+        float bd = Float.MAX_VALUE;
+        for (int i = 0, n = city.buildings.size(); i < n; i++) {
+            City.Building b = city.buildings.get(i);
+            if (b.kind != kind || b.collapsed || b.doorX == 0) continue;
+            float d = (b.doorX - e.x) * (b.doorX - e.x) + (b.doorY - e.y) * (b.doorY - e.y);
+            if (d < bd) {
+                bd = d;
+                best = b;
+            }
+        }
+        return best;
+    }
+
+    private City.Building pickWorkplace(Entity e) {
+        if (workplaces == null) {
+            workplaces = new ArrayList<City.Building>();
+            ArrayList<City.Building> offices = new ArrayList<City.Building>();
+            for (City.Building b : city.buildings) {
+                if (b.doorX == 0 || b.collapsed) continue;
+                if (b.kind == City.HOSPITAL || b.kind == City.SCHOOL || b.kind == City.MALL || b.kind == City.MARKET)
+                    workplaces.add(b);
+                else if (b.kind == City.OFFICE || b.kind == City.WAREHOUSE) offices.add(b);
+            }
+            java.util.Collections.shuffle(offices, rnd);
+            // A limited set of workplaces, so the routes to them stay remembered.
+            for (int i = 0; i < offices.size() && workplaces.size() < 50; i++) workplaces.add(offices.get(i));
+        }
+        City.Building best = null;
+        float bestScore = Float.MAX_VALUE;
+        for (int k = 0; k < 8 && !workplaces.isEmpty(); k++) {
+            City.Building b = workplaces.get(rnd.nextInt(workplaces.size()));
+            float score = (float) Math.hypot(b.doorX - e.x, b.doorY - e.y) + rnd.nextFloat() * 300;
+            if (score < bestScore) {
+                bestScore = score;
+                best = b;
+            }
+        }
+        return best;
+    }
+
+    private City.Building pickShop(Entity e) {
+        pickErrand(e, null);
+        City.Building best = null;
+        float bd = Float.MAX_VALUE;
+        for (int k = 0; k < 10 && errandSpots != null && !errandSpots.isEmpty(); k++) {
+            City.Building b = errandSpots.get(rnd.nextInt(errandSpots.size()));
+            if (b.kind != City.SHOP && b.kind != City.PHARMACY && b.kind != City.KIOSK && b.kind != City.MARKET) continue;
+            float d = (float) Math.hypot(b.doorX - e.x, b.doorY - e.y) + rnd.nextFloat() * 200;
+            if (d < bd) {
+                bd = d;
+                best = b;
+            }
+        }
+        return best;
+    }
+
+    /** Where someone goes next, by the life they lead. */
+    private City.Building nextPlace(Entity e, City.Building home) {
+        switch (e.job) {
+            case Entity.J_WORKER:
+            case Entity.J_SHOPKEEPER:
+            case Entity.J_STUDENT:
+                if (e.work != null && !e.work.collapsed && e.lastErrand != e.work) return e.work;
+                return home != null && rnd.nextFloat() < 0.65f ? home : pickErrand(e, home);
+            case Entity.J_HOMEBODY:
+                if (home != null && e.lastErrand != home) return home;
+                return rnd.nextFloat() < 0.5f || home == null ? pickErrand(e, home) : home;
+            default:
+                return home != null && e.lastErrand != home && rnd.nextFloat() < 0.35f ? home : pickErrand(e, home);
+        }
+    }
+
+    /** Routes to the parks and plazas, made when first needed. */
+    private final java.util.HashMap<float[], int[]> areaFields = new java.util.HashMap<float[], int[]>();
+
+    private float[] pickArea(Entity e, boolean plaza) {
+        float[] best = null;
+        float bd = Float.MAX_VALUE;
+        for (int k = 0; k < 8; k++) {
+            float[] a = city.openAreas.get(rnd.nextInt(city.openAreas.size()));
+            if (plaza && a[2] == 2) continue;
+            float d = (float) Math.hypot(a[0] - e.x, a[1] - e.y) + rnd.nextFloat() * 250;
+            if (d < bd && d < 1100) {
+                bd = d;
+                best = a;
+            }
+        }
+        return best;
+    }
+
+    private final java.util.HashMap<float[], float[]> areaPoints = new java.util.HashMap<float[], float[]>();
+
+    /** Somewhere in an open area people can actually stand (its middle may be a statue or a flower bed). */
+    float[] areaPoint(float[] a) {
+        float[] p = areaPoints.get(a);
+        if (p == null) {
+            p = city.findWalkable(a[0], a[1]);
+            if (p == null) p = a;
+            areaPoints.put(a, p);
+        }
+        return p;
+    }
+
+    /** A street vendor at their stall. */
+    boolean atStall(Entity e) {
+        if (e.job != Entity.J_VENDOR || e.spot == null) return false;
+        float[] p = areaPoint(e.spot);
+        return Math.hypot(p[0] - e.x, p[1] - e.y) < 18;
+    }
+
+    /** Walks to an open area by its own route. Returns true once there. */
+    private boolean walkToArea(Entity e, float[] a, float near, float speed) {
+        float[] p = areaPoint(a);
+        float ddx = p[0] - e.x, ddy = p[1] - e.y, d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
+        if (d < near) return true;
+        int[] f = areaFields.get(a);
+        if (f == null) {
+            if (pathBudget < 1) {
+                wander(e, speed * 0.7f);
+                return false;
+            }
+            pathBudget -= 1;
+            f = new int[city.w * city.h];
+            city.walkFieldFromPoints(f, new float[]{p[0]}, new float[]{p[1]}, 1);
+            areaFields.put(a, f);
+        }
+        if (d < 24 || !followField(e, f, speed)) steer(e, ddx / d, ddy / d, speed);
+        return false;
+    }
+
+    /**
+     * Lives lived out in the open: a run along the pavements, an afternoon in the park (walking the dog), a
+     * food stall at a plaza, a delivery round. Returns false when there's nothing to do outdoors (the
+     * building trips take over), and sends them home when the outing is over.
+     */
+    private boolean outing(Entity e, float dt, City.Building home) {
+        switch (e.job) {
+            case Entity.J_JOGGER: {
+                e.jobTimer += dt;
+                if (e.jobTimer > 70 + (e.nameSeed & 63)) break;
+                if (e.wanderTimer > 4) e.wanderTimer = 4;
+                wander(e, e.speed * 1.9f);
+                e.paused = false;
+                return true;
+            }
+            case Entity.J_PARK: {
+                if (e.spot == null) {
+                    if (city.openAreas.isEmpty()) return false;
+                    e.spot = pickArea(e, false);
+                    if (e.spot == null) return false;
+                    e.jobTimer = 0;
+                }
+                if (walkToArea(e, e.spot, 50, e.speed)) {
+                    e.jobTimer += dt;
+                    wander(e, e.speed * 0.4f);
+                }
+                if (e.jobTimer > 60 + (e.nameSeed & 127)) {
+                    e.spot = null;
+                    break;
+                }
+                return true;
+            }
+            case Entity.J_VENDOR: {
+                if (e.spot == null) {
+                    if (city.openAreas.isEmpty()) return false;
+                    e.spot = pickArea(e, true);
+                    if (e.spot == null) return false;
+                    e.jobTimer = 0;
+                }
+                if (walkToArea(e, e.spot, 14, e.speed * 0.8f)) {
+                    e.jobTimer += dt;
+                    steer(e, 0, 0, 0);
+                }
+                if (e.jobTimer > 300 + (e.nameSeed & 255)) {
+                    e.spot = null;
+                    break;
+                }
+                return true;
+            }
+            case Entity.J_POSTIE: {
+                if (e.round == null || e.jobStep >= e.round.size()) {
+                    if (e.round != null && !e.round.isEmpty()) {
+                        e.round = null;
+                        break;
+                    }
+                    e.round = new ArrayList<City.Building>();
+                    e.jobStep = 0;
+                    for (int i = 0, n = city.buildings.size(); i < n && e.round.size() < 7; i++) {
+                        City.Building b = city.buildings.get((i * 37 + (e.nameSeed & 0x7FFF)) % n);
+                        if (b.residents > 0 && !b.collapsed && Math.hypot(b.doorX - e.x, b.doorY - e.y) < 320) e.round.add(b);
+                    }
+                    if (e.round.isEmpty()) {
+                        e.round = null;
+                        return false;
+                    }
+                }
+                City.Building b = e.round.get(e.jobStep);
+                float ddx = b.doorX - e.x, ddy = b.doorY - e.y, d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
+                if (d > 14) {
+                    walkTo(e, b, ddx, ddy, d, e.speed * 1.1f);
+                    return true;
+                }
+                // At the door: post goes through the letterbox.
+                steer(e, 0, 0, 0);
+                e.jobTimer += dt;
+                if (e.jobTimer > 2.5f) {
+                    e.jobTimer = 0;
+                    e.jobStep++;
+                }
+                return true;
+            }
+            default:
+                return false;
+        }
+        // The outing's over: home for a while.
+        e.jobTimer = 0;
+        e.errand = home != null ? home : pickErrand(e, home);
+        e.lastErrand = e.errand;
+        if (e.errand != null) e.errand.heading++;
+        return false;
+    }
+
+    /** Neighbours stop for a chat now and then. */
+    private boolean chatting(Entity e, float dt) {
+        if (e.chat > 0) {
+            Entity o = e.chatWith;
+            e.chat -= dt;
+            if (o == null || o.dead || o.chatWith != e || o.fleeTimer > 0) {
+                e.chat = 0;
+                return false;
+            }
+            steer(e, 0, 0, 0);
+            e.angle = turn(e.angle, (float) Math.atan2(o.y - e.y, o.x - e.x), 0.2f);
+            // They take turns talking.
+            boolean mine = (((int) (e.chat / 2.2f)) % 2 == 0) == (e.nameSeed > o.nameSeed);
+            e.talkTimer = mine ? 0.3f : 0;
+            if (e.chat <= 0) {
+                e.chatWith = null;
+                e.errandTimer = Math.min(e.errandTimer, 0);
+            }
+            return true;
+        }
+        if (e.job == Entity.J_JOGGER || e.job == Entity.J_POSTIE || e.leader != null || rnd.nextFloat() > dt * 0.012f) return false;
+        Entity o = nearestOfType(e, Entity.CIVILIAN, 14);
+        if (o == null || o.chat > 0 || o.leader != null || o.task != Dispatch.T_NONE || o.fear > 0 || o.fleeTimer > 0
+                || o.job == Entity.J_JOGGER || o == controlled || e == controlled) return false;
+        float len = 4 + rnd.nextFloat() * 7;
+        e.chat = o.chat = len;
+        e.chatWith = o;
+        o.chatWith = e;
+        return true;
+    }
+
+    /** What someone's life is, for their card: "Nurse at City Hospital", "Postal worker". */
+    String jobTitle(Entity e) {
+        if (e.type != Entity.CIVILIAN || e.job == Entity.J_NONE) return null;
+        String at = e.work != null ? placeLabel(e.work) : null;
+        switch (e.job) {
+            case Entity.J_WORKER:
+                if (e.work == null) return "Works in town";
+                switch (e.work.kind) {
+                    case City.HOSPITAL: return "Nurse at " + at;
+                    case City.SCHOOL: return "Teacher at " + at;
+                    case City.WAREHOUSE: return "Warehouse worker";
+                    case City.MALL: return "Works at " + at;
+                    case City.MARKET: return "Cashier at " + at;
+                    default: return "Office worker";
+                }
+            case Entity.J_SHOPKEEPER: return "Runs " + at;
+            case Entity.J_STUDENT: return "Student at " + at;
+            case Entity.J_HOMEBODY: return "Spends most of the day at home";
+            case Entity.J_ERRANDS: return "Always out and about";
+            case Entity.J_JOGGER: return "Keen runner";
+            case Entity.J_PARK: return "Loves the park";
+            case Entity.J_POSTIE: return "Postal worker";
+            case Entity.J_VENDOR: return "Street food vendor";
+        }
+        return null;
+    }
+
+    private static String placeLabel(City.Building b) {
+        if (b.name != null) return b.name;
+        switch (b.kind) {
+            case City.SHOP: return "a shop";
+            case City.PHARMACY: return "a pharmacy";
+            case City.KIOSK: return "a gas station";
+            case City.WAREHOUSE: return "a warehouse";
+            case City.HOUSE: return "a house";
+            case City.APARTMENT: return "an apartment block";
+            default: return "an office";
+        }
+    }
+
+    /** What someone is doing with their day right now, for their card. */
+    String lifeActivity(Entity e) {
+        if (e.chat > 0) return "Chatting with a neighbour";
+        switch (e.job) {
+            case Entity.J_JOGGER:
+                if (e.errand == null) return "Out for a run";
+                break;
+            case Entity.J_PARK:
+                if (e.spot != null) return "Spending time at " + city.areaName(e.spot);
+                break;
+            case Entity.J_VENDOR:
+                if (e.spot != null)
+                    return (atStall(e) ? "Selling food at " : "Pushing the food cart to ")
+                            + city.areaName(e.spot);
+                break;
+            case Entity.J_POSTIE:
+                if (e.round != null && e.errand == null) return "Delivering the post (" + Math.min(e.jobStep + 1, e.round.size()) + " of " + e.round.size() + ")";
+                break;
+        }
+        if (e.errand != null) {
+            if (e.errand == e.home) return "Heading home";
+            if (e.errand == e.work) return e.job == Entity.J_STUDENT ? "On the way to school" : "On the way to work";
+            return "Going to " + placeLabel(e.errand);
+        }
+        return "Taking a stroll";
+    }
+
+    /** Who is inside a building going about their day: {at home, at work, visiting}. */
+    int[] insideCounts(City.Building b) {
+        int[] c = new int[3];
+        for (int i = 0, n = b.visitors.size(); i < n; i++) {
+            Entity o = b.visitors.get(i);
+            if (o.home == b) c[0]++;
+            else if (o.work == b) c[1]++;
+            else c[2]++;
+        }
+        return c;
     }
 
     /** Places people go on errands: the named landmarks and a handful of shops (so their routes stay cached). */

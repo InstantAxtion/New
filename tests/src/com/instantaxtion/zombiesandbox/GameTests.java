@@ -821,6 +821,49 @@ public final class GameTests {
                 check(!w.city.junctions.isEmpty(), "junctions are found");
             }
         });
+        test("everyone has a life: some at home, some at work, some out running, in the park or chatting", new Check() {
+            public void run() throws Exception {
+                CityConfig c = new CityConfig();
+                c.v[CityConfig.OPT_ZOMBIES] = 0;
+                c.seed = 7;
+                World w = new World(c);
+                w.populate(c);
+                int home = 0, work = 0;
+                for (City.Building b : w.city.buildings) {
+                    int[] in = w.insideCounts(b);
+                    home += in[0];
+                    work += in[1];
+                }
+                check(home > 50 && work > 20, "the day starts with people at home and at work");
+                java.util.HashSet<Integer> jobs = new java.util.HashSet<Integer>();
+                for (Entity e : w.entities) if (!e.dead && e.type == Entity.CIVILIAN) jobs.add(e.job);
+                for (City.Building b : w.city.buildings) for (Entity e : b.visitors) jobs.add(e.job);
+                check(jobs.size() >= 7, "many different lives");
+                boolean ran = false, park = false, chat = false, commute = false;
+                for (int s = 0; s < 30 * 150; s++) {
+                    w.update(1 / 30f);
+                    if (s % 30 != 0) continue;
+                    for (Entity e : w.entities) {
+                        if (e.dead || e.type != Entity.CIVILIAN) continue;
+                        String a = w.lifeActivity(e);
+                        ran |= a.startsWith("Out for a run");
+                        park |= a.startsWith("Spending time");
+                        chat |= e.chat > 0;
+                        commute |= a.startsWith("On the way to work");
+                    }
+                }
+                check(ran && park && commute, "people run, go to the park and go to work");
+                check(chat, "neighbours stop to chat");
+                // Lives survive a save.
+                java.io.File f = java.io.File.createTempFile("zcs", ".dat");
+                SaveGame.save(w, f);
+                World l = SaveGame.load(f);
+                int withJobs = 0;
+                for (Entity e : l.entities) if (e.type == Entity.CIVILIAN && e.job != Entity.J_NONE) withJobs++;
+                check(withJobs > 100, "and are saved");
+                f.delete();
+            }
+        });
         test("the Build tool, and its edits in the city code and saves", new Check() {
             public void run() throws Exception {
                 CityConfig c = new CityConfig();

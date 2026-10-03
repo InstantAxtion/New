@@ -2917,6 +2917,23 @@ final class GameView extends View implements Menu.Host {
     }
 
     private void drawEntity(Canvas c, Entity e, boolean healthBar) {
+        if (e.type == Entity.CIVILIAN && world.atStall(e)) {
+            // The food cart: a striped umbrella over a little stall.
+            float cx = e.x + 7, cy = e.y - 2;
+            fill.setColor(0x40000000);
+            c.drawRect(cx - 3.5f, cy - 2, cx + 5, cy + 5, fill);
+            fill.setColor(0xFFB8BCC0);
+            c.drawRect(cx - 4, cy - 2.5f, cx + 4, cy + 3.5f, fill);
+            fill.setColor(0xFF2A2A2A);
+            c.drawCircle(cx - 3, cy + 3.8f, 1, fill);
+            c.drawCircle(cx + 3, cy + 3.8f, 1, fill);
+            fill.setColor(0xFFE04A3A);
+            c.drawCircle(cx, cy - 1, 5.5f, fill);
+            fill.setColor(0xFFF2F2F2);
+            c.drawCircle(cx, cy - 1, 3.6f, fill);
+            fill.setColor(0xFFE04A3A);
+            c.drawCircle(cx, cy - 1, 1.8f, fill);
+        }
         if (e.hidden && scale < 5f) {
             // A crawler lying low: just a dark shape in the grass, if you look closely.
             fill.setColor(0x40263018);
@@ -3451,6 +3468,8 @@ final class GameView extends View implements Menu.Host {
         else if (e.type == Entity.SOLDIER) title = Names.person(e.nameSeed) + "  -  " + Entity.ROLE_NAMES[e.role] + ", " + Dispatch.name(e);
         else title = Names.person(e.nameSeed) + "  -  " + Entity.NAMES[e.type];
         lines.add(doing(e));
+        String life = world.jobTitle(e);
+        if (life != null) lines.add(life + (e.home != null ? ", lives on " + world.city.placeName(e.home.doorX, e.home.doorY).split(" & ")[0] : ""));
         String health = "Health " + Math.max(0, (int) e.hp) + "/" + (int) e.maxHp;
         if (e.infected) health += "   BITTEN: turns in " + Math.max(0, (int) e.infectTimer) + "s";
         if (e.fresh > 0) health += "   Freshly turned";
@@ -3778,7 +3797,8 @@ final class GameView extends View implements Menu.Host {
         if (e.type == Entity.RAIDER) return "Looking for trouble";
         if (e.type == Entity.MEDIC) return "Looking for anyone hurt";
         if (e.isArmed()) return "On patrol";
-        return e.leader != null ? "Staying close" : "Going about their day";
+        if (e.leader != null) return "Staying close";
+        return e.type == Entity.CIVILIAN ? world.lifeActivity(e) : "Going about their day";
     }
 
     /** Draws text on a dark pill above the tool bar, wrapping onto more lines on narrow screens. */
@@ -4488,7 +4508,14 @@ final class GameView extends View implements Menu.Host {
         else if (b.infestKnown && b.lurkers > 0) lines.add("INFESTED: there are zombies inside. Keep out!");
         else if (!b.occupants.isEmpty())
             lines.add(b.occupants.size() + " hiding inside, door barricaded (" + Math.max(0, (int) b.barricade) + "%)");
-        if (!b.visitors.isEmpty()) lines.add(b.visitors.size() + (b.visitors.size() == 1 ? " person" : " people") + " inside on errands");
+        if (!b.visitors.isEmpty()) {
+            int[] in = world.insideCounts(b);
+            String s = "Inside: ";
+            if (in[0] > 0) s += in[0] + " at home";
+            if (in[1] > 0) s += (in[0] > 0 ? ", " : "") + in[1] + (b.kind == City.SCHOOL ? " at school" : " at work");
+            if (in[2] > 0) s += (in[0] + in[1] > 0 ? ", " : "") + in[2] + " visiting";
+            lines.add(s);
+        }
         else if (b.infestKnown) lines.add("Zombies were inside. Nobody has gone back in.");
         else lines.add(b.capacity > 0 ? "Empty (room for " + b.capacity + " to hide)" : "Nobody can shelter here");
         if (!b.collapsed) {

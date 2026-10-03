@@ -57,6 +57,13 @@ on the phone, so the APK contains no audio files.
   hold two people per flat on every floor, and some offices and shops have flats upstairs. The number
   of people in a city comes from its homes (there's no fixed limit: a big city has thousands), and
   people run home first when trouble starts. Families go about together in groups of up to five.
+- **Everyone has a life**: office and warehouse workers, nurses, teachers and cashiers commute to a real
+  workplace and stay a shift; shopkeepers run a shop; students go to school; some people mostly stay
+  home; others are always out on errands; joggers run the pavements; park-lovers and dog walkers spend
+  time in the parks; a postal worker goes house to house; street food vendors set up carts at the plazas.
+  When the game starts many people are already at home or at work indoors. Neighbours stop to chat.
+  A person's card shows their life and what they're doing; a building's card shows who's inside (at
+  home, at work, visiting).
 - **Errands**: people go into shops, the supermarket, pharmacies, churches, schools and their own homes
   for a while, then come out and go somewhere else. A busy place puts people off, and a full one is
   skipped rather than queued at, so nobody piles up at a door. If zombies turn up outside, the people

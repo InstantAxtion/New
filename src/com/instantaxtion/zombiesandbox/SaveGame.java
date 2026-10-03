@@ -17,7 +17,7 @@ import java.util.ArrayList;
  * damaged or collapsed buildings.
  */
 final class SaveGame {
-    private static final int VERSION = 15;
+    private static final int VERSION = 16;
 
     private SaveGame() {
     }
@@ -303,6 +303,7 @@ final class SaveGame {
         out.writeFloat(e.fresh);
         out.writeByte(e.weapon);
         out.writeByte(e.melee);
+        out.writeByte(e.job);
     }
 
     static World load(File file) throws IOException {
@@ -568,6 +569,7 @@ final class SaveGame {
             e.weapon = in.readByte();
             e.melee = in.readByte();
         }
+        if (version >= 16) e.job = in.readByte();
         if (zone >= 0 && zone < d.zones.size()) e.zone = d.zones.get(zone);
         return e;
     }

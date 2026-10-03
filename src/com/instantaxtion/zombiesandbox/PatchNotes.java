@@ -2,11 +2,18 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "7.2";
-    static final int VERSION_CODE = 27;
+    static final String VERSION = "7.3";
+    static final int VERSION_CODE = 28;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "7.3  -  Everyone has a life",
+                    "Every resident has a life of their own: office and warehouse workers, nurses, teachers and cashiers who commute to a real workplace and stay a shift; shopkeepers who run a shop; students who go to school; people who mostly stay home; people always out on errands; joggers; park-lovers and dog walkers; a postal worker doing rounds house to house; street food vendors with their carts at the plazas.",
+                    "The day is under way when the game starts: many people are at home or at work indoors, and the rest are out doing their thing.",
+                    "Neighbours stop and chat in the street.",
+                    "Tap someone to see their life and what they're doing (\"Nurse at City Hospital, lives on Oak St\" - \"On the way to work\"). Tap a building to see who's inside: at home, at work or visiting.",
+            },
             {
                     "7.2  -  Traffic that follows the rules",
                     "Traffic lights at the big junctions, cycling green, amber and red each way (shown on the corners). Cars stop at the line on red, stop on amber unless it's too late, and go on green.",

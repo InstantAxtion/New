@@ -91,6 +91,19 @@ final class Entity {
     float lastX, lastY, memory, searchTimer, moanCd;
     /** Civilians: their home, and the errand they are on (a place to go and how long to stay). */
     City.Building home, errand;
+    /**
+     * Everyday life: what this person does with their day (J_ constants), where they work, and the state of
+     * whatever they're doing now (a run, a delivery round, a stall, a chat).
+     */
+    int job;
+    City.Building work;
+    float jobTimer, chat;
+    int jobStep;
+    Entity chatWith;
+    float[] spot;
+    java.util.ArrayList<City.Building> round;
+    static final int J_NONE = 0, J_WORKER = 1, J_HOMEBODY = 2, J_ERRANDS = 3, J_SHOPKEEPER = 4, J_STUDENT = 5,
+            J_JOGGER = 6, J_PARK = 7, J_POSTIE = 8, J_VENDOR = 9;
     float errandTimer;
     boolean homeChecked;
     /** The last hard knock (blast, car, charge), so the body flies the right way if it kills them. Fades fast. */

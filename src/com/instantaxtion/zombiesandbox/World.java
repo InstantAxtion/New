@@ -162,6 +162,8 @@ final class World {
     boolean gore = true;
 
     float time, shake;
+    /** What the player can see (world units), so cars aren't made to vanish or appear in plain view. */
+    float viewX0, viewY0, viewX1 = -1, viewY1 = -1;
     private float fieldTimer, engineTimer;
     final int[] counts = new int[Entity.TYPE_COUNT];
     int humans, zombies, turned, zombiesKilled, civiliansLost;

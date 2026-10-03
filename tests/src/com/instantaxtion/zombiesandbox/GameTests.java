@@ -783,6 +783,44 @@ public final class GameTests {
                         "buses are long, kei cars are small");
             }
         });
+        test("traffic keeps to the roads, stops at junctions and never vanishes in view", new Check() {
+            public void run() {
+                CityConfig c = new CityConfig();
+                c.v[CityConfig.OPT_ZOMBIES] = 0;
+                c.seed = 3;
+                World w = new World(c);
+                w.populate(c);
+                w.viewX0 = -100000;
+                w.viewY0 = -100000;
+                w.viewX1 = -99000;
+                w.viewY1 = -99000;
+                w.fleet.spawnTraffic(20);
+                // Now everything is on screen.
+                w.viewX0 = 0;
+                w.viewY0 = 0;
+                w.viewX1 = w.city.worldW();
+                w.viewY1 = w.city.worldH();
+                java.util.HashSet<Fleet.Vehicle> before = new java.util.HashSet<Fleet.Vehicle>();
+                for (Fleet.Vehicle v : w.fleet.vehicles) if (v.type == Fleet.CAR) before.add(v);
+                int pavement = 0, samples = 0, stops = 0;
+                for (int s = 0; s < 30 * 90; s++) {
+                    w.update(1 / 30f);
+                    for (Fleet.Vehicle v : w.fleet.vehicles) {
+                        if (v.type != Fleet.CAR || v.parked) continue;
+                        if (s % 15 == 0) {
+                            samples++;
+                            byte t = w.city.tiles[w.city.tileIndex(v.x, v.y)];
+                            if (t == City.SIDEWALK || t == City.PLAZA) pavement++;
+                        }
+                        if (v.held && v.speed < 3) stops++;
+                    }
+                }
+                for (Fleet.Vehicle v : before) check(w.fleet.vehicles.contains(v), "no car disappears while you can see it");
+                check(pavement * 50 < samples, "cars keep off the pavement");
+                check(stops > 0, "cars stop at lights and stop signs");
+                check(!w.city.junctions.isEmpty(), "junctions are found");
+            }
+        });
         test("the Build tool, and its edits in the city code and saves", new Check() {
             public void run() throws Exception {
                 CityConfig c = new CityConfig();

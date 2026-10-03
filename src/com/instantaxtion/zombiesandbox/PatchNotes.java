@@ -2,11 +2,19 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "7.1";
-    static final int VERSION_CODE = 26;
+    static final String VERSION = "7.2";
+    static final int VERSION_CODE = 27;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "7.2  -  Traffic that follows the rules",
+                    "Traffic lights at the big junctions, cycling green, amber and red each way (shown on the corners). Cars stop at the line on red, stop on amber unless it's too late, and go on green.",
+                    "Stop junctions: STOP (ALTO in Mexico) painted on the road and signs on the corners. Cars come to a full stop, then go when the junction is clear. Roundabouts: give way to anything already on it.",
+                    "Cars drive in the middle of their own lane, on the right (on the left in Australia and Japan), including on avenues with a median, and only steer while they're moving.",
+                    "Everyday traffic stays on the roads instead of cutting across pavements and car parks.",
+                    "Cars no longer vanish. A car that can't find anywhere to go pulls in and parks; parked cars and wrecks are only towed away, and new traffic only turns up, where you can't see.",
+            },
             {
                     "7.1  -  Buildings, cars and lanes for every country",
                     "Buildings built the local way. Australia: hip roofs in Colorbond or tile, verandahs, solar panels and rainwater tanks. Japan: kawara-tiled roofs, temples, green-roofed shrines and pagodas, flat-roofed blocks crowded with air conditioners, water tanks and balconies on every floor. France: zinc mansard roofs with dormers and chimney pots, tall windows and wrought-iron balconies, cathedrals with spires. Mexico: flat roofs behind painted parapets with black water tanks and rebar for the next floor, roof terraces, barred windows and tiled church domes with twin bell towers.",

@@ -63,6 +63,10 @@ on the phone, so the APK contains no audio files.
   inside stay in and shelter. Zoom in to see them inside.
 - **Trains** slow down and stop at the station for a few seconds. The barriers at the level crossings
   come down and the lights flash while a train is near.
+- **Traffic follows the rules**: traffic lights at the big junctions (green, amber, red each way, shown
+  on the corners), stop junctions with STOP (ALTO in Mexico) painted on the road, and give-way at
+  roundabouts. Cars keep to the middle of their lane on the correct side, stay on the roads, and never
+  vanish in view: a car with nowhere to go parks, and towing away or new traffic only happens off screen.
 - **Pedestrians keep to the rules**: people out on errands walk on the pavement, cross at the zebra
   crossings by the junctions and wait at the kerb while a car goes by. Anyone running from zombies
   crosses wherever they like.

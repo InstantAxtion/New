@@ -917,6 +917,10 @@ final class GameView extends View implements Menu.Host {
         }
         c.scale(scale, scale);
         c.translate(-camX, -camY);
+        world.viewX0 = camX;
+        world.viewY0 = camY;
+        world.viewX1 = camX + getWidth() / scale;
+        world.viewY1 = camY + getHeight() / scale;
         // Realistic graphics smooth the map when zoomed in; classic keeps the crisp pixels.
         bmpPaint.setFilterBitmap(realistic || scale < 1.5f);
         c.drawBitmap(world.city.bitmap, 0, 0, bmpPaint);
@@ -1129,6 +1133,7 @@ final class GameView extends View implements Menu.Host {
             c.drawCircle(sc[0], sc[1], 10 + sc[2] * 120, stroke);
         }
         drawCrossings(c, vx0, vx1, vy0, vy1);
+        drawSignals(c, vx0, vx1, vy0, vy1);
         // What the dead can hear: rings spreading out from gunfire, alarms, horns and screams.
         stroke.setStrokeWidth(1.5f / Math.max(0.5f, scale) * 2);
         for (int i = 0, n = world.noiseRings.size(); i < n; i++) {
@@ -2214,6 +2219,57 @@ final class GameView extends View implements Menu.Host {
     }
 
     /** A passenger train: a locomotive pulling three carriages along the line. */
+    /**
+     * Traffic lights on the corners of the big junctions (two show the north-south lights, two the east-west
+     * ones) and stop signs (ALTO in Mexico) at the small ones.
+     */
+    private void drawSignals(Canvas c, float vx0, float vx1, float vy0, float vy1) {
+        City city = world.city;
+        if (scale < 1.2f) return;
+        for (int i = 0, n = city.junctions.size(); i < n; i++) {
+            int[] j = city.junctions.get(i);
+            float x0 = j[0] * City.T - 4, y0 = j[1] * City.T - 4, x1 = (j[2] + 1) * City.T + 4, y1 = (j[3] + 1) * City.T + 4;
+            if (x1 < vx0 - 10 || x0 > vx1 + 10 || y1 < vy0 - 10 || y0 > vy1 + 10) continue;
+            if (j[4] == City.J_LIGHTS) {
+                int ns = city.lightState(i, true, world.time), ew = city.lightState(i, false, world.time);
+                signal(c, x0, y0, ns);
+                signal(c, x1, y1, ns);
+                signal(c, x1, y0, ew);
+                signal(c, x0, y1, ew);
+            } else if (j[4] == City.J_STOP) {
+                stopSign(c, x0, y0);
+                stopSign(c, x1, y1);
+                stopSign(c, x1, y0);
+                stopSign(c, x0, y1);
+            }
+        }
+    }
+
+    private void signal(Canvas c, float x, float y, int state) {
+        fill.setColor(0x50000000);
+        c.drawRect(x - 1.4f, y - 3.6f, x + 3, y + 4.6f, fill);
+        fill.setColor(0xFF1E2024);
+        c.drawRect(x - 2, y - 4.2f, x + 2, y + 4.2f, fill);
+        int[] on = {0xFF3AE070, 0xFFF0B020, 0xFFFF3A30};
+        for (int k = 0; k < 3; k++) {
+            boolean lit = state == 2 - k;
+            fill.setColor(lit ? on[2 - k] : 0xFF3A3C40);
+            c.drawCircle(x, y - 2.6f + k * 2.6f, 1.05f, fill);
+        }
+        int lit = state == 0 ? on[0] : state == 1 ? on[1] : on[2];
+        fill.setColor(alpha(lit, 0.22f));
+        c.drawCircle(x, y - 2.6f + (2 - state) * 2.6f, 2.6f, fill);
+    }
+
+    private void stopSign(Canvas c, float x, float y) {
+        fill.setColor(0xFF8A8C90);
+        c.drawRect(x - 0.4f, y, x + 0.4f, y + 3, fill);
+        fill.setColor(0xFFD02A2A);
+        c.drawCircle(x, y, 2.4f, fill);
+        fill.setColor(0xFFF2F2F2);
+        c.drawRect(x - 1.5f, y - 0.35f, x + 1.5f, y + 0.35f, fill);
+    }
+
     /** Level crossings: the barriers are up, or down with the red lights flashing while a train is near. */
     private void drawCrossings(Canvas c, float vx0, float vx1, float vy0, float vy1) {
         City city = world.city;

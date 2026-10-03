@@ -3471,6 +3471,54 @@ final class City {
         }
     }
 
+    /**
+     * Where each street meets a junction: a stop line across the lanes coming in, with STOP (ALTO in Mexico)
+     * painted before stop junctions and a dashed give-way line at roundabouts.
+     */
+    private void stopLines(Canvas c, Paint p, Street st, int n) {
+        float drive = country.leftHand ? -1 : 1;
+        for (int k = 1; k < n - 1; k++) {
+            int cx = st.vertical ? st.x0 + st.width / 2 : st.x0 + k, cy = st.vertical ? st.y0 + k : st.y0 + st.width / 2;
+            if (!paved(cx, cy) || junctionAt(cx, cy) || crosswalk(cx, cy)) continue;
+            for (int s = -1; s <= 1; s += 2) {
+                int ax = st.vertical ? cx : cx + s, ay = st.vertical ? cy + s : cy;
+                int bx = st.vertical ? cx : cx + 2 * s, by = st.vertical ? cy + 2 * s : cy;
+                if (!crosswalk(ax, ay) || !junctionAt(bx, by)) continue;
+                int id = junctionId[by * w + bx];
+                int type = junctions.get(id)[4];
+                float hx = st.vertical ? 0 : s, hy = st.vertical ? s : 0, rx = -hy, ry = hx;
+                // The edge of this tile nearest the junction, and the half of the road coming in.
+                float ex = (cx + 0.5f) * T + hx * T / 2, ey = (cy + 0.5f) * T + hy * T / 2;
+                float mid = st.width * T / 2f;
+                float sx = st.vertical ? st.x0 * T + mid : ex, sy = st.vertical ? ey : st.y0 * T + mid;
+                float ox = rx * drive, oy = ry * drive;
+                p.setColor(0xE8EEEEEE);
+                if (type == J_ROUNDABOUT) {
+                    p.setStrokeWidth(1.2f);
+                    for (float q = 1; q < mid - 1; q += 3)
+                        c.drawLine(sx + ox * q, sy + oy * q, sx + ox * (q + 1.6f), sy + oy * (q + 1.6f), p);
+                    continue;
+                }
+                p.setStrokeWidth(1.8f);
+                c.drawLine(sx + ox * 0.8f, sy + oy * 0.8f, sx + ox * (mid - 1), sy + oy * (mid - 1), p);
+                if (type == J_STOP && st.width == 3) {
+                    String word = country.id == Country.MEXICO ? "ALTO" : "STOP";
+                    float lx = sx + ox * mid * 0.5f - hx * 9, ly = sy + oy * mid * 0.5f - hy * 9;
+                    c.save();
+                    c.translate(lx, ly);
+                    // Read by the driver coming in.
+                    c.rotate((float) Math.toDegrees(Math.atan2(hy, hx)) + 90);
+                    p.setTextAlign(Paint.Align.CENTER);
+                    p.setTextSize(5.5f);
+                    p.setFakeBoldText(true);
+                    c.drawText(word, 0, 2, p);
+                    p.setFakeBoldText(false);
+                    c.restore();
+                }
+            }
+        }
+    }
+
     /** A painted arrow at (x, y) pointing along (hx, hy); turn 0 is straight on, +1 bends right, -1 left. */
     private static void arrow(Canvas c, Paint p, float x, float y, float hx, float hy, float turn) {
         float rx = -hy, ry = hx;
@@ -3515,6 +3563,7 @@ final class City {
                 }
             }
             if (st.width == 5) turnLanes(c, p, st, n);
+            stopLines(c, p, st, n);
             // Zebra crossings where the street meets a junction.
             p.setColor(0xCCE8E8E8);
             for (int k = 1; k < n; k++) {
@@ -4297,6 +4346,11 @@ final class City {
 
     /** Driving cost field to (x, y) for vehicles (Dijkstra; prefers roads). Returns false if unreachable. */
     boolean driveField(int[] dist, float x, float y) {
+        return driveField(dist, x, y, false);
+    }
+
+    /** With strict on, only roads and dirt tracks: everyday traffic doesn't cut across pavements and car parks. */
+    boolean driveField(int[] dist, float x, float y, boolean strict) {
         Arrays.fill(dist, FAR);
         float[] p = nearestDrivable(x, y);
         if (p == null) return false;
@@ -4313,6 +4367,7 @@ final class City {
                 int nx = tx + (k == 0 ? 1 : k == 1 ? -1 : 0), ny = ty + (k == 2 ? 1 : k == 3 ? -1 : 0);
                 if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
                 int n = ny * w + nx, c = driveCost(n);
+                if (strict && c > 4) continue;
                 if (c < 0 || d + c >= dist[n]) continue;
                 dist[n] = d + c;
                 pq.add(((long) dist[n] << 24) | n);
@@ -4352,6 +4407,146 @@ final class City {
                 for (int k = s; k < y; k++) if (y - s >= 7 && run[k * w + x] >= 7) junction[k * w + x] = true;
             }
         }
+        // Group the junction tiles into junctions, and decide how each is controlled.
+        junctionId = new int[w * h];
+        Arrays.fill(junctionId, -1);
+        junctions.clear();
+        int[] stack = new int[w * h];
+        for (int i = 0; i < w * h; i++) {
+            if (!junction[i] || junctionId[i] >= 0) continue;
+            int id = junctions.size(), top = 0, x0 = w, y0 = h, x1 = -1, y1 = -1, size = 0;
+            stack[top++] = i;
+            junctionId[i] = id;
+            while (top > 0) {
+                int t = stack[--top], tx = t % w, ty = t / w;
+                size++;
+                x0 = Math.min(x0, tx);
+                y0 = Math.min(y0, ty);
+                x1 = Math.max(x1, tx);
+                y1 = Math.max(y1, ty);
+                for (int q = 0; q < 4; q++) {
+                    int nx = tx + (q == 0 ? 1 : q == 1 ? -1 : 0), ny = ty + (q == 2 ? 1 : q == 3 ? -1 : 0);
+                    if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+                    int n = ny * w + nx;
+                    if (junction[n] && junctionId[n] < 0) {
+                        junctionId[n] = id;
+                        stack[top++] = n;
+                    }
+                }
+            }
+            // A ring with an island is a roundabout; where an avenue is involved there are traffic lights;
+            // the rest are stop junctions.
+            boolean island = false;
+            for (int y = Math.max(0, y0 - 1); y <= Math.min(h - 1, y1 + 1) && !island; y++)
+                for (int x = Math.max(0, x0 - 1); x <= Math.min(w - 1, x1 + 1); x++)
+                    if (x > x0 && x < x1 && y > y0 && y < y1 && (tiles[y * w + x] == GRASS || tiles[y * w + x] == TREE)) island = true;
+            int type = island ? J_ROUNDABOUT : (x1 - x0 >= 4 || y1 - y0 >= 4) ? J_LIGHTS : J_STOP;
+            junctions.add(new int[]{x0, y0, x1, y1, type, (id * 7919) % 23});
+        }
+        // Junctions only a tile or two apart are one junction as far as anyone driving is concerned.
+        int n = junctions.size();
+        int[] root = new int[n];
+        for (int i = 0; i < n; i++) root[i] = i;
+        for (int i = 0; i < n; i++)
+            for (int k = i + 1; k < n; k++) {
+                int[] a = junctions.get(i), b = junctions.get(k);
+                if (a[0] - 3 <= b[2] && b[0] - 3 <= a[2] && a[1] - 3 <= b[3] && b[1] - 3 <= a[3]) {
+                    int ra = i, rb = k;
+                    while (root[ra] != ra) ra = root[ra];
+                    while (root[rb] != rb) rb = root[rb];
+                    if (ra != rb) root[Math.max(ra, rb)] = Math.min(ra, rb);
+                }
+            }
+        boolean merged = false;
+        for (int i = 0; i < n; i++) {
+            int r = i;
+            while (root[r] != r) r = root[r];
+            root[i] = r;
+            if (r != i) merged = true;
+        }
+        if (merged) {
+            int[] newId = new int[n];
+            List<int[]> out = new ArrayList<int[]>();
+            for (int i = 0; i < n; i++) {
+                if (root[i] != i) continue;
+                newId[i] = out.size();
+                out.add(junctions.get(i).clone());
+            }
+            for (int i = 0; i < n; i++) {
+                if (root[i] == i) continue;
+                int[] into = out.get(newId[root[i]]), from = junctions.get(i);
+                newId[i] = newId[root[i]];
+                into[0] = Math.min(into[0], from[0]);
+                into[1] = Math.min(into[1], from[1]);
+                into[2] = Math.max(into[2], from[2]);
+                into[3] = Math.max(into[3], from[3]);
+                // Lights win over a stop sign; a roundabout stays a roundabout.
+                if (into[4] != J_ROUNDABOUT && from[4] != J_STOP) into[4] = from[4];
+            }
+            for (int i = 0; i < w * h; i++) if (junctionId[i] >= 0) junctionId[i] = newId[junctionId[i]];
+            junctions.clear();
+            junctions.addAll(out);
+        }
+        // The road inside a junction's box (the short links between merged parts) belongs to it too.
+        for (int id = 0; id < junctions.size(); id++) {
+            int[] jb = junctions.get(id);
+            for (int y = jb[1]; y <= jb[3]; y++)
+                for (int x = jb[0]; x <= jb[2]; x++)
+                    if (junctionId[y * w + x] < 0 && paved(x, y)) junctionId[y * w + x] = id;
+        }
+    }
+
+    static final int J_STOP = 0, J_LIGHTS = 1, J_ROUNDABOUT = 2;
+    /** Junctions: {x0, y0, x1, y1 (tiles, inclusive), type, light timing offset}. */
+    final List<int[]> junctions = new ArrayList<int[]>();
+    private int[] junctionId;
+
+    /** Which junction a point is in, or -1. */
+    int junctionIdAt(float x, float y) {
+        if (junction == null) computeJunctions();
+        int tx = (int) Math.floor(x / T), ty = (int) Math.floor(y / T);
+        return tx < 0 || ty < 0 || tx >= w || ty >= h ? -1 : junctionId[ty * w + tx];
+    }
+
+    /** Traffic lights: 0 green, 1 amber, 2 red for traffic going north-south (vertical) or east-west. */
+    int lightState(int id, boolean vertical, float time) {
+        float t = (time + junctions.get(id)[5]) % 26f;
+        // North-south: green 0-9, amber 9-12, then red while east-west has green 13-22 and amber 22-25
+        // (a second of all-red in between each way).
+        if (vertical) return t < 9 ? 0 : t < 12 ? 1 : 2;
+        return t >= 13 && t < 22 ? 0 : t >= 22 && t < 25 ? 1 : 2;
+    }
+
+    /**
+     * Where the lane is, across the road: how far (world units, to the driver's right) the middle of the lane
+     * on the proper side of the road is from the middle of tile (tx, ty), for someone heading (dx, dy). The
+     * other side of a median counts as the same road.
+     */
+    float laneOffset(int tx, int ty, int dx, int dy) {
+        if (junctionAt(tx, ty)) return 4.5f * (country.leftHand ? -1 : 1);
+        int rx = -dy, ry = dx;
+        int right = 0, left = 0;
+        for (int s = 1; s <= 6; s++) {
+            int x = tx + rx * s, y = ty + ry * s;
+            if (paved(x, y)) right = s;
+            else if (isMedian(x, y) && paved(x + rx, y + ry)) continue;
+            else break;
+        }
+        for (int s = 1; s <= 6; s++) {
+            int x = tx - rx * s, y = ty - ry * s;
+            if (paved(x, y)) left = s;
+            else if (isMedian(x, y) && paved(x - rx, y - ry)) continue;
+            else break;
+        }
+        float centre = (right - left) / 2f, half = (right + left + 1) / 2f;
+        float lane = half * 0.42f * (country.leftHand ? -1 : 1);
+        return (centre + lane) * T;
+    }
+
+    private boolean isMedian(int x, int y) {
+        if (x < 0 || y < 0 || x >= w || y >= h) return false;
+        byte t = tiles[y * w + x];
+        return t == GRASS || t == TREE;
     }
 
     boolean junctionAt(int x, int y) {

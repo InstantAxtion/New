@@ -36,6 +36,15 @@ final class Fleet {
         int type, state;
         /** For ordinary cars: what kind of car it is (M_SEDAN and so on). */
         int model;
+        /** The tile of its route it is driving along, and the route that belongs to. */
+        int pathT = -1;
+        int[] pathField;
+        /** At junctions: the one it has been let through, the one it is waiting at and for how long. */
+        int clearedJ = -1, waitJ = -1;
+        float waitT;
+        boolean held;
+        /** The way along the road it was last heading (one step of its route). */
+        int pdx, pdy;
         float x, y, angle, speed, timer, stuckTimer, lastDist, gunCd, soundCd, circle;
         /** Rounds fired by the door gunner (it fires in short bursts). */
         int burst;
@@ -177,7 +186,9 @@ final class Fleet {
         int buses = 0;
         for (int i = 0; i < n; i++) {
             float[] start = randomRoad();
-            if (start == null) return;
+            // New cars turn up out of sight, not out of thin air in front of you.
+            for (int k = 0; k < 8 && start != null && inView(start[0], start[1]); k++) start = randomRoad();
+            if (start == null || inView(start[0], start[1])) continue;
             Vehicle v = make(CAR);
             v.state = CRUISE;
             v.x = start[0];
@@ -208,10 +219,24 @@ final class Fleet {
         return null;
     }
 
+    /** The route's distance at (x, y), or from the road right next to it. */
+    private int nearField(int[] field, float x, float y) {
+        int ti = city.tileIndex(x, y), tx = ti % city.w, ty = ti / city.w, best = City.FAR;
+        for (int j = ty - 1; j <= ty + 1; j++)
+            for (int i = tx - 1; i <= tx + 1; i++)
+                if (i >= 0 && j >= 0 && i < city.w && j < city.h) best = Math.min(best, field[j * city.w + i]);
+        return best;
+    }
+
+    /** True if (x, y) is on the player's screen (or near it). */
+    boolean inView(float x, float y) {
+        return x > w.viewX0 - 60 && x < w.viewX1 + 60 && y > w.viewY0 - 60 && y < w.viewY1 + 60;
+    }
+
     private boolean newDestination(Vehicle v) {
-        for (int tries = 0; tries < 5; tries++) {
+        for (int tries = 0; tries < 12; tries++) {
             float[] d = randomRoad();
-            if (d == null || Math.hypot(d[0] - v.x, d[1] - v.y) < 400) continue;
+            if (d == null || Math.hypot(d[0] - v.x, d[1] - v.y) < (tries < 6 ? 400 : 160)) continue;
             if (route(v, d[0], d[1])) return true;
         }
         return false;
@@ -220,7 +245,7 @@ final class Fleet {
     /** Points the vehicle at a new goal. Returns false if it can't be reached by road. */
     private boolean route(Vehicle v, float x, float y) {
         int[] field = new int[city.w * city.h];
-        if (!city.driveField(field, x, y) || field[city.tileIndex(v.x, v.y)] >= City.FAR) return false;
+        if (!city.driveField(field, x, y, v.type == CAR) || nearField(field, v.x, v.y) >= City.FAR) return false;
         v.field = field;
         v.tx = x;
         v.ty = y;
@@ -667,9 +692,12 @@ final class Fleet {
             trafficTimer = 6;
             if (movingTraffic() < trafficTarget && w.zombieCount() < 10) spawnTraffic(1);
             int parked = 0;
-            for (int i = vehicles.size() - 1; i >= 0; i--)
-                if (vehicles.get(i).parked && vehicles.get(i).block == null && vehicles.get(i).riders.isEmpty() && ++parked > 25)
+            // Old wrecks and parked cars are towed away, but never while you're watching.
+            for (int i = vehicles.size() - 1; i >= 0; i--) {
+                Vehicle o = vehicles.get(i);
+                if (o.parked && o.block == null && o.riders.isEmpty() && o.player == null && ++parked > 25 && !inView(o.x, o.y))
                     vehicles.remove(i);
+            }
         }
         for (int i = vehicles.size() - 1; i >= 0; i--) {
             Vehicle v = vehicles.get(i);
@@ -816,6 +844,124 @@ final class Fleet {
         }
     }
 
+    /**
+     * The rules at junctions. Traffic lights: stop on red (and on amber if there's room to), go on green.
+     * Stop junctions: come to a full stop at the line, then go when the junction is clear (or after a few
+     * seconds, so nobody waits for ever). Roundabouts: give way to anything already on it. Returns the
+     * fastest the car may go right now.
+     */
+    private float junctionRule(Vehicle v, float dt) {
+        v.held = false;
+        if (v.type != CAR || v.riders.size() > 0 && v.rescue) return Float.MAX_VALUE;
+        int here = city.junctionIdAt(v.x, v.y);
+        if (here >= 0) {
+            // Through: next time round it has to wait its turn again.
+            if (here == v.clearedJ) v.clearedJ = -1;
+            v.waitJ = -1;
+            return Float.MAX_VALUE;
+        }
+        // Follow the route from the car's own tile to the first junction tile: that step is the way in,
+        // and the line across the end of the tile before it is where the junction starts.
+        int id = -1, W = city.w, dirx = 0, diry = 0;
+        float dist = 0;
+        if (v.field != null && v.pathT >= 0) {
+            int prev = city.tileIndex(v.x, v.y), t = v.pathT;
+            for (int k = 0; k < 7; k++) {
+                int nid = t == prev ? -1 : city.junctionIdAt((t % W + 0.5f) * City.T, (t / W + 0.5f) * City.T);
+                if (nid >= 0) {
+                    int sx = t % W - prev % W, sy = t / W - prev / W;
+                    if (Math.abs(sx) + Math.abs(sy) == 1) {
+                        dirx = sx;
+                        diry = sy;
+                    } else {
+                        dirx = v.pdx;
+                        diry = v.pdy;
+                    }
+                    if (dirx == 0 && diry == 0) break;
+                    float ex = (t % W + 0.5f - dirx * 0.5f) * City.T, ey = (t / W + 0.5f - diry * 0.5f) * City.T;
+                    dist = (ex - v.x) * dirx + (ey - v.y) * diry;
+                    if (dist < 90) id = nid;
+                    break;
+                }
+                int next = downhill(v.field, t);
+                if (next == t) break;
+                prev = t;
+                t = next;
+            }
+        }
+        if (id < 0) {
+            v.clearedJ = -1;
+            v.waitJ = -1;
+            return Float.MAX_VALUE;
+        }
+        if (id == v.clearedJ) return Float.MAX_VALUE;
+        int[] j = city.junctions.get(id);
+        // Stop with the front bumper at the line, before the zebra crossing.
+        float stopAt = dist - City.T - v.length() - 1;
+        float approach = Math.max(0, stopAt) * 1.8f;
+        boolean vertical = diry != 0;
+        if (j[4] == City.J_LIGHTS) {
+            int light = city.lightState(id, vertical, w.time);
+            if (light == 0) return Float.MAX_VALUE;
+            // Amber: carry on only if it's too late to stop.
+            if (light == 1 && v.speed > 40 && stopAt < v.speed * 0.2f) {
+                v.clearedJ = id;
+                return Float.MAX_VALUE;
+            }
+            v.held = stopAt < 6;
+            return approach;
+        }
+        if (v.waitJ != id) {
+            if (j[4] == City.J_ROUNDABOUT) {
+                if (stopAt < 10 && junctionClear(id, v)) {
+                    v.clearedJ = id;
+                    return Float.MAX_VALUE;
+                }
+                v.held = stopAt < 6;
+                return Math.max(approach, stopAt < 10 ? 0 : 25);
+            }
+            if (stopAt < 4 && v.speed < 6) {
+                v.waitJ = id;
+                v.waitT = 0;
+            }
+            v.held = stopAt < 6;
+            return Math.max(approach, 4);
+        }
+        v.waitT += dt;
+        v.held = true;
+        if (v.waitT > 1.2f && (junctionClear(id, v) || v.waitT > 7)) {
+            v.clearedJ = id;
+            v.waitJ = -1;
+            return Float.MAX_VALUE;
+        }
+        return 0;
+    }
+
+    /** The next tile down a route from tile t (t itself at the end). */
+    private int downhill(int[] field, int t) {
+        int W = city.w, tx = t % W, ty = t / W, best = field[t], bt = t;
+        for (int k = 0; k < 4; k++) {
+            int nx = tx + (k == 0 ? 1 : k == 1 ? -1 : 0), ny = ty + (k == 2 ? 1 : k == 3 ? -1 : 0);
+            if (nx < 0 || ny < 0 || nx >= W || ny >= city.h) continue;
+            int d = field[ny * W + nx];
+            if (d < best) {
+                best = d;
+                bt = ny * W + nx;
+            }
+        }
+        return bt;
+    }
+
+    /** Nobody else driving in the junction. */
+    private boolean junctionClear(int id, Vehicle self) {
+        for (int i = 0, n = vehicles.size(); i < n; i++) {
+            Vehicle o = vehicles.get(i);
+            if (o == self || airborne(o) || o.type == TRAIN || o.parked) continue;
+            if (city.junctionIdAt(o.x, o.y) == id) return false;
+        }
+        return true;
+    }
+
     /** Someone else's car close in front: time to brake. */
     private boolean carAhead(Vehicle v) {
         float fx = (float) Math.cos(v.angle), fy = (float) Math.sin(v.angle);
@@ -955,35 +1101,64 @@ final class Fleet {
      */
     private boolean driveStep(Vehicle v, float dt, float max, float throttle) {
         if (v.field == null) return false;
-        int ti = city.tileIndex(v.x, v.y);
-        int cur = v.field[ti];
-        if (cur <= 4 || cur >= City.FAR) return false;
-        int tx = ti % city.w, ty = ti / city.w, best = cur, bx = tx, by = ty;
+        int W = city.w;
+        // Follow the route tile by tile (the "path tile"), and drive in the lane beside it.
+        if (v.pathField != v.field || v.pathT < 0 || v.field[v.pathT] >= City.FAR
+                || Math.hypot((v.pathT % W + 0.5f) * City.T - v.x, (v.pathT / W + 0.5f) * City.T - v.y) > 44) {
+            v.pathField = v.field;
+            v.pathT = -1;
+            int ti = city.tileIndex(v.x, v.y), tx0 = ti % W, ty0 = ti / W, bestV = City.FAR;
+            // Knocked off the road: head back to the nearest bit of the route.
+            for (int r = 0; r <= 2 && v.pathT < 0; r++)
+                for (int y = ty0 - r; y <= ty0 + r; y++)
+                    for (int x = tx0 - r; x <= tx0 + r; x++) {
+                        if (x < 0 || y < 0 || x >= W || y >= city.h) continue;
+                        int fv = v.field[y * W + x];
+                        if (fv < bestV) {
+                            bestV = fv;
+                            v.pathT = y * W + x;
+                        }
+                    }
+            if (v.pathT < 0) return false;
+        }
+        int cur = v.field[v.pathT];
+        if (cur <= 4) return false;
+        int tx = v.pathT % W, ty = v.pathT / W, best = cur, bx = tx, by = ty;
         for (int k = 0; k < 4; k++) {
             int nx = tx + (k == 0 ? 1 : k == 1 ? -1 : 0), ny = ty + (k == 2 ? 1 : k == 3 ? -1 : 0);
-            if (nx < 0 || ny < 0 || nx >= city.w || ny >= city.h) continue;
-            int d = v.field[ny * city.w + nx];
+            if (nx < 0 || ny < 0 || nx >= W || ny >= city.h) continue;
+            int d = v.field[ny * W + nx];
             if (d < best) {
                 best = d;
                 bx = nx;
                 by = ny;
             }
         }
-        float gx = bx * City.T + City.T / 2f, gy = by * City.T + City.T / 2f;
-        // Keep to your side (right, or left in Australia and Japan) so cars going the other way pass instead of
-        // meeting head on.
-        float ddx = bx - tx, ddy = by - ty, side = city.country.leftHand ? -4.5f : 4.5f;
-        gx += -ddy * side;
-        gy += ddx * side;
+        if (bx == tx && by == ty) return false;
+        int ddx = bx - tx, ddy = by - ty;
+        // Keep to your own side of the road (left in Australia and Japan), in the middle of the lane.
+        float off = city.laneOffset(bx, by, ddx, ddy);
+        float gx = bx * City.T + City.T / 2f - ddy * off, gy = by * City.T + City.T / 2f + ddx * off;
+        if (Math.hypot(gx - v.x, gy - v.y) < 11 || ((v.x - (bx + 0.5f) * City.T) * ddx + (v.y - (by + 0.5f) * City.T) * ddy) > -2) {
+            v.pathT = by * W + bx;
+            // Only a step along the road counts as the way it's going, not a turn inside a junction.
+            if (city.junctionIdAt(v.x, v.y) < 0) {
+                v.pdx = ddx;
+                v.pdy = ddy;
+            }
+        }
         float want = (float) Math.atan2(gy - v.y, gx - v.x);
         float diff = want - v.angle;
         while (diff > Math.PI) diff -= Math.PI * 2;
         while (diff < -Math.PI) diff += Math.PI * 2;
-        v.angle += Math.max(-dt * 5, Math.min(dt * 5, diff));
+        // Wheels only turn the car while it's moving.
+        float steer = dt * 5 * Math.min(1, 0.05f + Math.abs(v.speed) / 18f);
+        v.angle += Math.max(-steer, Math.min(steer, diff));
         float target = max * throttle * (0.35f + 0.65f * Math.max(0, (float) Math.cos(diff)));
         // A badly damaged car limps along.
         if (v.hp < v.maxHp * 0.3f) target *= 0.6f;
-        v.speed += (target - v.speed) * Math.min(1, dt * 2.5f);
+        // Brake harder than you accelerate.
+        v.speed += (target - v.speed) * Math.min(1, dt * (target < v.speed ? 4.5f : 2.5f));
         v.x += (float) Math.cos(v.angle) * v.speed * dt;
         v.y += (float) Math.sin(v.angle) * v.speed * dt;
         if (cur < v.lastDist - 1) {
@@ -1008,6 +1183,7 @@ final class Fleet {
             if (w.hail(v)) v.waitTimer = 4;
         }
         v.timer += dt;
+        float limit = junctionRule(v, dt);
         boolean person = w.personAhead(v.x, v.y, v.angle) || trainComing(v);
         if ((person && v.timer < 2.5f) || (v.waitTimer > 0 && !zombiesClose) || trainComing(v)) {
             // Brake for pedestrians (then creep through, nudging them aside) or wait for someone to get in.
@@ -1017,8 +1193,11 @@ final class Fleet {
         } else {
             if (!person) v.timer = 0;
             v.stuckTimer += dt;
-            float throttle = carAhead(v) && v.stuckTimer < 3 ? 0.15f : 1f;
-            if (!driveStep(v, dt, zombiesClose ? 60 : 70, throttle)) {
+            boolean queue = carAhead(v);
+            float throttle = queue && v.stuckTimer < 3 ? 0.15f : 1f;
+            // Waiting at a red light, a stop sign or behind a queue isn't being stuck.
+            if (v.held || queue) v.stuckTimer = Math.min(v.stuckTimer, 1);
+            if (!driveStep(v, dt, Math.min(limit, zombiesClose ? 60 : 70), throttle)) {
                 arrive(v);
                 if (!newDestination(v)) v.stuckTimer = 99;
             } else {
@@ -1029,8 +1208,16 @@ final class Fleet {
         if (v.stuckTimer > 8 && !zombiesClose) {
             v.stuckTimer = 0;
             if (!newDestination(v)) {
+                if (!inView(v.x, v.y)) {
+                    dropRiders(v, false);
+                    return true;
+                }
+                // Nowhere to go: pull in and park (it's towed later, out of sight).
                 dropRiders(v, false);
-                return true;
+                v.parked = true;
+                v.speed = 0;
+                v.field = null;
+                pullOver(v);
             }
         }
         // Surrounded: the driver gets out and runs.

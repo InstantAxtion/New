@@ -26,9 +26,9 @@ final class CityConfig implements OptionSet {
     static final int STYLE_MIXED = 0, STYLE_OFFICES = 1, STYLE_HOUSES = 2, STYLE_WAREHOUSES = 3;
 
     static final int OPT_PRESET = 0, OPT_SIZE = 1, OPT_CIVILIANS = 2, OPT_COPS = 3, OPT_MILITARY = 4,
-            OPT_ZOMBIES = 5, OPT_RESERVES = 6;
+            OPT_ZOMBIES = 5, OPT_RESERVES = 6, OPT_COUNTRY = 7;
     private static final String[] LABELS = {"Map", "Map size", "Civilians", "Cops", "Military", "Zombies",
-            "Reinforcements"};
+            "Reinforcements", "Country"};
     private static final String[][] VALUES = {
             PRESETS,
             {"Small", "Medium", "Large", "Massive"},
@@ -37,6 +37,7 @@ final class CityConfig implements OptionSet {
             {"0", "5", "10", "20", "40"},
             {"0", "1", "5", "20", "50", "100", "200"},
             {"Off", "Low", "Medium", "High"},
+            Country.NAMES,
     };
     private static final int[] SIZES = {96, 128, 160, 224};
     /** Share of the city's residents out and about when the game starts. */
@@ -93,7 +94,7 @@ final class CityConfig implements OptionSet {
     };
 
     /** Current index into VALUES for each option. */
-    final int[] v = {0, 1, 4, 2, 1, 0, 2};
+    final int[] v = {0, 1, 4, 2, 1, 0, 2, 0};
     long seed = new Random().nextInt(1000000);
     /** Start the next game on the city from {@link #code()} instead of a new random one. */
     boolean keepCity;
@@ -103,7 +104,8 @@ final class CityConfig implements OptionSet {
      * Share it and anyone can play the same streets.
      */
     String code() {
-        return CODE_MAPS.charAt(v[OPT_PRESET]) + "" + (v[OPT_SIZE] + 1) + "-" + seed + (edits.isEmpty() ? "" : "~" + editString());
+        return CODE_MAPS.charAt(v[OPT_PRESET]) + "" + (v[OPT_SIZE] + 1) + "-" + seed
+                + (v[OPT_COUNTRY] == 0 ? "" : "@" + v[OPT_COUNTRY]) + (edits.isEmpty() ? "" : "~" + editString());
     }
 
     /** Changes made with the Build tool: {tile x, tile y, what}. They're part of the city code. */
@@ -147,6 +149,15 @@ final class CityConfig implements OptionSet {
             ed = t.substring(tilde + 1);
             t = t.substring(0, tilde);
         }
+        // The country, after an "@" (codes without one are American cities).
+        int country = 0;
+        int at = t.indexOf('@');
+        if (at > 0) {
+            if (at + 2 != t.length()) return false;
+            country = t.charAt(at + 1) - '0';
+            if (country < 0 || country >= Country.NAMES.length) return false;
+            t = t.substring(0, at);
+        }
         int dash = t.indexOf('-');
         if (dash != 2 || t.length() < 4 || t.length() > 22) return false;
         int preset = CODE_MAPS.indexOf(Character.toUpperCase(t.charAt(0))), size = t.charAt(1) - '1';
@@ -161,6 +172,7 @@ final class CityConfig implements OptionSet {
         v[OPT_PRESET] = preset;
         v[OPT_SIZE] = size;
         seed = s;
+        v[OPT_COUNTRY] = country;
         setEdits(ed);
         keepCity = true;
         return true;
@@ -216,6 +228,8 @@ final class CityConfig implements OptionSet {
             "High: 3 waves of police backup, 3 army reserve squads, 2 tanks and 2 helicopter sorties, then the National Guard "
                     + "if it's needed."};
     int zombies() { return ZOMBIES[v[OPT_ZOMBIES]]; }
+    /** Which country the city is in (see {@link Country}). */
+    int country() { return v[OPT_COUNTRY]; }
     /** 0 off, 1 low, 2 medium, 3 high: how many reserve squads and backup waves can be called in. */
     int reinforcements() { return v[OPT_RESERVES]; }
 

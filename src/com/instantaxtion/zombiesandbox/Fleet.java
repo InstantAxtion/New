@@ -948,10 +948,11 @@ final class Fleet {
             }
         }
         float gx = bx * City.T + City.T / 2f, gy = by * City.T + City.T / 2f;
-        // Keep right so cars going the other way pass instead of meeting head on.
-        float ddx = bx - tx, ddy = by - ty;
-        gx += -ddy * 4.5f;
-        gy += ddx * 4.5f;
+        // Keep to your side (right, or left in Australia and Japan) so cars going the other way pass instead of
+        // meeting head on.
+        float ddx = bx - tx, ddy = by - ty, side = city.country.leftHand ? -4.5f : 4.5f;
+        gx += -ddy * side;
+        gy += ddx * side;
         float want = (float) Math.atan2(gy - v.y, gx - v.x);
         float diff = want - v.angle;
         while (diff > Math.PI) diff -= Math.PI * 2;

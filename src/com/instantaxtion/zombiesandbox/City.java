@@ -24,25 +24,11 @@ final class City {
             APARTMENT = 15, GARAGE = 16, PHARMACY = 17, TRAIN_STATION = 18, MALL = 19, STADIUM = 20, POWER = 21,
             BARN = 22, SILO = 23;
     static final int KIND_COUNT = 24;
-    private static final int[] APARTMENT_WALLS = {0xFFC9B8A0, 0xFFB5A08A, 0xFFD4C8B8, 0xFFA89484, 0xFFBFB0C0};
-    private static final String[] GUN_STORES = {"Liberty Guns", "Ace Firearms", "Frontier Outfitters", "Hunter's Supply",
-            "Patriot Arms"};
-    private static final String[] PHARMACIES = {"CityCare Pharmacy", "Main Street Drugs", "HealthPlus", "Corner Pharmacy"};
     /** Ground decorations drawn into the map: {kind, x0, y0, x1, y1, variant} in world units. */
     static final int D_COURT = 0, D_FIELD = 1, D_PLAYGROUND = 2, D_GARDEN = 3, D_GRAVE = 4, D_SKATE = 5,
             D_CANOPY = 6, D_ALLEY = 7, D_SITE = 8, D_POWER = 9, D_HELIPAD = 10, D_BAY = 11, D_BANDSTAND = 12,
             D_FLOWERS = 13, D_CROPS = 14, D_ROUNDABOUT = 15, D_FLOODLIGHT = 16;
-    private static final int[] SHOP_ROOFS = {0xFF8C5A4A, 0xFF5A6E8C, 0xFF7E7A5C, 0xFF6E5A7E, 0xFF8A6A3E, 0xFF4F6F66};
-    private static final int[] SHOP_WALLS = {0xFFE0C9A6, 0xFFB9C6D2, 0xFFD8B8A8, 0xFFC9D6B8, 0xFFE8DCC8, 0xFFB8A8C8};
     static final int FACILITY_POLICE = 0, FACILITY_BASE = 1, FACILITY_HOSPITAL = 2, FACILITY_FIRE = 3;
-    private static final String[] SAINTS = {"St. Mary's", "St. Luke's", "St. Peter's", "Grace", "St. Anne's",
-            "Trinity", "St. Mark's", "Holy Cross"};
-    private static final String[] SCHOOLS = {"Lincoln High", "Westside Elementary", "Roosevelt Middle School",
-            "Jefferson High", "Oakwood Academy", "Hamilton Elementary"};
-    private static final String[] MARKETS = {"FreshMart", "ValueFoods", "Corner Grocer", "SuperSaver", "GreenBasket",
-            "MegaMart"};
-    private static final String[] BASE_NAMES = {"Fort Mercer", "Camp Redstone", "Fort Kessler", "Camp Hollow",
-            "Fort Whitmore", "Camp Ironwood"};
 
     /** A police station or military base: where reinforcements come from and a preferred safe zone. */
     static final class Facility {
@@ -74,8 +60,6 @@ final class City {
     private static final int[] WALLS = {
             0xFF9A8F80, 0xFFA8746A, 0xFF8C959E, 0xFFB5A58A, 0xFF7E8A7A, 0xFF9B7E6B, 0xFFA0A4A8, 0xFF6F7B88
     };
-    private static final int[] HOUSE_ROOFS = {0xFF8E3B2E, 0xFF6E4A3A, 0xFF4E5560, 0xFF7A5A48, 0xFF9A5B3C, 0xFF5A3D35};
-    private static final int[] HOUSE_WALLS = {0xFFD8CBB0, 0xFFC9B79C, 0xFFE0D6C4, 0xFFB8A48A, 0xFFA7B4BE, 0xFFC7A9A0};
     private static final int[] WAREHOUSE_ROOFS = {0xFF8A9096, 0xFF7C848A, 0xFF9AA0A4, 0xFF6F777D, 0xFF7D8A80};
     private static final int[] WAREHOUSE_WALLS = {0xFF8A8F94, 0xFF9C8F7F, 0xFF7F8A8F, 0xFF8F8575};
     private static final int[] CAR_COLORS = {
@@ -153,12 +137,10 @@ final class City {
     static final float TREE_HEIGHT = 14f;
 
     final CityConfig cfg;
+    /** Where the city is: its look and its names. */
+    final Country country;
     /** The town's name, the same every time for a given city code. */
     final String name;
-    private static final String[] NAME_START = {"Ash", "Maple", "Oak", "Stone", "Clay", "Wolf", "Fair", "Green", "North",
-            "Silver", "Iron", "Elder", "Hollow", "Red", "Kings", "Bright", "Glen", "Hazel", "Thorn", "Mill"};
-    private static final String[] NAME_END = {"ford", "field", "ville", "wood", "ton", "bury", "ridge", "haven", "dale",
-            "stead", "wick", "gate", "hurst", "moor"};
     final int w, h;
     final byte[] tiles;
     final boolean[] solid;
@@ -180,8 +162,6 @@ final class City {
             DT_PARKSIDE = 6, DT_COUNT = 7;
     static final String[] DISTRICT_KINDS = {"Downtown", "Midtown", "Old Town", "Suburb", "Industrial", "University",
             "Parkside"};
-    private static final String[] DISTRICT_WORDS = {"Oak", "Cedar", "Mill", "North", "South", "East", "West", "King's",
-            "Linden", "Ash", "Fox", "Hazel", "Stone", "Maple", "Willow", "Brook", "Elm", "High", "Rose", "Birch"};
 
     /** A neighbourhood of the city with its own character: tall towers, shops, old streets, homes or industry. */
     static final class District {
@@ -208,7 +188,7 @@ final class City {
         int m = core < 0.99f ? (int) (w * (1 - core) / 2) : 0;
         int n = 3 + (w - 2 * m) / 32;
         Random r = rnd;
-        List<String> words = new ArrayList<String>(Arrays.asList(DISTRICT_WORDS));
+        List<String> words = new ArrayList<String>(Arrays.asList(country.districtWords));
         java.util.Collections.shuffle(words, r);
         int word = 0;
         boolean[] usedUnique = new boolean[DT_COUNT];
@@ -268,14 +248,16 @@ final class City {
                 default: d.name = wd + " Common"; break;
             }
             if (d.type == DT_DOWNTOWN) usedUnique[DT_COUNT - 1] = true;
-            for (District o : districts) if (o.name.equals(d.name)) d.name = wd + " " + DISTRICT_KINDS[d.type];
+            d.name = this.country.districtName(d.name, wd, d.type);
+            for (District o : districts) if (o.name.equals(d.name)) d.name = this.country.districtName(wd + " " + DISTRICT_KINDS[d.type], wd + " " + (k + 1), -1);
             districts.add(d);
         }
         int country = -1;
         if (m > 0) {
             District d = new District();
             d.type = DT_PARKSIDE;
-            d.name = words.get(word++ % words.size()) + (r.nextBoolean() ? " Valley" : " Vale");
+            d.name = this.country.districtName(words.get(word) + (r.nextBoolean() ? " Valley" : " Vale"), words.get(word), -2);
+            word++;
             country = districts.size();
             countryDistrict = country;
             districts.add(d);
@@ -391,13 +373,6 @@ final class City {
     final List<float[]> openAreas = new ArrayList<float[]>();
     private int origin;
 
-    private static final String[] STREETS = {"Main", "Oak", "Pine", "Elm", "Maple", "Cedar", "Lake", "Hill", "Park",
-            "Church", "Market", "Mill", "King", "Queen", "Walnut", "Spruce", "Birch", "Chestnut", "Harbor", "Union",
-            "Rose", "Ash", "Willow", "Station", "River", "Bridge", "High", "Garden", "Orchard", "Victoria", "Albert",
-            "Greene", "Water", "Grove", "Meadow", "Forest", "Bay", "Summit", "Liberty", "Franklin", "Madison",
-            "Jackson", "Lincoln", "Hawthorn", "Laurel", "Poplar", "Sycamore", "Holly", "Juniper", "Linden"};
-    private static final String[] MAIN_SUFFIX = {"Ave", "Blvd", "Rd", "Pkwy"};
-    private static final String[] LOCAL_SUFFIX = {"St", "St", "St", "Ln", "Way", "Pl", "Ct", "Dr"};
 
     City(CityConfig cfg) {
         this(cfg, 1f);
@@ -410,7 +385,8 @@ final class City {
         w = h = cfg.tiles();
         rnd = new Random(cfg.seed);
         Random nameRnd = new Random(cfg.seed * 31 + 7);
-        name = NAME_START[nameRnd.nextInt(NAME_START.length)] + NAME_END[nameRnd.nextInt(NAME_END.length)];
+        country = Country.get(cfg.country());
+        name = country.townName(nameRnd);
         tiles = new byte[w * h];
         solid = new boolean[w * h];
         opaque = new boolean[w * h];
@@ -470,8 +446,8 @@ final class City {
             // Bigger and taller buildings take more to bring down.
             b.maxHp = b.hp = 150 + l[2] * l[3] * 22 + l[7] * 60;
             Random nr = new Random(l[5]);
-            if (k == CHURCH) b.name = SAINTS[nr.nextInt(SAINTS.length)] + " Church";
-            else if (k == SCHOOL) b.name = SCHOOLS[nr.nextInt(SCHOOLS.length)];
+            if (k == CHURCH) b.name = country.churches[nr.nextInt(country.churches.length)];
+            else if (k == SCHOOL) b.name = country.schools[nr.nextInt(country.schools.length)];
             else if (k == TRAIN_STATION) {
                 b.name = "Central Station";
                 stationBuilding = b;
@@ -482,17 +458,17 @@ final class City {
                 stadiumNamed = true;
             }
             else if (k == MARKET) {
-                b.name = MARKETS[nr.nextInt(MARKETS.length)];
+                b.name = country.markets[nr.nextInt(country.markets.length)];
                 b.stock = 240;
             } else if (k == PHARMACY) {
-                b.name = PHARMACIES[nr.nextInt(PHARMACIES.length)];
+                b.name = country.pharmacies[nr.nextInt(country.pharmacies.length)];
                 b.stock = 60;
             } else if (k == SHOP) {
                 // Some shops are gun stores or diners.
                 int roll = nr.nextInt(12);
                 b.shopType = roll == 0 ? 1 : roll < 3 ? 2 : 0;
                 if (b.shopType == 1) {
-                    b.name = GUN_STORES[nr.nextInt(GUN_STORES.length)];
+                    b.name = country.gunStores[nr.nextInt(country.gunStores.length)];
                     b.stock = 240;
                 }
             }
@@ -1029,15 +1005,14 @@ final class City {
         }
 
         // Street names: main roads get avenues and boulevards, the rest streets, lanes and courts.
-        List<String> names = new ArrayList<String>(Arrays.asList(STREETS));
+        List<String> names = new ArrayList<String>(Arrays.asList(country.streets));
         java.util.Collections.shuffle(names, rnd);
         int next = 0;
         for (Street st : streets) {
             String base = names.get(next++ % names.size());
             int len = st.vertical ? st.y1 - st.y0 : st.x1 - st.x0;
-            if (st.x0 == 0 && st.y0 == 0 || st.x1 == w || st.y1 == h) st.name = "Ring Rd";
-            else if (st.main || len > 40) st.name = base + " " + MAIN_SUFFIX[rnd.nextInt(MAIN_SUFFIX.length)];
-            else st.name = base + " " + LOCAL_SUFFIX[rnd.nextInt(LOCAL_SUFFIX.length)];
+            if (st.x0 == 0 && st.y0 == 0 || st.x1 == w || st.y1 == h) st.name = country.ringRoad;
+            else st.name = country.streetName(base, st.main || len > 40, rnd);
         }
         for (Facility f : facilities)
             if (f.kind == FACILITY_POLICE) {
@@ -1118,7 +1093,7 @@ final class City {
         if (c == null) c = new float[]{cx, cy};
         float r = Math.min(110, Math.min(aw, ah) * T * 0.42f);
         Facility base = new Facility(FACILITY_BASE, c[0], c[1], r, (gx + 1.5f) * T, (y + bh - 2.5f) * T,
-                BASE_NAMES[rnd.nextInt(BASE_NAMES.length)]);
+                country.bases[rnd.nextInt(country.bases.length)]);
         // Two guards inside each gate.
         float[][] gates = {{(gx + 1.5f) * T, (y + bh - 2.5f) * T}, {(gx + 1.5f) * T, (y + 1.5f) * T},
                 {(x + bw - 2.5f) * T, (gy + 1.5f) * T}};
@@ -1159,16 +1134,16 @@ final class City {
             float bx0 = wide ? (x + sw + 1) * T + 1 : (x + 1) * T, by0 = wide ? (y + 1) * T : (y + sh + 1) * T + 1;
             if (wide) addDecor(D_BAY, bx0, by0, bx0 + T - 2, by0 + Math.min(sh, 4) * T, 1);
             else addDecor(D_BAY, bx0, by0, bx0 + Math.min(sw, 4) * T, by0 + T - 2, 0);
-            facilities.add(new Facility(FACILITY_HOSPITAL, c[0], c[1], 64, c[0], c[1], "City Hospital"));
+            facilities.add(new Facility(FACILITY_HOSPITAL, c[0], c[1], 64, c[0], c[1], country.hospital));
             return;
         }
         if (kind == FIRE_STATION) {
             int n = 1;
             for (Facility f : facilities) if (f.kind == FACILITY_FIRE) n++;
-            facilities.add(new Facility(FACILITY_FIRE, c[0], c[1], 48, c[0], c[1], "Fire Station " + n));
+            facilities.add(new Facility(FACILITY_FIRE, c[0], c[1], 48, c[0], c[1], country.fireStation + n));
             return;
         }
-        Facility station = new Facility(FACILITY_POLICE, c[0], c[1], 64, c[0], c[1], "Precinct " + number);
+        Facility station = new Facility(FACILITY_POLICE, c[0], c[1], 64, c[0], c[1], country.policeStation + number);
         for (int k = -1; k <= 1; k += 2) {
             float[] p = findWalkable(c[0] + k * 18, c[1] + 10);
             if (p != null) station.posts.add(p);
@@ -1207,8 +1182,8 @@ final class City {
             roof = 0xFF5E4A3A;
             wall = 0xFFC4A882;
         } else if (kind == SHOP) {
-            roof = SHOP_ROOFS[rnd.nextInt(SHOP_ROOFS.length)];
-            wall = SHOP_WALLS[rnd.nextInt(SHOP_WALLS.length)];
+            roof = country.shopRoofs[rnd.nextInt(country.shopRoofs.length)];
+            wall = country.shopWalls[rnd.nextInt(country.shopWalls.length)];
         } else if (kind == TOWER) {
             roof = 0xFF4B5536;
             wall = 0xFF6B7350;
@@ -1523,14 +1498,24 @@ final class City {
                     tiles[j * w + i] = CAR;
     }
 
+    private int oldWall() {
+        int[] a = country.oldWalls != null ? country.oldWalls : OLD_WALLS;
+        return a[rnd.nextInt(a.length)];
+    }
+
+    private int oldRoof() {
+        int[] a = country.oldRoofs != null ? country.oldRoofs : OLD_ROOFS;
+        return a[rnd.nextInt(a.length)];
+    }
+
     private void addLot(int x, int y, int lw, int lh, int kind) {
         fill(x, y, lw, lh, BUILDING);
         int floors, roof, wall;
         int height = cfg.height();
         if (kind == HOUSE) {
             floors = 1 + rnd.nextInt(2);
-            roof = HOUSE_ROOFS[rnd.nextInt(HOUSE_ROOFS.length)];
-            wall = HOUSE_WALLS[rnd.nextInt(HOUSE_WALLS.length)];
+            roof = country.houseRoofs[rnd.nextInt(country.houseRoofs.length)];
+            wall = country.houseWalls[rnd.nextInt(country.houseWalls.length)];
         } else if (kind == WAREHOUSE) {
             floors = 1 + rnd.nextInt(2) + (height >= 2 ? 1 : 0);
             roof = WAREHOUSE_ROOFS[rnd.nextInt(WAREHOUSE_ROOFS.length)];
@@ -1538,7 +1523,7 @@ final class City {
         } else if (kind == APARTMENT) {
             floors = 3 + rnd.nextInt(4) + height * 2;
             roof = darken(ROOFS[rnd.nextInt(ROOFS.length)], 0.9f);
-            wall = APARTMENT_WALLS[rnd.nextInt(APARTMENT_WALLS.length)];
+            wall = country.apartmentWalls[rnd.nextInt(country.apartmentWalls.length)];
         } else if (kind == GARAGE) {
             floors = 3 + rnd.nextInt(2);
             roof = 0xFF6C6E70;
@@ -1563,8 +1548,10 @@ final class City {
             else if (min <= 3) floors = Math.min(floors, 8);
             else if (min <= 4) floors = Math.min(floors, 14);
             floors = Math.min(floors, 22);
-            roof = ROOFS[rnd.nextInt(ROOFS.length)];
-            wall = WALLS[rnd.nextInt(WALLS.length)];
+            int[] roofs = country.officeRoofs != null ? country.officeRoofs : ROOFS;
+            int[] walls = country.officeWalls != null ? country.officeWalls : WALLS;
+            roof = roofs[rnd.nextInt(roofs.length)];
+            wall = walls[rnd.nextInt(walls.length)];
             if (curDistrict == DT_DOWNTOWN) {
                 // Downtown towers climb higher and many are clad in glass.
                 floors = Math.min(24, floors + 2 + rnd.nextInt(3));
@@ -1572,16 +1559,16 @@ final class City {
             } else if (curDistrict == DT_OLDTOWN || curDistrict == DT_CAMPUS) {
                 // Old brick and stone, a few storeys high.
                 floors = 2 + rnd.nextInt(3);
-                wall = OLD_WALLS[rnd.nextInt(OLD_WALLS.length)];
-                roof = OLD_ROOFS[rnd.nextInt(OLD_ROOFS.length)];
+                wall = oldWall();
+                roof = oldRoof();
             } else if (curDistrict == DT_SUBURB || curDistrict == DT_PARKSIDE) {
                 floors = Math.min(floors, 5);
             }
         }
         if (kind == APARTMENT && curDistrict == DT_OLDTOWN) {
             floors = Math.min(floors, 5);
-            wall = OLD_WALLS[rnd.nextInt(OLD_WALLS.length)];
-            roof = OLD_ROOFS[rnd.nextInt(OLD_ROOFS.length)];
+            wall = oldWall();
+            roof = oldRoof();
         }
         buildingLots.add(new int[]{x, y, lw, lh, roof, rnd.nextInt(100000), kind, floors, wall});
     }
@@ -2093,7 +2080,6 @@ final class City {
         mainRoad[i] = false;
     }
 
-    private static final String[] HAMLET_ENDS = {" Green", " End", " Cross", " Hamlet", " Farm", " Corner", " Bridge", " Hollow"};
 
     /**
      * Hamlets out in the country: a short street of cottages and a farm or two, with a lane back to town.
@@ -2175,7 +2161,7 @@ final class City {
         if (districtAt == null) return;
         District d = new District();
         d.type = DT_PARKSIDE;
-        d.name = DISTRICT_WORDS[rnd.nextInt(DISTRICT_WORDS.length)] + HAMLET_ENDS[rnd.nextInt(HAMLET_ENDS.length)];
+        d.name = country.districtWords[rnd.nextInt(country.districtWords.length)] + country.hamletEnds[rnd.nextInt(country.hamletEnds.length)];
         for (District o : districts) if (o.name.equals(d.name)) d.name = d.name + " Village";
         d.x = cx;
         d.y = cy;
@@ -2480,11 +2466,11 @@ final class City {
                 int col;
                 boolean real = drawnRealistic;
                 switch (t) {
-                    case SIDEWALK: col = real ? 0xFF96938C : 0xFF8F8D87; break;
-                    case GRASS: case TREE: col = real ? 0xFF4F6F36 : 0xFF4C7837; break;
-                    case PLAZA: case STATUE: col = real ? 0xFFB2A58A : 0xFFB3A487; break;
+                    case SIDEWALK: col = country.pavement != 0 ? country.pavement : real ? 0xFF96938C : 0xFF8F8D87; break;
+                    case GRASS: case TREE: col = country.grass != 0 ? country.grass : real ? 0xFF4F6F36 : 0xFF4C7837; break;
+                    case PLAZA: case STATUE: col = country.plaza != 0 ? country.plaza : real ? 0xFFB2A58A : 0xFFB3A487; break;
                     case LOT: col = real ? 0xFF46474A : 0xFF48494D; break;
-                    case BUILDING: col = real ? 0xFF96938C : 0xFF8F8D87; break;
+                    case BUILDING: col = country.pavement != 0 ? country.pavement : real ? 0xFF96938C : 0xFF8F8D87; break;
                     case BASE: case FENCE: col = 0xFF6A6E5E; break;
                     case DIRT: col = real ? 0xFF8A7252 : 0xFF8C7456; break;
                     default: col = real ? 0xFF38393C : 0xFF3A3D43; break;
@@ -3467,8 +3453,8 @@ final class City {
                         c.drawLine(x * T + 4, (st.y0 + 1) * T, x * T + 10, (st.y0 + 1) * T, p);
                         c.drawLine(x * T + 4, (st.y0 + 4) * T, x * T + 10, (st.y0 + 4) * T, p);
                     }
-                } else if (st.width == 3 && !"Ring Rd".equals(st.name)) {
-                    p.setColor(0xFFD9B43A);
+                } else if (st.width == 3 && !country.ringRoad.equals(st.name)) {
+                    p.setColor(country.centreLine);
                     if (st.vertical) c.drawLine((st.x0 + 1.5f) * T, y * T + 3, (st.x0 + 1.5f) * T, y * T + 11, p);
                     else c.drawLine(x * T + 3, (st.y0 + 1.5f) * T, x * T + 11, (st.y0 + 1.5f) * T, p);
                 }

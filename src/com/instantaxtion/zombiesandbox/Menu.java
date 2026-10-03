@@ -1036,6 +1036,15 @@ final class Menu {
         }
         y += ((CityConfig.PRESETS.length + perRow - 1) / perRow) * (ch + gap) + 12 * dp;
         y = segRow(c, CityConfig.OPT_SIZE, "Map size", lx, y, lw);
+        y = segRow(c, CityConfig.OPT_COUNTRY, "Country: how the city looks and what it's called", lx, y, lw);
+        plain.setTextSize(12.5f * dp);
+        plain.setColor(0xFF9AA0A8);
+        y -= 6 * dp;
+        for (String line : wrap(Country.INFO[config.v[CityConfig.OPT_COUNTRY]], lw - 4 * dp, plain)) {
+            c.drawText(line, lx + 2 * dp, y + 10 * dp, plain);
+            y += 16 * dp;
+        }
+        y += 12 * dp;
         int homes = previewResidents;
         boolean known = homes > 0 && config.code().equals(previewKey);
         y = segRow(c, CityConfig.OPT_CIVILIANS, known

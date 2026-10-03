@@ -737,6 +737,27 @@ public final class GameTests {
                 check(mx > mn + 1, "the border isn't a perfect circle");
             }
         });
+        test("five countries: their own names, look and side of the road, kept in the city code", new Check() {
+            public void run() {
+                java.util.HashSet<String> streets = new java.util.HashSet<String>();
+                for (int k = 0; k < Country.NAMES.length; k++) {
+                    CityConfig c = new CityConfig();
+                    c.v[CityConfig.OPT_SIZE] = 0;
+                    c.v[CityConfig.OPT_COUNTRY] = k;
+                    c.seed = 9;
+                    City city = new City(c);
+                    check(city.country.id == k, "the city is in its country");
+                    streets.add(city.streets.get(city.streets.size() / 2).name);
+                    CityConfig d = new CityConfig();
+                    check(d.applyCode(c.code()) && d.country() == k && d.seed == 9, "the country is in the city code");
+                }
+                check(streets.size() >= 4, "street names differ by country");
+                check(Country.get(Country.AUSTRALIA).leftHand && Country.get(Country.JAPAN).leftHand && !Country.get(Country.USA).leftHand,
+                        "Australia and Japan drive on the left");
+                CityConfig old = new CityConfig();
+                check(old.applyCode("12-44") && old.country() == Country.USA, "old codes are American cities");
+            }
+        });
         test("the Build tool, and its edits in the city code and saves", new Check() {
             public void run() throws Exception {
                 CityConfig c = new CityConfig();

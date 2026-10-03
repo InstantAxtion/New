@@ -335,6 +335,7 @@ final class World {
 
     World(CityConfig cfg) {
         city = new City(cfg);
+        Country.current = city.country;
         rollStrain();
         dispatch = new Dispatch(this, cfg.reinforcements());
         fleet = new Fleet(this);
@@ -3553,10 +3554,10 @@ final class World {
             hospitalThreat = held ? hospitalThreat + 1 : Math.max(0, hospitalThreat - 2);
             if (!hospitalLost && hospitalThreat > 20) {
                 hospitalLost = true;
-                dispatch.say(Dispatch.WHO_INFO, null, "City Hospital has fallen. There's nowhere left to treat the wounded.", h.x, h.y);
+                dispatch.say(Dispatch.WHO_INFO, null, h.name + " has fallen. There's nowhere left to treat the wounded.", h.x, h.y);
             } else if (hospitalLost && hospitalThreat == 0 && countZombiesNear(h.x, h.y, 220) == 0) {
                 hospitalLost = false;
-                dispatch.say(Dispatch.WHO_INFO, null, "City Hospital is open again.", h.x, h.y);
+                dispatch.say(Dispatch.WHO_INFO, null, h.name + " is open again.", h.x, h.y);
             }
         }
     }

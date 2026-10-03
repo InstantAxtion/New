@@ -1889,7 +1889,7 @@ final class GameView extends View implements Menu.Host {
             }
         }
         boolean civ = v.type == Fleet.CAR;
-        int body = civ ? v.color : truck ? (v.guardUnit ? 0xFF8C8260 : 0xFF4F5A33) : engine ? 0xFFC8302A : amb ? 0xFFF2F2F2 : 0xFF1C1D22;
+        int body = civ ? v.color : truck ? (v.guardUnit ? 0xFF8C8260 : 0xFF4F5A33) : engine ? 0xFFC8302A : amb ? 0xFFF2F2F2 : world.city.country.cruiserBody;
         if (v.burnt) body = 0xFF2B2623;
         else if (v.broken) body = City.darken(body, 0.65f);
         fill.setColor(body);
@@ -1953,7 +1953,23 @@ final class GameView extends View implements Menu.Host {
                 c.drawRect(hl * 0.42f, -hw + 1, hl * 0.5f, hw - 1, fill);
             }
         } else {
-            fill.setColor(v.broken ? 0xFFA0A0A0 : 0xFFEDEDED);
+            Country land = world.city.country;
+            if (land.cruiserRoof != 0) {
+                // Japanese patrol cars: white roof and doors over a black body.
+                fill.setColor(v.broken ? 0xFFA0A0A0 : land.cruiserRoof);
+                c.drawRect(-hl * 0.55f, -hw + 0.6f, hl * 0.45f, hw - 0.6f, fill);
+            }
+            if (land.cruiserChecks) {
+                // A chequered band down each side.
+                for (int q = 0; q < 6; q++) {
+                    float x0 = -hl + 1 + q * (hl * 2 - 2) / 6f, x1 = x0 + (hl * 2 - 2) / 6f;
+                    fill.setColor(v.broken ? 0xFF9A9A9A : q % 2 == 0 ? land.checkA : land.checkB);
+                    c.drawRect(x0, -hw, x1, -hw + 1.3f, fill);
+                    fill.setColor(v.broken ? 0xFF9A9A9A : q % 2 == 0 ? land.checkB : land.checkA);
+                    c.drawRect(x0, hw - 1.3f, x1, hw, fill);
+                }
+            }
+            fill.setColor(v.broken ? 0xFFA0A0A0 : land.cruiserDoor);
             c.drawRect(-3f, -hw, 2f, -hw + 1.3f, fill);
             c.drawRect(-3f, hw - 1.3f, 2f, hw, fill);
             fill.setColor(0xFF1E2A33);

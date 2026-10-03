@@ -2200,30 +2200,56 @@ final class GameView extends View implements Menu.Host {
     }
 
     /** A safe zone on the ground: tinted area, a sandbag ring with gaps for entrances and a tent. */
+    private final android.graphics.Path zonePath = new android.graphics.Path();
+
     private void drawZone(Canvas c, Dispatch.SafeZone z) {
         int tint = z.military ? 0xFF6FBF3F : 0xFF4F8FE0;
-        fill.setColor(alpha(tint, 0.16f));
-        c.drawCircle(z.x, z.y, z.r, fill);
-        int bags = (int) (z.r * 2 * Math.PI / 5.5f);
-        for (int i = 0; i < bags; i++) {
-            if (i % 12 == 0 || i % 12 == 1) continue;
-            double a = i * Math.PI * 2 / bags;
-            float bx = z.x + (float) Math.cos(a) * z.r, by = z.y + (float) Math.sin(a) * z.r;
-            fill.setColor(0x60000000);
-            c.drawCircle(bx + 0.8f, by + 1f, 3f, fill);
-            fill.setColor(i % 2 == 0 ? 0xFFA38D5E : 0xFF917C50);
-            c.drawCircle(bx, by, 3f, fill);
+        int n = Dispatch.SafeZone.SECTORS;
+        // The ground inside the line (fainter while it's still going up).
+        zonePath.reset();
+        for (int k = 0; k < n; k++) {
+            double a = k * Math.PI * 2 / n;
+            float px = z.x + (float) Math.cos(a) * z.edge[k], py = z.y + (float) Math.sin(a) * z.edge[k];
+            if (k == 0) zonePath.moveTo(px, py);
+            else zonePath.lineTo(px, py);
+        }
+        zonePath.close();
+        fill.setColor(alpha(tint, z.open ? (z.fallingBack ? 0.1f : 0.16f) : 0.07f));
+        c.drawPath(zonePath, fill);
+        // Sandbags along the line, as far round as they've got; a gap for a gate every quarter.
+        float total = 0;
+        for (int k = 0; k < n; k++) total += segLen(z, k);
+        float done = total * z.built, run = 0;
+        for (int k = 0; k < n; k++) {
+            double a0 = k * Math.PI * 2 / n, a1 = (k + 1) * Math.PI * 2 / n;
+            float x0 = z.x + (float) Math.cos(a0) * z.edge[k], y0 = z.y + (float) Math.sin(a0) * z.edge[k];
+            float x1 = z.x + (float) Math.cos(a1) * z.edge[(k + 1) % n], y1 = z.y + (float) Math.sin(a1) * z.edge[(k + 1) % n];
+            float len = segLen(z, k);
+            int bags = Math.max(1, (int) (len / 5.5f));
+            boolean gate = k % 6 == 0;
+            for (int i = 0; i < bags; i++) {
+                float t = (i + 0.5f) / bags;
+                if (run + t * len > done) break;
+                if (gate && t > 0.3f && t < 0.7f) continue;
+                float bx = x0 + (x1 - x0) * t, by = y0 + (y1 - y0) * t;
+                fill.setColor(0x60000000);
+                c.drawCircle(bx + 0.8f, by + 1f, 3f, fill);
+                fill.setColor((k + i) % 2 == 0 ? 0xFFA38D5E : 0xFF917C50);
+                c.drawCircle(bx, by, 3f, fill);
+            }
+            run += len;
         }
         // Army checkpoints in the gaps: a striped boom and a guard hut.
-        if (z.military) {
-            for (int i = 0; i < bags; i += 12) {
-                double a = (i + 0.5) * Math.PI * 2 / bags;
+        if (z.military && z.open) {
+            for (int k = 0; k < n; k += 6) {
+                double a = (k + 0.5) * Math.PI * 2 / n;
                 float cx = (float) Math.cos(a), cy = (float) Math.sin(a);
-                float gx = z.x + cx * z.r, gy = z.y + cy * z.r;
+                float er = (z.edge[k] + z.edge[(k + 1) % n]) / 2 * (float) Math.cos(Math.PI / n);
+                float gx = z.x + cx * er, gy = z.y + cy * er;
                 float tx = -cy, ty = cx;
-                for (int k = 0; k < 4; k++) {
-                    float s0 = -5.5f + k * 2.75f, s1 = s0 + 2.75f;
-                    stroke.setColor(k % 2 == 0 ? 0xFFE03A30 : 0xFFF2F2F2);
+                for (int q = 0; q < 4; q++) {
+                    float s0 = -5.5f + q * 2.75f, s1 = s0 + 2.75f;
+                    stroke.setColor(q % 2 == 0 ? 0xFFE03A30 : 0xFFF2F2F2);
                     stroke.setStrokeWidth(1.4f);
                     c.drawLine(gx + tx * s0, gy + ty * s0, gx + tx * s1, gy + ty * s1, stroke);
                 }
@@ -2247,6 +2273,13 @@ final class GameView extends View implements Menu.Host {
         c.drawLine(z.x + 11, z.y + 6, z.x + 11, z.y - 12, stroke);
         fill.setColor(tint);
         c.drawRect(z.x + 11, z.y - 12, z.x + 19, z.y - 7, fill);
+    }
+
+    private static float segLen(Dispatch.SafeZone z, int k) {
+        int n = Dispatch.SafeZone.SECTORS;
+        double a0 = k * Math.PI * 2 / n, a1 = (k + 1) * Math.PI * 2 / n;
+        float r0 = z.edge[k], r1 = z.edge[(k + 1) % n];
+        return (float) Math.hypot(Math.cos(a1) * r1 - Math.cos(a0) * r0, Math.sin(a1) * r1 - Math.sin(a0) * r0);
     }
 
     private static final int[] LEAF_DARK = {0xFF24481C, 0xFF2A4E1E, 0xFF2E4A22};
@@ -2376,8 +2409,10 @@ final class GameView extends View implements Menu.Host {
             Dispatch.SafeZone z = world.dispatch.zones.get(i);
             float sx = screenX(z.x), sy = screenY(z.y - z.r) - 10 * dp;
             if (sx < -100 * dp || sx > getWidth() + 100 * dp || sy < 0 || sy > barTop) continue;
-            String label = (z.military ? "MILITARY" : "POLICE") + " SAFE ZONE  -  " + z.sheltered + "/" + z.capacity
-                    + (z.full ? "  FULL" : "") + "  -  ammo " + z.ammo + (z.supplyComing ? " (truck coming)" : "");
+            String label = !z.open ? (z.military ? "MILITARY" : "POLICE") + " SAFE ZONE  -  SETTING UP " + (int) (z.built * 100)
+                    + "%" + (z.onSite == 0 ? " (on the way)" : "")
+                    : (z.military ? "MILITARY" : "POLICE") + " SAFE ZONE  -  " + z.sheltered + "/" + z.capacity
+                    + (z.full ? "  FULL" : z.fallingBack ? "  FALLING BACK" : "") + "  -  ammo " + z.ammo + (z.supplyComing ? " (truck coming)" : "");
             float tw = text.measureText(label);
             oval.set(sx - tw / 2 - 8 * dp, sy - 14 * dp, sx + tw / 2 + 8 * dp, sy + 5 * dp);
             if (uiCovers(oval)) continue;

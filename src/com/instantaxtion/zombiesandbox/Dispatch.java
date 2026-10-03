@@ -40,6 +40,63 @@ final class Dispatch {
         /** Ammunition the zone has on hand for its guards, and whether a supply truck is on its way. */
         int ammo = 300;
         boolean supplyComing;
+
+        static final int SECTORS = 24;
+        /**
+         * Setting up: the guards make their way there and put the sandbags up a section at a time (0 to 1).
+         * Nobody is let in until it opens.
+         */
+        float built;
+        boolean open;
+        /** How many guards are actually there (not still on their way). */
+        int onSite;
+        /** The size it was planned at. */
+        float baseR;
+        /**
+         * The perimeter, as its distance from the centre in each direction. It grows as people come in and
+         * guards arrive, follows the streets around it, and gives ground where the dead push on it.
+         */
+        final float[] edge = new float[SECTORS];
+        final float[] shape = new float[SECTORS];
+        final int[] pressure = new int[SECTORS];
+        boolean fallingBack;
+        /** The way there, for the guards. */
+        int[] field;
+
+        void initEdge(float r, java.util.Random rnd) {
+            baseR = r;
+            float[] raw = new float[SECTORS];
+            for (int k = 0; k < SECTORS; k++) raw[k] = 0.82f + rnd.nextFloat() * 0.36f;
+            for (int k = 0; k < SECTORS; k++)
+                shape[k] = (raw[(k + SECTORS - 1) % SECTORS] + raw[k] * 2 + raw[(k + 1) % SECTORS]) / 4;
+            for (int k = 0; k < SECTORS; k++) edge[k] = r * shape[k] * 0.7f;
+            this.r = r * 0.7f;
+        }
+
+        /** How far the line is from the centre in the direction of an angle. */
+        float edgeAt(float a) {
+            float f = (float) (a / (Math.PI * 2) * SECTORS);
+            f -= (float) Math.floor(f / SECTORS) * SECTORS;
+            int k = (int) f % SECTORS;
+            float t = f - (int) f;
+            return edge[k] * (1 - t) + edge[(k + 1) % SECTORS] * t;
+        }
+
+        /** How far the line is from the centre in the direction of (px, py). */
+        float reach(float px, float py) {
+            return edgeAt((float) Math.atan2(py - y, px - x));
+        }
+
+        boolean contains(float px, float py, float margin) {
+            float dx = px - x, dy = py - y, e = reach(px, py) * margin;
+            return dx * dx + dy * dy < e * e;
+        }
+
+        float area() {
+            float a = 0, s = (float) Math.sin(Math.PI * 2 / SECTORS);
+            for (int k = 0; k < SECTORS; k++) a += edge[k] * edge[(k + 1) % SECTORS] * s / 2;
+            return a;
+        }
     }
 
     static final class Message {
@@ -207,6 +264,7 @@ final class Dispatch {
         for (int i = 0; i < zones.size(); i++) {
             zones.get(i).guards = 0;
             zones.get(i).sheltered = 0;
+            zones.get(i).onSite = 0;
         }
         for (int i = 0; i < incidents.size(); i++) incidents.get(i).cops = incidents.get(i).soldiers = 0;
         for (int i = 0, n = w.entities.size(); i < n; i++) {
@@ -221,6 +279,7 @@ final class Dispatch {
                     break;
                 case T_GUARD:
                     e.slot = e.zone.guards++;
+                    if (Math.hypot(e.x - e.zone.x, e.y - e.zone.y) < e.zone.baseR * 1.3f) e.zone.onSite++;
                     break;
                 case T_SHELTER:
                     e.zone.sheltered++;
@@ -620,7 +679,45 @@ final class Dispatch {
             z.attackCd -= step;
             int near = w.countZombiesNear(z.x, z.y, z.r * 1.6f);
             if (z.guards == 0 && z.age > 10) {
-                removeZone(z, near > 0);
+                removeZone(z, near > 0 && z.open);
+                continue;
+            }
+            shapeEdge(z, step);
+            if (!z.open) {
+                // Setting up: the sandbags go up as fast as there are hands on site to fill them.
+                if (w.countZombiesNear(z.x, z.y, z.baseR * 1.4f) >= 3) {
+                    say(z.military ? WHO_MILITARY : WHO_POLICE, null, (z.military ? "Military" : "Police") + ": The dead got to "
+                            + z.place + " before the safe zone was ready. Pulling out!", z.x, z.y);
+                    z.removed = true;
+                    zones.remove(i);
+                    zonesDirty = true;
+                    for (int k = 0, n = w.entities.size(); k < n; k++) if (w.entities.get(k).zone == z) release(w.entities.get(k));
+                    if (z.military) militaryZoneCd = 40;
+                    else policeZoneCd = 45;
+                    continue;
+                }
+                z.built += step * Math.min(6, z.onSite) / (z.military ? 110f : 120f);
+                if (z.built >= 1) {
+                    z.built = 1;
+                    z.open = true;
+                    z.age = 0;
+                    zonesDirty = true;
+                    say(z.military ? WHO_MILITARY : WHO_POLICE, null, (z.military ? "Military: " : "Police Command: ")
+                            + "The safe zone at " + z.place + " is open, room for " + z.capacity
+                            + ". Civilians, head there now!", z.x, z.y);
+                }
+                if (z.guards < z.wantGuards) assignGuards(z, z.wantGuards - z.guards, 900, z.military ? Entity.SOLDIER : Entity.COP);
+                continue;
+            }
+            // Overrun: more of the dead inside the line than the guards can hold.
+            int inside = 0;
+            for (int k = 0, n = w.entities.size(); k < n && near > 0; k++) {
+                Entity o = w.entities.get(k);
+                if (o.dead || !o.isZombie() || o.hidden) continue;
+                if (Math.abs(o.x - z.x) < z.r * 1.5f && Math.abs(o.y - z.y) < z.r * 1.5f && z.contains(o.x, o.y, 1)) inside++;
+            }
+            if (inside >= Math.max(4, z.onSite * 2)) {
+                removeZone(z, true);
                 continue;
             }
             // Stand the zone down when its own neighbourhood has been quiet for a while, when nobody has
@@ -713,7 +810,7 @@ final class Dispatch {
             }
             if (taken) continue;
             int d = Math.min(40, city.fieldAt(city.zombieDist, a[0], a[1]));
-            if (d < 5) continue;
+            if (d < 5 || w.countZombiesNear(a[0], a[1], CLEAR_OF_DEAD) > 0) continue;
             float dx = a[0] - px, dy = a[1] - py;
             float score = d * 3 - (float) Math.sqrt(dx * dx + dy * dy) / City.T * 0.6f;
             if (score > bestScore) {
@@ -731,7 +828,7 @@ final class Dispatch {
             boolean taken = false;
             for (int i = 0; i < zones.size(); i++)
                 if (Math.hypot(zones.get(i).x - f.x, zones.get(i).y - f.y) < 150) taken = true;
-            if (!taken && city.fieldAt(city.zombieDist, f.x, f.y) >= 3) return f;
+            if (!taken && city.fieldAt(city.zombieDist, f.x, f.y) >= 3 && w.countZombiesNear(f.x, f.y, CLEAR_OF_DEAD) == 0) return f;
         }
         return null;
     }
@@ -751,7 +848,7 @@ final class Dispatch {
                 if (Math.hypot(zones.get(k).x - b.doorX, zones.get(k).y - b.doorY) < 150) taken = true;
             if (taken) continue;
             int d = Math.min(30, city.fieldAt(city.zombieDist, b.doorX, b.doorY));
-            if (d < 4) continue;
+            if (d < 4 || w.countZombiesNear(b.doorX, b.doorY, CLEAR_OF_DEAD) > 0) continue;
             // Somewhere quiet, but not miles from the people who need it.
             float score = d - Math.min(40, city.fieldAt(city.humanDist, b.doorX, b.doorY)) * 0.3f + (b.kind == City.SCHOOL ? 2 : 0);
             if (score > bestScore) {
@@ -768,6 +865,59 @@ final class Dispatch {
         out[0] = p[0];
         out[1] = p[1];
         return best;
+    }
+
+    /** No safe zone is set up with the dead closer than this. */
+    static final float CLEAR_OF_DEAD = 250;
+
+    /**
+     * The line follows the ground: each section reaches out as far as the zone needs (more people, more
+     * room; more guards, a longer line they can hold), stops at walls, and falls back where the dead push.
+     */
+    private void shapeEdge(SafeZone z, float step) {
+        int n = SafeZone.SECTORS;
+        java.util.Arrays.fill(z.pressure, 0);
+        float look = z.r + 70;
+        for (int k = 0, count = w.entities.size(); k < count; k++) {
+            Entity o = w.entities.get(k);
+            if (o.dead || !o.isZombie() || Math.abs(o.x - z.x) > look || Math.abs(o.y - z.y) > look) continue;
+            float a = (float) Math.atan2(o.y - z.y, o.x - z.x);
+            int s = ((int) Math.floor(a / (Math.PI * 2) * n) % n + n) % n;
+            if (Math.hypot(o.x - z.x, o.y - z.y) < z.edge[s] + 60) z.pressure[s]++;
+        }
+        float guardFactor = Math.min(1, z.onSite / (float) Math.max(1, z.wantGuards));
+        float maxR = z.baseR * (0.7f + 0.6f * guardFactor);
+        float needed = (float) Math.sqrt((z.sheltered + 10) * 330 / Math.PI);
+        float target = Math.max(z.baseR * 0.6f, Math.min(maxR, needed));
+        if (!z.open) target = z.baseR * 0.85f;
+        float sum = 0;
+        int squeezed = 0;
+        for (int k = 0; k < n; k++) {
+            int p = z.pressure[k] + (z.pressure[(k + 1) % n] + z.pressure[(k + n - 1) % n]) / 2;
+            float want = target * z.shape[k] * (1 - 0.45f * Math.min(1, p / 4f));
+            // Stop short of buildings and water: the line is sandbags across the street, not through walls.
+            double a = k * Math.PI * 2 / n;
+            float ca = (float) Math.cos(a), sa = (float) Math.sin(a);
+            for (float d = 14; d < want; d += 6)
+                if (city.tiles[city.tileIndex(z.x + ca * d, z.y + sa * d)] == City.BUILDING) {
+                    want = Math.max(z.baseR * 0.45f, d - 4);
+                    break;
+                }
+            float rate = want < z.edge[k] ? 14 : 6;
+            z.edge[k] += Math.max(-rate * step, Math.min(rate * step, want - z.edge[k]));
+            sum += z.edge[k];
+            if (p >= 4) squeezed++;
+        }
+        z.r = sum / n;
+        // Room for as many as the line could stretch to hold with the guards it has.
+        int cap = Math.max(8, (int) (Math.PI * maxR * maxR / 330));
+        if (cap != z.capacity && z.open) zonesDirty = true;
+        z.capacity = cap;
+        boolean falling = z.open && squeezed >= n / 3;
+        if (falling && !z.fallingBack)
+            say(z.military ? WHO_MILITARY : WHO_POLICE, null, (z.military ? "Military" : "Police") + ": " + z.place
+                    + " perimeter is giving way. Pulling the line back!", z.x, z.y);
+        z.fallingBack = falling;
     }
 
     private SafeZone establish(boolean military, float[] at) {
@@ -804,10 +954,9 @@ final class Dispatch {
         z.x = x;
         z.y = y;
         z.military = military;
-        z.r = radius;
+        z.initEdge(radius, rnd);
         // Bases and stations hold more people than a zone thrown up in a park.
-        z.capacity = military ? (facility != null ? 60 : landmark != null ? 50 : 40)
-                : (facility != null ? 35 : landmark != null ? 32 : 25);
+        z.capacity = Math.max(8, (int) (Math.PI * radius * radius / 330));
         z.wantGuards = military ? 6 : 4;
         z.place = place;
         int got = assignGuards(z, z.wantGuards, Float.MAX_VALUE, military ? Entity.SOLDIER : Entity.COP);
@@ -820,11 +969,11 @@ final class Dispatch {
         }
         zonesDirty = true;
         if (military)
-            say(WHO_MILITARY, null, "Military: Safe zone established at " + place + ", " + got
-                    + " soldiers guarding. Civilians, head there now!", x, y);
+            say(WHO_MILITARY, null, "Military: " + got + " soldiers moving to " + place
+                    + " to set up a safe zone. It opens once the perimeter is up.", x, y);
         else
-            say(WHO_POLICE, null, "Police Command: Setting up a safe zone at " + place
-                    + ". All civilians, get there now!", x, y);
+            say(WHO_POLICE, null, "Police Command: Officers on the way to set up a safe zone at " + place
+                    + ". Stay put until it's ready.", x, y);
         return z;
     }
 
@@ -844,10 +993,14 @@ final class Dispatch {
     void closeZone(SafeZone z) {
         say(z.military ? WHO_MILITARY : WHO_POLICE, null, (z.military ? "Military: " : "Police Command: ") + "The " + z.place
                 + " safe zone is closing. Residents can go home.", z.x, z.y);
-        removeZone(z, false);
+        removeZone(z, false, true);
     }
 
     private void removeZone(SafeZone z, boolean overrun) {
+        removeZone(z, overrun, false);
+    }
+
+    private void removeZone(SafeZone z, boolean overrun, boolean closing) {
         z.removed = true;
         zones.remove(z);
         zonesDirty = true;
@@ -872,7 +1025,7 @@ final class Dispatch {
                         + fallback.place + ".", fallback.x, fallback.y);
                 assignGuards(fallback, 4, Float.MAX_VALUE, Entity.COP);
             }
-        } else {
+        } else if (!closing) {
             say(WHO_INFO, null, "The " + z.place + " safe zone was abandoned.", z.x, z.y);
         }
     }
@@ -882,6 +1035,10 @@ final class Dispatch {
         float[] p = city.findWalkable(x, y);
         if (p == null) {
             say(WHO_INFO, null, "Can't set up a safe zone there.", x, y);
+            return;
+        }
+        if (w.countZombiesNear(p[0], p[1], CLEAR_OF_DEAD) > 0) {
+            say(WHO_INFO, null, "Too close to the dead to set up a safe zone. Pick somewhere quieter.", p[0], p[1]);
             return;
         }
         census();
@@ -924,12 +1081,16 @@ final class Dispatch {
         SafeZone z = new SafeZone();
         z.x = x;
         z.y = y;
+        z.initEdge(r, rnd);
+        java.util.Arrays.fill(z.edge, r);
         z.r = r;
         z.military = military;
         z.place = place;
         z.capacity = capacity;
         z.wantGuards = wantGuards;
         z.age = 20;
+        z.built = 1;
+        z.open = true;
         zones.add(z);
         zonesDirty = true;
         if (!military) w.fleet.roadblocks(z);
@@ -937,7 +1098,7 @@ final class Dispatch {
 
     /** True if some safe zone still has room. */
     boolean hasRoom() {
-        for (int i = 0; i < zones.size(); i++) if (!zones.get(i).full) return true;
+        for (int i = 0; i < zones.size(); i++) if (zones.get(i).open && !zones.get(i).full) return true;
         return false;
     }
 
@@ -955,8 +1116,7 @@ final class Dispatch {
     SafeZone zoneAt(float x, float y, float margin) {
         for (int i = 0; i < zones.size(); i++) {
             SafeZone z = zones.get(i);
-            float dx = z.x - x, dy = z.y - y, r = z.r * margin;
-            if (dx * dx + dy * dy < r * r) return z;
+            if (z.open && z.contains(x, y, margin)) return z;
         }
         return null;
     }
@@ -968,7 +1128,7 @@ final class Dispatch {
         int n = 0;
         float[] xs = new float[zones.size()], ys = new float[zones.size()];
         for (int i = 0; i < zones.size(); i++) {
-            if (zones.get(i).full) continue;
+            if (zones.get(i).full || !zones.get(i).open) continue;
             xs[n] = zones.get(i).x;
             ys[n] = zones.get(i).y;
             n++;

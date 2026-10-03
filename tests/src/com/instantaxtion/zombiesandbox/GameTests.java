@@ -708,6 +708,35 @@ public final class GameTests {
                 f.delete();
             }
         });
+        test("safe zones take time to set up, keep clear of the dead and have a living border", new Check() {
+            public void run() {
+                CityConfig c = new CityConfig();
+                c.v[CityConfig.OPT_ZOMBIES] = 0;
+                c.seed = 21;
+                World w = new World(c);
+                w.populate(c);
+                float[] far = w.city.findWalkable(w.city.worldW() * 0.3f, w.city.worldH() * 0.3f);
+                float[] zp = w.city.findWalkable(far[0] + 120, far[1]);
+                w.spawn(Entity.ZOMBIE, zp[0], zp[1]);
+                w.update(1 / 30f);
+                w.dispatch.orderZone(far[0], far[1]);
+                check(w.dispatch.zones.isEmpty(), "no safe zone with the dead close by");
+                for (Entity e : w.entities) if (e.isZombie()) e.dead = true;
+                w.update(1 / 30f);
+                w.dispatch.orderZone(far[0], far[1]);
+                check(w.dispatch.zones.size() == 1, "a safe zone is ordered");
+                Dispatch.SafeZone z = w.dispatch.zones.get(0);
+                check(!z.open && w.dispatch.zoneAt(z.x, z.y, 1) == null, "it isn't open straight away");
+                for (int s = 0; s < 30 * 150 && !z.open && !z.removed; s++) w.update(1 / 30f);
+                check(z.open && w.dispatch.zoneAt(z.x, z.y, 1) == z, "it opens once the sandbags are up");
+                float mn = Float.MAX_VALUE, mx = 0;
+                for (float e : z.edge) {
+                    mn = Math.min(mn, e);
+                    mx = Math.max(mx, e);
+                }
+                check(mx > mn + 1, "the border isn't a perfect circle");
+            }
+        });
         test("the Build tool, and its edits in the city code and saves", new Check() {
             public void run() throws Exception {
                 CityConfig c = new CityConfig();

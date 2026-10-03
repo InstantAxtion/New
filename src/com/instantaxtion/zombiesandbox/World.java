@@ -2875,7 +2875,7 @@ final class World {
             float ddx = e.zone.x - e.x, ddy = e.zone.y - e.y;
             float d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
             // Mill around inside the zone; head back in (around walls) if drifting out.
-            if (d > e.zone.r * 0.75f) {
+            if (d > e.zone.reach(e.x, e.y) * 0.75f) {
                 if (!followField(e, dispatch.zoneField, e.speed)) steer(e, ddx / d, ddy / d, e.speed);
             } else {
                 wander(e, e.speed * 0.4f);
@@ -5781,17 +5781,24 @@ final class World {
     }
 
     private static boolean inside(Entity e, Dispatch.SafeZone z, float margin) {
-        float ddx = e.x - z.x, ddy = e.y - z.y, r = z.r * margin;
-        return ddx * ddx + ddy * ddy < r * r;
+        return z.contains(e.x, e.y, margin);
     }
 
     /** Guards spread out around the edge of their safe zone, facing outward. */
     private void holdPost(Entity e, Dispatch.SafeZone z, float speedFactor) {
         float a = e.slot * TAU / Math.max(1, z.guards);
-        float px = z.x + (float) Math.cos(a) * z.r * 0.8f, py = z.y + (float) Math.sin(a) * z.r * 0.8f;
+        // On the line itself; while it's going up, filling sandbags at their stretch of it.
+        float er = z.edgeAt(a) * (z.open ? 0.85f : 0.95f);
+        float px = z.x + (float) Math.cos(a) * er, py = z.y + (float) Math.sin(a) * er;
         float ddx = px - e.x, ddy = py - e.y;
         float d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
-        if (d > z.r * 2.5f && followField(e, dispatch.zoneField, e.runSpeed * speedFactor)) return;
+        if (d > z.r * 2.5f) {
+            if (z.field == null) {
+                z.field = new int[city.w * city.h];
+                city.fieldFromPoints(z.field, new float[]{z.x}, new float[]{z.y}, 1);
+            }
+            if (followField(e, z.field, e.runSpeed * speedFactor)) return;
+        }
         if (d > 5) {
             steer(e, ddx / d, ddy / d, (d > 30 ? e.runSpeed : e.speed) * speedFactor);
         } else {

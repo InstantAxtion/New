@@ -93,7 +93,7 @@ final class CityConfig implements OptionSet {
     };
 
     /** Current index into VALUES for each option. */
-    final int[] v = {0, 1, 2, 2, 1, 0, 2};
+    final int[] v = {0, 1, 4, 2, 1, 0, 2};
     long seed = new Random().nextInt(1000000);
     /** Start the next game on the city from {@link #code()} instead of a new random one. */
     boolean keepCity;
@@ -192,8 +192,29 @@ final class CityConfig implements OptionSet {
     int civilians(int residents) {
         return Math.round(residents * RESIDENT_SHARE[v[OPT_CIVILIANS]]);
     }
-    int cops() { return COPS[v[OPT_COPS]]; }
-    int soldiers() { return SOLDIERS[v[OPT_MILITARY]]; }
+    /**
+     * Police on duty when the game starts: about one officer for every eighty residents (more than a real city
+     * has on shift, so the war is a fair fight), a couple per station, at least four.
+     */
+    int cops(int residents) {
+        return Math.max(4, Math.min(80, Math.round(residents / 80f) + policeStations() * 2));
+    }
+
+    /** Soldiers at the base (if the map has one): a garrison that grows with the city. */
+    int soldiers(int residents) {
+        if (!militaryBase()) return 0;
+        return Math.max(8, Math.min(48, Math.round(residents / 110f) + 4));
+    }
+
+    /** What each Reinforcements setting means, in plain words. */
+    static final String[] RESERVE_INFO = {
+            "Off: nobody else comes. Only the police and soldiers already in the city fight.",
+            "Low: 1 wave of police backup (4 officers), 1 army reserve squad (4 soldiers), 1 tank and 1 helicopter sortie. "
+                    + "The National Guard comes if the army runs out and the city is losing.",
+            "Medium: 2 waves of police backup, 2 army reserve squads, 1 tank and 1 helicopter sortie, then the National Guard "
+                    + "if it's needed.",
+            "High: 3 waves of police backup, 3 army reserve squads, 2 tanks and 2 helicopter sorties, then the National Guard "
+                    + "if it's needed."};
     int zombies() { return ZOMBIES[v[OPT_ZOMBIES]]; }
     /** 0 off, 1 low, 2 medium, 3 high: how many reserve squads and backup waves can be called in. */
     int reinforcements() { return v[OPT_RESERVES]; }
@@ -257,7 +278,7 @@ final class CityConfig implements OptionSet {
     void randomize(Random r) {
         for (int i = 0; i < v.length; i++) v[i] = r.nextInt(VALUES[i].length);
         v[OPT_SIZE] = 1;
-        if (v[OPT_CIVILIANS] == 0) v[OPT_CIVILIANS] = 2;
+        if (v[OPT_CIVILIANS] == 0) v[OPT_CIVILIANS] = 4;
         keepCity = false;
     }
 

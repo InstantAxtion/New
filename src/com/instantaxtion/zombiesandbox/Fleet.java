@@ -97,9 +97,9 @@ final class Fleet {
                     default: return "Air 1: Returning to base";
                 }
             case TRAIN:
-                if (v.state == WAIT) return (w.outbreak ? "Evacuation train: Boarding (" : "Train: At the platform (") + (int) v.timer + "s)";
-                if (!v.pad && city.stationX >= 0) return w.outbreak ? "Evacuation train: Stopping at " + city.stationName : "Train: Stopping at " + city.stationName;
-                return w.outbreak ? "Train: Evacuation service" : "Train: Passing through";
+                if (v.state == WAIT) return "Train: At the platform (" + (int) v.timer + "s)";
+                if (!v.pad && city.stationX >= 0) return "Train: Stopping at " + city.stationName;
+                return "Train: Passing through";
             case JET:
                 return v.timer > 0 ? "Jet: Bombs away!" : "Jet: Attack run";
             case TANK:
@@ -559,36 +559,6 @@ final class Fleet {
         return false;
     }
 
-    /** A train pulls in: commuters get off in peacetime; in an outbreak it's an evacuation train. */
-    private void trainArrives(Vehicle v) {
-        if (w.outbreak) {
-            w.dispatch.say(Dispatch.WHO_INFO, null, "Rail: An evacuation train is at " + city.stationName
-                    + " for 25 seconds. Anyone who can get to the platform, get on!", city.stationX, v.y);
-            w.noise(city.stationX, v.y, 120);
-            return;
-        }
-        int n = 1 + w.rnd.nextInt(4);
-        for (int i = 0; i < n; i++) {
-            float[] p = city.findWalkable(city.stationX + w.rnd.nextFloat() * 60 - 30, city.stationY);
-            if (p != null) w.spawn(Entity.CIVILIAN, p[0], p[1]);
-        }
-    }
-
-    /** People on the platform get on: a few commuters in peacetime, anyone who can in an outbreak. */
-    private void board(Vehicle v) {
-        int limit = w.outbreak ? 24 : 2;
-        if (v.passengers >= limit) return;
-        for (int i = 0, n = w.entities.size(); i < n && v.passengers < limit; i++) {
-            Entity e = w.entities.get(i);
-            if (e.dead || e.type != Entity.CIVILIAN || e.ride != null || e.leader != null && !w.outbreak) continue;
-            if (Math.abs(e.x - city.stationX) > TRAIN_LENGTH / 2 || (Math.abs(e.y - v.y) > 42 && Math.abs(e.y - city.stationY) > 26)) continue;
-            e.dead = true;
-            e.removed = true;
-            v.passengers++;
-            if (w.outbreak) w.evacuated++;
-        }
-    }
-
     private void spawnTrain() {
         Vehicle v = make(TRAIN);
         boolean east = w.rnd.nextBoolean();
@@ -614,23 +584,13 @@ final class Fleet {
     private boolean updateTrain(Vehicle v, float dt) {
         float dir = (float) Math.cos(v.angle);
         if (v.state == WAIT) {
-            // At the platform: people get off and on.
+            // A short stop at the platform.
             v.speed = 0;
-            if (w.outbreak) evacTrain = v;
             v.timer -= dt;
-            v.gunCd -= dt;
-            if (v.gunCd <= 0) {
-                v.gunCd = 0.4f;
-                board(v);
-            }
             float mid = v.x - dir * TRAIN_LENGTH / 2;
             if (v.timer <= 0 || w.countZombiesNear(mid, v.y, 80) > 2) {
                 v.state = DRIVE;
                 w.emit(Sfx.HORN, v.x, v.y);
-                if (v.passengers > 0) w.highlight("Evacuation train: " + v.passengers + " escaped", mid, v.y);
-                if (v.passengers > 0)
-                    w.dispatch.say(Dispatch.WHO_INFO, null, "The evacuation train has left " + city.stationName + " with " + v.passengers
-                            + (v.passengers == 1 ? " person" : " people") + " aboard.", mid, v.y);
             }
             return false;
         }
@@ -643,9 +603,6 @@ final class Fleet {
                 boolean danger = w.countZombiesNear(city.stationX, v.y, 150) > 0;
                 if (danger) {
                     v.pad = true;
-                    if (w.outbreak)
-                        w.dispatch.say(Dispatch.WHO_INFO, null, "Rail: The train can't stop at " + city.stationName
-                                + ", there are zombies on the platform.", city.stationX, v.y);
                 } else {
                     cruise = Math.max(5, ahead * 0.38f);
                     if (ahead < 3) {
@@ -653,8 +610,7 @@ final class Fleet {
                         v.pad = true;
                         v.speed = 0;
                         v.passengers = 0;
-                        v.timer = w.outbreak ? 25 : 9;
-                        trainArrives(v);
+                        v.timer = 9;
                         return false;
                     }
                 }
@@ -677,11 +633,7 @@ final class Fleet {
         return v.x < -TRAIN_LENGTH - 40 || v.x > city.worldW() + TRAIN_LENGTH + 40;
     }
 
-    /** An evacuation train waiting at the platform right now, or null. */
-    Vehicle evacTrain;
-
     void update(float dt) {
-        evacTrain = null;
         // Keep the streets busy while the city is still calm; clear old wrecks.
         trafficTimer -= dt;
         trainTimer -= dt;

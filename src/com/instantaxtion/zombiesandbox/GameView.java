@@ -25,8 +25,10 @@ final class GameView extends View implements Menu.Host {
     private static final String[] BUILD_NAMES = {"Road", "Pavement", "Grass", "Trees", "Wall", "House", "Shop", "Clear"};
     private static final String[] BUILD_INFO = {"Drag to lay a road", "Drag to pave", "Drag to grass over", "Drag to plant trees",
             "Drag to build a wall nobody can cross", "Tap to put up a house", "Tap to put up a shop", "Grass over, or knock a building down"};
-    /** The medic has moved into the People picker, so its old tool slot isn't shown. */
-    private static final int TOOL_HIDDEN = 5;
+    /** Tools no longer on the bar: the medic (now in the People picker), Orders, Place, Events and Build. */
+    private static boolean hiddenTool(int t) {
+        return t == 5 || t == TOOL_ORDER || t == TOOL_PLACE || t == TOOL_EVENT || t == TOOL_BUILD;
+    }
     private static final String[] PLACE_NAMES = {"Car", "Police car", "Tank", "Fire engine", "Barricade", "Crate", "Fire",
             "Medkit"};
     private static final String[] EVENT_NAMES = {"Horde", "Panic", "Outbreak", "Supply drop", "Raiders", "Airstrike",
@@ -440,11 +442,14 @@ final class GameView extends View implements Menu.Host {
     protected void onSizeChanged(int w, int h, int oldw, int oldh) {
         super.onSizeChanged(w, h, oldw, oldh);
         portrait = h > w;
-        int[] shown = new int[toolRects.length - 1];
-        for (int i = 0, k = 0; i < toolRects.length; i++) if (i != TOOL_HIDDEN) shown[k++] = i;
-        toolRects[TOOL_HIDDEN].setEmpty();
-        int n = shown.length;
-        int perRow = portrait ? 6 : n;
+        int n = 0;
+        for (int i = 0; i < toolRects.length; i++) if (!hiddenTool(i)) n++;
+        int[] shown = new int[n];
+        for (int i = 0, k = 0; i < toolRects.length; i++) {
+            if (hiddenTool(i)) toolRects[i].setEmpty();
+            else shown[k++] = i;
+        }
+        int perRow = portrait ? (n + 1) / 2 : n;
         int rows = (n + perRow - 1) / perRow;
         float gap = 5 * dp, rowH = 62 * dp;
         barTop = h - rows * rowH - 8 * dp;
@@ -2952,11 +2957,11 @@ final class GameView extends View implements Menu.Host {
         // Stats panel: one column in landscape, two in portrait. Tap it to collapse to one line.
         float lh = 17 * dp;
         Dispatch d = world.dispatch;
-        int[] rows = {world.counts[Entity.CIVILIAN], world.counts[Entity.COP], world.counts[Entity.SOLDIER],
+        int[] rows = {world.civilians, world.counts[Entity.COP], world.counts[Entity.SOLDIER],
                 world.counts[Entity.MEDIC], world.counts[Entity.FIREFIGHTER], world.zombieCount()};
         text.setTextSize(12.5f * dp);
         if (statsCollapsed) {
-            String line = "People " + (world.humanCount() + world.hiding + world.riding) + "   Zombies " + world.zombieCount()
+            String line = "People " + (world.humanCount() + world.hiding + world.riding + world.visiting) + "   Zombies " + world.zombieCount()
                     + "   (tap for more)";
             float tw = text.measureText(line);
             oval.set(statsRect.left, statsRect.top, statsRect.left + tw + 24 * dp, statsRect.top + 28 * dp);

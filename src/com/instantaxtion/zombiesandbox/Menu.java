@@ -509,13 +509,12 @@ final class Menu {
         int t = (int) world.time;
         String[][] totals = {
                 {"Time", String.format("%d:%02d", t / 60, t % 60)},
-                {"People now", String.valueOf(world.humanCount() + world.hiding + world.riding)},
+                {"People now", String.valueOf(world.humanCount() + world.hiding + world.riding + world.visiting)},
                 {"Zombies now", String.valueOf(world.zombieCount())},
                 {"Most zombies at once", String.valueOf(world.peakZombies)},
                 {"Zombies killed", String.valueOf(world.zombiesKilled)},
                 {"People turned", String.valueOf(world.turned)},
                 {"Civilians lost", String.valueOf(world.civiliansLost)},
-                {"Evacuated by train", String.valueOf(world.evacuated)},
                 {"Infections cured", String.valueOf(world.cured)},
                 {"911 calls", String.valueOf(world.dispatch.calls)},
                 {"Shots fired", String.valueOf(world.shotsFired)},
@@ -926,8 +925,12 @@ final class Menu {
         plain.setTextAlign(Paint.Align.LEFT);
         plain.setTextSize(13 * dp);
         plain.setColor(0xFFB8BDC4);
-        c.drawText(label, x + 2 * dp, y + 14 * dp, plain);
-        y += 22 * dp;
+        // Long labels wrap rather than run off a narrow screen.
+        for (String line : wrap(label, width - 4 * dp, plain)) {
+            c.drawText(line, x + 2 * dp, y + 14 * dp, plain);
+            y += 17 * dp;
+        }
+        y += 5 * dp;
         String[] values = config.values(option);
         float gap = 4 * dp, bh = 36 * dp, bw = (width - gap * (values.length - 1)) / values.length;
         for (int i = 0; i < values.length; i++) {
@@ -1034,13 +1037,31 @@ final class Menu {
         y += ((CityConfig.PRESETS.length + perRow - 1) / perRow) * (ch + gap) + 12 * dp;
         y = segRow(c, CityConfig.OPT_SIZE, "Map size", lx, y, lw);
         int homes = previewResidents;
-        y = segRow(c, CityConfig.OPT_CIVILIANS, homes > 0 && config.code().equals(previewKey)
-                ? "People: how many residents are about (this city has homes for " + homes + ", about " + config.civilians(homes) + " people)"
+        boolean known = homes > 0 && config.code().equals(previewKey);
+        y = segRow(c, CityConfig.OPT_CIVILIANS, known
+                ? "People: how many of the " + homes + " residents are about (" + config.civilians(homes) + ")"
                 : "People: how many residents are about", lx, y, lw);
-        y = segRow(c, CityConfig.OPT_COPS, "Cops", lx, y, lw);
-        y = segRow(c, CityConfig.OPT_MILITARY, "Military", lx, y, lw);
+        // Police and the army are set by the size of the city.
+        plain.setTextSize(12.5f * dp);
+        plain.setColor(0xFF9AA0A8);
+        String force = known ? "Police and army are set by the city: " + config.cops(homes) + " officers on duty"
+                + (config.soldiers(homes) > 0 ? " and " + config.soldiers(homes) + " soldiers at the base." : ", and no army base on this map.")
+                : "Police and army are set by the size of the city.";
+        for (String line : wrap(force, lw - 4 * dp, plain)) {
+            c.drawText(line, lx + 2 * dp, y + 10 * dp, plain);
+            y += 16 * dp;
+        }
+        y += 10 * dp;
         y = segRow(c, CityConfig.OPT_ZOMBIES, "Zombies", lx, y, lw);
-        y = segRow(c, CityConfig.OPT_RESERVES, "Reinforcements (backup, army squads, tanks and air support)", lx, y, lw);
+        y = segRow(c, CityConfig.OPT_RESERVES, "Reinforcements: who comes to help once the fighting starts", lx, y, lw);
+        plain.setTextSize(12.5f * dp);
+        plain.setColor(0xFF9AA0A8);
+        y -= 6 * dp;
+        for (String line : wrap(CityConfig.RESERVE_INFO[config.v[CityConfig.OPT_RESERVES]], lw - 4 * dp, plain)) {
+            c.drawText(line, lx + 2 * dp, y + 10 * dp, plain);
+            y += 16 * dp;
+        }
+        y += 12 * dp;
         c.restore();
         contentHeight = y + scroll - listTop;
         clampScroll();

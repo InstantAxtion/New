@@ -90,6 +90,8 @@ final class World {
     float statStep = 2f;
     private float statTimer;
     int shotsFired, cured, peakZombies, hiding;
+    /** Every living civilian: on the street, indoors, or in a car (so the count doesn't jump as people go in and out). */
+    int civilians;
     /** Zombies shut inside buildings, out of sight. */
     int lurking;
     /** The power station or the hospital has been overrun. */
@@ -399,24 +401,25 @@ final class World {
         City.Facility base = city.nearestFacility(City.FACILITY_BASE, 0, 0);
         int stations = 0;
         for (City.Facility f : city.facilities) if (f.kind == City.FACILITY_POLICE) stations++;
-        int copsAtStations = stations > 0 ? cfg.cops() / 2 : 0;
+        int cops = cfg.cops(city.totalResidents), soldiers = cfg.soldiers(city.totalResidents);
+        int copsAtStations = stations > 0 ? cops / 2 : 0;
         int k = 0;
         for (City.Facility f : city.facilities) {
             if (f.kind != City.FACILITY_POLICE) continue;
             int n = copsAtStations / stations + (k++ < copsAtStations % stations ? 1 : 0);
             for (int i = 0; i < n; i++) spawn(Entity.COP, f.x + rnd.nextFloat() * 40 - 20, f.y + rnd.nextFloat() * 40 - 20);
         }
-        spawnRandom(Entity.COP, cfg.cops() - copsAtStations);
+        spawnRandom(Entity.COP, cops - copsAtStations);
         int firstSoldier = entities.size();
         if (base != null) {
-            for (int i = 0; i < cfg.soldiers(); i++)
+            for (int i = 0; i < soldiers; i++)
                 spawn(Entity.SOLDIER, base.x + rnd.nextFloat() * base.r - base.r / 2, base.y + rnd.nextFloat() * base.r - base.r / 2);
         } else {
-            spawnRandom(Entity.SOLDIER, cfg.soldiers());
+            spawnRandom(Entity.SOLDIER, soldiers);
         }
         // Every fourth soldier carries the squad's machine gun, big garrisons have snipers, and a
         // commander runs the show.
-        int snipers = cfg.soldiers() >= 10 ? 2 : 0;
+        int snipers = soldiers >= 10 ? 2 : 0;
         for (int i = firstSoldier, n = entities.size(); i < n; i++) {
             Entity e = entities.get(i);
             if (e.type != Entity.SOLDIER) continue;
@@ -426,7 +429,7 @@ final class World {
                 snipers--;
             }
         }
-        if (cfg.soldiers() >= 5) {
+        if (soldiers >= 5) {
             float[] p = base != null ? new float[]{base.x, base.y} : city.randomWalkable(rnd);
             spawnSoldier(Entity.ROLE_COMMANDER, p[0], p[1]);
         }
@@ -1331,9 +1334,17 @@ final class World {
         }
         hiding = 0;
         visiting = 0;
+        civilians = counts[Entity.CIVILIAN];
         for (int i = 0, n = city.buildings.size(); i < n; i++) {
-            hiding += city.buildings.get(i).occupants.size();
-            visiting += city.buildings.get(i).visitors.size();
+            City.Building b = city.buildings.get(i);
+            hiding += b.occupants.size();
+            visiting += b.visitors.size();
+            for (int k = 0; k < b.occupants.size(); k++) if (b.occupants.get(k).type == Entity.CIVILIAN) civilians++;
+            for (int k = 0; k < b.visitors.size(); k++) if (b.visitors.get(k).type == Entity.CIVILIAN) civilians++;
+        }
+        for (int i = 0, n = fleet.vehicles.size(); i < n; i++) {
+            ArrayList<Entity> r = fleet.vehicles.get(i).riders;
+            for (int k = 0; k < r.size(); k++) if (r.get(k).type == Entity.CIVILIAN) civilians++;
         }
         riding = fleet.riderCount();
         int h = humanCount() + hiding + riding + visiting;
@@ -2801,20 +2812,6 @@ final class World {
                 } else {
                     steer(e, ddx / d, ddy / d, e.speed * 1.6f);
                 }
-                return;
-            }
-        }
-
-        // An evacuation train at the station: anyone nearby who can make it runs for the platform.
-        if (fleet.evacTrain != null && city.stationBuilding != null && (e.task == Dispatch.T_NONE || e.task == Dispatch.T_HIDE)
-                && e.leader == null && !e.hasGun) {
-            float sdx = city.stationX - e.x, sdy = city.stationY - e.y, sd = (float) Math.sqrt(sdx * sdx + sdy * sdy) + 0.001f;
-            if (sd < 420 && (threat == null || threatDist > 45)) {
-                e.task = Dispatch.T_NONE;
-                City.Building st = city.stationBuilding;
-                float ddx = st.doorX - e.x, ddy = st.doorY - e.y, d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
-                if (d > 28 && sd > 70) walkTo(e, st, ddx, ddy, d, e.runSpeed);
-                else steer(e, sdx / sd, sdy / sd, e.runSpeed);
                 return;
             }
         }

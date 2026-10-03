@@ -758,6 +758,31 @@ public final class GameTests {
                 check(old.applyCode("12-44") && old.country() == Country.USA, "old codes are American cities");
             }
         });
+        test("each country's traffic: kei cars in Japan, Beetles in Mexico, utes in Australia", new Check() {
+            public void run() {
+                int[][] want = {{Country.JAPAN, Fleet.M_KEI}, {Country.MEXICO, Fleet.M_BEETLE}, {Country.AUSTRALIA, Fleet.M_PICKUP}};
+                for (int[] wv : want) {
+                    CityConfig c = new CityConfig();
+                    c.v[CityConfig.OPT_ZOMBIES] = 0;
+                    c.v[CityConfig.OPT_COUNTRY] = wv[0];
+                    c.seed = 5;
+                    World w = new World(c);
+                    w.populate(c);
+                    w.fleet.spawnTraffic(60);
+                    int found = 0, buses = 0;
+                    for (Fleet.Vehicle v : w.fleet.vehicles) {
+                        if (v.type != Fleet.CAR) continue;
+                        if (v.model == wv[1]) found++;
+                        if (v.model == Fleet.M_BUS) buses++;
+                    }
+                    check(found > 0, Country.NAMES[wv[0]] + " has its own cars");
+                    check(buses <= 6, "only a few buses");
+                    for (int s = 0; s < 30 * 20; s++) w.update(1 / 30f);
+                }
+                check(Fleet.MODEL_HL[Fleet.M_BUS] > Fleet.MODEL_HL[Fleet.M_SEDAN] && Fleet.MODEL_HL[Fleet.M_KEI] < Fleet.MODEL_HL[Fleet.M_SEDAN],
+                        "buses are long, kei cars are small");
+            }
+        });
         test("the Build tool, and its edits in the city code and saves", new Check() {
             public void run() throws Exception {
                 CityConfig c = new CityConfig();

@@ -2,11 +2,19 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "7.0";
-    static final int VERSION_CODE = 25;
+    static final String VERSION = "7.1";
+    static final int VERSION_CODE = 26;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "7.1  -  Buildings, cars and lanes for every country",
+                    "Buildings built the local way. Australia: hip roofs in Colorbond or tile, verandahs, solar panels and rainwater tanks. Japan: kawara-tiled roofs, temples, green-roofed shrines and pagodas, flat-roofed blocks crowded with air conditioners, water tanks and balconies on every floor. France: zinc mansard roofs with dormers and chimney pots, tall windows and wrought-iron balconies, cathedrals with spires. Mexico: flat roofs behind painted parapets with black water tanks and rebar for the next floor, roof terraces, barred windows and tiled church domes with twin bell towers.",
+                    "Signs in the local language: POMPIERS, ÉCOLE and MARCHÉ in France; POLICÍA, BOMBEROS and MERCADO in Mexico; PETROL in Australia; KOBAN in Japan.",
+                    "Traffic that fits the country: pickups, SUVs, yellow cabs and school buses in the USA; utes and 4WDs in Australia; tiny kei cars and minivans in Japan; hatchbacks and vans in France; Beetles, pickups and pink-and-white taxis in Mexico. Each kind of car looks different from above.",
+                    "Turn lanes: arrows on the avenues before each junction, inner lane for turning across the traffic, kerb lane for straight on or turning off, painted on the side of the road the country drives on.",
+                    "Safe zones can no longer be placed by hand. The police and army decide where and when they go up.",
+            },
             {
                     "7.0  -  Countries, safe zones and city life",
                     "Countries: pick USA, Australia, Japan, France or Mexico on the New Game screen. Each has its own buildings and colours, pavements, street, town and people's names, road lines and police cars. In Australia and Japan traffic drives on the left. The country is part of the city code.",

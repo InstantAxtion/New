@@ -27,7 +27,7 @@ final class GameView extends View implements Menu.Host {
             "Drag to build a wall nobody can cross", "Tap to put up a house", "Tap to put up a shop", "Grass over, or knock a building down"};
     /** Tools no longer on the bar: the medic (now in the People picker), Orders, Place, Events and Build. */
     private static boolean hiddenTool(int t) {
-        return t == 5 || t == TOOL_ORDER || t == TOOL_PLACE || t == TOOL_EVENT || t == TOOL_BUILD;
+        return t == 5 || t == TOOL_ORDER || t == TOOL_PLACE || t == TOOL_EVENT || t == TOOL_BUILD || t == TOOL_ZONE;
     }
     private static final String[] PLACE_NAMES = {"Car", "Police car", "Tank", "Fire engine", "Barricade", "Crate", "Fire",
             "Medkit"};
@@ -1722,6 +1722,8 @@ final class GameView extends View implements Menu.Host {
             float cw = len / cols;
             float glass = 0.55f + shade * 0.45f;
             int litMask = 7;
+            int land = world.city.country.id;
+            boolean block = b.kind == City.OFFICE || b.kind == City.APARTMENT;
             for (int k = 0; k < floors; k++) {
                 float v0 = k * City.FLOOR;
                 for (int i = 0; i < cols; i++) {
@@ -1796,6 +1798,18 @@ final class GameView extends View implements Menu.Host {
                     } else if (k == 0) {
                         fill.setColor(fade(City.darken(0xFF5A7890, glass)));
                         c.drawRect(u0 + 2, v0 + 1.5f, u0 + cw - 2, v0 + 8.5f, fill);
+                    } else if (land == Country.FRANCE && block && floors <= 10) {
+                        // Tall French windows.
+                        fill.setColor(fade(lit ? litColor : City.darken(0xFF27313B, glass)));
+                        c.drawRect(u0 + cw * 0.32f, v0 + 2, u0 + cw * 0.68f, v0 + 10.5f, fill);
+                        fill.setColor(fade(City.darken(0xFFE8E2D4, glass)));
+                        c.drawRect(u0 + cw * 0.49f, v0 + 2, u0 + cw * 0.51f, v0 + 10.5f, fill);
+                    } else if (land == Country.MEXICO && block && floors <= 10) {
+                        // Small windows behind iron bars.
+                        fill.setColor(fade(lit ? litColor : City.darken(0xFF27313B, glass)));
+                        c.drawRect(u0 + cw * 0.3f, v0 + 4, u0 + cw * 0.7f, v0 + 8.5f, fill);
+                        fill.setColor(fade(0xFF1A1A1A));
+                        for (int q = 1; q < 4; q++) c.drawRect(u0 + cw * (0.3f + 0.1f * q) - 0.2f, v0 + 4, u0 + cw * (0.3f + 0.1f * q) + 0.2f, v0 + 8.5f, fill);
                     } else {
                         fill.setColor(fade(lit ? litColor : City.darken(0xFF27313B, glass)));
                         c.drawRect(u0 + 3, v0 + 3.5f, u0 + cw - 3, v0 + 9.5f, fill);
@@ -1811,6 +1825,7 @@ final class GameView extends View implements Menu.Host {
             }
             fill.setColor(fade(City.darken(b.wall, shade * 0.8f)));
             c.drawRect(0, hgt - 2.5f, len, hgt, fill);
+            countryWall(c, b, len, hgt, floors, cw, shade, side, land, block);
         }
         if (realistic && scale > 2f) {
             // Soft light: darker towards the ground, a lit cornice along the top.
@@ -1843,6 +1858,53 @@ final class GameView extends View implements Menu.Host {
         c.restore();
     }
 
+    /**
+     * What sets a country's streets apart on the walls: Haussmann balconies and a zinc top floor in France,
+     * a balcony on every floor of a Japanese block, a painted base on Mexican buildings, a verandah on
+     * Australian houses.
+     */
+    private void countryWall(Canvas c, City.Building b, float len, float hgt, int floors, float cw, float shade, int side,
+                             int land, boolean block) {
+        if (land == Country.FRANCE && block && floors >= 3 && floors <= 10) {
+            for (int k = 1; k < floors; k++) {
+                if (k != 1 && k != floors - 2) continue;
+                float v0 = k * City.FLOOR;
+                fill.setColor(fade(City.darken(0xFF22262A, shade)));
+                c.drawRect(0, v0 + 1.4f, len, v0 + 2.2f, fill);
+                c.drawRect(0, v0 + 4.2f, len, v0 + 4.7f, fill);
+                for (float u = 1; u < len; u += 1.6f) c.drawRect(u, v0 + 2.2f, u + 0.3f, v0 + 4.2f, fill);
+            }
+            // The zinc mansard storey with its dormers.
+            float top = (floors - 1) * City.FLOOR;
+            fill.setColor(fade(City.darken(0xFF7A8490, shade)));
+            c.drawRect(0, top, len, hgt, fill);
+            for (float u = cw * 0.5f - 1.5f; u < len - 2; u += cw) {
+                fill.setColor(fade(City.darken(0xFFE8E2D4, shade)));
+                c.drawRect(u, top + 2.5f, u + 3, top + 9, fill);
+                fill.setColor(fade(City.darken(0xFF34414E, shade)));
+                c.drawRect(u + 0.6f, top + 3.5f, u + 2.4f, top + 8, fill);
+            }
+        } else if (land == Country.JAPAN && b.kind == City.APARTMENT) {
+            int slab = City.lighten(b.wall, 0.18f);
+            for (int k = 1; k < floors; k++) {
+                float v0 = k * City.FLOOR;
+                fill.setColor(fade(City.darken(slab, shade)));
+                c.drawRect(0, v0 + 0.5f, len, v0 + 4.2f, fill);
+                fill.setColor(fade(City.darken(slab, shade * 0.8f)));
+                for (float u = cw; u < len; u += cw) c.drawRect(u - 0.3f, v0 + 0.5f, u + 0.3f, v0 + 4.2f, fill);
+            }
+        } else if (land == Country.MEXICO && b.kind != City.CHURCH) {
+            fill.setColor(fade(City.darken(b.wall, shade * 0.62f)));
+            c.drawRect(0, 0, len, 2.6f, fill);
+        } else if (land == Country.AUSTRALIA && b.kind == City.HOUSE && side == 1) {
+            fill.setColor(fade(City.darken(0xFFDCD8CC, shade)));
+            c.drawRect(0, 8.2f, len, 9.8f, fill);
+            fill.setColor(fade(City.darken(0xFFF2F2F2, shade)));
+            for (float u = 1; u < len; u += 6) c.drawRect(u, 0, u + 0.7f, 8.2f, fill);
+            c.drawRect(0, 2.6f, len, 3f, fill);
+        }
+    }
+
     /** A car, police cruiser, army truck or fire engine, with its damage showing. */
     private void drawVehicle(Canvas c, Fleet.Vehicle v) {
         if (v.type == Fleet.TANK) {
@@ -1855,6 +1917,11 @@ final class GameView extends View implements Menu.Host {
         }
         boolean truck = v.type == Fleet.TRUCK, engine = v.type == Fleet.FIRE_ENGINE, amb = v.type == Fleet.AMBULANCE;
         float hl = truck || engine || amb ? 9.5f : 8f, hw = truck ? 5.2f : engine || amb ? 4.9f : 4.4f;
+        int model = v.type == Fleet.CAR ? v.model : -1;
+        if (model >= 0) {
+            hl = Fleet.MODEL_HL[model];
+            hw = Fleet.MODEL_HW[model];
+        }
         if (v.spraying) {
             // The hose: an arc of water from the engine to the fire.
             stroke.setColor(0x99A8D8FF);
@@ -1894,7 +1961,9 @@ final class GameView extends View implements Menu.Host {
         else if (v.broken) body = City.darken(body, 0.65f);
         fill.setColor(body);
         oval.set(-hl, -hw, hl, hw);
-        c.drawRoundRect(oval, 2.5f, 2.5f, fill);
+        if (model == Fleet.M_BEETLE) c.drawRoundRect(oval, hw, hw * 0.9f, fill);
+        else c.drawRoundRect(oval, model == Fleet.M_KEI || model == Fleet.M_BUS || model == Fleet.M_VAN ? 1.2f : 2.5f,
+                model == Fleet.M_KEI || model == Fleet.M_BUS || model == Fleet.M_VAN ? 1.2f : 2.5f, fill);
         if (v.burnt) {
             // A burnt-out shell.
             fill.setColor(0xFF4A2F22);
@@ -1905,11 +1974,7 @@ final class GameView extends View implements Menu.Host {
             return;
         }
         if (civ) {
-            fill.setColor(0xFF1E2A33);
-            c.drawRect(1.5f, -hw + 1, 4.5f, hw - 1, fill);
-            c.drawRect(-5f, -hw + 1, -3f, hw - 1, fill);
-            fill.setColor(City.lighten(body, 0.15f));
-            c.drawRect(-2.5f, -hw + 1.5f, 1f, hw - 1.5f, fill);
+            drawCarBody(c, v, body, hl, hw);
             if (!v.parked) {
                 fill.setColor(0xFFFFF4C0);
                 c.drawCircle(hl - 0.8f, -hw + 1.3f, 0.8f, fill);
@@ -2028,6 +2093,124 @@ final class GameView extends View implements Menu.Host {
             }
         }
         c.restore();
+    }
+
+    /**
+     * The top of an everyday car, by model: windscreens, roof and the things that set it apart (a pickup's
+     * bed, a taxi's roof sign, a bus's roof hatches, a Beetle's round wings).
+     */
+    private void drawCarBody(Canvas c, Fleet.Vehicle v, int body, float hl, float hw) {
+        int glass = 0xFF1E2A33;
+        int roofCol = City.lighten(body, 0.15f);
+        switch (v.model) {
+            case Fleet.M_PICKUP:
+                fill.setColor(glass);
+                c.drawRect(hl * 0.3f, -hw + 1, hl * 0.55f, hw - 1, fill);
+                fill.setColor(roofCol);
+                c.drawRect(-hl * 0.05f, -hw + 1.3f, hl * 0.3f, hw - 1.3f, fill);
+                fill.setColor(glass);
+                c.drawRect(-hl * 0.12f, -hw + 1.2f, -hl * 0.05f, hw - 1.2f, fill);
+                // The open bed, with something tied down in it now and then.
+                fill.setColor(City.darken(body, 0.6f));
+                c.drawRect(-hl + 0.9f, -hw + 0.9f, -hl * 0.18f, hw - 0.9f, fill);
+                if ((v.number & 1) == 0) {
+                    fill.setColor(0xFF8A6A48);
+                    c.drawRect(-hl * 0.8f, -hw * 0.45f, -hl * 0.4f, hw * 0.35f, fill);
+                }
+                break;
+            case Fleet.M_SUV:
+                fill.setColor(glass);
+                c.drawRect(hl * 0.25f, -hw + 1, hl * 0.52f, hw - 1, fill);
+                c.drawRect(-hl * 0.85f, -hw + 1, -hl * 0.68f, hw - 1, fill);
+                fill.setColor(roofCol);
+                c.drawRect(-hl * 0.66f, -hw + 1.4f, hl * 0.23f, hw - 1.4f, fill);
+                fill.setColor(0xFF2A2A2E);
+                c.drawRect(-hl * 0.6f, -hw + 1.3f, hl * 0.18f, -hw + 1.8f, fill);
+                c.drawRect(-hl * 0.6f, hw - 1.8f, hl * 0.18f, hw - 1.3f, fill);
+                break;
+            case Fleet.M_KEI:
+                // A tall little box: the windscreen right at the front.
+                fill.setColor(glass);
+                c.drawRect(hl * 0.42f, -hw + 0.8f, hl * 0.78f, hw - 0.8f, fill);
+                fill.setColor(roofCol);
+                c.drawRect(-hl * 0.85f, -hw + 1f, hl * 0.4f, hw - 1f, fill);
+                fill.setColor(glass);
+                c.drawRect(-hl * 0.97f, -hw + 1f, -hl * 0.86f, hw - 1f, fill);
+                break;
+            case Fleet.M_HATCH:
+                fill.setColor(glass);
+                c.drawRect(hl * 0.18f, -hw + 1, hl * 0.48f, hw - 1, fill);
+                c.drawRect(-hl * 0.9f, -hw + 1.1f, -hl * 0.72f, hw - 1.1f, fill);
+                fill.setColor(roofCol);
+                c.drawRect(-hl * 0.7f, -hw + 1.4f, hl * 0.16f, hw - 1.4f, fill);
+                break;
+            case Fleet.M_VAN:
+                fill.setColor(glass);
+                c.drawRect(hl * 0.55f, -hw + 0.9f, hl * 0.8f, hw - 0.9f, fill);
+                fill.setColor(roofCol);
+                c.drawRect(-hl + 1, -hw + 1, hl * 0.53f, hw - 1, fill);
+                fill.setColor(City.darken(body, 0.85f));
+                for (float x = -hl + 3; x < hl * 0.45f; x += 3) c.drawRect(x, -hw + 1.2f, x + 0.4f, hw - 1.2f, fill);
+                break;
+            case Fleet.M_BUS: {
+                Country land = world.city.country;
+                fill.setColor(glass);
+                c.drawRect(hl - 2.2f, -hw + 0.8f, hl - 0.6f, hw - 0.8f, fill);
+                fill.setColor(roofCol);
+                c.drawRect(-hl + 1, -hw + 1, hl - 2.6f, hw - 1, fill);
+                // Roof hatches and the air conditioning.
+                fill.setColor(0xFFB8BCC0);
+                c.drawRect(-hl * 0.2f, -hw * 0.55f, hl * 0.25f, hw * 0.55f, fill);
+                fill.setColor(City.darken(body, 0.75f));
+                c.drawRect(-hl * 0.75f, -1.6f, -hl * 0.55f, 1.6f, fill);
+                c.drawRect(hl * 0.45f, -1.6f, hl * 0.65f, 1.6f, fill);
+                if (land.id == Country.USA) {
+                    // School bus: black rub rails down the sides.
+                    fill.setColor(0xFF1A1A1A);
+                    c.drawRect(-hl + 0.5f, -hw + 0.3f, hl - 0.5f, -hw + 0.8f, fill);
+                    c.drawRect(-hl + 0.5f, hw - 0.8f, hl - 0.5f, hw - 0.3f, fill);
+                } else {
+                    int stripe = land.id == Country.JAPAN ? 0xFF2E8A4A : land.id == Country.FRANCE ? 0xFF2E5FB0
+                            : land.id == Country.MEXICO ? 0xFFF2F2F2 : 0xFF1F3F8A;
+                    fill.setColor(stripe);
+                    c.drawRect(-hl + 0.5f, -hw + 0.3f, hl - 0.5f, -hw + 1f, fill);
+                    c.drawRect(-hl + 0.5f, hw - 1f, hl - 0.5f, hw - 0.3f, fill);
+                }
+                break;
+            }
+            case Fleet.M_BEETLE:
+                // Round wings at the corners and a domed roof.
+                fill.setColor(City.darken(body, 0.82f));
+                for (int sx = -1; sx <= 1; sx += 2)
+                    for (int sy = -1; sy <= 1; sy += 2) c.drawCircle(sx * hl * 0.6f, sy * (hw - 0.8f), 1.5f, fill);
+                fill.setColor(glass);
+                oval.set(-hl * 0.55f, -hw + 1f, hl * 0.35f, hw - 1f);
+                c.drawOval(oval, fill);
+                fill.setColor(roofCol);
+                oval.set(-hl * 0.4f, -hw + 1.6f, hl * 0.18f, hw - 1.6f);
+                c.drawOval(oval, fill);
+                break;
+            default:
+                fill.setColor(glass);
+                c.drawRect(1.5f, -hw + 1, 4.5f, hw - 1, fill);
+                c.drawRect(-5f, -hw + 1, -3f, hw - 1, fill);
+                fill.setColor(roofCol);
+                c.drawRect(-2.5f, -hw + 1.5f, 1f, hw - 1.5f, fill);
+                if (v.model == Fleet.M_TAXI) {
+                    // The roof sign (and the chequered stripe on American and Australian cabs).
+                    fill.setColor(world.city.country.id == Country.MEXICO ? 0xFFF2F2F2 : 0xFFF2E8A0);
+                    c.drawRect(-1.6f, -1.6f, 0.2f, 1.6f, fill);
+                    if (world.city.country.id == Country.USA || world.city.country.id == Country.AUSTRALIA) {
+                        for (int q = 0; q < 6; q++) {
+                            fill.setColor(q % 2 == 0 ? 0xFF1A1A1A : 0xFFF2F2F2);
+                            float x0 = -hl + 2 + q * 1.6f;
+                            c.drawRect(x0, -hw + 0.2f, x0 + 1.6f, -hw + 0.9f, fill);
+                            c.drawRect(x0, hw - 0.9f, x0 + 1.6f, hw - 0.2f, fill);
+                        }
+                    }
+                }
+                break;
+        }
     }
 
     /** A passenger train: a locomotive pulling three carriages along the line. */

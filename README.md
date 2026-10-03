@@ -23,6 +23,12 @@ away from the middle of the screen as you pan, and the game plays in both portra
 - **Countries**: each has its own building colours, pavements, grass, street names (Oak St, Acacia
   Crescent, Sakura-dori, Rue de la Paix, Calle Hidalgo), town and people's names, churches or temples,
   shops, road lines and police car livery. In Australia and Japan traffic drives on the left.
+  Buildings are built the local way (Australian hip roofs, verandahs and rainwater tanks; Japanese tiled
+  roofs, temples, shrines, pagodas and balconied blocks; French mansards with dormers, chimney pots and
+  wrought-iron balconies; Mexican flat roofs with black water tanks, roof terraces and tiled church
+  domes), signs are in the local language, and the traffic fits: pickups, SUVs, yellow cabs and school
+  buses in the USA, utes and 4WDs in Australia, kei cars and minivans in Japan, hatchbacks and vans in
+  France, Beetles and pink taxis in Mexico. Avenues have turn-lane arrows before each junction.
 - **Load Game**: three save slots plus the autosave (save from the pause menu).
 - **Records & Achievements**: best results across games and 15 achievements.
 - **Settings**: music and sound volume, view (3D or bird's-eye), minimap, text and button size, battery saver, blood, health bars, screen shake, FPS counter
@@ -222,8 +228,6 @@ military safe zone.
     Guard.
   - **Zombies**: zombie (slow shambler), runner (fast, fragile), brute (huge, knocks people back),
     crawler (low and hard to hit), screamer (calls the horde), zombie dog, spitter and bloater.
-  - **Safe Zone**: orders police or military to set up a guarded safe zone where you tap (not with
-    zombies close by).
   - **Bomb**: explosion at the tap point.
   - **Erase**: removes people, zombies and corpses under your finger. Tap a safe zone's centre to
     close it.
@@ -282,6 +286,7 @@ install as updates over older ones. GitHub Actions also builds the APK on every 
 Code layout (`src/com/instantaxtion/zombiesandbox/`):
 
 - `CityConfig.java`: map presets and custom city options.
+- `Roofs.java`: each country's roofs (houses, blocks, shops, churches, temples and shrines).
 - `Country.java`: the five country themes (names, colours, police cars, which side of the road traffic keeps to).
 - `City.java`: city generation (building styles and heights, layouts, stations and bases), the pre-rendered map, line of sight, BFS flow fields and pedestrian routes that prefer pavements and crossings.
 - `World.java`: simulation (AI, shooting, infection, explosions, particles).

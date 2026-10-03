@@ -40,6 +40,9 @@ final class Country {
     final String[] first, last, dogs;
     /** Pavement, grass and plaza colours (0 keeps the usual), and roofs/walls for offices and old buildings (null keeps the usual). */
     int pavement, grass, plaza;
+    /** The everyday traffic: a weighted list of Fleet car models, their paint, and the local taxis and buses. */
+    int[] carModels, carColors;
+    int taxiColor, busColor;
     int[] officeRoofs, officeWalls, oldWalls, oldRoofs;
 
     private static final Country[] ALL = new Country[NAMES.length];
@@ -58,6 +61,20 @@ final class Country {
         String type = types[rnd.nextInt(types.length)];
         if (type.isEmpty()) return base;
         return typeFirst ? type + " " + base : id == JAPAN ? base + type : base + " " + type;
+    }
+
+    /** A sign on a roof in the local language. */
+    String sign(String english) {
+        String[][] words;
+        switch (id) {
+            case FRANCE: words = new String[][]{{"FIRE", "POMPIERS"}, {"MARKET", "MARCHÉ"}, {"SCHOOL", "ÉCOLE"}, {"GAS", "ESSENCE"}}; break;
+            case MEXICO: words = new String[][]{{"POLICE", "POLICÍA"}, {"FIRE", "BOMBEROS"}, {"MARKET", "MERCADO"}, {"SCHOOL", "ESCUELA"}, {"GAS", "GASOLINA"}}; break;
+            case AUSTRALIA: words = new String[][]{{"GAS", "PETROL"}}; break;
+            case JAPAN: words = new String[][]{{"POLICE", "KOBAN"}}; break;
+            default: return english;
+        }
+        for (String[] w : words) if (w[0].equals(english)) return w[1];
+        return english;
     }
 
     String townName(Random r) {
@@ -153,6 +170,11 @@ final class Country {
                         "Campbell", "Harris", "Lee", "King", "Wright", "Chen", "Singh", "Robinson", "Clarke"};
                 dogs = new String[]{"Bluey", "Rusty", "Max", "Bella", "Charlie", "Ruby", "Digger", "Molly", "Banjo",
                         "Kelpie", "Coco", "Rex", "Sheila", "Ziggy", "Bingo", "Tex"};
+                carModels = new int[]{0, 0, 1, 1, 1, 2, 2, 2, 4, 4, 6, 7};
+                carColors = new int[]{0xFFF2F2F2, 0xFFF2F2F2, 0xFF9AA0A6, 0xFF2A2C30, 0xFF1F4F8A, 0xFFB03A2E,
+                        0xFF6E7A5A, 0xFFD8C8A0};
+                taxiColor = 0xFFF2C21A;
+                busColor = 0xFFE8E8E8;
                 pavement = 0xFF9E9A90;
                 grass = 0xFF6E7A42;
                 officeRoofs = new int[]{0xFFB8B4AA, 0xFF8A8E8A, 0xFFC8C4BA, 0xFF4C5048, 0xFFA8ACA6, 0xFF9AA0A0};
@@ -210,6 +232,11 @@ final class Country {
                         "Hayashi", "Shimizu", "Mori", "Ikeda", "Hashimoto", "Abe", "Ishikawa", "Ogawa", "Fujita"};
                 dogs = new String[]{"Hachi", "Kuro", "Shiro", "Momo", "Coco", "Sora", "Maru", "Hana", "Kotetsu",
                         "Pochi", "Chibi", "Kuu", "Mugi", "Azuki", "Taro", "Sakura"};
+                carModels = new int[]{3, 3, 3, 3, 4, 4, 0, 5, 5, 6, 7};
+                carColors = new int[]{0xFFF2F2F2, 0xFFF2F2F2, 0xFFF2F2F2, 0xFFB8BCC0, 0xFFB8BCC0, 0xFF1A1A1C,
+                        0xFFE8D8B0, 0xFF8EC0D8, 0xFFD87A8A};
+                taxiColor = 0xFF2E7A4A;
+                busColor = 0xFFE8EAE4;
                 pavement = 0xFFA6A49E;
                 grass = 0xFF527A3E;
                 officeRoofs = new int[]{0xFFB8BCC0, 0xFFA8ACB0, 0xFFC4C6C8, 0xFF9AA0A6, 0xFFB0B2AE, 0xFF8E949A};
@@ -271,6 +298,11 @@ final class Country {
                         "Roux", "Vincent", "Fournier", "Morel", "Girard", "Bonnet", "Dupont", "Lambert", "Benali"};
                 dogs = new String[]{"Rex", "Filou", "Médor", "Pistache", "Caramel", "Oscar", "Lilou", "Nala", "Ulysse",
                         "Praline", "Biscotte", "Hercule", "Gaston", "Pomme", "Vanille", "Tintin"};
+                carModels = new int[]{4, 4, 4, 4, 4, 0, 5, 5, 2, 6, 7};
+                carColors = new int[]{0xFF8A8F96, 0xFFE8E8E8, 0xFF2A2C30, 0xFF2E4F8A, 0xFFB03A2E, 0xFF5A5E66,
+                        0xFFE8E0D0, 0xFF3C6A4E};
+                taxiColor = 0xFF1A1A1C;
+                busColor = 0xFFE8E8EC;
                 pavement = 0xFFAEA592;
                 grass = 0xFF56723A;
                 plaza = 0xFFC2B494;
@@ -336,6 +368,11 @@ final class Country {
                         "Torres", "Díaz", "Gutiérrez", "Ruiz", "Mendoza", "Aguilar", "Ortiz", "Castillo", "Romero", "Chávez"};
                 dogs = new String[]{"Firulais", "Canela", "Chispa", "Max", "Luna", "Toby", "Manchas", "Princesa",
                         "Pelusa", "Chato", "Negro", "Lobo", "Coco", "Rocky", "Chiquita", "Bruno"};
+                carModels = new int[]{8, 8, 0, 0, 1, 1, 1, 4, 2, 6, 6, 7};
+                carColors = new int[]{0xFFF2F2F2, 0xFFB03A2E, 0xFF2E5FB0, 0xFF3C8A4E, 0xFFE0C04A, 0xFF8A8F96,
+                        0xFFE07A2E, 0xFF5AB8C8};
+                taxiColor = 0xFFE0708C;
+                busColor = 0xFF3FA05A;
                 pavement = 0xFFB49C80;
                 grass = 0xFF77803F;
                 plaza = 0xFFC8A880;
@@ -382,6 +419,11 @@ final class Country {
                 bases = new String[]{"Fort Mercer", "Camp Redstone", "Fort Kessler", "Camp Hollow", "Fort Whitmore",
                         "Camp Ironwood"};
                 hospital = "City Hospital";
+                carModels = new int[]{0, 0, 0, 1, 1, 1, 2, 2, 2, 5, 6, 7};
+                carColors = new int[]{0xFFB03A2E, 0xFF2E5FB0, 0xFFE0E0E0, 0xFF222428, 0xFFD4A21C, 0xFF3C8A4E,
+                        0xFF8A8F96, 0xFF6B2E8A, 0xFFE07A2E};
+                taxiColor = 0xFFE8B81A;
+                busColor = 0xFFF2B21A;
                 policeStation = "Precinct ";
                 fireStation = "Fire Station ";
                 first = new String[]{"Maria", "James", "Aisha", "Tom", "Sofia", "Daniel", "Mei", "Carlos",

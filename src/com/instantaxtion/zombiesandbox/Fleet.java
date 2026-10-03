@@ -24,8 +24,18 @@ final class Fleet {
     /** Most people a car will squeeze in. */
     static final int SEATS = 4;
 
+    /** Kinds of everyday car (which ones are about depends on the country). */
+    static final int M_SEDAN = 0, M_PICKUP = 1, M_SUV = 2, M_KEI = 3, M_HATCH = 4, M_VAN = 5, M_TAXI = 6, M_BUS = 7,
+            M_BEETLE = 8;
+    static final String[] MODEL_NAMES = {"Car", "Pickup", "SUV", "Kei car", "Hatchback", "Van", "Taxi", "Bus", "Beetle"};
+    /** Half length and half width of each kind of car. */
+    static final float[] MODEL_HL = {8f, 8.8f, 8.4f, 6.2f, 7f, 8.6f, 8f, 15f, 6.8f};
+    static final float[] MODEL_HW = {4.4f, 4.6f, 4.8f, 3.8f, 4.2f, 4.6f, 4.4f, 5.6f, 4.2f};
+
     static final class Vehicle {
         int type, state;
+        /** For ordinary cars: what kind of car it is (M_SEDAN and so on). */
+        int model;
         float x, y, angle, speed, timer, stuckTimer, lastDist, gunCd, soundCd, circle;
         /** Rounds fired by the door gunner (it fires in short bursts). */
         int burst;
@@ -80,7 +90,8 @@ final class Fleet {
         boolean pulling;
 
         float length() {
-            return type == TANK ? 11f : type == TRUCK || type == FIRE_ENGINE || type == AMBULANCE ? 9.5f : 8f;
+            return type == TANK ? 11f : type == TRUCK || type == FIRE_ENGINE || type == AMBULANCE ? 9.5f
+                    : type == CAR ? MODEL_HL[model] : 8f;
         }
     }
 
@@ -163,6 +174,7 @@ final class Fleet {
 
     /** Ordinary traffic: cars driving around town between random spots on the roads. */
     void spawnTraffic(int n) {
+        int buses = 0;
         for (int i = 0; i < n; i++) {
             float[] start = randomRoad();
             if (start == null) return;
@@ -170,11 +182,21 @@ final class Fleet {
             v.state = CRUISE;
             v.x = start[0];
             v.y = start[1];
-            v.color = CAR_COLORS[w.rnd.nextInt(CAR_COLORS.length)];
+            pickModel(v, buses < Math.max(1, n / 14));
+            if (v.model == M_BUS) buses++;
             v.angle = w.rnd.nextInt(4) * (float) Math.PI / 2;
             if (!newDestination(v)) continue;
             vehicles.add(v);
         }
+    }
+
+    /** What kind of car this is, and its paint, as the country's streets would have them. */
+    private void pickModel(Vehicle v, boolean busOk) {
+        Country c = city.country;
+        int m = c.carModels[w.rnd.nextInt(c.carModels.length)];
+        if (m == M_BUS && !busOk) m = M_SEDAN;
+        v.model = m;
+        v.color = m == M_TAXI ? c.taxiColor : m == M_BUS ? c.busColor : c.carColors[w.rnd.nextInt(c.carColors.length)];
     }
 
     private float[] randomRoad() {
@@ -387,7 +409,7 @@ final class Fleet {
         v.state = CRUISE;
         v.x = p[0];
         v.y = p[1];
-        v.color = CAR_COLORS[w.rnd.nextInt(CAR_COLORS.length)];
+        pickModel(v, false);
         v.angle = w.rnd.nextInt(4) * (float) Math.PI / 2;
         if (!newDestination(v)) return null;
         vehicles.add(v);

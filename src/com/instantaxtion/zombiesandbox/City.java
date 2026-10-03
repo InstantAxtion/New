@@ -3434,6 +3434,61 @@ final class City {
             }
     }
 
+    /**
+     * Turn lanes on the avenues: just before each junction, the lane nearest the middle is for turning across
+     * the traffic (left, or right where they drive on the left) and the kerb lane is for going straight on or
+     * turning off. The arrows are painted on whichever side of the road the country drives on.
+     */
+    private void turnLanes(Canvas c, Paint p, Street st, int n) {
+        float drive = country.leftHand ? -1 : 1;
+        float mid = st.vertical ? st.x0 + st.width / 2f : st.y0 + st.width / 2f;
+        p.setColor(0xE0ECECEC);
+        p.setStrokeWidth(1.4f);
+        for (int k = 2; k < n - 2; k++) {
+            int cx = st.vertical ? st.x0 + st.width / 2 : st.x0 + k, cy = st.vertical ? st.y0 + k : st.y0 + st.width / 2;
+            if (!paved(cx, cy) || junctionAt(cx, cy) || crosswalk(cx, cy)) continue;
+            for (int s = -1; s <= 1; s += 2) {
+                // Heading towards a crossing and junction just ahead?
+                int ax = st.vertical ? cx : cx + s, ay = st.vertical ? cy + s : cy;
+                int bx = st.vertical ? cx : cx + 2 * s, by = st.vertical ? cy + 2 * s : cy;
+                if (!crosswalk(ax, ay) || !junctionAt(bx, by)) continue;
+                float hx = st.vertical ? 0 : s, hy = st.vertical ? s : 0;
+                // The right-hand side of someone driving that way.
+                float rx = -hy, ry = hx;
+                float along = (st.vertical ? cy : cx) + 0.5f;
+                for (int lane = 0; lane < 2; lane++) {
+                    float off = (lane == 0 ? 2.0f : 1.0f) * drive;
+                    float lx = st.vertical ? mid + rx * off : along, ly = st.vertical ? along : mid + ry * off;
+                    float px = lx * T, py = ly * T;
+                    if (lane == 0) {
+                        arrow(c, p, px, py, hx, hy, 0);
+                        arrow(c, p, px, py, hx, hy, drive);
+                    } else {
+                        arrow(c, p, px, py, hx, hy, -drive);
+                    }
+                }
+            }
+        }
+    }
+
+    /** A painted arrow at (x, y) pointing along (hx, hy); turn 0 is straight on, +1 bends right, -1 left. */
+    private static void arrow(Canvas c, Paint p, float x, float y, float hx, float hy, float turn) {
+        float rx = -hy, ry = hx;
+        if (turn == 0) {
+            c.drawLine(x - hx * 5, y - hy * 5, x + hx * 3, y + hy * 3, p);
+            c.drawLine(x + hx * 5, y + hy * 5, x + hx * 2.5f - rx * 1.8f, y + hy * 2.5f - ry * 1.8f, p);
+            c.drawLine(x + hx * 5, y + hy * 5, x + hx * 2.5f + rx * 1.8f, y + hy * 2.5f + ry * 1.8f, p);
+            c.drawLine(x + hx * 5, y + hy * 5, x + hx * 3, y + hy * 3, p);
+            return;
+        }
+        float ex = x + hx * 1 + rx * turn * 3.5f, ey = y + hy * 1 + ry * turn * 3.5f;
+        c.drawLine(x - hx * 5, y - hy * 5, x + hx * 1, y + hy * 1, p);
+        c.drawLine(x + hx * 1, y + hy * 1, ex, ey, p);
+        float tx = rx * turn, ty = ry * turn;
+        c.drawLine(ex + tx * 1.5f, ey + ty * 1.5f, ex - hx * 1.8f, ey - hy * 1.8f, p);
+        c.drawLine(ex + tx * 1.5f, ey + ty * 1.5f, ex + hx * 1.8f, ey + hy * 1.8f, p);
+    }
+
     private void drawRoadMarkings(Canvas c, Paint p) {
         p.setStrokeWidth(1.2f);
         for (Street st : streets) {
@@ -3459,6 +3514,7 @@ final class City {
                     else c.drawLine(x * T + 3, (st.y0 + 1.5f) * T, x * T + 11, (st.y0 + 1.5f) * T, p);
                 }
             }
+            if (st.width == 5) turnLanes(c, p, st, n);
             // Zebra crossings where the street meets a junction.
             p.setColor(0xCCE8E8E8);
             for (int k = 1; k < n; k++) {
@@ -3514,6 +3570,8 @@ final class City {
         int roof = b[4], kind = b[6];
         Random r = new Random(b[5]);
         float bw = x1 - x0, bh = y1 - y0;
+        int bi = buildingAt[b[1] * w + b[0]];
+        if (Roofs.draw(this, c, p, b, bi >= 0 && bi < buildings.size() ? buildings.get(bi).name : null)) return;
         if (kind == HOUSE) {
             // Pitched roof: two slopes meeting at a ridge along the long side.
             p.setColor(darken(roof, 0.75f));
@@ -3562,7 +3620,7 @@ final class City {
             p.setTextAlign(Paint.Align.CENTER);
             p.setTextSize(Math.min(10f, bw / 5.2f));
             p.setFakeBoldText(true);
-            c.drawText("POLICE", (x0 + x1) / 2, (y0 + y1) / 2 + 3.5f, p);
+            c.drawText(country.sign("POLICE"), (x0 + x1) / 2, (y0 + y1) / 2 + 3.5f, p);
             p.setFakeBoldText(false);
             p.setColor(0xFFE8C547);
             c.drawCircle((x0 + x1) / 2, y0 + Math.min(bh * 0.25f, 12), 3.2f, p);
@@ -3578,7 +3636,7 @@ final class City {
                 for (float sx = x0 + 10; sx < x1 - 10; sx += 18)
                     for (float sy = y0 + 10; sy < y1 - 10; sy += 18) c.drawRect(sx - 3, sy - 2, sx + 3, sy + 2, p);
             }
-            String label = kind == FIRE_STATION ? "FIRE" : kind == MARKET ? "MARKET" : kind == SCHOOL ? "SCHOOL" : "GAS";
+            String label = country.sign(kind == FIRE_STATION ? "FIRE" : kind == MARKET ? "MARKET" : kind == SCHOOL ? "SCHOOL" : "GAS");
             p.setColor(kind == FIRE_STATION ? 0xFFFFFFFF : kind == KIOSK ? 0xFFD83A3A : 0xFF3A3A3A);
             p.setTextAlign(Paint.Align.CENTER);
             p.setTextSize(Math.min(10f, bw / (label.length() * 0.75f)));

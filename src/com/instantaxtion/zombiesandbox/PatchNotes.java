@@ -2,11 +2,21 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "7.3";
-    static final int VERSION_CODE = 28;
+    static final String VERSION = "8.0";
+    static final int VERSION_CODE = 29;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "8.0  -  Bigger cities, real buildings",
+                    "Every map is twice the size it was, so buildings can be built at real-world scale: long terraces, deep office blocks, big-box stores, hospitals and stadiums.",
+                    "159 kinds of building, each with its own roof, colours and sign, chosen by country and by district: diners, drive-thrus and motels in the USA, corner pubs, milk bars and Queenslanders in Australia, konbini, izakayas, pachinko parlours and ryokan in Japan, boulangeries, brasseries and Haussmann blocks in France, taquerías, tortillerías and paleterías in Mexico, plus towers, halls, factories and homes everywhere.",
+                    "Real floor plans inside: rooms with walls and doorways, furniture to suit each place (sofas and beds at home, desks in offices, shelves and tills in shops, beds on the wards). People inside keep apart at their own spots and walk between rooms through the doors; when a building is full, the rest are upstairs.",
+                    "Streets line up: side streets carry straight on across junctions, and a narrow street meets the middle of a wide one.",
+                    "Cars keep to their own lane right up to the junction and turn inside it, slow down for corners, no longer swerve across the lanes or spin round in the road, and run red lights far less often. There's more traffic on the bigger maps. Parked cars stay off narrow streets and back from junctions.",
+                    "People out for a walk no longer pace back and forth; they carry on or turn along the pavement. Police, soldiers and medics keep to the pavements and crossings unless they're on a call.",
+                    "Basketball and tennis courts and football pitches have proper markings at the right size, inside the court.",
+            },
             {
                     "7.3  -  Everyone has a life",
                     "Every resident has a life of their own: office and warehouse workers, nurses, teachers and cashiers who commute to a real workplace and stay a shift; shopkeepers who run a shop; students who go to school; people who mostly stay home; people always out on errands; joggers; park-lovers and dog walkers; a postal worker doing rounds house to house; street food vendors with their carts at the plazas.",

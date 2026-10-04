@@ -72,11 +72,14 @@ on the phone, so the APK contains no audio files.
   come down and the lights flash while a train is near.
 - **Traffic follows the rules**: traffic lights at the big junctions (green, amber, red each way, shown
   on the corners), stop junctions with STOP (ALTO in Mexico) painted on the road, and give-way at
-  roundabouts. Cars keep to the middle of their lane on the correct side, stay on the roads, and never
-  vanish in view: a car with nowhere to go parks, and towing away or new traffic only happens off screen.
+  roundabouts. Cars keep to the middle of their lane on the correct side right up to the junction and
+  make their turns inside it, slow down for corners, stay on the roads, don't spin round mid-street,
+  and never vanish in view: a car with nowhere to go parks, and towing away or new traffic only
+  happens off screen. Bigger maps have more traffic.
 - **Pedestrians keep to the rules**: people out on errands walk on the pavement, cross at the zebra
   crossings by the junctions and wait at the kerb while a car goes by. Anyone running from zombies
-  crosses wherever they like.
+  crosses wherever they like. Walking routes are planned (A*) along pavements and crossings. Police,
+  soldiers and medics with no call to answer keep to the pavements too.
 - **Raiders, zombie dogs and evolution**: armed gangs rob and loot; dogs can rise as zombie dogs; a long
   outbreak makes new zombies tougher.
 - **Survivors and recovery**: supply runs, armed patrols, people escaping in abandoned cars; after the
@@ -166,8 +169,18 @@ default settings across all the maps, 20 zombies take the city about half the ti
   blackout (no sirens, no safe-zone broadcasts); if the hospital falls, nobody can be treated.
 - **Zombies inside**: some buildings hide zombies that burst out when someone comes near or tries to
   shelter there. Idle zombies lurk in empty buildings, smash shop windows and set off car alarms.
-- **Interiors**: zoom right in to see furniture laid out for what the building is, who is hiding, and
-  (if you look closely) shapes waiting in the dark. Tap a building with Move for its info card.
+- **159 kinds of building**: each with its own roof, colours and sign, picked by country and by
+  district. Diners, drive-thrus and motels in the USA; corner pubs, milk bars, RSL clubs and
+  Queenslanders in Australia; konbini, izakayas, pachinko parlours, ryokan and danchi blocks in
+  Japan; boulangeries, brasseries, mairies and Haussmann blocks in France; taquerías, tortillerías,
+  cantinas and vecindades in Mexico; plus towers, campus halls, factories, data centres, big-box
+  stores and homes everywhere. Maps are twice the size they were (192 to 448 tiles across) so
+  buildings are at real-world scale.
+- **Interiors**: zoom right in to see a real floor plan: rooms with walls and doorways (homes, flats,
+  offices and hotels), or one big hall with a back room (shops, warehouses, halls), furnished for
+  what the building is. People inside stand or sit at their own spots, apart, and walk between rooms
+  through the doors; when a building is full, the rest are upstairs. Look closely for shapes waiting
+  in the dark. Tap a building with Move for its info card.
 
 ## City layout
 
@@ -177,6 +190,8 @@ mall, a football stadium, a power station, building sites, farms on the edge of 
 maps) a military base. Streets have roundabouts, pavement trees and back alleys; parks can have a
 bandstand and flower beds. Every city has a name. Parks come as
 classic parks, playgrounds, soccer fields, courts, community gardens, skateparks and cemeteries.
+Courts and pitches are marked at their real proportions (basketball keys and three-point arcs,
+tennis service boxes, football penalty areas).
 Traffic drives the streets, pigeons flock in the parks, and explosions leave burning wrecks.
 
 **Countryside:** Villages, small towns and every Massive map are surrounded by open country:
@@ -298,6 +313,8 @@ Code layout (`src/com/instantaxtion/zombiesandbox/`):
 
 - `CityConfig.java`: map presets and custom city options.
 - `Roofs.java`: each country's roofs (houses, blocks, shops, churches, temples and shrines).
+- `Variants.java`: the 159 building kinds (name, sign, roof style, colours, which countries and districts).
+- `Interiors.java`: floor plans (rooms, walls, doorways), furniture and the spots people stand or sit at.
 - `Country.java`: the five country themes (names, colours, police cars, which side of the road traffic keeps to).
 - `City.java`: city generation (building styles and heights, layouts, stations and bases), the pre-rendered map, line of sight, BFS flow fields and pedestrian routes that prefer pavements and crossings.
 - `World.java`: simulation (AI, shooting, infection, explosions, particles).

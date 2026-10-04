@@ -94,6 +94,19 @@ final class Fleet {
         int crewWanted;
         float checkCd, quiet;
 
+        /**
+         * Whether anyone is inside for the dead to go after: a driver in moving traffic, the crew of an engine
+         * or patrol car, riders, a tank or ambulance crew, or you at the wheel. An empty or abandoned vehicle
+         * isn't worth their trouble.
+         */
+        boolean occupied() {
+            if (player != null || !riders.isEmpty() || !crew.isEmpty() || passengers > 0) return true;
+            if (parked || broken) return false;
+            if (type == FIRE_ENGINE) return state == WAIT;
+            if (type == CRUISER) return !patrol;
+            return type == CAR || type == TANK || type == AMBULANCE || type == TRUCK;
+        }
+
         /** Whether the roof lights are going (not on a quiet patrol, or parked at the station). */
         boolean lightsOn() {
             if (broken) return false;
@@ -822,7 +835,7 @@ final class Fleet {
                 if (v.broken || v.burnt) v.alarm = 0;
                 else if (((int) (v.alarm * 2)) != ((int) ((v.alarm + dt) * 2))) {
                     w.emit(Sfx.HORN, v.x, v.y);
-                    if (((int) v.alarm) % 3 == 0) w.noise(v.x, v.y, 220);
+                    if (((int) v.alarm) % 4 == 0) w.noise(v.x, v.y, 180);
                 }
             }
             v.anim += dt;

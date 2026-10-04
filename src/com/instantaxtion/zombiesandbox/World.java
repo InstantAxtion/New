@@ -1607,6 +1607,8 @@ final class World {
                     if (o.dead || !o.isZombie()) continue;
                     float ddx = o.x - x, ddy = o.y - y;
                     if (ddx * ddx + ddy * ddy > radius * radius) continue;
+                    // Already there and found nothing: it doesn't keep them hanging around.
+                    if (ddx * ddx + ddy * ddy < 45 * 45 && o.memory <= 0) continue;
                     o.noiseX = x + rnd.nextFloat() * 30 - 15;
                     o.noiseY = y + rnd.nextFloat() * 30 - 15;
                     o.noiseTimer = 14;
@@ -1775,16 +1777,23 @@ final class World {
         if (target != null) {
             float ddx = target.doorX - z.x, ddy = target.doorY - z.y;
             float d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
-            if (d < 14) {
-                steer(z, 0, 0, 0);
-                float dps = z.type == Entity.BRUTE ? 22 : z.type == Entity.CRAWLER ? 3 : 7;
+            // At the door, or pressed up behind the others at it: batter it.
+            boolean atDoor = d < 14 || (d < 30 && (z.blocked || countZombiesNear(target.doorX, target.doorY, 16) >= 2));
+            if (atDoor) {
+                if (d > 9 && !z.blocked) steer(z, ddx / d, ddy / d, z.speed * 0.5f);
+                else steer(z, 0, 0, 0);
+                z.angle = turn(z.angle, (float) Math.atan2(ddy, ddx), dt * 4);
+                float dps = (z.type == Entity.BRUTE ? 22 : z.type == Entity.CRAWLER ? 3 : 7) * (d < 14 ? 1 : 0.5f);
                 target.barricade -= dps * dt;
                 target.calmTimer = 0;
                 if (target.barricade < 70 && isShop(target)) smash(target);
                 if (rnd.nextFloat() < dt * 1.2f) emit(Sfx.THUD, target.doorX, target.doorY);
                 return;
             }
-            if (followField(z, city.humanDist, z.speed)) return;
+            // Find the way round to the door (not straight into the wall): every zombie at this building
+            // shares one route.
+            int[] route = doorField(target);
+            if (route != null && followField(z, route, z.speed * 1.1f)) return;
             steer(z, ddx / d, ddy / d, z.speed);
             return;
         }
@@ -1868,8 +1877,8 @@ final class World {
             Fleet.Vehicle v = fleet.vehicles.get(i);
             if (v.type != Fleet.CAR || !v.parked || v.broken || v.alarm > 0) continue;
             if (Math.abs(v.x - z.x) < 14 && Math.abs(v.y - z.y) < 14 && rnd.nextFloat() < 0.3f) {
-                v.alarm = 18 + rnd.nextFloat() * 10;
-                noise(v.x, v.y, 220);
+                v.alarm = 8 + rnd.nextFloat() * 4;
+                noise(v.x, v.y, 180);
                 return;
             }
         }
@@ -2189,11 +2198,7 @@ final class World {
         float bd = radius * radius;
         for (int i = 0, n = fleet.vehicles.size(); i < n; i++) {
             Fleet.Vehicle v = fleet.vehicles.get(i);
-            if (Fleet.airborne(v) || v.type == Fleet.TRAIN || (v.broken && v.riders.isEmpty())) continue;
-            if (v.speed < 5 && v.riders.isEmpty() && v.passengers == 0 && v.type != Fleet.FIRE_ENGINE && v.type != Fleet.CAR
-                    && v.type != Fleet.TANK && v.type != Fleet.AMBULANCE)
-                continue;
-            if (v.parked) continue;
+            if (Fleet.airborne(v) || v.type == Fleet.TRAIN || !v.occupied()) continue;
             float d = (v.x - z.x) * (v.x - z.x) + (v.y - z.y) * (v.y - z.y);
             if (d < bd) {
                 bd = d;
@@ -4792,6 +4797,26 @@ final class World {
     private final ArrayList<City.Building> doorPaths = new ArrayList<City.Building>();
     /** How many new door routes may be worked out right now (each is a search over the whole map). */
     private float pathBudget = 3;
+
+    /** Routes to the doors of buildings under siege, shared by all the dead outside (the last few only). */
+    private final java.util.LinkedHashMap<City.Building, int[]> doorFields = new java.util.LinkedHashMap<City.Building, int[]>(16, 0.75f, true) {
+        @Override
+        protected boolean removeEldestEntry(java.util.Map.Entry<City.Building, int[]> eldest) {
+            return size() > 6;
+        }
+    };
+
+    private int[] doorField(City.Building b) {
+        int[] f = doorFields.get(b);
+        if (f == null) {
+            if (pathBudget < 0.5f) return null;
+            pathBudget -= 0.5f;
+            f = new int[city.w * city.h];
+            city.walkFieldFromPoints(f, new float[]{b.doorX}, new float[]{b.doorY}, 1, 400);
+            doorFields.put(b, f);
+        }
+        return f;
+    }
 
     /**
      * Walks to a building's door around the building (not into its wall): a path field to the door is

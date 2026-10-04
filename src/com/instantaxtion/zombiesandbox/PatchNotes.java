@@ -2,11 +2,20 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "9.7";
-    static final int VERSION_CODE = 37;
+    static final String VERSION = "10.0";
+    static final int VERSION_CODE = 38;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.0  -  Holding on",
+                    "Smooth on more phones: the game watches how it's running and, if the phone is struggling, turns the detail down (people far off screen think less often, less background traffic, fewer sparks), and back up when there's room. The simulation itself is also about twice as fast on big maps.",
+                    "Fights inside buildings: when the dead break a door down they come in one at a time and it's a fight. Anyone with a gun stands and fights, the rest fall back to the far rooms and make a run for it, and the bitten turn among them. Look through the roof to watch, or see the gunfire flicker in the windows. Survivors win and board the door back up, or the building is lost.",
+                    "Survivor groups: a full building that's left in peace (or a band of armed neighbours) becomes a named group, like \"the Elm St survivors\". They fortify bit by bit (boards, then sandbags, then a wall), take in people passing by, keep guards on the door, send out supply runs for food and ammunition, and attract raiders who want what they've got.",
+                    "After the war: a city that survives starts to recover. Bodies and wrecks are cleared, damaged buildings are patched up, shops reopen and survivor groups go home, though the dead may come back. A city that falls gets one last army force sent in to take it back.",
+                    "New character art and animation: walking bob and lurch, the dead lunge when they bite, guns kick, bats and axes swing, brutes have huge fists, bloaters swell with each breath, screamers shriek in rings, runners sprint with their arms back, and the dead visibly get up when they turn.",
+                    "A cleaner screen: slimmer top buttons, a tool bar that folds away (tap the arrow), and a minimap you can close (the x) and bring back (Map).",
+            },
             {
                     "9.7  -  Tidier map, readable radio, more kinds of dead",
                     "911 calls on the map are small tags now: \"911 12\" for twelve of the dead there, with a blue badge for the units on the way. The pulsing ring is smaller, and zoomed right out only the big calls are tagged.",

@@ -123,6 +123,8 @@ final class Entity {
     boolean hidden;
     /** Armed residents holding a building together. */
     boolean militia;
+    /** When they last bit, fired, swung or shoved, screamed and spat (world time): for the animations. */
+    float biteAt = -9, shotAt = -9, swingAt = -9, screamAt = -9, spitAt = -9;
     /** A survivor group this person belongs to; a supply run they're on, and what they're bringing back. */
     World.Holdout holdout;
     City.Building scavenge;

@@ -182,6 +182,12 @@ counts), and wherever the dead gather the ground glows red. Labels go most impor
 - **The whole city**: patrols report every pack of the dead they find, so the police keep a call open for
   each part of the city under attack; officers with nothing to do guard their station. Once it's serious
   the army mounts up in trucks and drives out to support the police at the worst calls.
+- **Fights indoors**: the dead that break a door down come in and fight whoever is inside; the armed
+  stand, the rest fall back and flee, and the bitten turn. Survivors win and board up, or the building falls.
+- **Survivor groups**: people who hold a building become a named group that fortifies it (boards,
+  sandbags, a wall), takes in passers-by, guards the door, sends out supply runs and draws raiders.
+- **After the war**: a surviving city recovers (clean-up, repairs, shops reopen) though the dead may come
+  back; a fallen city gets one last army force to retake it.
 - **Ammunition runs out**: precincts and the base have a limited armoury, safe zones keep their own
   stock, and army supply trucks carry ammo to zones running low. Zombies can wreck a truck.
 - **Fire spreads**: burning cars and explosions set buildings alight; fires grow, jump to the building
@@ -200,6 +206,8 @@ counts), and wherever the dead gather the ground glows red. Labels go most impor
   badge for units on the way); radio messages come up a few seconds apart and stay long enough to read; noises show as rings spreading out (how far the dead can hear them);
   cards say who bit whom and how many each zombie has turned; Stats shows the infection's chain from
   patient zero; the replay marks the big moments on its timeline (tap near one to jump to it).
+- **Smooth on any phone**: detail drops automatically on a struggling phone and comes back when there's room.
+- **Screen**: the tool bar folds away and the minimap closes, for more of the city on screen.
 - **Feel**: vibration when you shoot, get hurt, crash or a blast goes off nearby (Settings: Vibration);
   bodies are thrown by blasts, cars and charging brutes.
 

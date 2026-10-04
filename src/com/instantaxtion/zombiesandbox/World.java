@@ -1738,6 +1738,7 @@ final class World {
             if (z.type == Entity.SCREAMER && z.screamCd <= 0) {
                 // A screamer calls every zombie around to its prey.
                 z.screamCd = 10;
+                z.screamAt = time;
                 noise(t.x, t.y, 380);
                 emit(Sfx.SHRIEK, z.x, z.y);
                 screams.add(new float[]{z.x, z.y, 0});
@@ -1894,6 +1895,7 @@ final class World {
         if (z.noiseTimer > 0 && z.type == Entity.SCREAMER && z.screamCd <= 0) {
             // A screamer that hears gunfire shrieks, and the whole neighbourhood of the dead comes with it.
             z.screamCd = 12;
+            z.screamAt = time;
             noise(z.noiseX, z.noiseY, 380);
             emit(Sfx.SHRIEK, z.x, z.y);
             screams.add(new float[]{z.x, z.y, 0});
@@ -2298,6 +2300,7 @@ final class World {
         float dmg = z.type == Entity.BRUTE ? 30 : z.type == Entity.RUNNER ? 8 : z.type == Entity.CRAWLER ? 10
                 : z.type == Entity.ZOMBIE_DOG ? 7 : 12;
         z.biteCd = z.type == Entity.RUNNER || z.type == Entity.ZOMBIE_DOG ? 0.55f : 0.9f;
+        z.biteAt = time;
         t.hp -= dmg;
         t.hurt = 1;
         t.killedByZombie = true;
@@ -2319,6 +2322,7 @@ final class World {
     /** Shoves a zombie back and stuns it; armed units also hit it with their weapon. */
     private void shove(Entity e, Entity z, boolean strong) {
         e.meleeCd = strong ? 1.2f : 2.2f;
+        e.swingAt = time;
         float ddx = z.x - e.x, ddy = z.y - e.y;
         float d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
         float push = (strong ? 11 : 7) / z.mass;
@@ -2406,6 +2410,7 @@ final class World {
     private void swing(Entity e, Entity z) {
         boolean axe = e.melee == Entity.M_AXE || (e.melee == Entity.M_NONE && e.type == Entity.FIREFIGHTER);
         e.meleeCd = axe ? 0.8f : 0.6f;
+        e.swingAt = time;
         float ddx = z.x - e.x, ddy = z.y - e.y, d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
         e.angle = (float) Math.atan2(ddy, ddx);
         if (z.isZombie() && z.type != Entity.BRUTE && rnd.nextFloat() < (axe ? 0.25f : 0.1f)) z.hp = 0;
@@ -3769,6 +3774,7 @@ final class World {
     final ArrayList<float[]> medkits = new ArrayList<float[]>();
 
     private void spit(Entity z, Entity t) {
+        z.spitAt = time;
         float ddx = t.x + t.vx * 0.5f - z.x, ddy = t.y + t.vy * 0.5f - z.y;
         float d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f, flight = d / 110f;
         spits.add(new float[]{z.x, z.y, ddx / flight, ddy / flight, flight});
@@ -6629,6 +6635,7 @@ final class World {
     }
 
     private void fire(Entity e, Entity t, float d, float range) {
+        e.shotAt = time;
         boolean soldier = e.type == Entity.SOLDIER;
         e.ammo--;
         shotsFired++;

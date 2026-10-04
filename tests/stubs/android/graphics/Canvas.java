@@ -22,6 +22,7 @@ public class Canvas {
  public void drawRect(float l,float t,float r,float b,Paint p){ if(P!=null){Path2D.Double q=new Path2D.Double(); double[] a=P.map(l,t);q.moveTo(a[0],a[1]); a=P.map(r,t);q.lineTo(a[0],a[1]); a=P.map(r,b);q.lineTo(a[0],a[1]); a=P.map(l,b);q.lineTo(a[0],a[1]); q.closePath(); sh(q,p);} else sh(new Rectangle2D.Float(l,t,r-l,b-t),p);}
  public void drawCircle(float x,float y,float r,Paint p){sh(new Ellipse2D.Float(x-r,y-r,2*r,2*r),p);}
  public void drawOval(RectF o,Paint p){sh(new Ellipse2D.Float(o.left,o.top,o.width(),o.height()),p);}
+ public void drawArc(RectF o,float start,float sweep,boolean center,Paint p){ap(p); g.draw(new Arc2D.Float(o.left,o.top,o.width(),o.height(),-start,-sweep,center?Arc2D.PIE:Arc2D.OPEN));}
  public void drawRoundRect(RectF o,float rx,float ry,Paint p){sh(new RoundRectangle2D.Float(o.left,o.top,o.width(),o.height(),rx*2,ry*2),p);}
  public void drawLine(float a,float b,float c,float d,Paint p){ap(p); g.draw(new Line2D.Float(a,b,c,d));}
  public void drawBitmap(Bitmap bm,float x,float y,Paint p){g.drawImage(bm.img,(int)x,(int)y,null);}

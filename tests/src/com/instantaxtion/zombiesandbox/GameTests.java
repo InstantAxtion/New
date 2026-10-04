@@ -678,7 +678,10 @@ public final class GameTests {
                 w.fleet.vehicles.clear();
                 // (No new traffic, and nobody indoors to come out either: nobody at all.)
                 w.fleet.trafficTarget = 0;
-                for (City.Building b : w.city.buildings) b.occupants.clear();
+                for (City.Building b : w.city.buildings) {
+                    b.occupants.clear();
+                    b.visitors.clear();
+                }
                 for (int i = 0; i < 6; i++) {
                     float[] q = w.city.randomWalkable(w.rnd);
                     w.spawn(Entity.CRAWLER, q[0], q[1]);
@@ -804,6 +807,132 @@ public final class GameTests {
                 if (base != null) check(maxAway >= 4, "soldiers away from the base helping: " + maxAway);
                 check(maxCalls >= 2, "the police deal with more than the last 911 call: " + maxCalls + " calls at once");
                 check(stuck <= 4, stuck + " cars stuck for 20 s or more");
+            }
+        });
+        test("the dead get inside and it's a fight: guns hold a building, the unarmed are overrun or flee", new Check() {
+            public void run() {
+                CityConfig c = new CityConfig();
+                c.seed = 3;
+                c.v[CityConfig.OPT_ZOMBIES] = 0;
+                World w = new World(c);
+                w.populate(c);
+                int held = 0, lost = 0;
+                for (int run = 0; run < 4; run++) {
+                    for (int armed = 0; armed < 2; armed++) {
+                        City.Building b = null;
+                        for (City.Building q : w.city.buildings)
+                            if (q.capacity >= 6 && q.occupants.isEmpty() && q.lurkers == 0 && q.fire == null && !q.collapsed) b = q;
+                        for (int k = 0; k < (armed == 1 ? 4 : 3); k++) {
+                            Entity e = w.spawn(armed == 1 ? Entity.SOLDIER : Entity.CIVILIAN, b.doorX, b.doorY);
+                            w.entities.remove(e);
+                            e.dead = e.removed = true;
+                            b.occupants.add(e);
+                        }
+                        b.lurkers = armed == 1 ? 2 : 5;
+                        for (int f = 0; f < 30 * 60 && (b.lurkers > 0 && !b.occupants.isEmpty()); f++) {
+                            w.update(1 / 30f);
+                            w.evCount = 0;
+                        }
+                        check(b.lurkers == 0 || b.occupants.isEmpty(), "the fight ends one way or the other");
+                        if (armed == 1 && b.lurkers == 0) held++;
+                        if (armed == 0 && b.occupants.isEmpty()) lost++;
+                        b.lurkers = 0;
+                        b.occupants.clear();
+                    }
+                }
+                check(held >= 3, "four soldiers fight off two of the dead inside (" + held + " of 4)");
+                check(lost >= 3, "three unarmed people don't hold out against five (" + lost + " of 4)");
+            }
+        });
+        test("survivor groups dig in over time and are still there after a save", new Check() {
+            public void run() throws Exception {
+                CityConfig c = new CityConfig();
+                c.seed = 3;
+                c.v[CityConfig.OPT_ZOMBIES] = 0;
+                World w = new World(c);
+                w.populate(c);
+                City.Building b = null;
+                for (City.Building q : w.city.buildings) if (q.capacity >= 8 && q.occupants.isEmpty() && !q.collapsed) b = q;
+                for (int k = 0; k < 7; k++) {
+                    Entity e = w.spawn(Entity.CIVILIAN, b.doorX, b.doorY);
+                    w.entities.remove(e);
+                    e.dead = e.removed = true;
+                    b.occupants.add(e);
+                }
+                World.Holdout h = w.found(b, true);
+                check(h != null && h.name.startsWith("the ") && h.name.endsWith(" survivors"), "named after their street: " + (h == null ? null : h.name));
+                for (int f = 0; f < 30 * 90; f++) {
+                    w.update(1 / 30f);
+                    w.evCount = 0;
+                }
+                check(h.fort > 25 && !h.gone, "fortified " + (int) h.fort + "% after a quiet minute and a half");
+                check(w.members(h) >= 6, "and they stayed (inside, on guard or out on a supply run): " + w.members(h));
+                java.io.File f = java.io.File.createTempFile("holdout", ".sav");
+                SaveGame.save(w, f);
+                World l = SaveGame.load(f);
+                check(l.holdouts.size() == w.holdouts.size() && l.holdouts.get(0).name.equals(h.name)
+                        && Math.abs(l.holdouts.get(0).fort - h.fort) < 0.01f, "the group and its defences are saved");
+                f.delete();
+            }
+        });
+        test("after the war: a surviving city recovers, a fallen one gets one last army to retake it", new Check() {
+            public void run() {
+                CityConfig c = new CityConfig();
+                c.seed = 3;
+                c.v[CityConfig.OPT_ZOMBIES] = 0;
+                World w = new World(c);
+                w.populate(c);
+                float[] p = w.city.randomWalkableInTown(w.rnd);
+                Entity z = w.spawn(Entity.ZOMBIE, p[0], p[1]);
+                for (int f = 0; f < 30 * 3; f++) { w.update(1 / 30f); w.evCount = 0; }
+                check(w.outbreak, "an outbreak");
+                for (Entity e : w.entities) if (e.isZombie()) e.hp = 0;
+                w.corpses.clear();
+                for (Entity e : w.entities) e.infected = false;
+                for (City.Building b : w.city.buildings) { b.lurkers = 0; for (Entity o : b.occupants) o.infected = false; }
+                for (int f = 0; f < 30 * 40; f++) { w.update(1 / 30f); w.evCount = 0; }
+                check(w.warResult == 1 && w.aftermath == World.AFTER_RECOVERY, "survived, and recovering (result " + w.warResult + ", aftermath " + w.aftermath + ")");
+                // A city that falls.
+                CityConfig c2 = new CityConfig();
+                c2.seed = 5;
+                c2.v[CityConfig.OPT_ZOMBIES] = 0;
+                World f2 = new World(c2);
+                f2.populate(c2);
+                for (int k = 0; k < 6; k++) { float[] q = f2.city.randomWalkableInTown(f2.rnd); f2.spawn(Entity.ZOMBIE, q[0], q[1]); }
+                for (int f = 0; f < 30 * 2; f++) { f2.update(1 / 30f); f2.evCount = 0; }
+                // Most of the people gone: the city has fallen.
+                int keep = 0;
+                for (Entity e : f2.entities) if (!e.isZombie() && keep++ > 6) e.removed = e.dead = true;
+                for (City.Building b : f2.city.buildings) {
+                    b.occupants.clear();
+                    b.visitors.clear();
+                }
+                f2.fleet.vehicles.clear();
+                f2.fleet.trafficTarget = 0;
+                for (int k = 0; k < 40; k++) { float[] q = f2.city.randomWalkableInTown(f2.rnd); f2.spawn(Entity.ZOMBIE, q[0], q[1]); }
+                boolean fell = false, retake = false;
+                for (int f = 0; f < 30 * 200 && !retake; f++) {
+                    f2.update(1 / 30f);
+                    f2.evCount = 0;
+                    if (f2.aftermath == World.AFTER_FALLEN) fell = true;
+                    if (fell && f2.retakeSent) retake = true;
+                }
+                check(fell, "the city fell");
+                if (f2.city.nearestFacility(City.FACILITY_BASE, 0, 0) != null) check(retake && f2.outbreak, "and the army came back for it, once");
+            }
+        });
+        test("a struggling phone gets less detail, and the dead find doors without whole-map routes", new Check() {
+            public void run() {
+                CityConfig c = new CityConfig();
+                c.seed = 3;
+                World w = new World(c);
+                w.populate(c);
+                w.setQuality(World.Q_LOW);
+                check(w.fleet.trafficScale < 0.5f && w.quality == World.Q_LOW, "low detail: less traffic");
+                w.setQuality(World.Q_FULL);
+                check(w.fleet.trafficScale == 1f, "and back to full");
+                for (int f = 0; f < 30 * 30; f++) { w.update(1 / 30f); w.evCount = 0; }
+                check(World.DOOR_S * World.DOOR_S < w.city.w * w.city.h / 4, "door routes are local patches");
             }
         });
         test("most of the bitten come back as plain zombies, a few as the other kinds", new Check() {

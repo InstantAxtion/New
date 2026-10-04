@@ -101,6 +101,9 @@ final class GameView extends View implements Menu.Host {
     private float fps, fpsTimer;
     private int lastMessageCount;
     private float frameDt;
+    /** The tool bar folded away, and the minimap closed (for more of the city on screen). */
+    private boolean toolsFolded, miniClosed;
+    private final RectF foldTab = new RectF(), miniX = new RectF(), mapChip = new RectF();
     /**
      * The radio feed on screen is paced: new messages wait their turn, each new line comes up a few seconds
      * after the last and stays long enough to read. (A backlog is thinned out; everything is in the log.)
@@ -557,8 +560,15 @@ final class GameView extends View implements Menu.Host {
         }
         int perRow = portrait ? (n + 1) / 2 : n;
         int rows = (n + perRow - 1) / perRow;
-        float gap = 5 * dp, rowH = 62 * dp;
+        float gap = 5 * dp, rowH = 56 * dp;
         barTop = h - rows * rowH - 8 * dp;
+        if (toolsFolded) {
+            // Folded away: just a thin strip to bring the tools back.
+            barTop = h - 30 * dp;
+            for (int i = 0; i < toolRects.length; i++) toolRects[i].setEmpty();
+            rows = 0;
+        }
+        foldTab.set(w / 2f - 30 * dp, barTop - 16 * dp, w / 2f + 30 * dp, barTop);
         float bw = Math.min(104 * dp, (w - 16 * dp - gap * (perRow - 1)) / perRow);
         for (int r = 0; r < rows; r++) {
             int first = r * perRow, count = Math.min(perRow, n - first);
@@ -569,17 +579,17 @@ final class GameView extends View implements Menu.Host {
                 x += bw + gap;
             }
         }
-        float th = 38 * dp, tgap = (portrait ? 4 : 6) * dp, tw, tx;
+        float th = 32 * dp, tgap = (portrait ? 4 : 5) * dp, tw, tx;
         int nb = TOP_BUTTONS;
         if (portrait) {
             tw = (w - 16 * dp - tgap * (nb - 1)) / nb;
             tx = 8 * dp;
         } else {
-            tw = Math.min(84 * dp, (w * 0.6f - tgap * (nb - 1)) / nb);
+            tw = Math.min(62 * dp, (w * 0.5f - tgap * (nb - 1)) / nb);
             tx = w - 10 * dp - tw * nb - tgap * (nb - 1);
         }
         for (int i = 0; i < nb; i++) {
-            topRects[i].set(tx, 10 * dp, tx + tw, 10 * dp + th);
+            topRects[i].set(tx, 8 * dp, tx + tw, 8 * dp + th);
             tx += tw + tgap;
         }
         float lh = 17 * dp;
@@ -903,7 +913,9 @@ final class GameView extends View implements Menu.Host {
     /** The minimap: the whole city small, with zombies, people, safe zones, vehicles and the camera view. */
     private void drawMinimap(Canvas c) {
         // While you're controlling someone, the attack button goes where the minimap was.
-        if (!settings.minimap() || world.controlled != null) {
+        miniX.setEmpty();
+        mapChip.setEmpty();
+        if (!settings.minimap() || world.controlled != null || miniClosed) {
             miniRect.setEmpty();
         } else {
             float size = portrait ? Math.min(getWidth() - statsRect.right - 18 * dp, 120 * dp) : Math.min(130 * dp, getHeight() * 0.3f);
@@ -911,7 +923,7 @@ final class GameView extends View implements Menu.Host {
             if (portrait && size >= 70 * dp && getWidth() - statsRect.right - 18 * dp >= 70 * dp)
                 miniRect.set(getWidth() - 10 * dp - size, statsRect.top, getWidth() - 10 * dp, statsRect.top + size);
             else
-                miniRect.set(getWidth() - 10 * dp - size, barTop - 10 * dp - size, getWidth() - 10 * dp, barTop - 10 * dp);
+                miniRect.set(getWidth() - 10 * dp - size, uiFloor() - 10 * dp - size, getWidth() - 10 * dp, uiFloor() - 10 * dp);
             int collapsed = 0;
             for (int i = 0; i < world.city.buildings.size(); i++) if (world.city.buildings.get(i).collapsed) collapsed++;
             if (miniMap == null || miniWorld != world || miniCollapsed != collapsed) {
@@ -957,6 +969,15 @@ final class GameView extends View implements Menu.Host {
             stroke.setStrokeWidth(1 * dp);
             c.drawRect(miniRect.left + camX * sx, miniRect.top + camY * sy, miniRect.left + (camX + getWidth() / scale) * sx,
                     miniRect.top + (camY + barTop / scale) * sy, stroke);
+            // A little x in the corner closes it.
+            miniX.set(miniRect.right - 16 * dp, miniRect.top - 2 * dp, miniRect.right + 2 * dp, miniRect.top + 16 * dp);
+            fill.setColor(0xE0101216);
+            c.drawCircle(miniX.centerX(), miniX.centerY(), 8 * dp, fill);
+            stroke.setColor(0xFFC8CCD2);
+            stroke.setStrokeWidth(1.6f * dp);
+            float mx = miniX.centerX(), my = miniX.centerY(), u = 3.5f * dp;
+            c.drawLine(mx - u, my - u, mx + u, my + u, stroke);
+            c.drawLine(mx - u, my + u, mx + u, my - u, stroke);
         }
         // The Auto cam switch sits with the minimap.
         text.setTextSize(11.5f * dp);
@@ -964,7 +985,7 @@ final class GameView extends View implements Menu.Host {
         String label = director ? "Auto cam: ON" : "Auto cam";
         float tw = text.measureText(label) + 20 * dp;
         float right = miniRect.isEmpty() ? getWidth() - 10 * dp : miniRect.right;
-        float top = miniRect.isEmpty() ? barTop - 40 * dp : portrait && miniRect.top < barTop / 2 ? miniRect.bottom + 8 * dp
+        float top = miniRect.isEmpty() ? uiFloor() - 40 * dp : portrait && miniRect.top < barTop / 2 ? miniRect.bottom + 8 * dp
                 : miniRect.top - 36 * dp;
         camChip.set(right - tw, top, right, top + 28 * dp);
         // In portrait the space above the minimap is where announcements go: the switch sits beside it.
@@ -974,6 +995,20 @@ final class GameView extends View implements Menu.Host {
         c.drawRoundRect(camChip, 9 * dp, 9 * dp, fill);
         text.setColor(0xFFF2F2F2);
         c.drawText(label, camChip.centerX(), camChip.centerY() + 4 * dp, text);
+        if (miniClosed && settings.minimap() && world.controlled == null) {
+            // Closed: a chip beside the Auto cam switch opens it again.
+            float mw = text.measureText("Map") + 20 * dp;
+            mapChip.set(camChip.left - 8 * dp - mw, camChip.top, camChip.left - 8 * dp, camChip.bottom);
+            fill.setColor(0xE0202227);
+            c.drawRoundRect(mapChip, 9 * dp, 9 * dp, fill);
+            text.setColor(0xFFF2F2F2);
+            c.drawText("Map", mapChip.centerX(), mapChip.centerY() + 4 * dp, text);
+        }
+    }
+
+    /** Where things sitting on the tool bar go down to (above its fold tab). */
+    private float uiFloor() {
+        return toolsFolded ? barTop : foldTab.top;
     }
 
     private android.graphics.Bitmap miniDots;
@@ -1804,8 +1839,8 @@ final class GameView extends View implements Menu.Host {
             c.drawLine(dx - 4, dy - 3, dx + 4, dy + 3, stroke);
             c.drawLine(dx - 4, dy + 3, dx + 4, dy - 3, stroke);
         }
-        if (f >= 25) ringOf(c, b, 6, Math.min(1, (f - 25) / 40f), 0xFFC4AA78, 0xFF8E7A50, 3.2f, b.doorX, b.doorY);
-        if (f >= 65) ringOf(c, b, 14, Math.min(1, (f - 65) / 35f), 0xFF7A5634, 0xFF4E3620, 2.2f, b.doorX, b.doorY);
+        if (f >= 25) ringOf(c, b, 6, Math.min(1, (f - 25) / 40f), 0xFFC4AA78, 0xFF6E5A36, 4.2f, b.doorX, b.doorY);
+        if (f >= 65) ringOf(c, b, 14, Math.min(1, (f - 65) / 35f), 0xFF7A5634, 0xFF3E2A18, 3f, b.doorX, b.doorY);
     }
 
     /** Sandbags (or planks) laid round a building at margin m, the first part of the way round so far. */
@@ -3290,7 +3325,7 @@ final class GameView extends View implements Menu.Host {
         if (overlaps(r, statsShown) || overlaps(r, meterRect)) return true;
         for (int i = 0; i < feedCount; i++) if (overlaps(r, feedLines[i])) return true;
         for (RectF t : topRects) if (overlaps(r, t)) return true;
-        if (overlaps(r, miniRect) || overlaps(r, camChip)) return true;
+        if (overlaps(r, miniRect) || overlaps(r, camChip) || overlaps(r, mapChip) || overlaps(r, foldTab)) return true;
         return r.bottom > barTop;
     }
 
@@ -3743,6 +3778,31 @@ final class GameView extends View implements Menu.Host {
         c.save();
         c.translate(e.x, e.y);
         c.rotate((float) Math.toDegrees(e.angle));
+        float now = world.time, spd = (float) Math.sqrt(e.vx * e.vx + e.vy * e.vy);
+        boolean anim = scale > 1.6f;
+        if (anim) {
+            // Attacks: the dead lunge as they bite, guns kick back.
+            float bite = 1 - Math.min(1, (now - e.biteAt) / 0.25f);
+            if (bite > 0 && e.isZombie()) c.translate(r * 0.5f * bite, 0);
+            float kick = 1 - Math.min(1, (now - e.shotAt) / 0.12f);
+            if (kick > 0 && !e.isZombie()) c.translate(-r * 0.2f * kick, 0);
+            if (spd > 4 && e.type != Entity.CRAWLER) {
+                // Walking: a bob in the stride; the dead lurch from side to side.
+                float bob = (float) Math.sin(e.phase * 2);
+                if (e.isZombie() && e.type != Entity.RUNNER) c.rotate((float) Math.sin(e.phase * 0.5f + (e.nameSeed & 7)) * 9);
+                c.scale(1 + 0.05f * bob, 1 - 0.03f * bob);
+            }
+            if (e.type == Entity.BLOATER) {
+                // Swelling and sagging with each breath.
+                float pu = 1 + 0.07f * (float) Math.sin(now * 3 + (e.nameSeed & 15));
+                c.scale(pu, pu);
+            }
+            if (e.isZombie() && e.fresh > 44) {
+                // Just got up: still unfolding.
+                float t = Math.max(0, 45 - e.fresh);
+                c.scale(0.7f + 0.3f * t, 0.7f + 0.3f * t);
+            }
+        }
 
         if (e.type != Entity.CRAWLER && scale > 2.5f) {
             // Legs stepping out in front and behind as they walk.
@@ -3766,9 +3826,29 @@ final class GameView extends View implements Menu.Host {
         } else if (e.isZombie()) {
             float sw = (float) Math.sin(e.phase) * r * 0.2f;
             stroke.setColor(e.skin);
-            stroke.setStrokeWidth(r * 0.42f);
-            c.drawLine(r * 0.1f, -r * 0.72f, r * 1.55f + sw, -r * 0.55f, stroke);
-            c.drawLine(r * 0.1f, r * 0.72f, r * 1.55f - sw, r * 0.55f, stroke);
+            if (e.type == Entity.RUNNER && spd > 30) {
+                // Sprinting: arms flung back.
+                stroke.setStrokeWidth(r * 0.36f);
+                c.drawLine(-r * 0.1f, -r * 0.72f, -r * 1.25f - sw, -r * 1.0f, stroke);
+                c.drawLine(-r * 0.1f, r * 0.72f, -r * 1.25f + sw, r * 1.0f, stroke);
+            } else if (e.type == Entity.SCREAMER && now - e.screamAt < 1.2f) {
+                // Shrieking, hands clawing at its head.
+                stroke.setStrokeWidth(r * 0.36f);
+                c.drawLine(0, -r * 0.8f, r * 0.45f, -r * 0.45f, stroke);
+                c.drawLine(0, r * 0.8f, r * 0.45f, r * 0.45f, stroke);
+            } else if (e.type == Entity.BRUTE) {
+                // Huge arms ending in fists.
+                stroke.setStrokeWidth(r * 0.62f);
+                c.drawLine(r * 0.1f, -r * 0.85f, r * 1.4f + sw, -r * 0.8f, stroke);
+                c.drawLine(r * 0.1f, r * 0.85f, r * 1.4f - sw, r * 0.8f, stroke);
+                fill.setColor(City.darken(e.skin, 0.8f));
+                c.drawCircle(r * 1.45f + sw, -r * 0.8f, r * 0.36f, fill);
+                c.drawCircle(r * 1.45f - sw, r * 0.8f, r * 0.36f, fill);
+            } else {
+                stroke.setStrokeWidth(r * 0.42f);
+                c.drawLine(r * 0.1f, -r * 0.72f, r * 1.55f + sw, -r * 0.55f, stroke);
+                c.drawLine(r * 0.1f, r * 0.72f, r * 1.55f - sw, r * 0.55f, stroke);
+            }
         } else if (e.isArmed() || (e.hasGun && e.aiming)) {
             boolean soldier = e.type == Entity.SOLDIER;
             stroke.setColor(e.skin);
@@ -3798,6 +3878,24 @@ final class GameView extends View implements Menu.Host {
             fill.setColor(e.skin);
             c.drawCircle(sw, -r * 0.95f, r * 0.28f, fill);
             c.drawCircle(-sw, r * 0.95f, r * 0.28f, fill);
+        }
+
+        if (anim && !e.isZombie() && now - e.swingAt < 0.3f) {
+            // A swing: the arm (and bat, axe or rifle butt) sweeps across in front.
+            float t = (now - e.swingAt) / 0.3f;
+            double a = Math.toRadians(-70 + 120 * t);
+            float hx = (float) Math.cos(a) * r * 1.6f, hy = (float) Math.sin(a) * r * 1.6f;
+            stroke.setColor(e.skin);
+            stroke.setStrokeWidth(r * 0.34f);
+            c.drawLine(0, r * 0.5f, hx * 0.6f, hy * 0.6f + r * 0.2f, stroke);
+            stroke.setColor(e.melee == Entity.M_AXE || e.type == Entity.FIREFIGHTER ? 0xFF8A2A1E : e.melee == Entity.M_BAT ? 0xFF9A7448 : 0xFF2A2A2A);
+            stroke.setStrokeWidth(r * 0.28f);
+            c.drawLine(hx * 0.55f, hy * 0.55f + r * 0.2f, hx * 1.2f, hy * 1.2f + r * 0.2f, stroke);
+            stroke.setColor(0x55FFFFFF);
+            stroke.setStrokeWidth(r * 0.12f);
+            oval.set(-r * 1.9f, -r * 1.9f, r * 1.9f, r * 1.9f);
+            stroke.setStyle(Paint.Style.STROKE);
+            c.drawArc(oval, -70, 120 * t, false, stroke);
         }
 
         fill.setColor(e.body);
@@ -3853,8 +3951,12 @@ final class GameView extends View implements Menu.Host {
             c.drawCircle(r * 0.1f, r * 0.45f, r * 0.18f, fill);
             c.drawCircle(-r * 0.5f, r * 0.3f, r * 0.15f, fill);
         } else if (e.type == Entity.BRUTE) {
+            // A hunched hump of shoulders, wider than the rest of it.
             fill.setColor(0xFF3A2E3C);
-            oval.set(-r * 0.4f, -r * 0.85f, r * 0.3f, r * 0.85f);
+            oval.set(-r * 0.55f, -r * 1.2f, r * 0.4f, r * 1.2f);
+            c.drawOval(oval, fill);
+            fill.setColor(0xFF4C3E4E);
+            oval.set(-r * 0.4f, -r * 0.8f, r * 0.2f, r * 0.8f);
             c.drawOval(oval, fill);
         }
 
@@ -3909,6 +4011,12 @@ final class GameView extends View implements Menu.Host {
                 c.drawCircle(r * 0.45f, r * 0.18f, r * 0.08f, fill);
             }
         }
+        if (e.type == Entity.SPITTER && anim) {
+            // Acid drooling from the mouth (a gob of it when it spits).
+            float sp = 1 - Math.min(1, (now - e.spitAt) / 0.3f);
+            fill.setColor(0xCCB8E040);
+            c.drawCircle(r * (0.75f + sp * 0.6f), 0, r * (0.14f + sp * 0.25f), fill);
+        }
         if (e.infected) {
             fill.setColor(alpha(0xFF7CFF3A, 0.35f + 0.25f * (float) Math.sin(world.time * 5)));
             c.drawCircle(r * 0.08f, 0, r * 0.58f, fill);
@@ -3918,6 +4026,27 @@ final class GameView extends View implements Menu.Host {
             c.drawCircle(0, 0, r * 1.05f, fill);
         }
         c.restore();
+        if (anim && e.type == Entity.SCREAMER && now - e.screamAt < 1.2f) {
+            // The shriek: rings spreading out.
+            float t = (now - e.screamAt) / 1.2f;
+            stroke.setStyle(Paint.Style.STROKE);
+            stroke.setStrokeWidth(0.5f);
+            for (int k = 0; k < 2; k++) {
+                float tt = (t + k * 0.35f) % 1f;
+                stroke.setColor(alpha(0xFFFFE2E2, (1 - tt) * 0.45f));
+                c.drawCircle(e.x, e.y, r * 1.5f + tt * r * 7, stroke);
+            }
+        }
+        if (anim && e.type == Entity.RUNNER && spd > 30) {
+            // Speed lines behind a sprinting runner.
+            float ux = -e.vx / spd, uy = -e.vy / spd;
+            stroke.setStrokeWidth(0.6f);
+            stroke.setColor(0x55FFFFFF);
+            for (int k = -1; k <= 1; k++) {
+                float ox = -uy * k * r * 0.6f, oy = ux * k * r * 0.6f;
+                c.drawLine(e.x + ux * r * 1.4f + ox, e.y + uy * r * 1.4f + oy, e.x + ux * r * (2.6f + (k & 1)) + ox, e.y + uy * r * (2.6f + (k & 1)) + oy, stroke);
+            }
+        }
         if (realistic && e.type != Entity.CRAWLER && scale > 3f) {
             // Light from the top left: a soft highlight on the shoulders and head, shade on the far side.
             fill.setColor(0x26FFFFFF);
@@ -3968,8 +4097,20 @@ final class GameView extends View implements Menu.Host {
         fill.setColor(City.darken(k.body, 0.75f));
         oval.set(-r * 1.2f, -r * 0.62f, r * 0.95f, r * 0.62f);
         c.drawOval(oval, fill);
+        float up = k.rise > 0 && k.rise < 1.5f ? 1 - k.rise / 1.5f : 0;
+        if (up > 0) {
+            // Turning: arms lifting off the ground, the head coming up, the colour draining to grey-green.
+            stroke.setColor(City.darken(k.body, 0.6f));
+            stroke.setStrokeWidth(r * 0.36f);
+            float reach = r * (0.5f + 1.3f * up), lift = r * (0.9f - 0.4f * up);
+            c.drawLine(r * 0.4f, -r * 0.5f, r * 0.4f + reach, -lift, stroke);
+            c.drawLine(r * 0.4f, r * 0.5f, r * 0.4f + reach, lift, stroke);
+            fill.setColor(alpha(0xFF6E8A4A, up * 0.55f));
+            oval.set(-r * 1.2f, -r * 0.62f, r * 0.95f, r * 0.62f);
+            c.drawOval(oval, fill);
+        }
         fill.setColor(City.darken(k.head, 0.85f));
-        c.drawCircle(r * 1.3f, 0, r * 0.5f, fill);
+        c.drawCircle(r * (1.3f - 0.5f * up), 0, r * (0.5f + 0.08f * up), fill);
         if (k.rise > 0) {
             fill.setColor(alpha(0xFF7CFF3A, 0.25f + 0.2f * (float) Math.sin(world.time * 8)));
             c.drawCircle(0, 0, r * 1.3f, fill);
@@ -4059,11 +4200,15 @@ final class GameView extends View implements Menu.Host {
                 world.counts[Entity.MEDIC], world.counts[Entity.FIREFIGHTER], world.zombieCount()};
         text.setTextSize(12.5f * dp);
         if (statsCollapsed) {
+            int at = (int) world.afterTime;
+            String phase = world.aftermath == World.AFTER_RECOVERY ? "   Recovery " + at / 60 + ":" + (at % 60 < 10 ? "0" : "") + at % 60
+                    : world.aftermath == World.AFTER_FALLEN ? "   City fallen" : "";
             String line = "People " + (world.humanCount() + world.hiding + world.riding + world.visiting) + "   Zombies " + world.zombieCount()
-                    + "   (tap for more)";
+                    + phase + "   (tap for more)";
             // (Short of the buttons along the top in landscape.)
             float room = (portrait ? getWidth() - 10 * dp : topRects[0].left - 8 * dp) - statsRect.left - 24 * dp;
             if (text.measureText(line) > room) line = line.substring(0, line.indexOf("   (tap"));
+            if (text.measureText(line) > room && !phase.isEmpty()) line = line.substring(0, line.length() - phase.length());
             float tw = Math.min(text.measureText(line), room);
             oval.set(statsRect.left, statsRect.top, statsRect.left + tw + 24 * dp, statsRect.top + 28 * dp);
             statsShown.set(oval);
@@ -4123,9 +4268,8 @@ final class GameView extends View implements Menu.Host {
         drawMapLabels(c);
         drawPopups(c);
         // Top buttons.
-        String[] top = {simPaused ? "Play" : "Pause", "Speed " + SPEEDS[speedIdx] + "x",
-                "Brush " + BRUSHES[brushIdx], settings.buildings3d() ? "View 3D" : "View Top", "Clear", "Menu"};
-        text.setTextSize((portrait ? 11 : 13) * dp);
+        String[] top = {"", SPEEDS[speedIdx] + "x", "Brush " + BRUSHES[brushIdx], settings.buildings3d() ? "3D" : "Top", "Clear", "Menu"};
+        text.setTextSize((portrait ? 11 : 12) * dp);
         text.setTextAlign(Paint.Align.CENTER);
         for (int i = 0; i < TOP_BUTTONS; i++) {
             RectF r = topRects[i];
@@ -4138,13 +4282,44 @@ final class GameView extends View implements Menu.Host {
             text.setColor(0xFFF2F2F2);
             float base = text.getTextSize(), fit = text.measureText(top[i]);
             if (fit > r.width() - 8 * dp) text.setTextSize(base * (r.width() - 8 * dp) / fit);
-            c.drawText(top[i], r.centerX(), r.centerY() + 4.5f * dp, text);
+            if (i == BTN_PAUSE) {
+                // Pause bars, or a play triangle.
+                fill.setColor(0xFFF2F2F2);
+                float cx = r.centerX(), cy = r.centerY(), u = 6 * dp;
+                if (simPaused) {
+                    android.graphics.Path tri = new android.graphics.Path();
+                    tri.moveTo(cx - u * 0.7f, cy - u);
+                    tri.lineTo(cx + u, cy);
+                    tri.lineTo(cx - u * 0.7f, cy + u);
+                    tri.close();
+                    c.drawPath(tri, fill);
+                } else {
+                    c.drawRect(cx - u * 0.8f, cy - u, cx - u * 0.25f, cy + u, fill);
+                    c.drawRect(cx + u * 0.25f, cy - u, cx + u * 0.8f, cy + u, fill);
+                }
+            } else c.drawText(top[i], r.centerX(), r.centerY() + 4.5f * dp, text);
             text.setTextSize(base);
         }
 
-        // Bottom tool bar.
+        // Bottom tool bar (or, folded away, a strip to bring it back).
         fill.setColor(0xD80E0F12);
         c.drawRect(0, barTop, w, h, fill);
+        text.setTextAlign(Paint.Align.CENTER);
+        if (toolsFolded) {
+            text.setTextSize(12 * dp);
+            text.setColor(0xFFC8CCD2);
+            String name = tool == TOOL_ZOMBIE ? Entity.NAMES[ZOMBIE_VARIANTS[zombieVariant]] : tool == TOOL_CIV ? Entity.NAMES[CIV_VARIANTS[civVariant]]
+                    : tool == TOOL_MIL ? MIL_NAMES[milVariant] : tool == TOOL_COP ? COP_NAMES[copVariant] : TOOL_NAMES[tool];
+            c.drawText("\u25B2  Tools  -  " + name, w / 2f, barTop + 19 * dp, text);
+        } else {
+            fill.setColor(0xD80E0F12);
+            c.drawRoundRect(foldTab, 8 * dp, 8 * dp, fill);
+            stroke.setColor(0xFFC8CCD2);
+            stroke.setStrokeWidth(2 * dp);
+            float fx = foldTab.centerX(), fy = foldTab.centerY() + 1 * dp;
+            c.drawLine(fx - 6 * dp, fy - 3 * dp, fx, fy + 3 * dp, stroke);
+            c.drawLine(fx, fy + 3 * dp, fx + 6 * dp, fy - 3 * dp, stroke);
+        }
         text.setTextSize(11.5f * dp);
         for (int i = 0; i < toolRects.length; i++) {
             RectF r = toolRects[i];
@@ -5088,6 +5263,13 @@ final class GameView extends View implements Menu.Host {
             picker = -1;
             return true;
         }
+        if (toolsFolded && y >= barTop || !toolsFolded && foldTab.contains(x, y)) {
+            click();
+            toolsFolded = !toolsFolded;
+            picker = -1;
+            onSizeChanged(getWidth(), getHeight(), getWidth(), getHeight());
+            return true;
+        }
         if (y >= barTop) {
             for (int i = 0; i < toolRects.length; i++) {
                 if (toolRects[i].contains(x, y)) {
@@ -5128,6 +5310,11 @@ final class GameView extends View implements Menu.Host {
                     }
                     return true;
                 }
+        }
+        if (!miniX.isEmpty() && miniX.contains(x, y) || !mapChip.isEmpty() && mapChip.contains(x, y)) {
+            click();
+            miniClosed = !miniClosed;
+            return true;
         }
         if (camChip.contains(x, y)) {
             click();

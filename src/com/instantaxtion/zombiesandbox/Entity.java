@@ -96,6 +96,10 @@ final class Entity {
      * whatever they're doing now (a run, a delivery round, a stall, a chat).
      */
     int job;
+    /** A walking route (tile indices) to a building, how far along it they are, and where it goes. */
+    int[] path;
+    int pathIdx;
+    City.Building pathDest;
     City.Building work;
     float jobTimer, chat;
     int jobStep;

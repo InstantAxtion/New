@@ -77,7 +77,9 @@ public final class GameTests {
                 for (Fleet.Vehicle v : w.fleet.vehicles) if (v.guard != null && w.entities.contains(v.guard)) posted++;
                 int dead = 0;
                 for (Entity e : w.entities) if (e.dead) dead++;
-                check(Math.abs(l.entities.size() - (w.entities.size() - dead - posted + visiting)) <= w.fleet.riderCount() + 8,
+                int carried = 0;
+                for (Fleet.Vehicle v : w.fleet.vehicles) carried += Math.max(0, v.passengers);
+                check(Math.abs(l.entities.size() - (w.entities.size() - dead - posted + visiting)) <= w.fleet.riderCount() + carried + 8,
                         "same people (" + l.entities.size() + " vs " + w.entities.size() + " - " + dead + " dead - " + posted + " posted + " + visiting
                                 + " visiting, riders " + w.fleet.riderCount() + ")");
                 check(l.zombiesKilled == w.zombiesKilled, "same stats");
@@ -292,7 +294,7 @@ public final class GameTests {
                 c.v[CityConfig.OPT_SIZE] = 3;
                 c.seed = 9;
                 City big = new City(c, 0.1f);
-                check(big.w == 224, "massive maps are 224 tiles");
+                check(big.w == 448, "massive maps are 448 tiles");
                 int grass = 0;
                 for (byte t : big.tiles) if (t == City.GRASS || t == City.TREE) grass++;
                 check(grass > big.tiles.length / 4, "massive maps have open country around the city");

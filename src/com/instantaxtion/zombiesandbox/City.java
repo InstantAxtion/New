@@ -154,7 +154,7 @@ final class City {
     static volatile boolean realistic = true;
     /** Which look the map bitmap was last drawn with. */
     boolean drawnRealistic;
-    private final float detail;
+    final float detail;
 
     // ------------------------------------------------------------------ districts
 
@@ -375,7 +375,8 @@ final class City {
 
 
     City(CityConfig cfg) {
-        this(cfg, 1f);
+        // The map picture is kept to about 4096 pixels across, so a massive map still fits in a phone's memory.
+        this(cfg, Math.min(1f, 4096f / (cfg.tiles() * T)));
     }
 
     /** A city; with a detail below 1 the map bitmap is drawn smaller (for the New Game preview). */
@@ -430,15 +431,15 @@ final class City {
                     || k == KIOSK || k == APARTMENT || k == GARAGE || k == PHARMACY || k == TRAIN_STATION || k == MALL
                     || k == BARN || (k == STADIUM && !stadiumNamed)) placeDoor(b, l);
             if (k == MALL) b.capacity = 40;
-            if (k == APARTMENT) b.capacity = Math.max(8, Math.min(30, l[2] * l[3]));
+            if (k == APARTMENT) b.capacity = Math.max(8, Math.min(40, l[2] * l[3] / 3));
             Random rr = new Random(l[5] * 31L + 7);
             if (b.capacity > 0) {
                 // Two people to a flat, a flat for every two tiles of floor, on every floor.
-                if (k == HOUSE) b.residents = 1 + rr.nextInt(4) + (l[2] * l[3] >= 6 ? 1 : 0);
-                else if (k == APARTMENT) b.residents = Math.min(160, l[2] * l[3] * Math.max(1, l[7]));
+                if (k == HOUSE) b.residents = 1 + rr.nextInt(4) + (l[2] * l[3] >= 24 ? 1 : 0);
+                else if (k == APARTMENT) b.residents = Math.min(160, l[2] * l[3] * Math.max(1, l[7]) / 9);
                 else if (k == SHOP && l[7] >= 2) b.residents = 1 + rr.nextInt(3);
                 // Some office blocks are flats (and some old buildings have flats upstairs).
-                else if (k == OFFICE && l[7] >= 2 && rr.nextFloat() < 0.3f) b.residents = Math.min(80, l[2] * l[3] * l[7] / 2);
+                else if (k == OFFICE && l[7] >= 2 && rr.nextFloat() < 0.2f) b.residents = Math.min(60, l[2] * l[3] * l[7] / 18);
                 // Home is somewhere the whole household can shelter.
                 b.capacity = Math.max(b.capacity, Math.min(b.residents, 40));
                 totalResidents += b.residents;
@@ -639,6 +640,9 @@ final class City {
      * line up across a main road: offset crossings and T-junctions instead of a grid. A hint lets the
      * second side sometimes continue a street from the first. Leaves become blocks.
      */
+    /** Where streets have been laid out so far (columns of north-south ones, rows of east-west ones). */
+    private final List<Integer> vLines = new ArrayList<Integer>(), hLines = new ArrayList<Integer>();
+
     private int split(int x0, int y0, int x1, int y1, int depth, int hintX, int hintY) {
         int bw = x1 - x0, bh = y1 - y0;
         float cx = (x0 + x1) / 2f - w / 2f, cy = (y0 + y1) / 2f - h / 2f;
@@ -662,12 +666,14 @@ final class City {
         maxLeaf += 3;
         if (rural) maxLeaf += 6;
         if (cfg.density() == 2) maxLeaf -= 2;
+        // Blocks are twice the size they used to be (in tiles): real buildings need room.
+        maxLeaf *= 2;
         if (bw <= maxLeaf && bh <= maxLeaf) {
             blocks.add(new int[]{x0, y0, x1, y1});
             return -1;
         }
-        boolean big = Math.max(bw, bh) > (w > 110 ? 42 : 34) && depth < 3 && !rural;
-        int roadW = big ? 5 : 3, minSide = 8;
+        boolean big = Math.max(bw, bh) > (w > 220 ? 84 : 68) && depth < 3 && !rural;
+        int roadW = big ? 5 : 3, minSide = 16;
         boolean vertical;
         if (bw > bh * 1.3f) vertical = true;
         else if (bh > bw * 1.3f) vertical = false;
@@ -692,6 +698,22 @@ final class City {
         else if (dt == DT_DOWNTOWN) align = Math.max(align, 0.7f);
         int hint = vertical ? hintX : hintY;
         if (hint >= lo && hint <= hi && rnd.nextFloat() < align) at = hint;
+        else if (rnd.nextFloat() < align) {
+            // Line up with a street already laid out elsewhere in town, so streets run straight across
+            // the map instead of jogging at every junction.
+            List<Integer> lines = vertical ? vLines : hLines;
+            int best = -1, bd = Integer.MAX_VALUE, mid = (lo + hi) / 2;
+            for (int k = 0; k < lines.size(); k++) {
+                int l = lines.get(k);
+                if (l < lo || l > hi) continue;
+                if (Math.abs(l - mid) < bd) {
+                    bd = Math.abs(l - mid);
+                    best = l;
+                }
+            }
+            if (best >= 0) at = best;
+        }
+        (vertical ? vLines : hLines).add(at);
         Street st = vertical ? new Street(at, y0, at + roadW, y1, true, big) : new Street(x0, at, x1, at + roadW, false, big);
         carve(st);
         int nextHint;
@@ -759,7 +781,7 @@ final class City {
         }
         if (organic) erodeTown(bx0, by0, bx1, by1);
         if (m > 0) {
-            int n = w >= 200 ? 3 + rnd.nextInt(3) : w >= 150 ? 1 + rnd.nextInt(2) : rnd.nextInt(2);
+            int n = w >= 400 ? 3 + rnd.nextInt(3) : w >= 300 ? 1 + rnd.nextInt(2) : rnd.nextInt(2);
             hamlets(n);
         }
         if (m > 0) countryside(townX0, townY0, townX1, townY1);
@@ -916,7 +938,7 @@ final class City {
                 mall(b[0] + 1, b[1] + 1, b[2] - b[0] - 2, b[3] - b[1] - 2);
             }
         }
-        if ((w >= 128 || cfg.density() == 2) && !rural) {
+        if ((w >= 256 || cfg.density() == 2) && !rural) {
             int k = bigBlock(used, 12, 11, 0.6f);
             if (k >= 0) {
                 used[k] = true;
@@ -1063,20 +1085,20 @@ final class City {
         // Barracks along the top, leaving a lane by the fence and around the gate.
         int left = ax + 2, right = ax + aw - 2;
         if (aw >= 16) {
-            for (int row = 0; row < 2 && ay + 1 + row * 3 + 2 <= ay + ah / 2; row++) {
-                int by = ay + 1 + row * 3;
-                int mid = gx - 1;
-                if (mid - left >= 3) addFacilityLot(left, by, mid - left, 2, BARRACKS, 1);
-                if (right - (gx + 4) >= 3) addFacilityLot(gx + 4, by, right - (gx + 4), 2, BARRACKS, 1);
+            for (int row = 0; row < 2 && ay + 1 + row * 6 + 4 <= ay + ah / 2; row++) {
+                int by = ay + 2 + row * 6;
+                int mid = gx - 2;
+                if (mid - left >= 5) addFacilityLot(left, by, mid - left, 4, BARRACKS, 1);
+                if (right - (gx + 5) >= 5) addFacilityLot(gx + 5, by, right - (gx + 5), 4, BARRACKS, 1);
             }
         } else {
             // Narrow base: long barracks down both sides of the parade ground.
             int len = Math.max(3, ah / 2 - 1);
-            addFacilityLot(ax + 1, ay + 2, 2, len, BARRACKS, 1);
-            addFacilityLot(ax + aw - 3, ay + 2, 2, len, BARRACKS, 1);
+            addFacilityLot(ax + 1, ay + 2, 4, len, BARRACKS, 1);
+            addFacilityLot(ax + aw - 5, ay + 2, 4, len, BARRACKS, 1);
         }
-        addFacilityLot(ax, ay + ah - 1, 1, 1, TOWER, 3);
-        addFacilityLot(ax + aw - 1, ay, 1, 1, TOWER, 3);
+        addFacilityLot(ax, ay + ah - 2, 2, 2, TOWER, 3);
+        addFacilityLot(ax + aw - 2, ay, 2, 2, TOWER, 3);
         // Helipad and tents in the open lower half, trucks parked along the bottom right.
         helipads.add(new float[]{(ax + aw * 0.3f) * T, (ay + ah * 0.72f) * T});
         for (int i = 0; i < 4; i++)
@@ -1262,28 +1284,28 @@ final class City {
             int shopChance = mainRoad ? cfg.shopShare() + 20 : cfg.shopShare() / 3;
             if (curDistrict == DT_OLDTOWN) shopChance = Math.max(shopChance, 45);
             if (curDistrict == DT_MIDTOWN && mainRoad) shopChance += 15;
-            if (curDistrict == DT_OLDTOWN && bw >= 5 && bh >= 5 && rnd.nextFloat() < 0.55f) {
+            if (curDistrict == DT_OLDTOWN && bw >= 10 && bh >= 10 && rnd.nextFloat() < 0.55f) {
                 terraces(x, y, bw, bh);
                 return;
             }
-            if (curDistrict == DT_CAMPUS && bw >= 6 && bh >= 6) {
+            if (curDistrict == DT_CAMPUS && bw >= 12 && bh >= 12) {
                 // Campus: halls on lawns.
                 fill(x, y, bw, bh, GRASS);
-                lots(x + 1, y + 1, bw - 2, bh - 2, 1);
+                lots(x + 2, y + 2, bw - 4, bh - 4, 1);
                 return;
             }
             if (style == CityConfig.STYLE_HOUSES && !mainRoad) shopChance = cfg.shopShare() / 6;
-            if (style != CityConfig.STYLE_HOUSES && bw >= 6 && bh >= 6 && rnd.nextFloat() < 0.05f) constructionSite(x, y, bw, bh);
-            else if (rnd.nextInt(100) < shopChance && bw >= 5 && bh >= 5 && style != CityConfig.STYLE_WAREHOUSES) shops(x, y, bw, bh);
-            else if (style == CityConfig.STYLE_HOUSES && rnd.nextInt(100) < cfg.buildingMix()[0] / 2 && bw >= 5 && bh >= 5) {
+            if (style != CityConfig.STYLE_HOUSES && bw >= 12 && bh >= 12 && rnd.nextFloat() < 0.05f) constructionSite(x, y, bw, bh);
+            else if (rnd.nextInt(100) < shopChance && bw >= 10 && bh >= 10 && style != CityConfig.STYLE_WAREHOUSES) shops(x, y, bw, bh);
+            else if (style == CityConfig.STYLE_HOUSES && rnd.nextInt(100) < cfg.buildingMix()[0] / 2 && bw >= 10 && bh >= 10) {
                 // An apartment block on the edge of the suburbs.
                 fill(x, y, bw, bh, GRASS);
-                addLot(x + 1, y + 1, bw - 2, bh - 2, APARTMENT);
+                addLot(x + 2, y + 2, bw - 4, bh - 4, APARTMENT);
             } else if (style == CityConfig.STYLE_HOUSES) houses(x, y, bw, bh);
             else if (style == CityConfig.STYLE_WAREHOUSES) warehouses(x, y, bw, bh);
-            else if (cfg.density() == 0 && bw >= 5 && bh >= 5) {
+            else if (cfg.density() == 0 && bw >= 10 && bh >= 10) {
                 fill(x, y, bw, bh, GRASS);
-                lots(x + 1, y + 1, bw - 2, bh - 2, 0);
+                lots(x + 2, y + 2, bw - 4, bh - 4, 0);
             } else {
                 lots(x, y, bw, bh, 0);
             }
@@ -1316,21 +1338,21 @@ final class City {
 
     private void lots(int x, int y, int lw, int lh, int depth) {
         int maxDepth = cfg.density() == 2 ? 2 : 3;
-        if (depth < maxDepth && lw >= 7 && lw >= lh && rnd.nextFloat() < 0.75f) {
-            int cut = 3 + rnd.nextInt(lw - 5);
+        if (depth < maxDepth && lw >= 13 && lw >= lh && rnd.nextFloat() < 0.75f) {
+            int cut = 6 + rnd.nextInt(lw - 12);
             lots(x, y, cut, lh, depth + 1);
             lots(x + cut + 1, y, lw - cut - 1, lh, depth + 1);
             if (lh >= 4) addDecor(D_ALLEY, (x + cut) * T + 1, y * T, (x + cut + 1) * T - 1, (y + lh) * T, 0);
             return;
         }
-        if (depth < maxDepth && lh >= 7 && rnd.nextFloat() < 0.75f) {
-            int cut = 3 + rnd.nextInt(lh - 5);
+        if (depth < maxDepth && lh >= 13 && rnd.nextFloat() < 0.75f) {
+            int cut = 6 + rnd.nextInt(lh - 12);
             lots(x, y, lw, cut, depth + 1);
             lots(x, y + cut + 1, lw, lh - cut - 1, depth + 1);
             if (lw >= 4) addDecor(D_ALLEY, x * T, (y + cut) * T + 1, (x + lw) * T, (y + cut + 1) * T - 1, 0);
             return;
         }
-        if (lw < 2 || lh < 2) return;
+        if (lw < 3 || lh < 3) return;
         addLot(x, y, lw, lh, officeKind(lw, lh));
     }
 
@@ -1338,23 +1360,24 @@ final class City {
     private int officeKind(int lw, int lh) {
         int[] mix = cfg.buildingMix();
         int r = rnd.nextInt(100);
-        if (r < mix[0] && lw >= 3 && lh >= 3) return APARTMENT;
-        if ((r -= mix[0]) < mix[1] && lw >= 4 && lh >= 4) return GARAGE;
-        if ((r -= mix[1]) < mix[2] && lw <= 4 && lh <= 4) return PHARMACY;
+        if (r < mix[0] && lw >= 6 && lh >= 6) return APARTMENT;
+        if ((r -= mix[0]) < mix[1] && lw >= 8 && lh >= 8) return GARAGE;
+        if ((r -= mix[1]) < mix[2] && lw <= 8 && lh <= 8) return PHARMACY;
         return OFFICE;
     }
 
     private void houses(int x, int y, int pw, int ph) {
-        if ((pw >= 11 || ph >= 11) && Math.min(pw, ph) >= 7 && rnd.nextFloat() < 0.7f) {
+        if ((pw >= 22 || ph >= 22) && Math.min(pw, ph) >= 14 && rnd.nextFloat() < 0.7f) {
             culDeSac(x, y, pw, ph);
             return;
         }
         fill(x, y, pw, ph, GRASS);
-        for (int cy = y; cy + 2 <= y + ph; cy += 4)
-            for (int cx = x; cx + 2 <= x + pw; cx += 4) {
-                int hw = Math.min(2 + rnd.nextInt(2), x + pw - cx);
-                int hh = Math.min(2 + rnd.nextInt(2), y + ph - cy);
-                if (hw >= 2 && hh >= 2 && rnd.nextFloat() > 0.1f) addLot(cx, cy, hw, hh, HOUSE);
+        // Houses set back from the pavement, each in its own garden.
+        for (int cy = y + 1; cy + 4 <= y + ph; cy += 7)
+            for (int cx = x + 1; cx + 4 <= x + pw; cx += 7) {
+                int hw = Math.min(4 + rnd.nextInt(2), x + pw - cx);
+                int hh = Math.min(4 + rnd.nextInt(2), y + ph - cy);
+                if (hw >= 4 && hh >= 4 && rnd.nextFloat() > 0.1f) addLot(cx, cy, hw, hh, HOUSE);
             }
         for (int j = y; j < y + ph; j++)
             for (int i = x; i < x + pw; i++)
@@ -1393,16 +1416,16 @@ final class City {
                 if (i >= x && j >= y && i < x + pw && j < y + ph) tiles[j * w + i] = ROAD;
             }
         // Houses facing the lane on both sides, then more filling the rest of the block.
-        for (int k = 1; k + 2 <= (vertical ? ph : pw) - 1; k += 3)
+        for (int k = 1; k + 4 <= (vertical ? ph : pw) - 1; k += 6)
             for (int side = 0; side < 2; side++) {
-                int hw = 2, hd = 2 + rnd.nextInt(2);
+                int hw = 4, hd = 4 + rnd.nextInt(2);
                 int along = (vertical ? y : x) + k;
-                int across = side == 0 ? mid - 1 - hd : mid + 3;
+                int across = side == 0 ? mid - 2 - hd : mid + 4;
                 int lx = vertical ? across : along, ly = vertical ? along : across;
                 placeHouse(lx, ly, vertical ? hd : hw, vertical ? hw : hd, x, y, pw, ph);
             }
-        for (int cy = y; cy + 2 <= y + ph; cy += 3)
-            for (int cx = x; cx + 2 <= x + pw; cx += 3) placeHouse(cx, cy, 2, 2, x, y, pw, ph);
+        for (int cy = y + 1; cy + 4 <= y + ph; cy += 6)
+            for (int cx = x + 1; cx + 4 <= x + pw; cx += 6) placeHouse(cx, cy, 4, 4, x, y, pw, ph);
         for (int j = y; j < y + ph; j++)
             for (int i = x; i < x + pw; i++)
                 if (tiles[j * w + i] == GRASS && rnd.nextFloat() < 0.1f && !hasNeighbor(i, j, TREE)
@@ -1429,7 +1452,7 @@ final class City {
         stationX = (x + bw / 2f) * T;
         stationY = railBelow ? (y + bh - 0.5f) * T : (y + 0.5f) * T;
         stationName = "Central Station";
-        int sw = Math.min(bw - 2, Math.max(6, bw * 2 / 3)), sh = Math.max(2, Math.min(4, bh - 3));
+        int sw = Math.min(bw - 2, Math.max(12, bw * 2 / 3)), sh = Math.max(4, Math.min(8, bh - 3));
         int sx = x + (bw - sw) / 2, sy = railBelow ? y + 1 : y + bh - 1 - sh;
         addFacilityLot(sx, sy, sw, sh, TRAIN_STATION, 2);
         // Platform canopy along the tracks.
@@ -1448,7 +1471,7 @@ final class City {
      */
     private void terraces(int x, int y, int bw, int bh) {
         fill(x, y, bw, bh, PLAZA);
-        int depth = bh >= 8 && bw >= 8 ? 3 : 2;
+        int depth = bh >= 16 && bw >= 16 ? 6 : 4;
         for (int side = 0; side < 4; side++) {
             boolean horizontal = side < 2;
             int len = horizontal ? bw : bh - 2 * depth;
@@ -1458,11 +1481,11 @@ final class City {
                 // An archway through the front and back rows into the courtyard.
                 if (!arch && i >= len / 2 - 1) {
                     arch = true;
-                    i++;
+                    i += 2;
                     continue;
                 }
-                int uw = Math.min(2 + rnd.nextInt(2), len - i);
-                if (uw < 2) break;
+                int uw = Math.min(3 + rnd.nextInt(3), len - i);
+                if (uw < 3) break;
                 int lx, ly, lw, lh;
                 if (side == 0) { lx = x + i; ly = y; lw = uw; lh = depth; }
                 else if (side == 1) { lx = x + i; ly = y + bh - depth; lw = uw; lh = depth; }
@@ -1475,7 +1498,7 @@ final class City {
         }
         // A tree or two in the courtyard.
         int cx = x + bw / 2, cy = y + bh / 2;
-        if (bw >= 7 && bh >= 7 && tiles[cy * w + cx] == PLAZA) tiles[cy * w + cx] = TREE;
+        if (bw >= 14 && bh >= 14 && tiles[cy * w + cx] == PLAZA) tiles[cy * w + cx] = TREE;
     }
 
     private void warehouses(int x, int y, int pw, int ph) {
@@ -1580,17 +1603,24 @@ final class City {
     /** A row of small shops around the edge of the block with a service lot behind. */
     private void shops(int x, int y, int bw, int bh) {
         fill(x, y, bw, bh, LOT);
-        int depth = bh >= 8 ? 3 : 2;
+        int depth = bh >= 16 ? 6 : 4;
         for (int side = 0; side < 2; side++) {
             int sy = side == 0 ? y : y + bh - depth;
             int i = x;
             while (i < x + bw) {
-                int uw = Math.min(2 + rnd.nextInt(2), x + bw - i);
-                if (uw >= 2) addFacilityLot(i, sy, uw, depth, SHOP, 1 + (rnd.nextFloat() < 0.3f ? 1 : 0));
+                int uw = Math.min(3 + rnd.nextInt(3), x + bw - i);
+                if (uw >= 3) addFacilityLot(i, sy, uw, depth, SHOP, 1 + (rnd.nextFloat() < 0.3f ? 1 : 0));
                 i += uw;
             }
         }
-        for (int j = y + depth + 1; j < y + bh - depth - 1; j++)
+        // Behind the shopfronts: offices and flats (a service yard with a few parked cars in the suburbs).
+        int iy0 = y + depth + 1, iy1 = y + bh - depth - 1;
+        if (iy1 - iy0 >= 8 && curDistrict != DT_SUBURB && curDistrict != DT_PARKSIDE) {
+            fill(x, iy0, bw, iy1 - iy0, SIDEWALK);
+            lots(x + 1, iy0 + 1, bw - 2, iy1 - iy0 - 2, 1);
+            return;
+        }
+        for (int j = iy0; j < iy1; j++)
             for (int i = x + 1; i < x + bw - 1; i++)
                 if (rnd.nextFloat() < 0.12f && !hasNeighbor(i, j, CAR)) tiles[j * w + i] = CAR;
     }
@@ -1599,11 +1629,11 @@ final class City {
     private void church(int x, int y, int bw, int bh) {
         fill(x, y, bw, bh, GRASS);
         boolean wide = bw >= bh;
-        int cw = wide ? Math.min(bw - 3, Math.max(4, bw / 2)) : Math.min(bw - 2, 4);
-        int ch = wide ? Math.min(bh - 2, 4) : Math.min(bh - 3, Math.max(4, bh / 2));
-        addFacilityLot(x + 1, y + 1, cw, ch, CHURCH, 2);
-        if (wide) addFacilityLot(x + 1 + cw, y + 1 + ch / 2, 1, 1, SPIRE, 6);
-        else addFacilityLot(x + 1 + cw / 2, y + 1 + ch, 1, 1, SPIRE, 6);
+        int cw = wide ? Math.min(bw - 6, Math.max(8, bw / 2)) : Math.min(bw - 4, 8);
+        int ch = wide ? Math.min(bh - 4, 8) : Math.min(bh - 6, Math.max(8, bh / 2));
+        addFacilityLot(x + 2, y + 2, cw, ch, CHURCH, 3);
+        if (wide) addFacilityLot(x + 2 + cw, y + 2 + ch / 2 - 1, 2, 2, SPIRE, 8);
+        else addFacilityLot(x + 2 + cw / 2 - 1, y + 2 + ch, 2, 2, SPIRE, 8);
         graves(x, y, bw, bh, 0.5f);
     }
 
@@ -1612,7 +1642,7 @@ final class City {
         int cx = x + bw / 2, cy = y + bh / 2;
         for (int i = x; i < x + bw; i++) tiles[cy * w + i] = PLAZA;
         for (int j = y; j < y + bh; j++) tiles[j * w + cx] = PLAZA;
-        if (bw >= 7 && bh >= 7) addFacilityLot(cx + 1, cy + 1, 2, 2, CRYPT, 1);
+        if (bw >= 14 && bh >= 14) addFacilityLot(cx + 2, cy + 2, 3, 3, CRYPT, 1);
         graves(x, y, bw, bh, 0.8f);
         for (int j = y; j < y + bh; j++)
             for (int i = x; i < x + bw; i++)
@@ -1666,8 +1696,8 @@ final class City {
     /** A gas station: canopy over the pumps and a little shop. */
     private void gasStation(int x, int y, int bw, int bh) {
         fill(x, y, bw, bh, LOT);
-        addFacilityLot(x + bw - 3, y + 1, 2, 2, KIOSK, 1);
-        int cx0 = x + 1, cy0 = y + 1, cx1 = x + bw - 4, cy1 = y + bh - 1;
+        addFacilityLot(x + bw - 5, y + 1, 4, 3, KIOSK, 1);
+        int cx0 = x + 1, cy0 = y + 1, cx1 = x + bw - 6, cy1 = y + bh - 1;
         if (cx1 - cx0 < 2) {
             int j = y + bh / 2;
             tiles[j * w + x + 1] = PUMP;
@@ -1761,7 +1791,7 @@ final class City {
         // A village's lanes carry on from the ends of its streets.
         for (int[] e : villageEnds) dirtRoad(e[0], e[1], e[2], e[3], lane);
         for (int[] o : villageEnds.isEmpty() ? outs : new int[0][]) {
-            int roads = 1 + (w > 180 ? 1 : 0) + (rnd.nextFloat() < 0.4f ? 1 : 0);
+            int roads = 1 + (w > 360 ? 1 : 0) + (rnd.nextFloat() < 0.4f ? 1 : 0);
             for (int k = 0; k < roads; k++) {
                 // Start on the ring road, somewhere along this side (clear of the railway).
                 int x, y;
@@ -1777,7 +1807,7 @@ final class City {
             }
         }
         // On big maps, side tracks branch off the lanes out to the remote corners.
-        int branches = w > 180 ? 4 + rnd.nextInt(3) : w > 120 ? 1 + rnd.nextInt(2) : 0;
+        int branches = w > 360 ? 4 + rnd.nextInt(3) : w > 240 ? 1 + rnd.nextInt(2) : 0;
         int mains = lane.size();
         for (int k = 0; k < branches && mains > 0; k++) {
             int[] c = lane.get(rnd.nextInt(mains));
@@ -1791,17 +1821,17 @@ final class City {
             int[] c = lane.get(k);
             if (rnd.nextFloat() > 0.35f) continue;
             boolean farmhouse = rnd.nextFloat() < 0.55f;
-            int fw = farmhouse ? 9 : 3, fh = farmhouse ? 8 : 3;
+            int fw = farmhouse ? 18 : 6, fh = farmhouse ? 16 : 6;
             int side = rnd.nextBoolean() ? 1 : -1;
             boolean vert = c[2] == 1;
-            int fx = vert ? c[0] + side * 3 + (side < 0 ? -fw : 0) : c[0] - fw / 2;
-            int fy = vert ? c[1] - fh / 2 : c[1] + side * 3 + (side < 0 ? -fh : 0);
+            int fx = vert ? c[0] + side * 4 + (side < 0 ? -fw : 0) : c[0] - fw / 2;
+            int fy = vert ? c[1] - fh / 2 : c[1] + side * 4 + (side < 0 ? -fh : 0);
             if (!allGrass(fx - 1, fy - 1, fw + 2, fh + 2)) continue;
             if (farmhouse) farm(fx, fy, fw, fh);
-            else addLot(fx, fy, 2, 2, HOUSE);
+            else addLot(fx + 1, fy + 1, 4, 4, HOUSE);
             // The track from the road.
             int tx = c[0], ty = c[1];
-            for (int s = 1; s < 4; s++) {
+            for (int s = 1; s < 5; s++) {
                 int ax = vert ? tx + side * s : tx, ay = vert ? ty : ty + side * s;
                 if (ax >= 0 && ay >= 0 && ax < w && ay < h && tiles[ay * w + ax] == GRASS) tiles[ay * w + ax] = DIRT;
             }
@@ -1888,10 +1918,10 @@ final class City {
         villageEnds.add(new int[]{cx, by0, 0, -1});
         villageEnds.add(new int[]{cx, by1 - 1, 0, 1});
         // A back lane off the crossroad, running part way to one side.
-        int off = (12 + rnd.nextInt(4)) * (rnd.nextBoolean() ? 1 : -1), ly = cy + off;
-        if (ly > by0 + 10 && ly < by1 - 12) {
+        int off = (24 + rnd.nextInt(8)) * (rnd.nextBoolean() ? 1 : -1), ly = cy + off;
+        if (ly > by0 + 20 && ly < by1 - 24) {
             boolean east = rnd.nextBoolean();
-            int len = (bx1 - bx0) / 2 - 6 - rnd.nextInt(8);
+            int len = (bx1 - bx0) / 2 - 12 - rnd.nextInt(16);
             Street back = east ? new Street(cx + 3, ly, cx + 3 + len, ly + 3, false, false) : new Street(cx - len, ly, cx, ly + 3, false, false);
             carve(back);
             own.add(back);
@@ -1911,8 +1941,8 @@ final class City {
         int from = st.vertical ? st.y0 : st.x0, to = st.vertical ? st.y1 : st.x1;
         for (int side = -1; side <= 1; side += 2) {
             int p = from + 1 + rnd.nextInt(3);
-            while (p < to - 6) {
-                int pw = 8 + rnd.nextInt(3), pd = 8 + rnd.nextInt(3);
+            while (p < to - 12) {
+                int pw = 15 + rnd.nextInt(5), pd = 15 + rnd.nextInt(5);
                 int x0, y0, x1, y1;
                 if (st.vertical) {
                     y0 = p;
@@ -1929,8 +1959,8 @@ final class City {
                     fill(x0, y0, x1 - x0, y1 - y0, SIDEWALK);
                     blocks.add(new int[]{x0, y0, x1, y1, flag});
                     made++;
-                    p += pw + 1 + (rnd.nextFloat() < 0.3f ? 3 + rnd.nextInt(5) : 0);
-                } else p += 2;
+                    p += pw + 1 + (rnd.nextFloat() < 0.3f ? 6 + rnd.nextInt(10) : 0);
+                } else p += 3;
             }
         }
         return made;
@@ -1954,7 +1984,7 @@ final class City {
             float x = (b[0] + b[2]) / 2f - cx, y = ((b[1] + b[3]) / 2f - cy) * stretch;
             float a = (float) Math.atan2(y, x), d = (float) Math.sqrt(x * x + y * y) / rad;
             // Big maps get a properly ragged edge; a small town just loses its corners.
-            float r = w >= 200 ? 0.86f : 1.02f;
+            float r = w >= 400 ? 0.86f : 1.02f;
             for (int k = 0; k < 4; k++) r += amp[k] * (float) Math.sin((k + 2) * a + ph[k]);
             boolean keep = d < r && !(d > r - 0.14f && rnd.nextFloat() < 0.3f);
             if (keep) kept.add(b);
@@ -2091,19 +2121,19 @@ final class City {
         List<float[]> made = new ArrayList<float[]>();
         for (int k = 0; k < count; k++) {
             for (int tries = 0; tries < 250; tries++) {
-                int cx = 18 + rnd.nextInt(Math.max(1, w - 36)), cy = 18 + rnd.nextInt(Math.max(1, h - 36));
+                int cx = 30 + rnd.nextInt(Math.max(1, w - 60)), cy = 30 + rnd.nextInt(Math.max(1, h - 60));
                 // Clear of the town's own (eroded, irregular) edge rather than its bounding box.
-                if (!allOpen(cx - 17, cy - 17, 34, 34)) continue;
-                if (railY0 >= 0 && Math.abs(cy - railY0) < 16) continue;
+                if (!allOpen(cx - 28, cy - 28, 56, 56)) continue;
+                if (railY0 >= 0 && Math.abs(cy - railY0) < 30) continue;
                 boolean far = true;
-                for (float[] o : made) if (Math.hypot(o[0] - cx, o[1] - cy) < 45) far = false;
-                if (!far || !allOpen(cx - 13, cy - 13, 26, 26)) continue;
+                for (float[] o : made) if (Math.hypot(o[0] - cx, o[1] - cy) < 90) far = false;
+                if (!far) continue;
                 boolean vertical = rnd.nextBoolean();
-                int len = 16 + rnd.nextInt(12);
+                int len = 30 + rnd.nextInt(20);
                 Street st = vertical ? new Street(cx - 1, cy - len / 2, cx + 2, cy + len / 2, true, false)
                         : new Street(cx - len / 2, cy - 1, cx + len / 2, cy + 2, false, false);
                 carve(st);
-                plotsAlong(st, cx - 13, cy - 13, cx + 13, cy + 13, 2);
+                plotsAlong(st, cx - 25, cy - 25, cx + 25, cy + 25, 2);
                 made.add(new float[]{cx, cy});
                 settlements.add(new float[]{(cx + 0.5f) * T, (cy + 0.5f) * T});
                 // A lane from the end nearer town, back to the nearest road.
@@ -2308,22 +2338,22 @@ final class City {
         }
         addDecor(D_SITE, (x + 1) * T, (y + 1) * T, (x + bw - 1) * T, (y + bh - 1) * T, rnd.nextInt(4));
         // A half-built block in one corner.
-        if (bw >= 8 && bh >= 8) addLot(x + bw - 4, y + bh - 4, 2, 2, OFFICE);
+        if (bw >= 16 && bh >= 16) addLot(x + bw - 8, y + bh - 8, 5, 5, OFFICE);
     }
 
     /** A farm: the farmhouse, a barn and a silo in the yard, and fields of crops. */
     private void farm(int x, int y, int bw, int bh) {
         fill(x, y, bw, bh, GRASS);
         boolean wide = bw >= bh;
-        int yard = 4;
+        int yard = 8;
         int yx = x, yy = y;
-        addLot(yx + 1, yy + 1, 2, 2, HOUSE);
-        addFacilityLot(wide ? yx + 1 : yx + 4, wide ? yy + 4 : yy + 1, 3, 2, BARN, 1);
-        if (wide ? bh >= 8 : bw >= 8) addFacilityLot(wide ? yx + 2 : yx + 8, wide ? yy + 7 : yy + 2, 1, 1, SILO, 3);
+        addLot(yx + 1, yy + 1, 5, 4, HOUSE);
+        addFacilityLot(wide ? yx + 1 : yx + 7, wide ? yy + 7 : yy + 1, 6, 4, BARN, 1);
+        if (wide ? bh >= 15 : bw >= 15) addFacilityLot(wide ? yx + 4 : yx + 14, wide ? yy + 12 : yy + 4, 2, 2, SILO, 3);
         int fx = wide ? x + yard + 1 : x, fy = wide ? y : y + yard + 1;
         int fw = wide ? bw - yard - 1 : bw, fh = wide ? bh : bh - yard - 1;
         // Split the land into two or three fields with different crops.
-        int fields = Math.max(1, Math.min(3, (wide ? fw : fh) / 5));
+        int fields = Math.max(1, Math.min(3, (wide ? fw : fh) / 10));
         for (int k = 0; k < fields; k++) {
             float a0 = (wide ? fx : fy) + (wide ? fw : fh) * k / (float) fields, a1 = (wide ? fx : fy) + (wide ? fw : fh) * (k + 1) / (float) fields;
             if (wide) addDecor(D_CROPS, a0 * T + 3, fy * T + 3, a1 * T - 3, (fy + fh) * T - 3, rnd.nextInt(3));
@@ -4312,8 +4342,10 @@ final class City {
     // ------------------------------------------------------------------ flow fields
 
     void computeFields(List<Entity> entities) {
-        bfs(humanDist, entities, false);
-        bfs(zombieDist, entities, true);
+        // Only near distances matter (how far the nearest zombie or person is, within smelling range), so
+        // the searches stop spreading after a while instead of covering a whole massive map.
+        bfs(humanDist, entities, false, 110);
+        bfs(zombieDist, entities, true, 70);
     }
 
     /** Can a vehicle drive over this tile, and at what cost: roads are cheap, sidewalks and lots dearer. */
@@ -4576,6 +4608,11 @@ final class City {
      * zebra crossings. Roads without a pavement (country lanes) still get used when there's no other way.
      */
     void walkFieldFromPoints(int[] dist, float[] xs, float[] ys, int n) {
+        walkFieldFromPoints(dist, xs, ys, n, FAR);
+    }
+
+    /** As above, but only out to a walking distance of limit (in steps of cost). */
+    void walkFieldFromPoints(int[] dist, float[] xs, float[] ys, int n, int limit) {
         if (walkCost == null) computeWalkCost();
         Arrays.fill(dist, FAR);
         if (walkBuckets == null) walkBuckets = new int[9][w * h];
@@ -4591,6 +4628,11 @@ final class City {
         }
         for (int d = 0; pending > 0; d++) {
             int bi = d % 9;
+            if (d > limit) {
+                // Past the limit: what's left in the queue stays unreached.
+                for (int k = 0; k < 9; k++) sizes[k] = 0;
+                break;
+            }
             int[] bk = walkBuckets[bi];
             int size = sizes[bi];
             for (int k = 0; k < size; k++) {
@@ -4617,6 +4659,100 @@ final class City {
         }
     }
 
+    // A* over the walking costs, for one person's trip: no map-sized route to build and keep.
+    private int[] astarG, astarFrom, astarStamp;
+    private long[] astarHeap = new long[4096];
+    private int astarRun;
+
+    /**
+     * A walking route from (sx, sy) to (tx, ty) as tile indices (start excluded), keeping to pavements and
+     * crossings like walkFieldFromPoints, or null if there's none within maxExpand tiles searched.
+     */
+    int[] findPath(float sx, float sy, float tx, float ty, int maxExpand) {
+        if (walkCost == null) computeWalkCost();
+        if (astarG == null) {
+            astarG = new int[w * h];
+            astarFrom = new int[w * h];
+            astarStamp = new int[w * h];
+        }
+        int run = ++astarRun;
+        int s = tileIndex(sx, sy), g = tileIndex(tx, ty);
+        if (s == g) return new int[]{g};
+        int gx = g % w, gy = g / w;
+        int size = 0;
+        astarStamp[s] = run;
+        astarG[s] = 0;
+        astarFrom[s] = -1;
+        astarHeap[size++] = ((long) heur(s % w, s / w, gx, gy) << 32) | s;
+        int expanded = 0;
+        while (size > 0) {
+            long top = astarHeap[0];
+            astarHeap[0] = astarHeap[--size];
+            siftDown(size);
+            int t = (int) (top & 0xFFFFFFFFL), f = (int) (top >>> 32);
+            int tx0 = t % w, ty0 = t / w;
+            if (f - heur(tx0, ty0, gx, gy) > astarG[t]) continue;
+            if (t == g) {
+                int n = 0;
+                for (int c = t; c != s; c = astarFrom[c]) n++;
+                int[] path = new int[n];
+                for (int c = t, k = n - 1; c != s; c = astarFrom[c]) path[k--] = c;
+                return path;
+            }
+            if (++expanded > maxExpand) return null;
+            for (int q = 0; q < 8; q++) {
+                int dx = q < 4 ? (q == 0 ? 1 : q == 1 ? -1 : 0) : (q == 4 || q == 6 ? 1 : -1);
+                int dy = q < 4 ? (q == 2 ? 1 : q == 3 ? -1 : 0) : (q < 6 ? 1 : -1);
+                int nx = tx0 + dx, ny = ty0 + dy;
+                if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+                int nb = ny * w + nx;
+                if (solid[nb] && nb != g) continue;
+                // No cutting corners past a wall.
+                if (dx != 0 && dy != 0 && (solid[ty0 * w + nx] || solid[ny * w + tx0])) continue;
+                int ng = astarG[t] + walkCost[nb] * (dx != 0 && dy != 0 ? 14 : 10);
+                if (astarStamp[nb] == run && ng >= astarG[nb]) continue;
+                astarStamp[nb] = run;
+                astarG[nb] = ng;
+                astarFrom[nb] = t;
+                if (size == astarHeap.length) astarHeap = Arrays.copyOf(astarHeap, size * 2);
+                astarHeap[size] = ((long) (ng + heur(nx, ny, gx, gy)) << 32) | nb;
+                siftUp(size++);
+            }
+        }
+        return null;
+    }
+
+    private static int heur(int x, int y, int gx, int gy) {
+        int dx = Math.abs(x - gx), dy = Math.abs(y - gy);
+        return 10 * Math.max(dx, dy) + 4 * Math.min(dx, dy);
+    }
+
+    private void siftUp(int i) {
+        long v = astarHeap[i];
+        while (i > 0) {
+            int p = (i - 1) >> 1;
+            if (astarHeap[p] <= v) break;
+            astarHeap[i] = astarHeap[p];
+            i = p;
+        }
+        astarHeap[i] = v;
+    }
+
+    private void siftDown(int size) {
+        if (size == 0) return;
+        long v = astarHeap[0];
+        int i = 0;
+        while (true) {
+            int c = 2 * i + 1;
+            if (c >= size) break;
+            if (c + 1 < size && astarHeap[c + 1] < astarHeap[c]) c++;
+            if (astarHeap[c] >= v) break;
+            astarHeap[i] = astarHeap[c];
+            i = c;
+        }
+        astarHeap[i] = v;
+    }
+
     /** Distance field (in tiles) to the nearest of the given points. */
     void fieldFromPoints(int[] dist, float[] xs, float[] ys, int n) {
         Arrays.fill(dist, FAR);
@@ -4628,10 +4764,10 @@ final class City {
                 queue[tail++] = t;
             }
         }
-        spread(dist, tail);
+        spread(dist, tail, FAR);
     }
 
-    private void bfs(int[] dist, List<Entity> entities, boolean zombies) {
+    private void bfs(int[] dist, List<Entity> entities, boolean zombies, int limit) {
         Arrays.fill(dist, FAR);
         int tail = 0;
         for (int i = 0, n = entities.size(); i < n; i++) {
@@ -4654,14 +4790,15 @@ final class City {
                     queue[tail++] = t;
                 }
             }
-        spread(dist, tail);
+        spread(dist, tail, limit);
     }
 
-    private void spread(int[] dist, int tail) {
+    private void spread(int[] dist, int tail, int limit) {
         int head = 0;
         while (head < tail) {
             int t = queue[head++];
             int tx = t % w, ty = t / w, nd = dist[t] + 1;
+            if (nd > limit) continue;
             if (tx > 0) tail = visit(dist, t - 1, nd, tail);
             if (tx < w - 1) tail = visit(dist, t + 1, nd, tail);
             if (ty > 0) tail = visit(dist, t - w, nd, tail);

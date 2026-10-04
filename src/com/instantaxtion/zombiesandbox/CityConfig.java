@@ -39,7 +39,7 @@ final class CityConfig implements OptionSet {
             {"Off", "Low", "Medium", "High"},
             Country.NAMES,
     };
-    private static final int[] SIZES = {96, 128, 160, 224};
+    private static final int[] SIZES = {192, 256, 320, 448};
     /** Share of the city's residents out and about when the game starts. */
     private static final float[] RESIDENT_SHARE = {0, 0.2f, 0.45f, 0.7f, 1f};
     private static final int[] COPS = {0, 5, 10, 20, 40, 60};

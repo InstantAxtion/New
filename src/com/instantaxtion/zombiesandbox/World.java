@@ -3147,7 +3147,9 @@ final class World {
         float bestScore = Float.MAX_VALUE;
         for (int k = 0; k < 8 && !workplaces.isEmpty(); k++) {
             City.Building b = workplaces.get(rnd.nextInt(workplaces.size()));
-            float score = (float) Math.hypot(b.doorX - e.x, b.doorY - e.y) + rnd.nextFloat() * 300;
+            float dd = (float) Math.hypot(b.doorX - e.x, b.doorY - e.y);
+            if (dd > 1400) continue;
+            float score = dd + rnd.nextFloat() * 300;
             if (score < bestScore) {
                 bestScore = score;
                 best = b;
@@ -3239,7 +3241,7 @@ final class World {
             }
             pathBudget -= 1;
             f = new int[city.w * city.h];
-            city.walkFieldFromPoints(f, new float[]{p[0]}, new float[]{p[1]}, 1);
+            city.walkFieldFromPoints(f, new float[]{p[0]}, new float[]{p[1]}, 1, 260);
             areaFields.put(a, f);
         }
         if (d < 24 || !followField(e, f, speed)) steer(e, ddx / d, ddy / d, speed);
@@ -4672,24 +4674,55 @@ final class World {
             steer(e, ddx / d, ddy / d, speed);
             return true;
         }
-        if (b.field == null && pathBudget < 1) {
-            // Too many new routes this second: head straight there for now and plan properly later
-            // (someone in no hurry strolls along the pavement meanwhile instead of cutting across the road).
-            if (keepsRules(e)) wander(e, speed * 0.7f);
-            else steer(e, ddx / d, ddy / d, speed);
-            return false;
-        }
-        if (b.field == null) {
-            pathBudget -= 1;
-            // Keep a limited number of these around.
-            if (doorPaths.size() >= 140) doorPaths.remove(0).field = null;
-            b.field = new int[city.w * city.h];
-            city.walkFieldFromPoints(b.field, new float[]{b.doorX}, new float[]{b.doorY}, 1);
-            doorPaths.add(b);
+        if (e.pathDest != b || e.path == null) {
+            if (pathBudget < 0.25f) {
+                // Too many new routes this second: plan properly in a moment
+                // (someone in no hurry strolls along the pavement meanwhile instead of cutting across the road).
+                if (keepsRules(e)) wander(e, speed * 0.7f);
+                else steer(e, ddx / d, ddy / d, speed);
+                return false;
+            }
+            pathBudget -= 0.25f;
+            e.path = city.findPath(e.x, e.y, b.doorX, b.doorY, 9000);
+            e.pathIdx = 0;
+            e.pathDest = b;
+            if (e.path == null) {
+                // No way there on foot: try again in a while.
+                e.path = new int[0];
+            }
         }
         e.blocked = false;
-        if (followField(e, b.field, speed)) return true;
+        if (followPath(e, speed)) return true;
         steer(e, ddx / d, ddy / d, speed);
+        return false;
+    }
+
+    /** Follows a walking route tile by tile, waiting at the kerb for traffic. False when there's none to follow. */
+    private boolean followPath(Entity e, float speed) {
+        int[] p = e.path;
+        if (p == null || p.length == 0) return false;
+        int w = city.w;
+        while (e.pathIdx < p.length) {
+            int t = p[e.pathIdx];
+            float px = (t % w + 0.5f) * City.T, py = (t / w + 0.5f) * City.T;
+            float dx = px - e.x, dy = py - e.y, dd = (float) Math.sqrt(dx * dx + dy * dy) + 0.001f;
+            if (dd > 60) {
+                // Pushed well off the route: plan it again.
+                e.path = null;
+                return false;
+            }
+            if (dd < 7 && e.pathIdx < p.length - 1) {
+                e.pathIdx++;
+                continue;
+            }
+            int cur = city.tileIndex(e.x, e.y);
+            if (keepsRules(e) && city.tiles[t] == City.ROAD && city.tiles[cur] != City.ROAD && carComing(px, py)) {
+                steer(e, 0, 0, 0);
+                return true;
+            }
+            steer(e, dx / dd, dy / dd, speed);
+            return true;
+        }
         return false;
     }
 

@@ -908,6 +908,9 @@ final class GameView extends View implements Menu.Host {
 
     // ------------------------------------------------------------------ world rendering
 
+    private final android.graphics.Rect mapSrc = new android.graphics.Rect();
+    private final RectF mapDst = new RectF();
+
     private void drawWorld(Canvas c) {
         c.drawColor(0xFF1B1C1F);
         c.save();
@@ -923,7 +926,12 @@ final class GameView extends View implements Menu.Host {
         world.viewY1 = camY + getHeight() / scale;
         // Realistic graphics smooth the map when zoomed in; classic keeps the crisp pixels.
         bmpPaint.setFilterBitmap(realistic || scale < 1.5f);
-        c.drawBitmap(world.city.bitmap, 0, 0, bmpPaint);
+        if (world.city.detail >= 0.999f) c.drawBitmap(world.city.bitmap, 0, 0, bmpPaint);
+        else {
+            mapSrc.set(0, 0, world.city.bitmap.getWidth(), world.city.bitmap.getHeight());
+            mapDst.set(0, 0, world.city.worldW(), world.city.worldH());
+            c.drawBitmap(world.city.bitmap, mapSrc, mapDst, bmpPaint);
+        }
 
         float vx0 = camX - 20, vy0 = camY - 20;
         float vx1 = camX + getWidth() / scale + 20, vy1 = camY + getHeight() / scale + 20;
@@ -1409,7 +1417,8 @@ final class GameView extends View implements Menu.Host {
             if (cy > b.y1) drawWall(c, b, b.x1, b.y1, b.x0, b.y1, rx1, ry1, rx0, ry1, 0.52f, windows, 1);
             if (cx < b.x0) drawWall(c, b, b.x0, b.y1, b.x0, b.y0, rx0, ry1, rx0, ry0, 0.9f, windows, 2);
             if (cx > b.x1) drawWall(c, b, b.x1, b.y0, b.x1, b.y1, rx1, ry0, rx1, ry1, 0.62f, windows, 3);
-            roofSrc.set((int) b.x0, (int) b.y0, (int) b.x1, (int) b.y1);
+            float dl = world.city.detail;
+            roofSrc.set((int) (b.x0 * dl), (int) (b.y0 * dl), (int) Math.ceil(b.x1 * dl), (int) Math.ceil(b.y1 * dl));
             roofDst.set(rx0, ry0, rx1, ry1);
             float roofA = 1 - 0.82f * see;
             bmpPaint.setAlpha((int) (255 * roofA));

@@ -2,11 +2,17 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "9.6";
-    static final int VERSION_CODE = 36;
+    static final String VERSION = "9.7";
+    static final int VERSION_CODE = 37;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "9.7  -  Tidier map, readable radio, more kinds of dead",
+                    "911 calls on the map are small tags now: \"911 12\" for twelve of the dead there, with a blue badge for the units on the way. The pulsing ring is smaller, and zoomed right out only the big calls are tagged.",
+                    "The radio and news feed slows down: new messages come up one at a time a few seconds apart and stay long enough to read. When lots happen at once the older chatter is skipped (it's all still in the log); calls for help are kept.",
+                    "Not everyone comes back the same: someone bitten now has a small chance of rising as a runner, crawler, screamer, spitter, bloater or even a brute (cops, soldiers and firefighters a bit likelier to come back as brutes). Most still come back as ordinary zombies.",
+            },
             {
                     "9.6  -  The whole city fights back",
                     "Police keep after the whole outbreak: patrols report every pack of the dead they find, so there's a call out for each part of the city under attack, not just the last 911 call. Officers with nothing to do guard their station instead of wandering off.",

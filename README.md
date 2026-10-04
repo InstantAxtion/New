@@ -192,9 +192,12 @@ counts), and wherever the dead gather the ground glows red. Labels go most impor
 - **Zombies**: brutes charge, bowling people over and smashing barricades and cars; crawlers lie in wait
   beside cars and in the grass (hard to spot until you're close); screamers that hear gunfire bring the
   neighbourhood's dead with them; on big maps hordes travel the lanes between the town and the hamlets.
+- **Turning**: most of the bitten rise as ordinary zombies, but a few come back as runners, crawlers,
+  screamers, spitters, bloaters or brutes.
 - **Wildlife**: deer and foxes live in the countryside. Deer bolting out of the woods mean something is
   coming; a fox caught by the dead can come back as a zombie dog.
-- **Seeing what's going on**: noises show as rings spreading out (how far the dead can hear them);
+- **Seeing what's going on**: 911 calls are small tags on the map ("911 12" for twelve of the dead, a blue
+  badge for units on the way); radio messages come up a few seconds apart and stay long enough to read; noises show as rings spreading out (how far the dead can hear them);
   cards say who bit whom and how many each zombie has turned; Stats shows the infection's chain from
   patient zero; the replay marks the big moments on its timeline (tap near one to jump to it).
 - **Feel**: vibration when you shoot, get hurt, crash or a blast goes off nearby (Settings: Vibration);

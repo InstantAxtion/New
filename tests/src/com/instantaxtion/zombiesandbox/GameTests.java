@@ -806,6 +806,18 @@ public final class GameTests {
                 check(stuck <= 4, stuck + " cars stuck for 20 s or more");
             }
         });
+        test("most of the bitten come back as plain zombies, a few as the other kinds", new Check() {
+            public void run() {
+                CityConfig c = new CityConfig();
+                c.seed = 3;
+                World w = new World(c);
+                int[] n = new int[Entity.TYPE_COUNT];
+                for (int i = 0; i < 20000; i++) n[w.turnType(i % 2 == 0 ? Entity.CIVILIAN : Entity.SOLDIER)]++;
+                check(n[Entity.ZOMBIE] > 14000 && n[Entity.ZOMBIE] < 16500, n[Entity.ZOMBIE] + " plain zombies of 20000");
+                for (int t : new int[]{Entity.RUNNER, Entity.CRAWLER, Entity.SCREAMER, Entity.SPITTER, Entity.BLOATER, Entity.BRUTE})
+                    check(n[t] > 200 && n[t] < 2600, n[t] + " " + Entity.NAMES[t] + "s");
+            }
+        });
         test("roof lettering stays sharp (drawn as text over the map), and a fire station looks like one", new Check() {
             public void run() {
                 CityConfig c = new CityConfig();

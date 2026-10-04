@@ -100,6 +100,17 @@ final class GameView extends View implements Menu.Host {
     private float menuTime, savedCamX, savedCamY, savedScale;
     private float fps, fpsTimer;
     private int lastMessageCount;
+    private float frameDt;
+    /**
+     * The radio feed on screen is paced: new messages wait their turn, each new line comes up a few seconds
+     * after the last and stays long enough to read. (A backlog is thinned out; everything is in the log.)
+     */
+    private final java.util.ArrayList<Dispatch.Message> feedQueue = new java.util.ArrayList<Dispatch.Message>(),
+            feedOn = new java.util.ArrayList<Dispatch.Message>();
+    private final java.util.ArrayList<Float> feedOnAge = new java.util.ArrayList<Float>();
+    private int feedSeen;
+    private float feedGap;
+    static final float FEED_LIFE = 14, FEED_EVERY = 3.5f;
     private final RectF feedRect = new RectF();
     private final RectF[] feedLines = {new RectF(), new RectF(), new RectF(), new RectF()};
     private final Dispatch.Message[] feedMsgs = new Dispatch.Message[4];
@@ -153,6 +164,7 @@ final class GameView extends View implements Menu.Host {
     private final Paint text = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint bmpPaint = new Paint();
     private final RectF oval = new RectF();
+    private final RectF oval2 = new RectF();
     private final Entity[] icons = new Entity[Entity.TYPE_COUNT];
     private final Matrix wallMatrix = new Matrix();
     private final float[] wallSrc = new float[8], wallDst = new float[8];
@@ -443,6 +455,10 @@ final class GameView extends View implements Menu.Host {
         lastAction.clear();
         tool = TOOL_PAN;
         lastMessageCount = world.dispatch.messageCount;
+        feedSeen = world.dispatch.messageCount;
+        feedQueue.clear();
+        feedOn.clear();
+        feedOnAge.clear();
         centerCamera();
         menu.screen = Menu.NONE;
     }
@@ -593,6 +609,7 @@ final class GameView extends View implements Menu.Host {
         float rawDt = (now - lastFrame) / 1e9f;
         float dt = Math.min(0.05f, rawDt);
         lastFrame = now;
+        frameDt = dt;
         if (loading) {
             loadingTime += dt;
             if (built != null) {
@@ -1616,9 +1633,9 @@ final class GameView extends View implements Menu.Host {
             float pulse = (world.time * 1.5f + i * 0.3f) % 1f;
             stroke.setStrokeWidth(2f / Math.max(0.5f, scale) + 0.6f);
             stroke.setColor(alpha(0xFFFF4A3A, 1 - pulse));
-            c.drawCircle(inc.x, inc.y, 10 + pulse * 40, stroke);
+            c.drawCircle(inc.x, inc.y, 8 + pulse * 18, stroke);
             stroke.setColor(0xCCFF4A3A);
-            c.drawCircle(inc.x, inc.y, 7, stroke);
+            c.drawCircle(inc.x, inc.y, 5, stroke);
         }
 
         if (follow != null) {
@@ -3139,20 +3156,36 @@ final class GameView extends View implements Menu.Host {
             text.setColor(0xFFFFFFFF);
             c.drawText(label, sx, sy, text);
         }
+        // 911 calls: a small tag, "911 12" (the dead there), and a blue dot with how many units are coming.
+        // Zoomed out, only the big ones.
+        text.setTextSize(9.5f * dp);
         for (int i = 0, n = world.dispatch.incidents.size(); i < n; i++) {
             Dispatch.Incident inc = world.dispatch.incidents.get(i);
-            float sx = screenX(inc.x), sy = screenY(inc.y) - 22 * dp;
-            if (sx < -60 * dp || sx > getWidth() + 60 * dp || sy < 0 || sy > barTop) continue;
+            if (scale / dp < 0.6f && inc.zombiesNear < 6) continue;
+            float sx = screenX(inc.x), sy = screenY(inc.y) - 14 * dp;
+            if (sx < -40 * dp || sx > getWidth() + 40 * dp || sy < 0 || sy > barTop) continue;
             int coming = inc.cops + inc.soldiers + world.fleet.inbound(inc);
-            String label = "911  -  " + inc.zombiesNear + (inc.zombiesNear == 1 ? " zombie" : " zombies")
-                    + (coming > 0 ? "  -  " + coming + " police on the way" : "  -  nobody sent yet");
-            float tw = text.measureText(label);
-            oval.set(sx - tw / 2 - 7 * dp, sy - 13 * dp, sx + tw / 2 + 7 * dp, sy + 5 * dp);
+            String label = "911 " + inc.zombiesNear;
+            String units = coming > 0 ? String.valueOf(coming) : null;
+            float tw = text.measureText(label), uw = units == null ? 0 : Math.max(12 * dp, text.measureText(units) + 7 * dp);
+            float w = tw + 10 * dp + (units == null ? 0 : uw + 3 * dp);
+            oval.set(sx - w / 2, sy - 10 * dp, sx + w / 2, sy + 3.5f * dp);
             if (!claim(oval)) continue;
-            fill.setColor(0xD8A01E16);
-            c.drawRoundRect(oval, 7 * dp, 7 * dp, fill);
+            fill.setColor(units == null ? 0xE0C0281E : 0xD08A1E16);
+            c.drawRoundRect(oval, 6 * dp, 6 * dp, fill);
             text.setColor(0xFFFFFFFF);
-            c.drawText(label, sx, sy, text);
+            text.setTextAlign(Paint.Align.LEFT);
+            c.drawText(label, oval.left + 5 * dp, sy, text);
+            if (units != null) {
+                float ux = oval.right - 2 * dp - uw;
+                RectF u = oval2;
+                u.set(ux, oval.top + 2 * dp, oval.right - 2 * dp, oval.bottom - 2 * dp);
+                fill.setColor(0xFF2E6AD0);
+                c.drawRoundRect(u, 5 * dp, 5 * dp, fill);
+                text.setTextAlign(Paint.Align.CENTER);
+                c.drawText(units, u.centerX(), sy, text);
+            }
+            text.setTextAlign(Paint.Align.CENTER);
         }
         text.setTextSize(10.5f * dp);
         for (int i = 0, n = world.city.buildings.size(); i < n; i++) {
@@ -3281,18 +3314,52 @@ final class GameView extends View implements Menu.Host {
         }
     }
 
+    /** Takes in new radio messages and lets them onto the screen one at a time, a few seconds apart. */
+    private void paceFeed(float dt, int maxLines) {
+        Dispatch d = world.dispatch;
+        if (d.messageCount < feedSeen) feedSeen = d.messageCount;
+        int fresh = Math.min(d.messageCount - feedSeen, d.log.size());
+        for (int i = d.log.size() - fresh; i < d.log.size(); i++) feedQueue.add(d.log.get(i));
+        feedSeen = d.messageCount;
+        // A backlog: what's old news by now is dropped (calls for help are kept over chatter).
+        while (feedQueue.size() > 4) {
+            int drop = 0;
+            for (int i = 0; i < feedQueue.size() - 1; i++)
+                if (!feedQueue.get(i).who.equals("911")) {
+                    drop = i;
+                    break;
+                }
+            feedQueue.remove(drop);
+        }
+        for (int i = feedOn.size() - 1; i >= 0; i--) {
+            float age = feedOnAge.get(i) + dt;
+            if (age > FEED_LIFE) {
+                feedOn.remove(i);
+                feedOnAge.remove(i);
+            } else feedOnAge.set(i, age);
+        }
+        feedGap -= dt;
+        if (!feedQueue.isEmpty() && feedGap <= 0) {
+            // Full: the oldest line makes way (but only once it's been up a while).
+            if (feedOn.size() >= maxLines && feedOnAge.get(0) < 6) return;
+            if (feedOn.size() >= maxLines) {
+                feedOn.remove(0);
+                feedOnAge.remove(0);
+            }
+            feedOn.add(feedQueue.remove(0));
+            feedOnAge.add(0f);
+            feedGap = FEED_EVERY;
+        }
+    }
+
     /** The last few radio messages. Tapping one moves the camera to where it happened. */
     private void drawFeed(Canvas c) {
         feedCount = 0;
         feedBottom = 0;
         if (!settings.radio()) return;
-        java.util.ArrayList<Dispatch.Message> log = world.dispatch.log;
-        int shown = 0;
         int maxLines = portrait ? 2 : 3;
-        for (int i = log.size() - 1; i >= 0 && shown < maxLines; i--) {
-            if (log.get(i).age > 16) break;
-            shown++;
-        }
+        paceFeed(frameDt, maxLines);
+        int shown = feedOn.size();
         float lineH = 22 * dp, gap = 3 * dp, y = feedRect.top;
         // In portrait the war meter sits where the messages start: they go below it.
         if (portrait && meterBottom > 0) y = Math.max(y, meterBottom + 8 * dp);
@@ -3302,8 +3369,10 @@ final class GameView extends View implements Menu.Host {
         feedBottom = y;
         text.setTextSize(11.5f * dp);
         for (int k = 0; k < shown; k++) {
-            Dispatch.Message m = log.get(log.size() - shown + k);
-            float a = Math.min(1, (16 - m.age) / 2f);
+            int idx = feedOn.size() - shown + k;
+            Dispatch.Message m = feedOn.get(idx);
+            float age = feedOnAge.get(idx);
+            float a = Math.min(Math.min(1, age / 0.3f), (FEED_LIFE - age) / 1.5f);
             String who = m.who + ": ";
             text.setTextAlign(Paint.Align.LEFT);
             float whoW = text.measureText(who);

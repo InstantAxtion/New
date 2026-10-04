@@ -6198,7 +6198,7 @@ final class World {
                 }
             }
             if (b.barricade <= 0 || turnedInside) {
-                if (turnedInside) spawn(Entity.ZOMBIE, b.doorX, b.doorY);
+                if (turnedInside) spawn(turnType(Entity.CIVILIAN), b.doorX, b.doorY);
                 dispatch.say(Dispatch.WHO_INFO, null, "Zombies broke into a building on " + city.placeName(b.doorX, b.doorY)
                         + "! " + b.occupants.size() + (b.occupants.size() == 1 ? " person" : " people") + " fleeing.", b.doorX, b.doorY);
                 int lost = 0;
@@ -6245,7 +6245,7 @@ final class World {
         for (int k = 0; k < n; k++) {
             float[] p = city.findWalkable(b.doorX + rnd.nextFloat() * 12 - 6, b.doorY + rnd.nextFloat() * 12 - 6);
             if (p == null) break;
-            Entity z = spawn(rnd.nextFloat() < 0.15f ? Entity.RUNNER : Entity.ZOMBIE, p[0], p[1]);
+            Entity z = spawn(turnType(Entity.CIVILIAN), p[0], p[1]);
             if (z != null) z.fresh = 0;
         }
         emit(Sfx.THUD, b.doorX, b.doorY);
@@ -6754,9 +6754,7 @@ final class World {
             reveal(TR_RESTLESS);
         }
         c.rise = turns ? 2.5f + rnd.nextFloat() * 3f : -1;
-        float roll = rnd.nextFloat();
-        c.riseType = e.type == Entity.DOG ? Entity.ZOMBIE_DOG
-                : roll < 0.14f ? Entity.RUNNER : roll < 0.18f ? Entity.SCREAMER : roll < 0.22f ? Entity.CRAWLER : Entity.ZOMBIE;
+        c.riseType = e.type == Entity.DOG ? Entity.ZOMBIE_DOG : turnType(e.type);
         if (e.gibbed) {
             bloodBurst(e.x, e.y, 14, 0, 0);
             if (rnd.nextBoolean()) return;
@@ -6769,6 +6767,27 @@ final class World {
                     break;
                 }
         }
+    }
+
+    /**
+     * What someone comes back as. Most are ordinary zombies, but now and then one turns into one of the
+     * other kinds (a big soldier or cop is likelier to come back a brute).
+     */
+    int turnType(int was) {
+        float roll = rnd.nextFloat();
+        float brute = was == Entity.SOLDIER || was == Entity.COP || was == Entity.FIREFIGHTER ? 0.05f : 0.02f;
+        if (roll < 0.11f) return Entity.RUNNER;
+        roll -= 0.11f;
+        if (roll < 0.04f) return Entity.CRAWLER;
+        roll -= 0.04f;
+        if (roll < 0.03f) return Entity.SCREAMER;
+        roll -= 0.03f;
+        if (roll < 0.03f) return Entity.SPITTER;
+        roll -= 0.03f;
+        if (roll < 0.025f) return Entity.BLOATER;
+        roll -= 0.025f;
+        if (roll < brute) return Entity.BRUTE;
+        return Entity.ZOMBIE;
     }
 
     private void updateCorpses(float dt) {

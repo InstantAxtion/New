@@ -462,7 +462,7 @@ final class World {
         applyReadiness();
         spawnBirds();
         spawnWildlife();
-        fleet.trafficTarget = new int[]{0, 8, 16}[cfg.traffic()] * city.w / 96;
+        fleet.trafficTarget = Fleet.trafficFor(city);
         fleet.spawnTraffic(fleet.trafficTarget);
         // Zombies start in a few small outbreaks rather than spread evenly.
         int left = cfg.zombies();
@@ -1146,7 +1146,7 @@ final class World {
         fieldTimer = 0;
         spawnBirds();
         spawnWildlife();
-        fleet.trafficTarget = new int[]{0, 8, 16}[city.cfg.traffic()] * city.w / 96;
+        fleet.trafficTarget = Fleet.trafficFor(city);
         fleet.spawnTraffic(fleet.trafficTarget);
         buildHash();
         city.computeFields(entities);

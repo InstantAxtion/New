@@ -237,7 +237,15 @@ final class Fleet {
         for (int tries = 0; tries < 12; tries++) {
             float[] d = randomRoad();
             if (d == null || Math.hypot(d[0] - v.x, d[1] - v.y) < (tries < 6 ? 400 : 160)) continue;
-            if (route(v, d[0], d[1])) return true;
+            // Somewhere on ahead, as a rule: a car doesn't spin round in the road for its next trip.
+            float hx = (float) Math.cos(v.angle), hy = (float) Math.sin(v.angle);
+            if (tries < 8 && (d[0] - v.x) * hx + (d[1] - v.y) * hy < 0) continue;
+            if (route(v, d[0], d[1])) {
+                if (tries >= 3 || v.type != CAR) return true;
+                // And the way there starts ahead too (not a U-turn across the lanes).
+                int t = city.tileIndex(v.x, v.y), n = downhill(v.field, t);
+                if (n == t || (n % city.w - t % city.w) * hx + (n / city.w - t / city.w) * hy > -0.5f) return true;
+            }
         }
         return false;
     }
@@ -587,6 +595,12 @@ final class Fleet {
     }
 
     int trafficTarget;
+
+    /** How many cars are about: as many to a street as on a small map, so it grows with the map's area. */
+    static int trafficFor(City city) {
+        int base = new int[]{0, 12, 24}[city.cfg.traffic()];
+        return Math.min(base * 10, (int) (base * (long) city.w * city.h / (96 * 128)));
+    }
     private float trafficTimer, trainTimer = 20;
 
     /** A train is on the line near this car's crossing: wait. */
@@ -695,7 +709,9 @@ final class Fleet {
             // Old wrecks and parked cars are towed away, but never while you're watching.
             for (int i = vehicles.size() - 1; i >= 0; i--) {
                 Vehicle o = vehicles.get(i);
-                if (o.parked && o.block == null && o.riders.isEmpty() && o.player == null && ++parked > 25 && !inView(o.x, o.y))
+                // (A wreck left in the middle of a junction goes first.)
+                boolean blocking = o.parked && city.junctionIdAt(o.x, o.y) >= 0;
+                if (o.parked && o.block == null && o.riders.isEmpty() && o.player == null && (++parked > 25 || blocking) && !inView(o.x, o.y))
                     vehicles.remove(i);
             }
         }
@@ -1138,6 +1154,19 @@ final class Fleet {
         int ddx = bx - tx, ddy = by - ty;
         // Keep to your own side of the road (left in Australia and Japan), in the middle of the lane.
         float off = city.laneOffset(bx, by, ddx, ddy);
+        // Into a junction in your own lane (measured on the road you're on): the turn is made inside it,
+        // not by cutting across the lanes before the stop line.
+        if (ddx * v.pdx + ddy * v.pdy > 0 && city.junctionIdAt((bx + 0.5f) * City.T, (by + 0.5f) * City.T) >= 0
+                && city.junctionIdAt((tx + 0.5f) * City.T, (ty + 0.5f) * City.T) < 0)
+            off = city.laneOffset(tx, ty, ddx, ddy);
+        // A step across the road outside a junction (a U-turn mid-block, or pulling out from the far kerb):
+        // straight over, slowly, not along a "lane" that runs the wrong way.
+        int rd = city.junctionIdAt(v.x, v.y) < 0 && city.junctionIdAt((bx + 0.5f) * City.T, (by + 0.5f) * City.T) < 0
+                ? city.roadDirAt(bx, by) : 0;
+        if ((rd == 1 && ddx != 0) || (rd == 2 && ddy != 0)) {
+            off = 0;
+            max = Math.min(max, 22);
+        }
         float gx = bx * City.T + City.T / 2f - ddy * off, gy = by * City.T + City.T / 2f + ddx * off;
         if (Math.hypot(gx - v.x, gy - v.y) < 11 || ((v.x - (bx + 0.5f) * City.T) * ddx + (v.y - (by + 0.5f) * City.T) * ddy) > -2) {
             v.pathT = by * W + bx;
@@ -1145,6 +1174,22 @@ final class Fleet {
             if (city.junctionIdAt(v.x, v.y) < 0) {
                 v.pdx = ddx;
                 v.pdy = ddy;
+            }
+        }
+        // Slow down for a turn coming up on the route: round a corner at a walking-pace crawl, not at cruising speed.
+        // (Emergency vehicles take corners a bit quicker.)
+        {
+            float round = v.type == CAR ? 26 : 38;
+            int t = v.pathT, steps = 0;
+            for (; steps < 4; steps++) {
+                int n = downhill(v.field, t);
+                if (n == t) break;
+                int sx = n % W - t % W, sy = n / W - t / W;
+                if (sx != ddx || sy != ddy) {
+                    max = Math.min(max, round + steps * City.T * 0.9f);
+                    break;
+                }
+                t = n;
             }
         }
         float want = (float) Math.atan2(gy - v.y, gx - v.x);

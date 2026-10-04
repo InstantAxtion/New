@@ -771,14 +771,15 @@ public final class GameTests {
                     World w = new World(c);
                     w.populate(c);
                     w.fleet.spawnTraffic(60);
-                    int found = 0, buses = 0;
+                    int found = 0, buses = 0, cars = 0;
                     for (Fleet.Vehicle v : w.fleet.vehicles) {
                         if (v.type != Fleet.CAR) continue;
+                        cars++;
                         if (v.model == wv[1]) found++;
                         if (v.model == Fleet.M_BUS) buses++;
                     }
                     check(found > 0, Country.NAMES[wv[0]] + " has its own cars");
-                    check(buses <= 6, "only a few buses");
+                    check(buses <= Math.max(6, cars / 10), "only a few buses");
                     for (int s = 0; s < 30 * 20; s++) w.update(1 / 30f);
                 }
                 check(Fleet.MODEL_HL[Fleet.M_BUS] > Fleet.MODEL_HL[Fleet.M_SEDAN] && Fleet.MODEL_HL[Fleet.M_KEI] < Fleet.MODEL_HL[Fleet.M_SEDAN],

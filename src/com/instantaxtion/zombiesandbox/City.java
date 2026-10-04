@@ -645,15 +645,18 @@ final class City {
         streets.add(st);
     }
 
-    /**
-     * Splits a rectangle of city with a street, then splits each side again, until the pieces are block
-     * sized. Big pieces get main roads; the two sides are split independently, so streets usually don't
-     * line up across a main road: offset crossings and T-junctions instead of a grid. A hint lets the
-     * second side sometimes continue a street from the first. Leaves become blocks.
-     */
-    /** Where streets have been laid out so far (columns of north-south ones, rows of east-west ones). */
+    /** Where streets have been laid out so far: centres (doubled) of north-south and east-west ones. */
     private final List<Integer> vLines = new ArrayList<Integer>(), hLines = new ArrayList<Integer>();
 
+    /** Marks a split's returned street centre as a north-south street. */
+    private static final int VERT = 1 << 20;
+
+    /**
+     * Splits a rectangle of city with a street, then splits each side again, until the pieces are block
+     * sized. Big pieces get main roads. Streets carry on straight across junctions: the second side continues
+     * the first side's street, or a street lines up with one already laid elsewhere in town; only now and
+     * then (more in the old town) does a street jog. Leaves become blocks. Returns the street's centre.
+     */
     private int split(int x0, int y0, int x1, int y1, int depth, int hintX, int hintY) {
         int bw = x1 - x0, bh = y1 - y0;
         float cx = (x0 + x1) / 2f - w / 2f, cy = (y0 + y1) / 2f - h / 2f;
@@ -703,20 +706,25 @@ final class City {
         int at = lo + rnd.nextInt(hi - lo + 1);
         // Carry on the neighbouring street now and then, so some roads run on straight.
         // Streets carry on across junctions far more often than not (a jog at every crossing makes no sense).
-        float align = cfg.layout() == 0 ? 0.92f : cfg.layout() == 1 ? 0.8f : 0.6f;
-        // Old streets wander; downtown is laid out on a grid.
-        if (dt == DT_OLDTOWN) align = 0.45f;
-        else if (dt == DT_DOWNTOWN) align = Math.max(align, 0.7f);
+        float align = cfg.layout() == 0 ? 0.97f : cfg.layout() == 1 ? 0.9f : 0.75f;
+        // Old streets wander a little; downtown is laid out on a grid.
+        if (dt == DT_OLDTOWN) align = 0.6f;
+        else if (dt == DT_DOWNTOWN) align = Math.max(align, 0.95f);
+        // Lines are kept as street centres (doubled, so odd widths stay exact): a narrow street lines up
+        // with the middle of a wide one, not with its edge.
         int hint = vertical ? hintX : hintY;
-        if (hint >= lo && hint <= hi && rnd.nextFloat() < align) at = hint;
-        else if (rnd.nextFloat() < align) {
+        int wideLo = (vertical ? x0 : y0) + minSide, wideHi = (vertical ? x1 : y1) - roadW - minSide;
+        if (hint >= 0 && rnd.nextFloat() < align) {
+            int h0 = (hint - roadW) / 2;
+            if (h0 >= wideLo && h0 <= wideHi) at = h0;
+        } else if (rnd.nextFloat() < align) {
             // Line up with a street already laid out elsewhere in town, so streets run straight across
             // the map instead of jogging at every junction.
             List<Integer> lines = vertical ? vLines : hLines;
             int best = -1, bd = Integer.MAX_VALUE, mid = (lo + hi) / 2;
             for (int k = 0; k < lines.size(); k++) {
-                int l = lines.get(k);
-                if (l < lo || l > hi) continue;
+                int l = (lines.get(k) - roadW) / 2;
+                if (l < wideLo || l > wideHi) continue;
                 if (Math.abs(l - mid) < bd) {
                     bd = Math.abs(l - mid);
                     best = l;
@@ -724,18 +732,21 @@ final class City {
             }
             if (best >= 0) at = best;
         }
-        (vertical ? vLines : hLines).add(at);
+        (vertical ? vLines : hLines).add(at * 2 + roadW);
         Street st = vertical ? new Street(at, y0, at + roadW, y1, true, big) : new Street(x0, at, x1, at + roadW, false, big);
         carve(st);
+        // The first side's own street, when it runs across this one, is carried on into the second side.
         int nextHint;
         if (vertical) {
             nextHint = split(x0, y0, at, y1, depth + 1, -1, hintY);
-            split(at + roadW, y0, x1, y1, depth + 1, -1, nextHint >= 0 ? nextHint : hintY);
+            boolean across = nextHint >= 0 && (nextHint & VERT) == 0;
+            split(at + roadW, y0, x1, y1, depth + 1, -1, across ? nextHint : hintY);
         } else {
             nextHint = split(x0, y0, x1, at, depth + 1, hintX, -1);
-            split(x0, at + roadW, x1, y1, depth + 1, nextHint >= 0 ? nextHint : hintX, -1);
+            boolean across = nextHint >= 0 && (nextHint & VERT) != 0;
+            split(x0, at + roadW, x1, y1, depth + 1, across ? nextHint & ~VERT : hintX, -1);
         }
-        return at;
+        return (at * 2 + roadW) | (vertical ? VERT : 0);
     }
 
     private void generate() {
@@ -1033,6 +1044,15 @@ final class City {
                 boolean vertical = dir == 1;
                 boolean kerb = vertical ? !isRoad(x - 1, y) || !isRoad(x + 1, y) : !isRoad(x, y - 1) || !isRoad(x, y + 1);
                 if (!kerb) continue;
+                // Only where the road is wide enough to drive past, and well back from any junction.
+                int ox = vertical ? (!isRoad(x - 1, y) ? -1 : 1) : 0, oy = vertical ? 0 : (!isRoad(x, y - 1) ? -1 : 1);
+                int width = 0;
+                while (width < 8 && isRoad(x - ox * width, y - oy * width)) width++;
+                if (width < 4) continue;
+                boolean nearJunction = false;
+                for (int k = -6; k <= 6 && !nearJunction; k++)
+                    if (vertical ? isRoad(x + ox, y + k) : isRoad(x + k, y + oy)) nearJunction = true;
+                if (nearJunction) continue;
                 tiles[y * w + x] = CAR;
             }
         }
@@ -3275,17 +3295,20 @@ final class City {
                 p.setColor(0xFF4A6E8A);
                 c.drawRect(x1 - 15, y0 + 5, x1 - 11, y0 + 8, p);
                 // The crane: a mast with a long jib, and its shadow on the ground.
-                float mx = fx1 - 4, my = fy1 - 4, ang = variant * 1.4f + 0.4f, jl = Math.max(dw, dh) * 0.9f;
+                // The jib swings over the site (never out over the street or the next block).
+                float mx = fx1 - 4, my = fy1 - 4, ang = (float) Math.PI + 0.25f + (variant % 4) * 0.35f;
                 float jx = (float) Math.cos(ang), jy = (float) Math.sin(ang);
+                float jl = 0.92f * Math.min((mx - x0) / Math.max(0.05f, -jx), (my - y0) / Math.max(0.05f, -jy));
+                float cj = Math.min(jl * 0.25f, Math.min((x1 - mx) / Math.max(0.05f, -jx), (y1 - my) / Math.max(0.05f, -jy)));
                 p.setStrokeWidth(3f);
                 p.setColor(0x40000000);
-                c.drawLine(mx + 10 - jx * jl * 0.25f, my + 14 - jy * jl * 0.25f, mx + 10 + jx * jl, my + 14 + jy * jl, p);
+                c.drawLine(mx + 10 - jx * cj, my + 14 - jy * cj, mx + 10 + jx * jl, my + 14 + jy * jl, p);
                 p.setColor(0xFFE8B830);
                 c.drawRect(mx - 3, my - 3, mx + 3, my + 3, p);
                 p.setStrokeWidth(2.2f);
-                c.drawLine(mx - jx * jl * 0.25f, my - jy * jl * 0.25f, mx + jx * jl, my + jy * jl, p);
+                c.drawLine(mx - jx * cj, my - jy * cj, mx + jx * jl, my + jy * jl, p);
                 p.setColor(0xFF6A6A6A);
-                c.drawRect(mx - jx * jl * 0.25f - 3, my - jy * jl * 0.25f - 3, mx - jx * jl * 0.25f + 3, my - jy * jl * 0.25f + 3, p);
+                c.drawRect(mx - jx * cj - 3, my - jy * cj - 3, mx - jx * cj + 3, my - jy * cj + 3, p);
                 p.setStrokeWidth(1f);
                 break;
             }
@@ -4521,6 +4544,12 @@ final class City {
                 if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
                 int n = ny * w + nx, c = driveCost(n);
                 if (strict && c > 4) continue;
+                // A step across the road (from lane to lane) outside a junction is a last resort: routes keep
+                // to their row of the road and only change rows at the junctions, so cars don't swerve over.
+                if (strict && c >= 0 && junctionId[n] < 0 && junctionId[t] < 0) {
+                    byte rd = roadDir[n];
+                    if ((rd == 1 && k < 2) || (rd == 2 && k >= 2)) c += 14;
+                }
                 if (c < 0 || d + c >= dist[n]) continue;
                 dist[n] = d + c;
                 pq.add(((long) dist[n] << 24) | n);

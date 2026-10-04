@@ -259,8 +259,137 @@ final class Dispatch {
         militaryCd -= step;
         policeCd -= step;
         census();
+        sweep(step);
         updateIncidents(step);
+        mobilise(step);
         updateZones(step);
+    }
+
+    private float sweepCd = 3, mobiliseCd = 2;
+
+    /**
+     * Command keeps the whole outbreak in mind, not just the last 911 call: once the city knows, every few
+     * seconds the worst clusters of the dead that nobody is dealing with become calls of their own (sightings
+     * from patrols, cameras and the public), so units clearing one scene are sent straight on to the next.
+     */
+    private void sweep(float step) {
+        sweepCd -= step;
+        if (sweepCd > 0 || w.alert < 1) return;
+        sweepCd = 3;
+        int max = city.w >= 400 ? 18 : city.w >= 300 ? 14 : 12;
+        if (incidents.size() >= max) return;
+        int cell = 192, gw = (int) (city.worldW() / cell) + 1, gh = (int) (city.worldH() / cell) + 1;
+        int[] count = new int[gw * gh];
+        float[] sx = new float[gw * gh], sy = new float[gw * gh];
+        for (int i = 0, n = w.entities.size(); i < n; i++) {
+            Entity z = w.entities.get(i);
+            if (z.dead || !z.isZombie() || z.hidden) continue;
+            int c = Math.min(gh - 1, (int) (z.y / cell)) * gw + Math.min(gw - 1, (int) (z.x / cell));
+            count[c]++;
+            sx[c] += z.x;
+            sy[c] += z.y;
+        }
+        int least = w.alert >= 2 ? 1 : 2;
+        for (int made = 0; made < 1 && incidents.size() < max; made++) {
+            int best = -1;
+            for (int c = 0; c < count.length; c++) {
+                if (count[c] < least || (best >= 0 && count[c] <= count[best])) continue;
+                float cx = sx[c] / count[c], cy = sy[c] / count[c];
+                boolean covered = false;
+                for (int i = 0; i < incidents.size() && !covered; i++) {
+                    Incident inc = incidents.get(i);
+                    if ((inc.x - cx) * (inc.x - cx) + (inc.y - cy) * (inc.y - cy) < 260 * 260) covered = true;
+                }
+                if (!covered) best = c;
+            }
+            if (best < 0) return;
+            float cx = sx[best] / count[best], cy = sy[best] / count[best];
+            count[best] = 0;
+            float[] p = city.findWalkable(cx, cy);
+            if (p == null) continue;
+            Incident inc = new Incident();
+            inc.x = p[0];
+            inc.y = p[1];
+            inc.place = city.placeName(p[0], p[1]);
+            inc.reported = inc.lastLogged = Math.max(1, w.countZombiesNear(p[0], p[1], 140));
+            inc.field = new int[city.w * city.h];
+            city.walkFieldFromPoints(inc.field, new float[]{inc.x}, new float[]{inc.y}, 1);
+            incidents.add(inc);
+            say(WHO_POLICE, null, "Dispatch: Patrols report " + inc.reported + " of them at " + inc.place
+                    + ". All available units.", inc.x, inc.y);
+        }
+    }
+
+    /**
+     * Once the city is at full alert, the army doesn't sit at the base: free squads mount up and go to the
+     * worst fighting the police have (by truck from the base when it's a long way), a squad to a call.
+     */
+    private void mobilise(float step) {
+        mobiliseCd -= step;
+        if (mobiliseCd > 0) return;
+        mobiliseCd = 2;
+        boolean war = w.alert >= 2;
+        // The calls that need soldiers, worst first.
+        Incident target = null;
+        for (int i = 0; i < incidents.size(); i++) {
+            Incident inc = incidents.get(i);
+            if (inc.resolved) continue;
+            int have = inc.soldiers + w.fleet.inboundSoldiers(inc);
+            boolean wants = inc.militaryRequested || (war && inc.zombiesNear >= 3);
+            if (!wants || have >= 3) continue;
+            if (target == null || inc.zombiesNear > target.zombiesNear) target = inc;
+        }
+        if (target == null) return;
+        // Free squads (the National Guard looks after the safe zones), nearest first; one stays home unless
+        // the war is on.
+        java.util.HashMap<Integer, ArrayList<Entity>> squads = new java.util.HashMap<Integer, ArrayList<Entity>>();
+        for (int i = 0, n = w.entities.size(); i < n; i++) {
+            Entity e = w.entities.get(i);
+            if (e.dead || e.type != Entity.SOLDIER || e.task != T_NONE || e.role == Entity.ROLE_GUARD || e.rig != null) continue;
+            if (e.ammo <= 0 && e.reserve <= 0) continue;
+            ArrayList<Entity> sq = squads.get(e.squad);
+            if (sq == null) squads.put(e.squad, sq = new ArrayList<Entity>());
+            sq.add(e);
+        }
+        if (squads.isEmpty() || (!war && squads.size() < 2)) return;
+        ArrayList<Entity> pick = null;
+        float bd = Float.MAX_VALUE, px = 0, py = 0;
+        for (ArrayList<Entity> sq : squads.values()) {
+            float x = 0, y = 0;
+            for (Entity e : sq) {
+                x += e.x;
+                y += e.y;
+            }
+            x /= sq.size();
+            y /= sq.size();
+            float d = (x - target.x) * (x - target.x) + (y - target.y) * (y - target.y);
+            if (d < bd) {
+                bd = d;
+                pick = sq;
+                px = x;
+                py = y;
+            }
+        }
+        Entity lead = pick.get(0);
+        for (Entity e : pick) if (e.role == Entity.ROLE_COMMANDER) lead = e;
+        String squadName = SQUADS[Math.max(0, lead.squad) % SQUADS.length];
+        // A long way from the base: by truck.
+        City.Facility base = city.nearestFacility(City.FACILITY_BASE, px, py);
+        boolean atBase = base != null && Math.hypot(base.x - px, base.y - py) < Math.max(200, base.r * 2.5f);
+        if (atBase && bd > 600 * 600 && w.fleet.troopTruck(pick, base, target)) {
+            say(WHO_MILITARY, null, "Command: " + squadName + " squad, mount up. Support the police at " + target.place + ".",
+                    target.x, target.y);
+            target.militaryRequested = true;
+            return;
+        }
+        for (Entity e : pick) {
+            e.task = T_RESPOND;
+            e.incident = target;
+            e.onScene = false;
+            target.soldiers++;
+        }
+        target.militaryRequested = true;
+        say(WHO_MILITARY, lead, squadName + " squad moving to " + target.place + " to support the police.", target.x, target.y);
     }
 
     private void census() {
@@ -462,7 +591,7 @@ final class Dispatch {
                 resolve(inc);
                 continue;
             }
-            int need = Math.min(4, 1 + inc.zombiesNear / 3);
+            int need = w.alert >= 2 ? Math.min(6, 2 + inc.zombiesNear / 3) : Math.min(4, 1 + inc.zombiesNear / 3);
             int have = inc.cops + inc.soldiers + w.fleet.inbound(inc);
             // The nearest patrol car takes the call first; officers on foot make up the rest.
             if (have < need) {

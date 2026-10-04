@@ -599,15 +599,46 @@ final class City {
         return out;
     }
 
+    /**
+     * Lettering on the roofs (shop names, POLICE, FIRE...): kept as text and drawn over the map by the view at
+     * screen resolution, instead of into the map picture where it blurs as soon as you zoom in.
+     */
+    static final class Label {
+        final String text;
+        final float x, y, size;
+        final int color, building;
+
+        Label(String text, float x, float y, float size, int color, int building) {
+            this.text = text;
+            this.x = x;
+            this.y = y;
+            this.size = size;
+            this.color = color;
+            this.building = building;
+        }
+    }
+
+    final List<Label> labels = new ArrayList<Label>();
+    private boolean collectLabels;
+
+    void label(String text, float x, float y, float size, int color) {
+        if (!collectLabels) return;
+        int tx = Math.max(0, Math.min(w - 1, (int) (x / T))), ty = Math.max(0, Math.min(h - 1, (int) (y / T)));
+        labels.add(new Label(text, x, y, size, color, buildingAt[ty * w + tx]));
+    }
+
     /** Draws (or redraws, after the Graphics setting changes) the ground bitmap. */
     synchronized void redraw() {
         renderVersion++;
+        labels.clear();
         trees.clear();
         computeJunctions();
         Canvas canvas = new Canvas(bitmap);
         if (detail != 1f) canvas.scale(detail, detail);
         drawnRealistic = realistic;
+        collectLabels = true;
         render(canvas);
+        collectLabels = false;
         for (Building b : buildings) if (b.collapsed) drawRubble(b);
     }
 
@@ -1232,8 +1263,11 @@ final class City {
     }
 
     /** A precinct with police cruisers, or a hospital with ambulances, parked next to it. */
+    private boolean spareEngine;
+
     private void serviceBuilding(int x, int y, int bw, int bh, int kind, int number) {
         fill(x, y, bw, bh, LOT);
+        spareEngine = false;
         boolean wide = bw >= bh;
         int sw = wide ? Math.max(3, bw / 2 - 1) : bw - 2, sh = wide ? bh - 2 : Math.max(3, bh / 2 - 1);
         addFacilityLot(x + 1, y + 1, sw, sh, kind, kind == HOSPITAL ? 4 : kind == FIRE_STATION ? 2 : 3);
@@ -1241,9 +1275,13 @@ final class City {
         int lw = wide ? bw - sw - 2 : bw, lh = wide ? bh : bh - sh - 2;
         for (int j = ly + 1; j < ly + lh - 1; j += 3)
             for (int i = lx + 1; i < lx + lw - 1; i++)
-                if (rnd.nextFloat() < (kind == HOSPITAL ? 0.35f : kind == FIRE_STATION ? 0.45f : 0.6f)) {
+                if (rnd.nextFloat() < (kind == HOSPITAL ? 0.35f : kind == FIRE_STATION ? 0.2f : 0.6f)) {
                     tiles[j * w + i] = CAR;
-                    carKind[j * w + i] = (byte) (kind == HOSPITAL ? 3 : kind == FIRE_STATION ? 4 : 1);
+                    // (At a fire station: the crew's own cars, and a spare engine at most. Its engine is the real
+                    // one, out on the apron.)
+                    boolean spare = kind == FIRE_STATION && !spareEngine && rnd.nextFloat() < 0.3f;
+                    if (spare) spareEngine = true;
+                    carKind[j * w + i] = (byte) (kind == HOSPITAL ? 3 : kind == FIRE_STATION ? (spare ? 4 : 0) : 1);
                 }
         float cx = (lx + lw / 2f) * T, cy = (ly + lh / 2f) * T;
         float[] c = findWalkable(cx, cy);
@@ -4919,9 +4957,7 @@ final class City {
             p.setColor(0xFFFFFFFF);
             p.setTextAlign(Paint.Align.CENTER);
             p.setTextSize(Math.min(10f, bw / 5.2f));
-            p.setFakeBoldText(true);
-            c.drawText(country.sign("POLICE"), (x0 + x1) / 2, (y0 + y1) / 2 + 3.5f, p);
-            p.setFakeBoldText(false);
+            label(country.sign("POLICE"), (x0 + x1) / 2, (y0 + y1) / 2 + 3.5f, Math.min(10f, bw / 5.2f), 0xFFFFFFFF);
             p.setColor(0xFFE8C547);
             c.drawCircle((x0 + x1) / 2, y0 + Math.min(bh * 0.25f, 12), 3.2f, p);
             return;
@@ -4940,9 +4976,8 @@ final class City {
             p.setColor(kind == FIRE_STATION ? 0xFFFFFFFF : kind == KIOSK ? 0xFFD83A3A : 0xFF3A3A3A);
             p.setTextAlign(Paint.Align.CENTER);
             p.setTextSize(Math.min(10f, bw / (label.length() * 0.75f)));
-            p.setFakeBoldText(true);
-            c.drawText(label, (x0 + x1) / 2, (y0 + y1) / 2 + 3.5f, p);
-            p.setFakeBoldText(false);
+            label(label, (x0 + x1) / 2, (y0 + y1) / 2 + 3.5f, Math.min(10f, bw / (label.length() * 0.75f)),
+                    kind == FIRE_STATION ? 0xFFFFFFFF : kind == KIOSK ? 0xFFD83A3A : 0xFF3A3A3A);
             return;
         }
         if (kind == CHURCH || kind == CRYPT) {
@@ -5609,7 +5644,20 @@ final class City {
 
     /** With strict on, only roads and dirt tracks: everyday traffic doesn't cut across pavements and car parks. */
     boolean driveField(int[] dist, float x, float y, boolean strict) {
+        return driveField(dist, x, y, strict, -1);
+    }
+
+    /**
+     * As above, but done once the search has got back to the vehicle at tile from (and a little beyond, for the
+     * lanes either side of its way): a trip across town needn't cost a search of the whole map. Tiles further
+     * out are left FAR.
+     */
+    boolean driveField(int[] dist, float x, float y, boolean strict, int from) {
         Arrays.fill(dist, FAR);
+        int fx = from < 0 ? -9 : from % w, fy = from < 0 ? -9 : from / w, stopAt = Integer.MAX_VALUE;
+        // (Its own tile, if it's on the road: a tile near it may be the far carriageway, a long way round.)
+        int fc = from < 0 ? -1 : driveCost(from);
+        boolean fromRoad = fc >= 0 && (!strict || fc <= 4);
         float[] p = nearestDrivable(x, y);
         if (p == null) return false;
         // Dial's algorithm: step costs are small whole numbers, so a ring of buckets (one per distance) does
@@ -5622,13 +5670,15 @@ final class City {
         dist[s0] = 0;
         dialPush(s0, 0);
         int left = 1;
-        for (int d = 0; left > 0; d++) {
+        for (int d = 0; left > 0 && d <= stopAt; d++) {
           int bk = d & 31;
           while (dialN[bk] > 0) {
             int t = dialB[bk][--dialN[bk]];
             left--;
             if (dist[t] != d) continue;
             int tx = t % w, ty = t / w;
+            // Back at the vehicle: finish off the lanes round it, then stop.
+            if (stopAt == Integer.MAX_VALUE && (fromRoad ? t == from : Math.abs(tx - fx) <= 1 && Math.abs(ty - fy) <= 1)) stopAt = d + 160;
             for (int k = 0; k < 4; k++) {
                 int nx = tx + (k == 0 ? 1 : k == 1 ? -1 : 0), ny = ty + (k == 2 ? 1 : k == 3 ? -1 : 0);
                 if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
@@ -5650,6 +5700,7 @@ final class City {
             }
           }
         }
+        for (int b = 0; b < 32; b++) dialN[b] = 0;
         return true;
     }
 
@@ -5813,7 +5864,62 @@ final class City {
     }
 
     /** Traffic lights: 0 green, 1 amber, 2 red for traffic going north-south (vertical) or east-west. */
+    /**
+     * Traffic lights that answer to the traffic: each set stays green while its own traffic flows and nobody
+     * waits the other way; with someone waiting, it changes after a short minimum green (or a longer maximum, if
+     * its own traffic keeps coming). Phases: 0 north-south green, 1 its amber, 2 all red, 3 east-west green,
+     * 4 its amber, 5 all red.
+     */
+    private byte[] lightPhase;
+    private float[] lightT;
+    private int[] demandNS, demandEW;
+
+    private void initLights() {
+        int n = junctions.size();
+        lightPhase = new byte[n];
+        lightT = new float[n];
+        demandNS = new int[n];
+        demandEW = new int[n];
+        for (int i = 0; i < n; i++) {
+            lightPhase[i] = (byte) ((i * 7919) % 2 == 0 ? 0 : 3);
+            lightT[i] = (i * 31) % 6;
+        }
+    }
+
+    /** A vehicle coming up to lights, heading north-south (vertical) or east-west. */
+    void lightDemand(int id, boolean vertical) {
+        if (demandNS == null || id < 0 || id >= demandNS.length) return;
+        if (vertical) demandNS[id]++;
+        else demandEW[id]++;
+    }
+
+    void updateLights(float dt) {
+        if (lightPhase == null || lightPhase.length != junctions.size()) initLights();
+        for (int i = 0; i < lightPhase.length; i++) {
+            lightT[i] += dt;
+            int p = lightPhase[i];
+            float t = lightT[i];
+            boolean nsGreen = p == 0;
+            if (p == 0 || p == 3) {
+                int mine = nsGreen ? demandNS[i] : demandEW[i], other = nsGreen ? demandEW[i] : demandNS[i];
+                if (other > 0 && t >= 6 && (mine == 0 || t >= 16)) next(i);
+            } else if ((p == 1 || p == 4) && t >= 2.5f) next(i);
+            else if ((p == 2 || p == 5) && t >= 1.2f) next(i);
+            demandNS[i] = demandEW[i] = 0;
+        }
+    }
+
+    private void next(int i) {
+        lightPhase[i] = (byte) ((lightPhase[i] + 1) % 6);
+        lightT[i] = 0;
+    }
+
     int lightState(int id, boolean vertical, float time) {
+        if (lightPhase != null && id < lightPhase.length) {
+            int p = lightPhase[id];
+            if (vertical) return p == 0 ? 0 : p == 1 ? 1 : 2;
+            return p == 3 ? 0 : p == 4 ? 1 : 2;
+        }
         float t = (time + junctions.get(id)[5]) % 26f;
         // North-south: green 0-9, amber 9-12, then red while east-west has green 13-22 and amber 22-25
         // (a second of all-red in between each way).

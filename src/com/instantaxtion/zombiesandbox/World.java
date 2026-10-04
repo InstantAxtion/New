@@ -2935,7 +2935,33 @@ final class World {
         if (e.task == Dispatch.T_SEEK && threatDist > 28) {
             e.paused = false;
             float speed = e.fleeTimer > 0 ? e.runSpeed : e.speed * 1.7f;
-            if (!followField(e, dispatch.zoneField, speed)) wander(e, e.speed);
+            if (followField(e, dispatch.zoneField, speed)) return;
+            // No open zone within reach yet: make for the nearest one (still being set up, perhaps) and wait by
+            // it; with none at all, get indoors instead of milling about.
+            Dispatch.SafeZone z = null;
+            float bd = Float.MAX_VALUE;
+            for (int i = 0; i < dispatch.zones.size(); i++) {
+                Dispatch.SafeZone q = dispatch.zones.get(i);
+                if (q.removed || q.full) continue;
+                float d = (q.x - e.x) * (q.x - e.x) + (q.y - e.y) * (q.y - e.y);
+                if (d < bd) {
+                    bd = d;
+                    z = q;
+                }
+            }
+            if (z == null) {
+                e.task = Dispatch.T_NONE;
+                getToSafety(e, homeOf(e));
+                return;
+            }
+            float d = (float) Math.sqrt(bd) + 0.001f, wait = z.baseR * 1.3f + 20;
+            if (d > wait) {
+                if (z.field == null || !followField(e, z.field, speed)) steer(e, (z.x - e.x) / d, (z.y - e.y) / d, speed);
+            } else {
+                // Waiting outside for it to open, a little way back.
+                float a = (float) Math.atan2(e.y - z.y, e.x - z.x);
+                standAt(e, z.x + (float) Math.cos(a) * wait, z.y + (float) Math.sin(a) * wait, 0.5f);
+            }
             return;
         }
         if (e.task == Dispatch.T_SHELTER && threatDist > 28 && e.zone != null) {
@@ -2970,7 +2996,10 @@ final class World {
             }
             flee(e, ax / d, ay / d, e.runSpeed);
         } else if (!routine(e, dt)) {
-            wander(e, e.speed);
+            // A moment between things (or nothing doing): stand about, or stroll a little, not drift for ever.
+            if (e.aware) getToSafety(e, homeOf(e));
+            else if (e.errandTimer > 0 && e.errandTimer < 6) steer(e, 0, 0, 0);
+            else wander(e, e.speed * 0.6f);
         }
     }
 
@@ -3109,6 +3138,9 @@ final class World {
         if (e.errand == null || e.errand.collapsed) {
             if (e.errandTimer > 0) return false;
             e.errand = nextPlace(e, home);
+            // Nowhere in particular to be: home, rather than drifting round the streets.
+            if (e.errand == null && home != null && !home.collapsed
+                    && (home.doorX - e.x) * (home.doorX - e.x) + (home.doorY - e.y) * (home.doorY - e.y) > 40 * 40) e.errand = home;
             e.lastErrand = e.errand;
             e.errandTimer = 0;
             if (e.errand != null) e.errand.heading++;
@@ -5396,6 +5428,25 @@ final class World {
         int dist = city.fieldAt(city.zombieDist, e.x, e.y);
         int hunt = soldier ? 200 : 40;
         if ((e.ammo > 0 || e.reserve > 0) && dist < hunt && followField(e, city.zombieDist, e.speed * 1.3f)) return;
+        if (!soldier && alert >= 1 && e.task == Dispatch.T_NONE && e.rig == null) {
+            // The city is under attack: officers with no call guard their precinct, spread round it facing out,
+            // instead of milling about.
+            City.Facility st = city.nearestFacility(City.FACILITY_POLICE, e.x, e.y);
+            if (st != null) {
+                float sx = st.x - e.x, sy = st.y - e.y;
+                if (sx * sx + sy * sy > 500 * 500) {
+                    if (followField(e, st.field, e.speed)) return;
+                } else {
+                    float a = (e.callsign * 2.39996f) % TAU, r = st.r * 0.95f + 10;
+                    float px = st.x + (float) Math.cos(a) * r, py = st.y + (float) Math.sin(a) * r;
+                    if (!city.solidAt(px, py)) {
+                        standAt(e, px, py, 0.7f);
+                        if (e.want < 1) e.angle = turn(e.angle, a, dt * 2);
+                        return;
+                    }
+                }
+            }
+        }
         if (soldier) {
             // With nothing to fight, soldiers drift back to base.
             City.Facility base = city.nearestFacility(City.FACILITY_BASE, e.x, e.y);

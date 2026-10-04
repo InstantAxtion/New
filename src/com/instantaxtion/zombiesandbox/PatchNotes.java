@@ -2,11 +2,21 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "9.5";
-    static final int VERSION_CODE = 35;
+    static final String VERSION = "9.6";
+    static final int VERSION_CODE = 36;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "9.6  -  The whole city fights back",
+                    "Police keep after the whole outbreak: patrols report every pack of the dead they find, so there's a call out for each part of the city under attack, not just the last 911 call. Officers with nothing to do guard their station instead of wandering off.",
+                    "The army leaves the base to help: once the outbreak is serious, squads mount up in trucks and drive out to support the police at the worst calls, then fight on foot; squads close by march there.",
+                    "People act with purpose: they head for a safe zone (and wait outside if it's full), hide, or go home, instead of milling about.",
+                    "Rooftop signs (POLICE, FIRE and the rest) stay sharp at any zoom: the lettering is drawn as text over the map.",
+                    "Fire stations look like fire stations inside: an engine bay with marked bays, turnout gear, breathing sets, hose racks and a pole, plus a bunk room, kitchen, store and washroom.",
+                    "Fire station yards no longer fill up with fire engines: just a spare and the crew's cars.",
+                    "Smoother traffic and frame rate: traffic lights change for the traffic waiting, cars pull out round a stalled or parked car, police cars find their way back to the station (round barriers, out of queues) instead of getting stuck, and route finding stops as soon as it has the way there.",
+            },
             {
                     "9.5  -  No more crashing at the start",
                     "Fixed the game crashing when creating a city: big maps ran the phone out of memory, because every car kept a route map the size of the whole city. Routes now keep just the way there, and a Massive city needs about a third of the memory it did.",

@@ -843,7 +843,7 @@ final class Roofs {
                 break;
             }
         }
-        if (v.sign != null && bw >= 18 && bh >= 12) sign(c, p, v.sign, x0, y0, x1, y1, acc);
+        if (v.sign != null && bw >= 18 && bh >= 12) sign(city, c, p, v.sign, x0, y0, x1, y1, acc);
         return true;
     }
 
@@ -864,7 +864,7 @@ final class Roofs {
     }
 
     /** The name of the place on a board on the roof (so it can be read from above). */
-    private static void sign(Canvas c, Paint p, String text, float x0, float y0, float x1, float y1, int acc) {
+    private static void sign(City city, Canvas c, Paint p, String text, float x0, float y0, float x1, float y1, int acc) {
         float bw = x1 - x0;
         float size = Math.min(7f, Math.max(3.5f, (bw - 8) / (text.length() * 0.62f)));
         p.setTextSize(size);
@@ -877,8 +877,8 @@ final class Roofs {
         p.setColor(acc);
         c.drawRect(cx - tw / 2, cy - size * 0.8f, cx + tw / 2, cy + size * 0.45f, p);
         int lum = ((acc >> 16) & 0xFF) * 3 + ((acc >> 8) & 0xFF) * 6 + (acc & 0xFF);
-        p.setColor(lum > 1500 ? 0xFF1E1E20 : 0xFFF8F8F4);
-        c.drawText(text, cx, cy + size * 0.12f, p);
+        // (The lettering is drawn over the map at screen resolution, so it stays sharp close up.)
+        city.label(text, cx, cy + size * 0.12f, size, lum > 1500 ? 0xFF1E1E20 : 0xFFF8F8F4);
         p.setFakeBoldText(false);
     }
 

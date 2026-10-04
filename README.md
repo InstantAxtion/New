@@ -179,6 +179,9 @@ counts), and wherever the dead gather the ground glows red. Labels go most impor
 - **Escalation**: if the city is being lost, the army seals off the worst district (barricades across
   every road out) and, later, announces an air strike with a 60-second countdown. People run; then the
   district is firebombed.
+- **The whole city**: patrols report every pack of the dead they find, so the police keep a call open for
+  each part of the city under attack; officers with nothing to do guard their station. Once it's serious
+  the army mounts up in trucks and drives out to support the police at the worst calls.
 - **Ammunition runs out**: precincts and the base have a limited armoury, safe zones keep their own
   stock, and army supply trucks carry ammo to zones running low. Zombies can wreck a truck.
 - **Fire spreads**: burning cars and explosions set buildings alight; fires grow, jump to the building

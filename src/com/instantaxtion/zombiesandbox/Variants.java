@@ -22,7 +22,7 @@ final class Variants {
     static final int I_HOME = 0, I_SHELVES = 1, I_CAFE = 2, I_RESTAURANT = 3, I_BAR = 4, I_OFFICE = 5, I_CLASSROOM = 6,
             I_WARD = 7, I_PEWS = 8, I_RACKS = 9, I_FACTORY = 10, I_HOTEL = 11, I_GYM = 12, I_LIBRARY = 13, I_BATH = 14,
             I_SEATS = 15, I_SALON = 16, I_LAUNDRY = 17, I_SHOWROOM = 18, I_ARCADE = 19, I_KITCHEN = 20, I_LAB = 21,
-            I_DORM = 22;
+            I_DORM = 22, I_FIRE = 23;
 
     // Countries (bits) and districts (bits by City.DT_ type).
     static final int US = 1, AU = 2, JP = 4, FR = 8, MX = 16, ALL = 31, EN = US | AU | JP;

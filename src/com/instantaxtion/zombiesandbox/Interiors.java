@@ -16,7 +16,7 @@ final class Interiors {
     static final int LIVING = 0, KITCHEN = 1, BEDROOM = 2, BATH = 3, SHOPFLOOR = 4, STORE = 5, DINING = 6, COOKING = 7,
             BARROOM = 8, OPENPLAN = 9, MEETING = 10, CLASS = 11, WARD = 12, PEWS = 13, RACKS = 14, MACHINES = 15,
             HOTELROOM = 16, GYMFLOOR = 17, BOOKS = 18, POOLS = 19, SEATS = 20, SALON = 21, LAUNDRY = 22, SHOWROOM = 23,
-            ARCADE = 24, BAKERY = 25, LAB = 26, DORMROOM = 27, LOBBY = 28;
+            ARCADE = 24, BAKERY = 25, LAB = 26, DORMROOM = 27, LOBBY = 28, APPARATUS = 29;
 
     static final class Plan {
         /** Rooms: {x0, y0, x1, y1, kind, doorX, doorY}. */
@@ -42,7 +42,7 @@ final class Interiors {
             case City.WAREHOUSE: return Variants.I_RACKS;
             case City.OFFICE: case City.TOWER: return Variants.I_OFFICE;
             case City.TRAIN_STATION: return Variants.I_SEATS;
-            case City.FIRE_STATION: return Variants.I_SHOWROOM;
+            case City.FIRE_STATION: return Variants.I_FIRE;
             default: return -1;
         }
     }
@@ -58,7 +58,7 @@ final class Interiors {
             case Variants.I_HOTEL: case Variants.I_DORM: case Variants.I_WARD: case Variants.I_CLASSROOM: min = 26; break;
             case Variants.I_OFFICE: case Variants.I_LAB: min = 44; break;
             case Variants.I_RACKS: case Variants.I_FACTORY: case Variants.I_SEATS: case Variants.I_SHOWROOM:
-            case Variants.I_GYM: case Variants.I_BATH: min = 70; break;
+            case Variants.I_GYM: case Variants.I_BATH: case Variants.I_FIRE: min = 70; break;
             default: min = 34; break;
         }
         if (isHall(inside)) hall(p, inside, x0, y0, x1, y1, dx, dy, r);
@@ -103,6 +103,7 @@ final class Interiors {
             case Variants.I_SALON: main = SALON; break;
             case Variants.I_LAUNDRY: main = LAUNDRY; break;
             case Variants.I_SHOWROOM: main = SHOWROOM; break;
+            case Variants.I_FIRE: main = APPARATUS; break;
             case Variants.I_ARCADE: main = ARCADE; break;
             case Variants.I_KITCHEN: main = BAKERY; break;
             default: main = SHOPFLOOR; break;
@@ -133,6 +134,8 @@ final class Interiors {
             float wallPos = wide ? (backFar ? m1y : m0y) : (backFar ? m1x : m0x);
             float rx0 = wide ? a0 : s0x, ry0 = wide ? s0y : a0, rx1 = wide ? a1 : s1x, ry1 = wide ? s1y : a1;
             int kind = k == n - 1 ? BATH : k == 0 && food ? COOKING : k == 1 && n > 2 ? MEETING : STORE;
+            // A fire station: the crew's bunks and kitchen behind the engine bay.
+            if (main == APPARATUS && k < n - 1) kind = k == 0 ? DORMROOM : k == 1 ? COOKING : STORE;
             p.rooms.add(new float[]{rx0, ry0, rx1, ry1, kind, wide ? doorA : wallPos, wide ? wallPos : doorA});
             // Wall with a doorway into each back room, and walls between them.
             if (wide) {
@@ -230,6 +233,12 @@ final class Interiors {
             }
             room[4] = kind;
         }
+    }
+
+    /** A rectangle given along a room's length (a) and across it (b), for rooms laid out either way round. */
+    private static void edge(Plan p, boolean along, float a0, float b0, float a1, float b1, int col) {
+        if (along) item(p, a0, b0, a1, b1, col);
+        else item(p, b0, a0, b1, a1, col);
     }
 
     private static void item(Plan p, float x0, float y0, float x1, float y1, int col) {
@@ -504,6 +513,53 @@ final class Interiors {
                     }
                 break;
             }
+            case APPARATUS: {
+                // The engine bay: big painted bays for the engines (out on the apron, ready, when they're home)
+                // with keep-clear hatching at the doors, the crew's turnout gear on hooks along the back wall,
+                // breathing sets on a rack, a workbench, a hose rack and the brass pole.
+                boolean along = x1 - x0 >= y1 - y0;
+                float len = along ? x1 - x0 : y1 - y0, depth = along ? y1 - y0 : x1 - x0;
+                float a00 = along ? x0 : y0, b00 = along ? y0 : x0;
+                int bays = Math.max(1, Math.min(4, (int) (len / 44)));
+                float slot = len / bays, bw = Math.min(30, slot - 10), bd = depth - 22;
+                for (int k = 0; k < bays; k++) {
+                    float a0 = a00 + slot * (k + 0.5f) - bw / 2, a1 = a0 + bw, b0 = b00 + 3, b1 = b0 + bd;
+                    // Outline, and the hatching by the doors.
+                    edge(p, along, a0, b0, a1, b0 + 1, 0xFFE0C040);
+                    edge(p, along, a0, b1 - 1, a1, b1, 0xFFE0C040);
+                    edge(p, along, a0, b0, a0 + 1, b1, 0xFFE0C040);
+                    edge(p, along, a1 - 1, b0, a1, b1, 0xFFE0C040);
+                    for (float q = a0 + 3; q < a1 - 3; q += 5) edge(p, along, q, b0 + 2, q + 2, b0 + 7, 0xFFC8B040);
+                    // Wheel chocks where the engine stops.
+                    edge(p, along, a0 + 4, b1 - 8, a0 + 7, b1 - 6, 0xFFE0C040);
+                    edge(p, along, a1 - 7, b1 - 8, a1 - 4, b1 - 6, 0xFFE0C040);
+                }
+                // Turnout gear: coat and helmet on each hook, along the back wall.
+                float gw = b00 + depth - 6;
+                for (float u = a00 + 3; u < a00 + len - 30; u += 6) {
+                    edge(p, along, u, gw, u + 4, gw + 4, 0xFFC8A040);
+                    float hx = along ? u + 2 : gw - 1.5f, hy = along ? gw - 1.5f : u + 2;
+                    round(p, hx, hy, 1.4f, 0xFFD03A2A);
+                }
+                // Breathing sets on a rack, the workbench and the hose rack in the far corner, and the pole.
+                float c0 = a00 + len - 26;
+                for (int k = 0; k < 4; k++) {
+                    float hx = along ? c0 + 2 + k * 3 : gw + 1, hy = along ? gw + 1 : c0 + 2 + k * 3;
+                    round(p, hx, hy, 1.2f, 0xFFB8BCC0);
+                }
+                edge(p, along, c0 + 14, gw - 1, c0 + 24, gw + 4, WOOD);
+                for (int k = 0; k < 3; k++) {
+                    float hx = along ? c0 + 4 + k * 4 : gw - 8, hy = along ? gw - 8 : c0 + 4 + k * 4;
+                    round(p, hx, hy, 1.8f, 0xFF8A8A84);
+                }
+                float px = along ? a00 + len - 6 : b00 + depth - 14, py = along ? b00 + depth - 14 : a00 + len - 6;
+                round(p, px, py, 1.6f, 0xFFE0B040);
+                for (float u = a00 + 10; u < a00 + len - 30; u += 24) {
+                    float sx = along ? u : gw - 6, sy = along ? gw - 6 : u;
+                    spot(p, sx, sy, idx, along ? 1.57f : 0);
+                }
+                break;
+            }
             case ARCADE: {
                 int[] cab = {0xFFE040C0, 0xFF3A8AE0, 0xFFE0C040, 0xFF40B070, 0xFFE03A3A};
                 for (float ty = y0 + 2; ty < y1 - 8; ty += 13)
@@ -526,6 +582,7 @@ final class Interiors {
             case KITCHEN: case BATH: case COOKING: case BAKERY: case LAUNDRY: case POOLS: return 0xFFDCDCD4;
             case WARD: case LAB: return 0xFFD8E2E6;
             case RACKS: case MACHINES: case SHOWROOM: case STORE: return 0xFF8A8A84;
+            case APPARATUS: return 0xFF9A9A94;
             case PEWS: return 0xFF9C8C76;
             case SEATS: case ARCADE: return 0xFF4A3A4A;
             case GYMFLOOR: return 0xFF6A6E74;

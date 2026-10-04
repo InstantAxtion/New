@@ -686,6 +686,9 @@ public final class GameTests {
                 for (int s = 0; s < 30 * 90 && !hid; s++) {
                     w.update(1 / 30f);
                     w.evCount = 0;
+                    // (Patrols sent to the old calls, and trains, would bring people back.)
+                    w.fleet.vehicles.clear();
+                    for (int i = w.entities.size() - 1; i >= 0; i--) if (!w.entities.get(i).isZombie()) w.entities.remove(i);
                     for (Entity e : w.entities) if (e.hidden) hid = true;
                 }
                 check(hid, "a crawler lies in wait");
@@ -764,6 +767,64 @@ public final class GameTests {
                         "Australia and Japan drive on the left");
                 CityConfig old = new CityConfig();
                 check(old.applyCode("12-44") && old.country() == Country.USA, "old codes are American cities");
+            }
+        });
+        test("the army leaves the base to help, the police keep after the whole outbreak, traffic never jams for good", new Check() {
+            public void run() {
+                CityConfig c = new CityConfig();
+                c.v[CityConfig.OPT_SIZE] = 2;
+                c.v[CityConfig.OPT_ZOMBIES] = 3;
+                c.v[CityConfig.OPT_MILITARY] = 1;
+                c.seed = 3;
+                World w = new World(c);
+                w.populate(c);
+                City.Facility base = w.city.nearestFacility(City.FACILITY_BASE, 0, 0);
+                java.util.HashMap<Fleet.Vehicle, Float> still = new java.util.HashMap<Fleet.Vehicle, Float>();
+                int maxAway = 0, maxCalls = 0, stuck = 0;
+                java.util.HashSet<Fleet.Vehicle> counted = new java.util.HashSet<Fleet.Vehicle>();
+                for (int f = 0; f < 30 * 150; f++) {
+                    w.update(1 / 30f);
+                    w.evCount = 0;
+                    maxCalls = Math.max(maxCalls, w.dispatch.incidents.size());
+                    if (base != null && f % 30 == 0) {
+                        int away = 0;
+                        for (Entity e : w.entities)
+                            if (!e.dead && e.type == Entity.SOLDIER && Math.hypot(e.x - base.x, e.y - base.y) > 400) away++;
+                        int[] crews = new int[Entity.TYPE_COUNT];
+                        w.fleet.countCrews(crews);
+                        maxAway = Math.max(maxAway, away + crews[Entity.SOLDIER]);
+                    }
+                    for (Fleet.Vehicle v : w.fleet.vehicles) {
+                        if (v.type != Fleet.CAR || v.parked || v.broken) continue;
+                        float t = Math.abs(v.speed) < 2 && !v.held ? (still.containsKey(v) ? still.get(v) : 0) + 1 / 30f : 0;
+                        still.put(v, t);
+                        if (t > 20 && counted.add(v)) stuck++;
+                    }
+                }
+                if (base != null) check(maxAway >= 4, "soldiers away from the base helping: " + maxAway);
+                check(maxCalls >= 2, "the police deal with more than the last 911 call: " + maxCalls + " calls at once");
+                check(stuck <= 4, stuck + " cars stuck for 20 s or more");
+            }
+        });
+        test("roof lettering stays sharp (drawn as text over the map), and a fire station looks like one", new Check() {
+            public void run() {
+                CityConfig c = new CityConfig();
+                c.seed = 3;
+                City city = new City(c);
+                boolean police = false;
+                for (City.Label l : city.labels) if (l.text.equals(city.country.sign("POLICE"))) police = true;
+                check(!city.labels.isEmpty() && police, city.labels.size() + " roof labels, a police station's among them: " + police);
+                for (City.Building b : city.buildings)
+                    if (b.kind == City.FIRE_STATION) {
+                        check(Interiors.insideOf(b) == Variants.I_FIRE, "a fire station has an engine bay inside, not a showroom");
+                        Interiors.Plan p = Interiors.make(b, Variants.I_FIRE);
+                        boolean bay = false, bunks = false;
+                        for (float[] r : p.rooms) {
+                            if ((int) r[4] == Interiors.APPARATUS) bay = true;
+                            if ((int) r[4] == Interiors.DORMROOM) bunks = true;
+                        }
+                        check(bay && bunks, "engine bay " + bay + ", bunk room " + bunks);
+                    }
             }
         });
         test("traffic keeps its distance: hardly any crashes, and patrol cars keep to their side", new Check() {

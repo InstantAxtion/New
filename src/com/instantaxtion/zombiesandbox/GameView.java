@@ -1098,6 +1098,46 @@ final class GameView extends View implements Menu.Host {
     private volatile int chunkVersion;
     private Thread chunkWorker;
 
+    private final Paint labelPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    /** Each building's roof lettering, looked up once per map drawing. */
+    private final java.util.IdentityHashMap<City.Building, java.util.ArrayList<City.Label>> roofLabels =
+            new java.util.IdentityHashMap<City.Building, java.util.ArrayList<City.Label>>();
+    private City labelCity;
+    private int labelVersion = -1;
+
+    /**
+     * A roof's lettering (shop names, POLICE, FIRE...) drawn as text on the raised roof, so it stays sharp at any
+     * zoom: s is the roof's perspective scale about (cx, cy), a its opacity.
+     */
+    private void drawRoofLabels(Canvas c, City.Building b, float cx, float cy, float s, float a) {
+        City city = world.city;
+        if (city != labelCity || city.renderVersion != labelVersion) {
+            labelCity = city;
+            labelVersion = city.renderVersion;
+            roofLabels.clear();
+            for (City.Label l : city.labels) {
+                if (l.building < 0 || l.building >= city.buildings.size()) continue;
+                City.Building o = city.buildings.get(l.building);
+                java.util.ArrayList<City.Label> list = roofLabels.get(o);
+                if (list == null) roofLabels.put(o, list = new java.util.ArrayList<City.Label>());
+                list.add(l);
+            }
+        }
+        java.util.ArrayList<City.Label> list = roofLabels.get(b);
+        if (list == null || a <= 0.1f) return;
+        labelPaint.setTextAlign(Paint.Align.CENTER);
+        labelPaint.setFakeBoldText(true);
+        for (int i = 0; i < list.size(); i++) {
+            City.Label l = list.get(i);
+            float size = l.size * s;
+            if (size * scale < 3.5f) continue;
+            labelPaint.setTextSize(size);
+            labelPaint.setColor(l.color);
+            labelPaint.setAlpha((int) (((l.color >>> 24) & 0xFF) * a));
+            c.drawText(l.text, cx + (l.x - cx) * s, cy + (l.y - cy) * s, labelPaint);
+        }
+    }
+
     private void drawCloseUps(Canvas c) {
         City city = world.city;
         if (city != chunkCity || city.renderVersion != chunkVersion) {
@@ -1695,6 +1735,7 @@ final class GameView extends View implements Menu.Host {
             c.drawBitmap(world.city.bitmap, roofSrc, roofDst, bmpPaint);
             bmpPaint.setAlpha(255);
             drawDamage(c, b, rx0, ry0, rx1, ry1, roofA);
+            drawRoofLabels(c, b, cx, cy, s, roofA);
         }
         wallFade = 1;
     }

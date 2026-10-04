@@ -159,6 +159,18 @@ final class World {
     int evCount;
 
     int maxEntities = 1600;
+    /** Detail level, lowered on a phone that's struggling (see GameView.tuneQuality). */
+    static final int Q_FULL = 0, Q_REDUCED = 1, Q_LOW = 2;
+    int quality = Q_FULL;
+
+    void setQuality(int q) {
+        quality = Math.max(Q_FULL, Math.min(Q_LOW, q));
+        fleet.trafficScale = quality == Q_FULL ? 1f : quality == Q_REDUCED ? 0.7f : 0.45f;
+    }
+
+    private boolean onScreen(Entity e) {
+        return viewX1 >= 0 && e.x > viewX0 - 80 && e.x < viewX1 + 80 && e.y > viewY0 - 80 && e.y < viewY1 + 80;
+    }
 
     /** Sets the population cap; 0 means Auto, sized to the city: everyone who lives there, and room for the dead. */
     void setMaxPopulation(int cap) {
@@ -1261,8 +1273,9 @@ final class World {
         if (warBannerTime > 0) warBannerTime -= dt;
         buildHash();
         fieldTimer -= dt;
+        occTimer -= dt;
         if (fieldTimer <= 0) {
-            fieldTimer = 0.25f;
+            fieldTimer = quality == Q_FULL ? 0.25f : quality == Q_REDUCED ? 0.4f : 0.6f;
             city.computeFields(entities);
         }
         dispatch.update(dt);
@@ -1288,8 +1301,16 @@ final class World {
             // (but still move every frame), which lets a city of thousands run smoothly.
             if (e.type == Entity.CIVILIAN && e.task == Dispatch.T_NONE && e.fleeTimer <= 0 && e != controlled && e.leader == null
                     && city.fieldAt(city.zombieDist, e.x, e.y) > 30) {
-                if ((i + lodFrame) % 3 != 0) continue;
-                think(e, dt * 3);
+                // (On a struggling phone, those off screen even less often.)
+                int every = quality == Q_FULL || onScreen(e) ? 3 : quality == Q_REDUCED ? 5 : 8;
+                if ((i + lodFrame) % every != 0) continue;
+                think(e, dt * every);
+            } else if (quality > Q_FULL && e.isZombie() && e.charge <= 0 && e.noiseTimer <= 0 && e != controlled && !onScreen(e)
+                    && city.fieldAt(city.humanDist, e.x, e.y) > 40) {
+                // The same for the dead shuffling about off screen with nobody near.
+                int every = quality == Q_REDUCED ? 2 : 3;
+                if ((i + lodFrame) % every != 0) continue;
+                think(e, dt * every);
             } else think(e, dt);
         }
         for (int i = 0, n = entities.size(); i < n; i++) {
@@ -1499,6 +1520,12 @@ final class World {
             }
         }
         return res;
+    }
+
+    /** Any of the dead within radius? Quick when there's none within a walk of here (the usual case). */
+    boolean zombieWithin(float x, float y, float radius) {
+        if (city.fieldAt(city.zombieDist, x, y) > radius / City.T + 3) return false;
+        return countZombiesNear(x, y, radius) > 0;
     }
 
     int countZombiesNear(float x, float y, float radius) {
@@ -1774,15 +1801,22 @@ final class World {
         // People barricaded indoors: batter the door down.
         City.Building target = null;
         float best = 150 * 150;
-        for (int i = 0, n = city.buildings.size(); i < n; i++) {
-            City.Building b = city.buildings.get(i);
-            if (b.occupants.isEmpty()) continue;
-            float ddx = b.doorX - z.x, ddy = b.doorY - z.y, d2 = ddx * ddx + ddy * ddy;
-            if (d2 < best) {
-                best = d2;
-                target = b;
+        if (occGrid == null || occTimer <= 0) buildOccGrid();
+        int ocx = (int) (z.x / OCC_CELL), ocy = (int) (z.y / OCC_CELL);
+        for (int gy = Math.max(0, ocy - 1); gy <= Math.min(occGH - 1, ocy + 1); gy++)
+            for (int gx = Math.max(0, ocx - 1); gx <= Math.min(occGW - 1, ocx + 1); gx++) {
+                java.util.ArrayList<City.Building> cell = occGrid[gy * occGW + gx];
+                if (cell == null) continue;
+                for (int i = 0, n = cell.size(); i < n; i++) {
+                    City.Building b = cell.get(i);
+                    if (b.occupants.isEmpty()) continue;
+                    float ddx = b.doorX - z.x, ddy = b.doorY - z.y, d2 = ddx * ddx + ddy * ddy;
+                    if (d2 < best) {
+                        best = d2;
+                        target = b;
+                    }
+                }
             }
-        }
         if (target != null) {
             float ddx = target.doorX - z.x, ddy = target.doorY - z.y;
             float d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
@@ -1801,8 +1835,8 @@ final class World {
             }
             // Find the way round to the door (not straight into the wall): every zombie at this building
             // shares one route.
-            int[] route = doorField(target);
-            if (route != null && followField(z, route, z.speed * 1.1f)) return;
+            DoorRoute route = doorField(target);
+            if (route != null && followDoor(z, route, z.speed * 1.1f)) return;
             steer(z, ddx / d, ddy / d, z.speed);
             return;
         }
@@ -2063,7 +2097,8 @@ final class World {
             a.timer -= dt;
             a.flee -= dt;
             // Anything coming? The dead from a long way off, people closer.
-            Entity z = nearestZombie(a.x, a.y, 130);
+            // (Nothing dead within a walk of here at all: no need to look.)
+            Entity z = city.fieldAt(city.zombieDist, a.x, a.y) > 130 / City.T + 4 ? null : nearestZombie(a.x, a.y, 130);
             if (z != null) {
                 float dx = a.x - z.x, dy = a.y - z.y, d = (float) Math.sqrt(dx * dx + dy * dy) + 0.001f;
                 if (d < 6) {
@@ -4839,24 +4874,123 @@ final class World {
     /** How many new door routes may be worked out right now (each is a search over the whole map). */
     private float pathBudget = 3;
 
-    /** Routes to the doors of buildings under siege, shared by all the dead outside (the last few only). */
-    private final java.util.LinkedHashMap<City.Building, int[]> doorFields = new java.util.LinkedHashMap<City.Building, int[]>(16, 0.75f, true) {
+    /**
+     * Routes to the doors of buildings under siege, shared by all the dead outside. Each covers just the
+     * streets round the building (the dead only besiege a building they're close to), so they're cheap.
+     */
+    static final int DOOR_R = 24, DOOR_S = DOOR_R * 2 + 1;
+
+    static final class DoorRoute {
+        int x0, y0;
+        final int[] d = new int[DOOR_S * DOOR_S];
+    }
+
+    private final java.util.LinkedHashMap<City.Building, DoorRoute> doorFields = new java.util.LinkedHashMap<City.Building, DoorRoute>(16, 0.75f, true) {
         @Override
-        protected boolean removeEldestEntry(java.util.Map.Entry<City.Building, int[]> eldest) {
-            return size() > 6;
+        protected boolean removeEldestEntry(java.util.Map.Entry<City.Building, DoorRoute> eldest) {
+            return size() > 48;
         }
     };
+    private int[][] doorBuckets;
 
-    private int[] doorField(City.Building b) {
-        int[] f = doorFields.get(b);
+    /** Buildings with people inside, by area (refreshed twice a second), for the dead looking for a way in. */
+    static final int OCC_CELL = 160;
+    private java.util.ArrayList<City.Building>[] occGrid;
+    private int occGW, occGH;
+    private float occTimer;
+
+    @SuppressWarnings("unchecked")
+    private void buildOccGrid() {
+        occGW = (int) (city.worldW() / OCC_CELL) + 1;
+        occGH = (int) (city.worldH() / OCC_CELL) + 1;
+        if (occGrid == null || occGrid.length != occGW * occGH) occGrid = new java.util.ArrayList[occGW * occGH];
+        for (java.util.ArrayList<City.Building> l : occGrid) if (l != null) l.clear();
+        for (int i = 0, n = city.buildings.size(); i < n; i++) {
+            City.Building b = city.buildings.get(i);
+            if (b.occupants.isEmpty()) continue;
+            int gx = Math.max(0, Math.min(occGW - 1, (int) (b.doorX / OCC_CELL))), gy = Math.max(0, Math.min(occGH - 1, (int) (b.doorY / OCC_CELL)));
+            java.util.ArrayList<City.Building> l = occGrid[gy * occGW + gx];
+            if (l == null) occGrid[gy * occGW + gx] = l = new java.util.ArrayList<City.Building>();
+            l.add(b);
+        }
+        occTimer = 0.5f;
+    }
+
+    private DoorRoute doorField(City.Building b) {
+        DoorRoute f = doorFields.get(b);
         if (f == null) {
-            if (pathBudget < 0.5f) return null;
-            pathBudget -= 0.5f;
-            f = new int[city.w * city.h];
-            city.walkFieldFromPoints(f, new float[]{b.doorX}, new float[]{b.doorY}, 1, 400);
+            if (pathBudget < 0.05f) return null;
+            pathBudget -= 0.05f;
+            f = new DoorRoute();
+            int dx = (int) (b.doorX / City.T), dy = (int) (b.doorY / City.T);
+            f.x0 = dx - DOOR_R;
+            f.y0 = dy - DOOR_R;
+            java.util.Arrays.fill(f.d, City.FAR);
+            if (doorBuckets == null) doorBuckets = new int[9][DOOR_S * DOOR_S * 4];
+            if (city.walkCost == null) city.computeWalkCost();
+            int[] sizes = new int[9];
+            int start = DOOR_R * DOOR_S + DOOR_R;
+            f.d[start] = 0;
+            sizes[0] = 1;
+            doorBuckets[0][0] = start;
+            int pending = 1;
+            for (int d = 0; pending > 0 && d < 400; d++) {
+                int bi = d % 9;
+                int[] bk = doorBuckets[bi];
+                int size = sizes[bi];
+                sizes[bi] = 0;
+                pending -= size;
+                for (int k = 0; k < size; k++) {
+                    int t = bk[k];
+                    if (f.d[t] != d) continue;
+                    int lx = t % DOOR_S, ly = t / DOOR_S;
+                    for (int q = 0; q < 4; q++) {
+                        int nx = lx + (q == 0 ? -1 : q == 1 ? 1 : 0), ny = ly + (q == 2 ? -1 : q == 3 ? 1 : 0);
+                        if (nx < 0 || ny < 0 || nx >= DOOR_S || ny >= DOOR_S) continue;
+                        int wx = f.x0 + nx, wy = f.y0 + ny;
+                        if (wx < 0 || wy < 0 || wx >= city.w || wy >= city.h) continue;
+                        int wi = wy * city.w + wx;
+                        if (city.solid[wi]) continue;
+                        int nl = ny * DOOR_S + nx, nd = d + city.walkCost[wi];
+                        if (nd >= f.d[nl]) continue;
+                        f.d[nl] = nd;
+                        int b2 = nd % 9;
+                        if (sizes[b2] >= doorBuckets[b2].length) continue;
+                        doorBuckets[b2][sizes[b2]++] = nl;
+                        pending++;
+                    }
+                }
+            }
             doorFields.put(b, f);
         }
         return f;
+    }
+
+    /** Follows a door route downhill; false if this one is off its patch or cut off. */
+    private boolean followDoor(Entity e, DoorRoute f, float speed) {
+        int tx = (int) (e.x / City.T), ty = (int) (e.y / City.T);
+        int lx = tx - f.x0, ly = ty - f.y0;
+        if (lx < 1 || ly < 1 || lx >= DOOR_S - 1 || ly >= DOOR_S - 1) return false;
+        int cur = f.d[ly * DOOR_S + lx];
+        if (cur >= City.FAR || cur == 0) return false;
+        int best = cur, bx = -1, by = -1;
+        for (int oy = -1; oy <= 1; oy++)
+            for (int ox = -1; ox <= 1; ox++) {
+                if (ox == 0 && oy == 0) continue;
+                if (city.solidTile(tx + ox, ty + oy)) continue;
+                if (ox != 0 && oy != 0 && (city.solidTile(tx + ox, ty) || city.solidTile(tx, ty + oy))) continue;
+                int v = f.d[(ly + oy) * DOOR_S + lx + ox];
+                if (v < best) {
+                    best = v;
+                    bx = tx + ox;
+                    by = ty + oy;
+                }
+            }
+        if (bx < 0) return false;
+        float gx = bx * City.T + City.T / 2f - e.x, gy = by * City.T + City.T / 2f - e.y;
+        float d = (float) Math.sqrt(gx * gx + gy * gy) + 0.001f;
+        steer(e, gx / d, gy / d, speed);
+        return true;
     }
 
     /**
@@ -6221,12 +6355,12 @@ final class World {
                 continue;
             }
             // Everyone inside helps shore up the door: more people, a stronger barricade.
-            if (countZombiesNear(b.doorX, b.doorY, 60) == 0)
+            if (!zombieWithin(b.doorX, b.doorY, 60))
                 b.barricade = Math.min(100, b.barricade + dt * (2 + b.occupants.size() * 0.5f));
             else if (b.occupants.size() >= 4) b.barricade = Math.min(100, b.barricade + dt * b.occupants.size() * 0.25f);
             // Come out once the street has been quiet for a while.
             b.calmTimer += dt;
-            if (countZombiesNear(b.doorX, b.doorY, 250) > 0) b.calmTimer = 0;
+            if (zombieWithin(b.doorX, b.doorY, 250)) b.calmTimer = 0;
             if (b.calmTimer > 25) {
                 b.releaseTimer -= dt;
                 if (b.releaseTimer <= 0) {
@@ -6760,7 +6894,7 @@ final class World {
             if (rnd.nextBoolean()) return;
         }
         corpses.add(c);
-        if (corpses.size() > 350) {
+        if (corpses.size() > (quality == Q_FULL ? 350 : quality == Q_REDUCED ? 220 : 130)) {
             for (int i = 0; i < corpses.size(); i++)
                 if (corpses.get(i).rise < 0) {
                     corpses.remove(i);
@@ -7215,6 +7349,10 @@ final class World {
     // ------------------------------------------------------------------ effects
 
     void particle(float x, float y, float vx, float vy, float life, float size, int color, byte type) {
+        if (quality > Q_FULL && ((pnext * 7 + 3) % 10) < (quality == Q_REDUCED ? 4 : 7)) {
+            pnext = (pnext + 1) % MAXP; // (skips a slot so the pattern moves on)
+            return;
+        }
         int i = pnext;
         pnext = (pnext + 1) % MAXP;
         px[i] = x;

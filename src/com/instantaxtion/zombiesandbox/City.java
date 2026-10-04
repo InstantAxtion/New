@@ -5605,7 +5605,7 @@ final class City {
     void computeFields(List<Entity> entities) {
         // Only near distances matter (how far the nearest zombie or person is, within smelling range), so
         // the searches stop spreading after a while instead of covering a whole massive map.
-        bfs(humanDist, entities, false, 110);
+        bfs(humanDist, entities, false, (int) (World.SCENT * 1.7f) + 4);
         bfs(zombieDist, entities, true, 70);
     }
 
@@ -5983,7 +5983,7 @@ final class City {
         return junctionAt(x - 1, y) || junctionAt(x + 1, y) || junctionAt(x, y - 1) || junctionAt(x, y + 1);
     }
 
-    private void computeWalkCost() {
+    void computeWalkCost() {
         computeJunctions();
         walkCost = new byte[w * h];
         for (int y = 0; y < h; y++)

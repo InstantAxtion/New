@@ -725,12 +725,37 @@ final class GameView extends View implements Menu.Host {
             text.setTextSize(12 * dp);
             text.setTextAlign(Paint.Align.RIGHT);
             text.setColor(0xFFFFFF66);
-            c.drawText((int) (fps + 0.5f) + " FPS", getWidth() - 8 * dp,
+            c.drawText((int) (fps + 0.5f) + " FPS" + (world.quality == World.Q_REDUCED ? "  (reduced detail)"
+                            : world.quality == World.Q_LOW ? "  (low detail)" : ""), getWidth() - 8 * dp,
                     menu.isOpen() ? getHeight() - 30 * dp : barTop - 8 * dp, text);
         }
+        if (inGame && hasGame) tuneQuality(rawDt, (System.nanoTime() - now) / 1e6f);
         if (running) {
             if (!settings.batterySaver()) postInvalidateOnAnimation();
             else postInvalidateDelayed(simPaused && !menu.isOpen() || menu.screen == Menu.PAUSE ? 100 : 33);
+        }
+    }
+
+    /**
+     * Keeps the game smooth on slower phones: it watches how long each frame takes (and the frame rate) and,
+     * if the phone is struggling, steps the detail down - people far off screen think less often, there's
+     * less background traffic, fewer sparks and specks - and steps it back up once there's room again.
+     */
+    private float workMs = 8, slowT, fastT;
+
+    private void tuneQuality(float rawDt, float ms) {
+        if (rawDt > 0.25f) return; // (a hitch: the app was paused, or a GC)
+        workMs += (ms - workMs) * 0.05f;
+        boolean slow = workMs > 21 || (!settings.batterySaver() && fps > 0 && fps < 38);
+        boolean fast = workMs < 11 && (settings.batterySaver() || fps > 52);
+        slowT = slow ? slowT + rawDt : 0;
+        fastT = fast ? fastT + rawDt : 0;
+        if (slowT > 2.5f && world.quality < World.Q_LOW) {
+            world.setQuality(world.quality + 1);
+            slowT = 0;
+        } else if (fastT > 8 && world.quality > World.Q_FULL) {
+            world.setQuality(world.quality - 1);
+            fastT = 0;
         }
     }
 
@@ -1166,7 +1191,7 @@ final class GameView extends View implements Menu.Host {
         }
         // Only once the map picture is being stretched noticeably.
         if (scale < city.detail * 1.6f) return;
-        int res = scale >= 3.2f ? 4 : 2;
+        int res = scale >= 3.2f && world.quality < World.Q_LOW ? 4 : 2;
         int cx0 = Math.max(0, (int) (camX / CHUNK)), cy0 = Math.max(0, (int) (camY / CHUNK));
         int cx1 = (int) ((camX + getWidth() / scale) / CHUNK), cy1 = (int) ((camY + barTop / scale) / CHUNK);
         int nx = (int) Math.ceil(city.worldW() / CHUNK), ny = (int) Math.ceil(city.worldH() / CHUNK);

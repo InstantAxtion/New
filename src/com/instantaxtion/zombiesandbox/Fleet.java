@@ -896,6 +896,8 @@ final class Fleet {
     }
 
     int trafficTarget;
+    /** Less background traffic on a struggling phone. */
+    float trafficScale = 1;
 
     /** How many cars are about: as many to a street as on a small map, so it grows with the map's area. */
     static int trafficFor(City city) {
@@ -1008,7 +1010,7 @@ final class Fleet {
         }
         if (trafficTimer <= 0) {
             trafficTimer = 6;
-            if (movingTraffic() < trafficTarget && w.zombieCount() < 10 && w.alert < 2) spawnTraffic(1);
+            if (movingTraffic() < trafficTarget * trafficScale && w.zombieCount() < 10 && w.alert < 2) spawnTraffic(1);
             int parked = 0;
             // Old wrecks and parked cars are towed away, but never while you're watching.
             for (int i = vehicles.size() - 1; i >= 0; i--) {

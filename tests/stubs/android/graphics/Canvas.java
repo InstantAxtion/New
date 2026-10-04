@@ -14,6 +14,7 @@ public class Canvas {
  public void drawBitmap(Bitmap bm,Rect s,RectF d,Paint p){java.awt.Composite oc=g.getComposite(); if(p!=null&&p.alpha<255) g.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER,p.alpha/255f)); g.drawImage(bm.img,Math.round(d.left),Math.round(d.top),Math.round(d.right),Math.round(d.bottom),s.left,s.top,s.right,s.bottom,null); g.setComposite(oc);}
  public void restore(){g.setTransform(stack.pop()); AffineTransform t=g.getTransform(); g.setTransform(new AffineTransform()); Shape cl=clips.pop(); g.setClip(null); g.setTransform(t); Matrix q=pstack.pop();P=q;}
  public void translate(float x,float y){g.translate(x,y);} public void scale(float x,float y){g.scale(x,y);}
+ public void clipRect(float l, float t, float r, float b){g.clip(new Rectangle2D.Float(l,t,r-l,b-t));}
  public void clipRect(RectF r){g.clip(new Rectangle2D.Float(r.left,r.top,r.width(),r.height()));}
  public void drawRect(RectF r,Paint p){drawRect(r.left,r.top,r.right,r.bottom,p);}
  public void rotate(float d){g.rotate(Math.toRadians(d));}

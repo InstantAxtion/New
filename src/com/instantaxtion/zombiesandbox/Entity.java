@@ -123,6 +123,11 @@ final class Entity {
     boolean hidden;
     /** Armed residents holding a building together. */
     boolean militia;
+    /** A survivor group this person belongs to; a supply run they're on, and what they're bringing back. */
+    World.Holdout holdout;
+    City.Building scavenge;
+    int carryFood, carryAmmo;
+    boolean homeward;
     /** The gun they carry if it isn't their standard issue (pistol, shotgun or rifle), and a bat or axe. */
     int weapon, melee;
     static final int W_STD = 0, W_PISTOL = 1, W_SHOTGUN = 2, W_RIFLE = 3;

@@ -100,6 +100,14 @@ final class City {
         }
         /** Zombies shut inside, waiting. Nobody knows until they burst out (then {@link #infestKnown}). */
         int lurkers;
+        /**
+         * A fight inside: the dead got in while people were still there (lurkers and occupants together).
+         * The one the defenders are fighting now has intruderHp left; flash is a muzzle flash to draw.
+         */
+        float intruderHp, fightTime, flash, fightSaid;
+        boolean fighting;
+        /** A survivor group has made this building its home. */
+        World.Holdout holdout;
         /** On fire: the flames firefighters hose (null if not burning). */
         World.Fire fire;
         /** People inside on an errand (shopping, at church, at school), and how many are on their way. */

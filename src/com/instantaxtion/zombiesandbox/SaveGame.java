@@ -17,7 +17,7 @@ import java.util.ArrayList;
  * damaged or collapsed buildings.
  */
 final class SaveGame {
-    private static final int VERSION = 17;
+    private static final int VERSION = 18;
 
     private SaveGame() {
     }
@@ -249,6 +249,20 @@ final class SaveGame {
                 out.writeFloat(h[2]);
                 out.writeUTF(w.highlightText.get(i));
             }
+            // Version 18: survivor groups, and what's happened since the war was decided.
+            out.writeInt(w.holdouts.size());
+            for (World.Holdout h : w.holdouts) {
+                out.writeInt(w.city.buildings.indexOf(h.b));
+                out.writeUTF(h.name);
+                out.writeFloat(h.fort);
+                out.writeInt(h.stash);
+                out.writeInt(h.runs);
+                out.writeInt(h.said);
+            }
+            out.writeInt(w.aftermath);
+            out.writeFloat(w.afterTime);
+            out.writeInt(w.flareUps);
+            out.writeBoolean(w.retakeSent);
         } finally {
             out.close();
         }
@@ -527,6 +541,29 @@ final class SaveGame {
                     w.highlightAt.add(new float[]{in.readFloat(), in.readFloat(), in.readFloat()});
                     w.highlightText.add(in.readUTF());
                 }
+            }
+            if (version >= 18) {
+                int groups = in.readInt();
+                for (int i = 0; i < groups; i++) {
+                    int bi = in.readInt();
+                    String name = in.readUTF();
+                    float fort = in.readFloat();
+                    int stash = in.readInt(), runs = in.readInt(), said = in.readInt();
+                    if (bi < 0 || bi >= w.city.buildings.size()) continue;
+                    World.Holdout h = w.found(w.city.buildings.get(bi), false);
+                    if (h == null) continue;
+                    h.name = name;
+                    h.fort = fort;
+                    h.stash = stash;
+                    h.runs = runs;
+                    h.said = said;
+                }
+                w.aftermath = in.readInt();
+                w.afterTime = in.readFloat();
+                // (What's already been announced isn't announced again.)
+                if (w.afterTime > 50) w.afterSaid = 7;
+                w.flareUps = in.readInt();
+                w.retakeSent = in.readBoolean();
             }
             d.copCount = copCount;
             d.soldierCount = soldierCount;

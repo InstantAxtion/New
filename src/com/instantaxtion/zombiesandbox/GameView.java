@@ -1319,6 +1319,11 @@ final class GameView extends View implements Menu.Host {
         }
 
         for (int i = 0, n = world.dispatch.zones.size(); i < n; i++) drawZone(c, world.dispatch.zones.get(i));
+        for (int i = 0, n = world.holdouts.size(); i < n; i++) {
+            World.Holdout h = world.holdouts.get(i);
+            if (h.b.x1 + 40 < vx0 || h.b.x0 - 40 > vx1 || h.b.y1 + 40 < vy0 || h.b.y0 - 40 > vy1) continue;
+            drawHoldout(c, h);
+        }
 
         for (int i = 0, n = world.barriers.size(); i < n; i++) {
             float[] b = world.barriers.get(i);
@@ -1721,6 +1726,7 @@ final class GameView extends View implements Menu.Host {
                 City.Building b = world.city.buildings.get(i);
                 if (b.collapsed || b.x1 < vx0 || b.x0 > vx1 || b.y1 < vy0 || b.y0 > vy1) continue;
                 drawDamage(c, b, b.x0, b.y0, b.x1, b.y1, 1);
+                if (b.flash > 0) drawGunGlow(c, b, b.x0, b.y0, b.x1, b.y1);
                 if (see > 0) drawInterior(c, b, see);
             }
             return;
@@ -1777,9 +1783,70 @@ final class GameView extends View implements Menu.Host {
             c.drawBitmap(world.city.bitmap, roofSrc, roofDst, bmpPaint);
             bmpPaint.setAlpha(255);
             drawDamage(c, b, rx0, ry0, rx1, ry1, roofA);
+            if (b.flash > 0) drawGunGlow(c, b, rx0, ry0, rx1, ry1);
             drawRoofLabels(c, b, cx, cy, s, roofA);
         }
         wallFade = 1;
+    }
+
+    /**
+     * A survivor group's defences, growing as they work: boards over the door, then a ring of sandbags
+     * round the building (gap at the door), then a plank wall further out.
+     */
+    private void drawHoldout(Canvas c, World.Holdout h) {
+        City.Building b = h.b;
+        float f = h.fort;
+        if (f >= 10) {
+            // Boards nailed across the door.
+            stroke.setColor(0xFF8A6238);
+            stroke.setStrokeWidth(1.6f);
+            float dx = b.doorX, dy = b.doorY;
+            c.drawLine(dx - 4, dy - 3, dx + 4, dy + 3, stroke);
+            c.drawLine(dx - 4, dy + 3, dx + 4, dy - 3, stroke);
+        }
+        if (f >= 25) ringOf(c, b, 6, Math.min(1, (f - 25) / 40f), 0xFFC4AA78, 0xFF8E7A50, 3.2f, b.doorX, b.doorY);
+        if (f >= 65) ringOf(c, b, 14, Math.min(1, (f - 65) / 35f), 0xFF7A5634, 0xFF4E3620, 2.2f, b.doorX, b.doorY);
+    }
+
+    /** Sandbags (or planks) laid round a building at margin m, the first part of the way round so far. */
+    private void ringOf(Canvas c, City.Building b, float m, float part, int col, int edge, float size, float gx, float gy) {
+        float x0 = b.x0 - m, y0 = b.y0 - m, x1 = b.x1 + m, y1 = b.y1 + m;
+        float w = x1 - x0, h = y1 - y0, per = 2 * (w + h);
+        float step = size * 1.5f;
+        int count = (int) (per / step), show = (int) (count * part);
+        for (int k = 0; k < show; k++) {
+            float t = k * step, px, py;
+            boolean across;
+            if (t < w) { px = x0 + t; py = y0; across = true; }
+            else if (t < w + h) { px = x1; py = y0 + t - w; across = false; }
+            else if (t < 2 * w + h) { px = x1 - (t - w - h); py = y1; across = true; }
+            else { px = x0; py = y1 - (t - 2 * w - h); across = false; }
+            // A gap to get in and out by the door.
+            if (Math.abs(px - gx) < 7 && Math.abs(py - gy) < m + 7) continue;
+            City.Building o = world.city.buildingAt(px, py);
+            if (o != null && o != b) continue;
+            float hw = across ? size * 0.75f : size * 0.45f, hh = across ? size * 0.45f : size * 0.75f;
+            fill.setColor(edge);
+            c.drawRect(px - hw - 0.4f, py - hh - 0.4f, px + hw + 0.4f, py + hh + 0.4f, fill);
+            fill.setColor(col);
+            c.drawRect(px - hw, py - hh, px + hw, py + hh, fill);
+        }
+    }
+
+    /** Gunfire inside lights up the windows: a flicker along the walls, seen from anywhere. */
+    private void drawGunGlow(Canvas c, City.Building b, float x0, float y0, float x1, float y1) {
+        int k = (int) (world.time * 30) + b.seed;
+        float w = x1 - x0, h = y1 - y0;
+        for (int n = 0; n < 2; n++) {
+            int side = (k + n * 3) & 3;
+            float t = ((k * 37 + n * 101) % 100) / 100f;
+            float px = side < 2 ? x0 + 3 + t * (w - 6) : side == 2 ? x0 + 1.5f : x1 - 1.5f;
+            float py = side >= 2 ? y0 + 3 + t * (h - 6) : side == 0 ? y0 + 1.5f : y1 - 1.5f;
+            fill.setColor(0x80FFD27A);
+            c.drawCircle(px, py, 5, fill);
+            fill.setColor(0xF0FFF4C8);
+            c.drawCircle(px, py, 1.8f, fill);
+        }
     }
 
     /** Cracks and scorch marks on the roof of a building that has taken blast damage. */
@@ -2042,6 +2109,10 @@ final class GameView extends View implements Menu.Host {
         // and then. Whoever doesn't fit on the ground floor is upstairs.
         java.util.ArrayList<float[]> spots = plan != null ? plan.spots : looseSpots(b, x0, y0, x1, y1);
         int ns = spots.size();
+        if (b.fighting && ns > 1) {
+            drawFightInside(c, b, spots, a);
+            return;
+        }
         for (int i = 0, n = Math.min(ns, b.occupants.size() + b.visitors.size()); i < n; i++) {
             Entity o = i < b.occupants.size() ? b.occupants.get(i) : b.visitors.get(i - b.occupants.size());
             placeInside(o, i, b, spots, plan);
@@ -2057,6 +2128,73 @@ final class GameView extends View implements Menu.Host {
             c.drawCircle(lx + sway, ly, 3.4f, fill);
             fill.setColor(alpha(0xFF7C9A5E, a * 0.75f));
             c.drawCircle(lx + sway + 0.4f, ly, 2f, fill);
+        }
+    }
+
+    private Entity[] puppets;
+    private final java.util.HashMap<City.Building, Integer[]> byDoor = new java.util.HashMap<City.Building, Integer[]>();
+
+    /**
+     * A fight inside, seen through the roof: the dead have the rooms by the door, the people inside are
+     * pushed back to the far end, facing them, with guns flashing.
+     */
+    private void drawFightInside(Canvas c, final City.Building b, final java.util.ArrayList<float[]> spots, float a) {
+        Integer[] order = byDoor.get(b);
+        if (order == null || order.length != spots.size()) {
+            if (byDoor.size() > 100) byDoor.clear();
+            order = new Integer[spots.size()];
+            for (int i = 0; i < order.length; i++) order[i] = i;
+            java.util.Arrays.sort(order, new java.util.Comparator<Integer>() {
+                public int compare(Integer p, Integer q) {
+                    float[] u = spots.get(p), v = spots.get(q);
+                    return Float.compare(Math.abs(u[0] - b.doorX) + Math.abs(u[1] - b.doorY), Math.abs(v[0] - b.doorX) + Math.abs(v[1] - b.doorY));
+                }
+            });
+            byDoor.put(b, order);
+        }
+        if (puppets == null) {
+            puppets = new Entity[10];
+            for (int i = 0; i < puppets.length; i++) puppets[i] = world.puppetZombie(i);
+        }
+        int ns = order.length;
+        int dead = Math.min(Math.min(puppets.length, b.lurkers), Math.max(1, ns / 2));
+        float fx = 0, fy = 0;
+        for (int i = 0; i < dead; i++) {
+            float[] sp = spots.get(order[i]);
+            Entity z = puppets[i];
+            // Shuffling forwards, pulled back, forwards again.
+            float lunge = (float) Math.sin(world.time * 2.2f + i * 1.7f) * 2.5f;
+            float[] far = spots.get(order[ns - 1]);
+            float dx = far[0] - sp[0], dy = far[1] - sp[1], d = (float) Math.sqrt(dx * dx + dy * dy) + 0.001f;
+            z.x = sp[0] + dx / d * lunge;
+            z.y = sp[1] + dy / d * lunge;
+            z.angle = (float) Math.atan2(dy, dx);
+            z.phase = world.time * 3 + i;
+            drawEntity(c, z, false);
+            fx += z.x;
+            fy += z.y;
+        }
+        if (dead > 0) {
+            fx /= dead;
+            fy /= dead;
+        }
+        int people = Math.min(b.occupants.size(), ns - dead);
+        for (int i = 0; i < people; i++) {
+            Entity o = b.occupants.get(i);
+            float[] sp = spots.get(order[ns - 1 - i]);
+            o.x = sp[0];
+            o.y = sp[1];
+            o.angle = (float) Math.atan2(fy - o.y, fx - o.x);
+            o.aiming = o.canShoot() && dead > 0;
+            drawEntity(c, o, false);
+            if (o.aiming && b.flash > 0 && (i & 1) == ((int) (world.time * 20) & 1)) {
+                float ca = (float) Math.cos(o.angle), sa = (float) Math.sin(o.angle);
+                fill.setColor(alpha(0xFFFFE08A, a));
+                c.drawCircle(o.x + ca * 7, o.y + sa * 7, 2.2f, fill);
+                stroke.setColor(alpha(0x99FFF2C0, a));
+                stroke.setStrokeWidth(0.6f);
+                c.drawLine(o.x + ca * 7, o.y + sa * 7, fx, fy, stroke);
+            }
         }
     }
 
@@ -3184,6 +3322,22 @@ final class GameView extends View implements Menu.Host {
         // 911 calls: a small tag, "911 12" (the dead there), and a blue dot with how many units are coming.
         // Zoomed out, only the big ones.
         text.setTextSize(9.5f * dp);
+        // Survivor groups: their name, how many, and how well dug in.
+        text.setTextSize(10.5f * dp);
+        for (int i = 0, n = world.holdouts.size(); i < n; i++) {
+            World.Holdout h = world.holdouts.get(i);
+            float sx = screenX((h.b.x0 + h.b.x1) / 2), sy = screenY(h.b.y0) - 8 * dp;
+            if (sx < -100 * dp || sx > getWidth() + 100 * dp || sy < 0 || sy > barTop) continue;
+            String label = h.name.toUpperCase(java.util.Locale.ROOT) + "  -  " + h.count + "  -  "
+                    + (h.fort >= 100 ? "walled in" : "fortified " + (int) h.fort + "%");
+            float tw = text.measureText(label);
+            oval.set(sx - tw / 2 - 7 * dp, sy - 13 * dp, sx + tw / 2 + 7 * dp, sy + 5 * dp);
+            if (!claim(oval)) continue;
+            fill.setColor(0xD04A3A1C);
+            c.drawRoundRect(oval, 7 * dp, 7 * dp, fill);
+            text.setColor(0xFFF2E2B8);
+            c.drawText(label, sx, sy, text);
+        }
         for (int i = 0, n = world.dispatch.incidents.size(); i < n; i++) {
             Dispatch.Incident inc = world.dispatch.incidents.get(i);
             if (scale / dp < 0.6f && inc.zombiesNear < 6) continue;
@@ -3217,11 +3371,12 @@ final class GameView extends View implements Menu.Host {
             City.Building b = world.city.buildings.get(i);
             if (b.occupants.isEmpty()) continue;
             // (Zoomed out, only the ones under attack.)
-            boolean attacked = b.barricade < 99 && world.countZombiesNear(b.doorX, b.doorY, 40) > 0;
+            boolean attacked = b.fighting || b.barricade < 99 && world.countZombiesNear(b.doorX, b.doorY, 40) > 0;
             if (scale / dp < 1.3f && !attacked) continue;
             float sx = screenX(b.doorX), sy = screenY(b.doorY) - 12 * dp;
             if (sx < -60 * dp || sx > getWidth() + 60 * dp || sy < 0 || sy > barTop) continue;
-            String label = b.occupants.size() + " hiding" + (attacked ? " - UNDER ATTACK" : "");
+            String label = b.fighting ? b.occupants.size() + " FIGHTING " + b.lurkers + " INSIDE"
+                    : b.occupants.size() + " hiding" + (attacked ? " - UNDER ATTACK" : "");
             float tw = text.measureText(label);
             oval.set(sx - tw / 2 - 6 * dp, sy - 12 * dp, sx + tw / 2 + 6 * dp, sy + 7 * dp);
             if (!claim(oval)) continue;

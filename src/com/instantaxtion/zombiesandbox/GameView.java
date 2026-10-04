@@ -46,7 +46,7 @@ final class GameView extends View implements Menu.Host {
     private static final String[] MIL_NAMES = {"Soldier", "Commander", "Sniper", "Machine gunner", "National Guard"};
     // One line about each option in the pickers.
     private static final String[] CIV_INFO = {"Goes about their day, runs and hides from zombies",
-            "Heals the hurt and can cure fresh bites", "Puts out fires, gives first aid, fights with an axe",
+            "Heals the hurt (bites can't be treated)", "Puts out fires, gives first aid, fights with an axe",
             "Follows its owner and fights zombies", "Armed gang member: robs, loots and shoots"};
     private static final String[] COP_INFO = {"Pistol, answers 911 calls", "Shield blocks bites from the front",
             "Officer with a police dog"};
@@ -77,8 +77,25 @@ final class GameView extends View implements Menu.Host {
     private final Sound sound;
     private final Menu menu;
     private final Records records;
-    private String achievement;
-    private float achievementTime, recordTimer;
+    private float recordTimer;
+    /**
+     * Big announcements (the war turning, achievements) are queued and shown one at a time in a single band,
+     * so they never land on top of each other: {title, subtitle, colour}.
+     */
+    private final java.util.ArrayList<Object[]> headlines = new java.util.ArrayList<Object[]>();
+    private float headTime;
+    private int seenBanner;
+    private static final float HEAD_SECONDS = 4.5f;
+    /** Where the radio feed ended this frame (the headline band goes below it in portrait). */
+    private float feedBottom;
+
+    private void headline(String title, String sub, int color) {
+        // A newer word on the war replaces one still waiting; never more than three in the queue.
+        for (int i = headlines.size() - 1; i >= 1; i--)
+            if (((Integer) headlines.get(i)[2]) == color && color != 0xFFFFD86B) headlines.remove(i);
+        if (headlines.size() >= 3) headlines.remove(headlines.size() - 1);
+        headlines.add(new Object[]{title, sub, color});
+    }
     private boolean hasGame;
     private float menuTime, savedCamX, savedCamY, savedScale;
     private float fps, fpsTimer;
@@ -554,13 +571,26 @@ final class GameView extends View implements Menu.Host {
                 recordTimer = 2;
                 String got = records.check(world);
                 if (got != null) {
-                    achievement = got;
-                    achievementTime = 5;
+                    headline("ACHIEVEMENT UNLOCKED", got, 0xFFFFD86B);
                     sound.play(Sfx.RADIO, 0.8f, 0);
                 }
             }
         }
-        if (achievementTime > 0) achievementTime -= dt;
+        // Headlines: one at a time, each for a few seconds.
+        if (world.bannerSeq != seenBanner) {
+            seenBanner = world.bannerSeq;
+            if (world.warBanner != null) {
+                boolean good = world.warBanner.contains("SURVIVES") || world.warBanner.contains("TURNING");
+                headline(world.warBanner, world.warSub, good ? 0xFF8FB8FF : 0xFF9BE070);
+            }
+        }
+        if (!headlines.isEmpty()) {
+            headTime += dt;
+            if (headTime > HEAD_SECONDS) {
+                headlines.remove(0);
+                headTime = 0;
+            }
+        }
         sound.playTrack(inGame || menu.screen == Menu.PAUSE ? mood : Synth.TRACK_MENU);
         if (world.alarmTime > 0) sound.play(Sfx.ALARM, 0.7f, 0);
         playSounds(inGame ? 1f : 0.35f);
@@ -760,6 +790,9 @@ final class GameView extends View implements Menu.Host {
         float top = miniRect.isEmpty() ? barTop - 40 * dp : portrait && miniRect.top < barTop / 2 ? miniRect.bottom + 8 * dp
                 : miniRect.top - 36 * dp;
         camChip.set(right - tw, top, right, top + 28 * dp);
+        // In portrait the space above the minimap is where announcements go: the switch sits beside it.
+        if (portrait && !miniRect.isEmpty() && miniRect.top > barTop / 2)
+            camChip.set(miniRect.left - 8 * dp - tw, miniRect.bottom - 28 * dp, miniRect.left - 8 * dp, miniRect.bottom);
         fill.setColor(director ? 0xE03A6EA5 : 0xE0202227);
         c.drawRoundRect(camChip, 9 * dp, 9 * dp, fill);
         text.setColor(0xFFF2F2F2);
@@ -828,8 +861,7 @@ final class GameView extends View implements Menu.Host {
                     getHeight() - 10 * dp, text);
             shareHandler.share(b);
             if (records.unlock(Records.PHOTO)) {
-                achievement = Records.ACHIEVEMENTS[Records.PHOTO][0];
-                achievementTime = 5;
+                headline("ACHIEVEMENT UNLOCKED", Records.ACHIEVEMENTS[Records.PHOTO][0], 0xFFFFD86B);
             }
         } catch (Throwable t) {
             world.say("Couldn't take a screenshot");
@@ -2867,6 +2899,7 @@ final class GameView extends View implements Menu.Host {
     /** The last few radio messages. Tapping one moves the camera to where it happened. */
     private void drawFeed(Canvas c) {
         feedCount = 0;
+        feedBottom = 0;
         if (!settings.radio()) return;
         java.util.ArrayList<Dispatch.Message> log = world.dispatch.log;
         int shown = 0;
@@ -2876,8 +2909,12 @@ final class GameView extends View implements Menu.Host {
             shown++;
         }
         float lineH = 22 * dp, gap = 3 * dp, y = feedRect.top;
-        // In portrait the war meter sits where the messages start: move them below it.
-        if (portrait && (world.outbreak || world.warBannerTime > 0)) y += 36 * dp;
+        // In portrait the war meter sits where the messages start: they go below it.
+        if (portrait && meterBottom > 0) y = Math.max(y, meterBottom + 8 * dp);
+        // Never down over the Auto cam switch (or the minimap) on the right.
+        float limit = portrait ? barTop : (camChip.isEmpty() ? barTop : camChip.top) - 6 * dp;
+        while (shown > 0 && y + shown * (lineH + gap) > limit) shown--;
+        feedBottom = y;
         text.setTextSize(11.5f * dp);
         for (int k = 0; k < shown; k++) {
             Dispatch.Message m = log.get(log.size() - shown + k);
@@ -2903,6 +2940,7 @@ final class GameView extends View implements Menu.Host {
             c.drawText(body, r.left + 8 * dp + whoW, y + lineH * 0.68f, text);
             feedMsgs[feedCount++] = m;
             y += lineH + gap;
+            feedBottom = y;
         }
     }
 
@@ -3303,13 +3341,49 @@ final class GameView extends View implements Menu.Host {
      * The tug of war under the stats panel: how much of the fighting strength is on the people's side. The
      * marker slides as the battle swings, and a big banner marks turning points and the end of the war.
      */
+    /** Where the war meter's panel ends (0 when it isn't shown), and the space it takes. */
+    private float meterBottom;
+    private final RectF meterRect = new RectF();
+
+    /** The text, cut short with "..." to fit the width (in the current text size). */
+    private String fitText(String s, float width) {
+        if (text.measureText(s) <= width) return s;
+        while (s.length() > 4 && text.measureText(s + "...") > width) s = s.substring(0, s.length() - 1);
+        return s + "...";
+    }
+
     private void drawWarMeter(Canvas c) {
+        meterBottom = 0;
+        meterRect.setEmpty();
         if (world.outbreak || world.warBannerTime > 0) {
             float left = statsShown.left, right = Math.max(statsShown.right, left + 200 * dp), top = statsShown.bottom + 8 * dp;
             float bh = 10 * dp, b = Math.max(0.03f, Math.min(0.97f, world.warBalance));
-            oval.set(left, top, right, top + bh + 18 * dp);
+            // An air strike on the way gets a red line of its own inside the panel.
+            boolean strike = world.firebombTime > 0 && world.firebombPlace != null;
+            // (Where there's no room under the meter, the warning sits beside it.)
+            boolean inside = strike && top + bh + 38 * dp < barTop - 6 * dp;
+            oval.set(left, top, right, top + bh + 18 * dp + (inside ? 20 * dp : 0));
+            meterRect.set(oval);
+            meterBottom = oval.bottom;
             fill.setColor(0xB0101114);
             c.drawRoundRect(oval, 8 * dp, 8 * dp, fill);
+            if (strike) {
+                text.setTextSize(11 * dp);
+                text.setTextAlign(Paint.Align.LEFT);
+                String msg = "AIR STRIKE: " + world.firebombPlace + " in " + (int) Math.ceil(world.firebombTime) + "s";
+                float tx = left + 10 * dp, ty = oval.bottom - 7 * dp;
+                if (!inside) {
+                    float tw = Math.min(text.measureText(msg), 260 * dp) + 20 * dp;
+                    oval.set(right + 8 * dp, top, right + 8 * dp + tw, top + 24 * dp);
+                    fill.setColor(0xD0601010);
+                    c.drawRoundRect(oval, 8 * dp, 8 * dp, fill);
+                    meterRect.set(meterRect.left, meterRect.top, oval.right, Math.max(meterRect.bottom, oval.bottom));
+                    tx = oval.left + 10 * dp;
+                    ty = oval.bottom - 8 * dp;
+                }
+                text.setColor(((int) (world.time * 3)) % 2 == 0 ? 0xFFFF6A5A : 0xFFFFB0A0);
+                c.drawText(fitText(msg, inside ? right - left - 20 * dp : 260 * dp), tx, ty, text);
+            }
             float bx0 = left + 10 * dp, bx1 = right - 10 * dp, by = top + 15 * dp, split = bx0 + (bx1 - bx0) * b;
             fill.setColor(0xFF4F7BE0);
             c.drawRect(bx0, by, split, by + bh * 0.6f, fill);
@@ -3324,48 +3398,6 @@ final class GameView extends View implements Menu.Host {
             text.setTextAlign(Paint.Align.RIGHT);
             text.setColor(0xFFB8E09A);
             c.drawText((int) ((1 - b) * 100) + "% ZOMBIES", bx1, top + 11 * dp, text);
-            // The race for a cure.
-            if (world.cureProgress > 0) {
-                float cy = top + bh + 22 * dp;
-                oval.set(left, cy, right, cy + 20 * dp);
-                fill.setColor(0xB0101114);
-                c.drawRoundRect(oval, 8 * dp, 8 * dp, fill);
-                fill.setColor(0xFF2A3A2A);
-                c.drawRect(bx0, cy + 13 * dp, bx1, cy + 16 * dp, fill);
-                fill.setColor(world.cureReady ? 0xFF63E06B : 0xFF3FA84A);
-                c.drawRect(bx0, cy + 13 * dp, bx0 + (bx1 - bx0) * world.cureProgress, cy + 16 * dp, fill);
-                text.setTextAlign(Paint.Align.LEFT);
-                text.setColor(0xFF9BE08A);
-                c.drawText(world.cureReady ? "CURE READY" : world.hospitalLost ? "CURE  (hospital lost: no progress)"
-                        : "CURE " + (int) (world.cureProgress * 100) + "%", bx0, cy + 10 * dp, text);
-            }
-        }
-        // An air strike is coming.
-        if (world.firebombTime > 0) {
-            String msg = "AIR STRIKE ON " + world.firebombPlace.toUpperCase() + " IN " + (int) Math.ceil(world.firebombTime) + "s";
-            text.setTextAlign(Paint.Align.CENTER);
-            text.setTextSize(16 * dp);
-            float tw = text.measureText(msg) + 30 * dp, ty = topRects[0].bottom + 54 * dp;
-            oval.set((getWidth() - tw) / 2, ty - 22 * dp, (getWidth() + tw) / 2, ty + 10 * dp);
-            fill.setColor(((int) (world.time * 3)) % 2 == 0 ? 0xE0B02020 : 0xE0701010);
-            c.drawRoundRect(oval, 8 * dp, 8 * dp, fill);
-            text.setColor(0xFFFFFFFF);
-            c.drawText(msg, getWidth() / 2f, ty, text);
-        }
-        if (world.warBannerTime > 0 && world.warBanner != null) {
-            world.warBannerTime -= 1 / 60f;
-            float a = Math.min(1, world.warBannerTime / 1.2f) * Math.min(1, (6 - world.warBannerTime) * 3);
-            float cy = barTop * 0.42f;
-            fill.setColor(alpha(0xC0000000, a));
-            c.drawRect(0, cy - 38 * dp, getWidth(), cy + 30 * dp, fill);
-            text.setTextAlign(Paint.Align.CENTER);
-            text.setTextSize(Math.min(30 * dp, getWidth() / 16f));
-            boolean good = world.warBanner.contains("SURVIVES") || world.warBanner.contains("TURNING") || world.warBanner.contains("CURE");
-            text.setColor(alpha(good ? 0xFF8FB8FF : 0xFF9BE070, a));
-            c.drawText(world.warBanner, getWidth() / 2f, cy, text);
-            text.setTextSize(13 * dp);
-            text.setColor(alpha(0xFFE6E6E6, a));
-            if (world.warSub != null) c.drawText(world.warSub, getWidth() / 2f, cy + 20 * dp, text);
         }
     }
 
@@ -3402,9 +3434,15 @@ final class GameView extends View implements Menu.Host {
                 c.drawCircle(x0 + 14 * dp, ty - 4.5f * dp, 4.5f * dp, fill);
                 text.setColor(0xFFE6E6E6);
                 text.setTextAlign(Paint.Align.LEFT);
+                // Label and number never run into each other: shrink the row if the column is narrow.
+                String num = String.valueOf(rows[t]);
+                float room = colW - 26 * dp - 12 * dp - 8 * dp, need = text.measureText(ROW_LABELS[t]) + text.measureText(num);
+                float size = text.getTextSize();
+                if (need > room) text.setTextSize(size * room / need);
                 c.drawText(ROW_LABELS[t], x0 + 26 * dp, ty, text);
                 text.setTextAlign(Paint.Align.RIGHT);
-                c.drawText(String.valueOf(rows[t]), x0 + colW - 12 * dp, ty, text);
+                c.drawText(num, x0 + colW - 12 * dp, ty, text);
+                text.setTextSize(size);
             }
             text.setTextAlign(Paint.Align.LEFT);
             float pad = statsRect.left;
@@ -3426,29 +3464,13 @@ final class GameView extends View implements Menu.Host {
             c.drawText(String.format("Time %d:%02d", secs / 60, secs % 60), pad + 12 * dp, y, text);
         }
 
-        // The feed goes first so map labels can keep out of its way.
-        drawFeed(c);
+        // The minimap and war meter go first so the radio feed can stack round them, then the feed so
+        // map labels can keep out of its way.
         drawMinimap(c);
         drawWarMeter(c);
+        drawFeed(c);
         drawMapLabels(c);
         drawPopups(c);
-        if (achievementTime > 0 && achievement != null) {
-            // Achievement unlocked banner.
-            float a = Math.min(1, achievementTime);
-            text.setTextSize(15 * dp);
-            text.setTextAlign(Paint.Align.CENTER);
-            String line = "Achievement unlocked: " + achievement;
-            float tw = text.measureText(line) + 40 * dp;
-            oval.set(w / 2f - tw / 2, barTop - 110 * dp, w / 2f + tw / 2, barTop - 72 * dp);
-            fill.setColor(alpha(0xF02F5E2B, a));
-            c.drawRoundRect(oval, 12 * dp, 12 * dp, fill);
-            stroke.setColor(alpha(0xFF9BE08A, a));
-            stroke.setStrokeWidth(1.5f * dp);
-            c.drawRoundRect(oval, 12 * dp, 12 * dp, stroke);
-            text.setColor(alpha(0xFFFFFFFF, a));
-            c.drawText(line, w / 2f, oval.centerY() + 5 * dp, text);
-        }
-
         // Top buttons.
         String[] top = {simPaused ? "Play" : "Pause", "Speed " + SPEEDS[speedIdx] + "x",
                 "Brush " + BRUSHES[brushIdx], settings.buildings3d() ? "View 3D" : "View Top", "Clear", "Menu"};
@@ -3506,16 +3528,7 @@ final class GameView extends View implements Menu.Host {
         }
         if (picker >= 0) drawPicker(c);
 
-        // Messages.
-        text.setTextAlign(Paint.Align.CENTER);
-        if (world.messageTime > 0 && world.message != null) {
-            float a = Math.min(1, world.messageTime);
-            text.setTextSize(28 * dp);
-            text.setColor(alpha(0xFF000000, a * 0.7f));
-            c.drawText(world.message, w / 2f + 2 * dp, h * 0.3f + 2 * dp, text);
-            text.setColor(alpha(0xFFFFE27A, a));
-            c.drawText(world.message, w / 2f, h * 0.3f, text);
-        }
+        drawHeadlines(c);
         float infoY = barTop - 12 * dp;
         drawPins(c);
         text.setTextSize(13 * dp);
@@ -3535,6 +3548,62 @@ final class GameView extends View implements Menu.Host {
                     w / 2f, infoY);
         } else if (simPaused) {
             drawBanner(c, "PAUSED", w / 2f, infoY);
+        }
+    }
+
+    /**
+     * The headline band (one announcement at a time, across the whole screen) and, under it, the short
+     * line about what you just did. In portrait they go below the radio feed; in landscape across the middle.
+     */
+    private void drawHeadlines(Canvas c) {
+        int w = getWidth();
+        float top = portrait ? Math.max(feedBottom, Math.max(meterBottom, statsShown.bottom)) + 12 * dp : barTop * 0.4f;
+        text.setTextAlign(Paint.Align.CENTER);
+        if (!headlines.isEmpty()) {
+            Object[] hd = headlines.get(0);
+            float a = Math.min(1, Math.min(headTime * 4, (HEAD_SECONDS - headTime) / 0.6f));
+            String title = (String) hd[0], sub = (String) hd[1];
+            float bandH = sub == null ? 44 * dp : 64 * dp;
+            fill.setColor(alpha(0xE6101114, a));
+            c.drawRect(0, top, w, top + bandH, fill);
+            fill.setColor(alpha((Integer) hd[2], a));
+            c.drawRect(0, top, w, top + 2 * dp, fill);
+            text.setTextSize(Math.min(26 * dp, w / 18f));
+            text.setColor(alpha((Integer) hd[2], a));
+            c.drawText(fitText(title, w - 24 * dp), w / 2f, top + 32 * dp, text);
+            if (sub != null) {
+                text.setTextSize(13 * dp);
+                text.setColor(alpha(0xFFE6E6E6, a));
+                c.drawText(fitText(sub, w - 24 * dp), w / 2f, top + 53 * dp, text);
+            }
+            top += bandH + 8 * dp;
+        }
+        if (world.messageTime > 0 && world.message != null) {
+            float a = Math.min(1, world.messageTime);
+            text.setTextSize(17 * dp);
+            // Fit between whatever else is on screen at that height (stats, meter, minimap, Auto cam).
+            float bottom = top + 34 * dp, l = 10 * dp, rr = w - 10 * dp;
+            RectF[] around = {statsShown, meterRect, miniRect, camChip};
+            for (RectF o : around) {
+                if (o.isEmpty() || o.bottom < top || o.top > bottom) continue;
+                if (o.centerX() < w / 2f) l = Math.max(l, o.right + 8 * dp);
+                else rr = Math.min(rr, o.left - 8 * dp);
+            }
+            if (rr - l < 120 * dp) {
+                l = 10 * dp;
+                rr = w - 10 * dp;
+            }
+            String msg = fitText(world.message, rr - l - 28 * dp);
+            if (text.measureText(world.message) > rr - l - 28 * dp) {
+                text.setTextSize(14 * dp);
+                msg = fitText(world.message, rr - l - 28 * dp);
+            }
+            float tw = text.measureText(msg) + 28 * dp, mid = (l + rr) / 2;
+            oval.set(mid - tw / 2, top, mid + tw / 2, bottom);
+            fill.setColor(alpha(0xD8101114, a));
+            c.drawRoundRect(oval, 10 * dp, 10 * dp, fill);
+            text.setColor(alpha(0xFFFFE27A, a));
+            c.drawText(msg, mid, oval.centerY() + 6 * dp, text);
         }
     }
 
@@ -4641,7 +4710,7 @@ final class GameView extends View implements Menu.Host {
         String role = null;
         switch (b.kind) {
             case City.POWER: role = world.blackout ? "BLACKOUT: overrun. Clear the zombies out to get the power back." : "Keeps the lights, sirens and broadcasts on"; break;
-            case City.HOSPITAL: role = world.hospitalLost ? "FALLEN: nobody can be treated here until it's cleared" : "Heals the wounded and cures fresh bites"; break;
+            case City.HOSPITAL: role = world.hospitalLost ? "FALLEN: nobody can be treated here until it's cleared" : "Heals the wounded"; break;
             case City.STATION: role = "Police armoury: officers restock here"; break;
             case City.BARRACKS: role = "Army barracks: soldiers restock at the base"; break;
             case City.MARKET: role = "Food and hunting ammo; can become a safe zone"; break;

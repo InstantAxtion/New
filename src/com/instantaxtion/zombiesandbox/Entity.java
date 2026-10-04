@@ -49,7 +49,7 @@ final class Entity {
     Dispatch.Incident incident;
     Dispatch.SafeZone zone;
     int slot, callsign, squad, member;
-    boolean onScene, outOfAmmoSaid, cureTried;
+    boolean onScene, outOfAmmoSaid;
     float phoneTimer, talkTimer, callCd, taskTimer;
     /** A spot to stand at: guard posts and player orders. */
     float postX, postY;

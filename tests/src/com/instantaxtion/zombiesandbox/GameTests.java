@@ -231,7 +231,7 @@ public final class GameTests {
                 z.place = "Test";
                 java.lang.reflect.Method m = World.class.getDeclaredMethod("checkpoint", Entity.class, Dispatch.SafeZone.class);
                 m.setAccessible(true);
-                int before = w.turnedAway + w.quarantined, stopped = 0;
+                int before = w.turnedAway, stopped = 0;
                 for (int i = 0; i < 40; i++) {
                     Entity e = w.create(Entity.CIVILIAN, z.x, z.y);
                     e.infected = true;
@@ -239,7 +239,7 @@ public final class GameTests {
                     if ((Boolean) m.invoke(w, e, z)) stopped++;
                     check(e.screened, "checked at the gate");
                 }
-                int caught = w.turnedAway + w.quarantined - before;
+                int caught = w.turnedAway - before;
                 check(caught >= 20 && stopped <= caught, "caught " + caught + " of 40");
                 Entity clean = w.create(Entity.CIVILIAN, z.x, z.y);
                 check(!(Boolean) m.invoke(w, clean, z), "healthy people walk in");
@@ -599,7 +599,7 @@ public final class GameTests {
                 w.controlled = null;
             }
         });
-        test("fires spread, the cure, quarantine, supplies and militias", new Check() {
+        test("fires spread, no cure, quarantine, supplies and militias", new Check() {
             public void run() throws Exception {
                 CityConfig c = new CityConfig();
                 c.v[CityConfig.OPT_ZOMBIES] = 0;
@@ -621,22 +621,23 @@ public final class GameTests {
                     m.invoke(w, 1 / 30f);
                 }
                 check(b.collapsed, "an unchecked fire burns it down");
-                // The cure.
+                // There's no cure: a bite is for good, even at the hospital or with a medic.
+                boolean noCure = true;
+                for (java.lang.reflect.Method mm : World.class.getDeclaredMethods())
+                    if (mm.getName().toLowerCase().contains("cure") || mm.getName().equals("revive")) noCure = false;
+                for (java.lang.reflect.Field ff : World.class.getDeclaredFields())
+                    if (ff.getName().toLowerCase().contains("cure")) noCure = false;
+                check(noCure, "the cure is gone");
                 Entity bitten = null;
                 for (Entity e : w.entities) if (e.type == Entity.CIVILIAN && !e.dead) bitten = e;
+                City.Facility hosp = w.city.nearestFacility(City.FACILITY_HOSPITAL, bitten.x, bitten.y);
                 bitten.infected = true;
-                bitten.infectTimer = 100;
-                w.outbreak = true;
-                w.cureProgress = 0.999f;
-                java.lang.reflect.Method cure = World.class.getDeclaredMethod("updateCure");
-                cure.setAccessible(true);
-                cure.invoke(w);
-                check(w.cureReady && !bitten.infected, "the cure saves the bitten");
-                float[] p = w.city.findWalkable(bitten.x + 20, bitten.y);
-                Entity z = w.spawn(Entity.ZOMBIE, p[0], p[1]);
-                java.lang.reflect.Method revive = World.class.getDeclaredMethod("revive", Entity.class);
-                revive.setAccessible(true);
-                check((Boolean) revive.invoke(w, z) && z.dead, "the cure brings a zombie back");
+                bitten.infectTimer = 1000;
+                bitten.x = hosp.x;
+                bitten.y = hosp.y;
+                Entity medic = w.spawn(Entity.MEDIC, hosp.x + 6, hosp.y);
+                for (int i = 0; i < 30 * 10; i++) w.update(1 / 30f);
+                check(bitten.infected || bitten.dead, "the bite can't be treated");
                 // Quarantine.
                 java.lang.reflect.Method seal = World.class.getDeclaredMethod("sealDistrict", int.class);
                 seal.setAccessible(true);
@@ -646,7 +647,7 @@ public final class GameTests {
                 File f = File.createTempFile("zcs", ".dat");
                 SaveGame.save(w, f);
                 World l = SaveGame.load(f);
-                check(l.cureReady && l.city.facilities.get(0).ammo == w.city.facilities.get(0).ammo, "the war's state is saved");
+                check(l.city.facilities.get(0).ammo == w.city.facilities.get(0).ammo, "the war's state is saved");
                 f.delete();
             }
         });

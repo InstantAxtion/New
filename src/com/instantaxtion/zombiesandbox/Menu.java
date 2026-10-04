@@ -73,7 +73,7 @@ final class Menu {
             {"Looking around", "Pinch to zoom and drag with two fingers. With Move selected you can drag with one finger, and tap anyone to follow them with the camera. Press Take control on their card to play them yourself: left thumb to move (push further to run), the red button to shoot, bite or shove. Zoom right in to see through roofs. The View button switches between 3D and bird's-eye."},
             {"The city fights back", "Civilians call 911, the police respond by car, and the military is called in when it gets bad. The radio feed shows what they say. Tap a message to jump there."},
             {"Safe zones and hiding", "Police and soldiers pick a spot well away from the dead and put up a sandbag line; the zone opens once it's built. Its border grows as people arrive and guards join, follows the streets, and pulls back where the dead push. Others barricade themselves in buildings until zombies break the door down. Where and when zones go up is up to them."},
-            {"Medics, ammo and reserves", "Medics heal the hurt and can cure fresh bites. Ammo runs out, and units go back to the station or base to resupply. Backup, army squads and helicopter support are limited."},
+            {"Medics, ammo and reserves", "Medics heal the hurt (a bite can't be treated). Ammo runs out, and units go back to the station or base to resupply. Backup, army squads and helicopter support are limited."},
             {"Pausing and saving", "Menu (top right) pauses the game, saves it and shows the stats. The game also saves itself when you leave the app."},
     };
     private int tutorialPage;
@@ -514,12 +514,12 @@ final class Menu {
                 {"Zombies killed", String.valueOf(world.zombiesKilled)},
                 {"People turned", String.valueOf(world.turned)},
                 {"Civilians lost", String.valueOf(world.civiliansLost)},
-                {"Infections cured", String.valueOf(world.cured)},
+                {"People patched up by medics", String.valueOf(world.healed)},
                 {"911 calls", String.valueOf(world.dispatch.calls)},
                 {"Shots fired", String.valueOf(world.shotsFired)},
                 {"Volunteers joined (said no)", world.recruits + " (" + world.refused + ")"},
                 {"City", world.city.name + "  (" + world.city.cfg.code() + ")"},
-                {"Checkpoints: turned away / treated", world.turnedAway + " / " + world.quarantined},
+                {"Bitten people turned away at checkpoints", String.valueOf(world.turnedAway)},
                 {"Outbreak started", world.outbreakPlace == null ? "-" : world.outbreakPlace},
                 {"Infection chain", chainText(world)},
                 {world.strainName, strainTraits(world)},

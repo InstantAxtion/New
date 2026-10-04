@@ -89,7 +89,7 @@ final class World {
     int histCount;
     float statStep = 2f;
     private float statTimer;
-    int shotsFired, cured, peakZombies, hiding;
+    int shotsFired, healed, peakZombies, hiding;
     /** Every living civilian: on the street, indoors, or in a car (so the count doesn't jump as people go in and out). */
     int civilians;
     /** Zombies shut inside buildings, out of sight. */
@@ -98,7 +98,7 @@ final class World {
     boolean blackout, hospitalLost;
     private float powerThreat, hospitalThreat;
     /** Army checkpoints: bitten people turned away at the gate, and caught and treated in quarantine. */
-    int turnedAway, quarantined;
+    int turnedAway;
     /** Recruitment: the most cops and soldiers there have been, how many civilians joined up or refused. */
     int peakCops, peakSoldiers, recruits, refused;
     /** How far the infection has evolved (0-5), how long the outbreak has run, and the recovery afterwards. */
@@ -218,6 +218,8 @@ final class World {
     /** A big announcement across the screen (the end of the war, a turning point) and how long it shows. */
     String warBanner, warSub;
     float warBannerTime;
+    /** Counts banners, so the screen can queue each one once. */
+    int bannerSeq;
     int startHumans;
 
     /** How ready the city is: 0 normal, 1 unprepared, 2 panicking, 3 a gun town, 4 well prepared. */
@@ -331,6 +333,7 @@ final class World {
         warBanner = title;
         warSub = sub;
         warBannerTime = 6;
+        bannerSeq++;
         dispatch.say(Dispatch.WHO_INFO, null, title.charAt(0) + title.substring(1).toLowerCase() + ". " + sub,
                 city.worldW() / 2, city.worldH() / 2);
     }
@@ -1228,6 +1231,7 @@ final class World {
         time += dt;
         shake = Math.max(0, shake - dt * 3);
         if (messageTime > 0) messageTime -= dt;
+        if (warBannerTime > 0) warBannerTime -= dt;
         buildHash();
         fieldTimer -= dt;
         if (fieldTimer <= 0) {
@@ -2199,7 +2203,6 @@ final class World {
         if (!t.infected && t.type != Entity.DOG && rnd.nextFloat() < chance) {
             t.infected = true;
             t.infectTimer = turnTime(12 + rnd.nextFloat() * 14);
-            t.cureTried = false;
         }
         if (z.type == Entity.BRUTE) tryMove(t, nx * 8, ny * 8);
     }
@@ -3589,10 +3592,6 @@ final class World {
                     e.hp = Math.min(e.maxHp, e.hp + 15 * dt);
                     m[2] -= dt * 0.5f;
                 }
-                if (e.infected && !e.cureTried) {
-                    tryCure(e, 0.5f);
-                    m[2] -= 1;
-                }
             }
             if (m[2] <= 0) medkits.remove(i);
         }
@@ -3617,7 +3616,6 @@ final class World {
                     if (infect && !o.infected && o.type != Entity.DOG && rnd.nextFloat() < 0.35f * dmg) {
                         o.infected = true;
                         o.infectTimer = turnTime(15 + rnd.nextFloat() * 15);
-                        o.cureTried = false;
                     }
                 }
             }
@@ -3683,7 +3681,6 @@ final class World {
         if (best == null) return null;
         best.infected = true;
         best.infectTimer = 25 + rnd.nextFloat() * 20;
-        best.cureTried = false;
         if (patientZero == null) markPatientZero(best);
         return best;
     }
@@ -3991,7 +3988,6 @@ final class World {
     private void cityLife() {
         keyBuildings();
         callNationalGuard();
-        updateCure();
         escalate();
         supplies();
         militias();
@@ -4756,14 +4752,14 @@ final class World {
     /** Hurt people walk to the hospital when nothing is chasing them, and heal there. */
     private boolean healSeeking(Entity e, Entity threat, float dt) {
         City.Facility hospital = hospitalLost ? null : city.nearestFacility(City.FACILITY_HOSPITAL, e.x, e.y);
-        boolean needs = e.hp < e.maxHp * 0.45f || (e.infected && e.infectTimer > 6 && !e.cureTried);
+        boolean needs = e.hp < e.maxHp * 0.45f;
         if (e.task == Dispatch.T_NONE && needs && threat == null) e.task = Dispatch.T_HEAL;
         if (e.task != Dispatch.T_HEAL) return false;
         if (threat != null && e.fleeTimer > 0) {
             e.task = Dispatch.T_NONE;
             return false;
         }
-        // A pharmacy on the way patches people up (and sometimes stops an infection).
+        // A pharmacy on the way patches people up.
         float hd = hospital == null ? Float.MAX_VALUE : (float) Math.hypot(hospital.x - e.x, hospital.y - e.y);
         City.Building ph = pharmacyNear(e, Math.min(hd, 700));
         if (ph != null) {
@@ -4772,7 +4768,6 @@ final class World {
             if (d < 10) {
                 ph.stock--;
                 e.hp = Math.min(e.maxHp, e.hp + e.maxHp * 0.5f);
-                if (e.infected && !e.cureTried) tryCure(e, 0.3f);
                 e.task = Dispatch.T_NONE;
                 e.talkTimer = 1.5f;
                 for (int k = 0; k < 6; k++)
@@ -4789,8 +4784,7 @@ final class World {
         float ddx = hospital.x - e.x, ddy = hospital.y - e.y;
         if (ddx * ddx + ddy * ddy < hospital.r * hospital.r) {
             e.hp = Math.min(e.maxHp, e.hp + 8 * dt);
-            if (e.infected && !e.cureTried) tryCure(e, 0.5f);
-            if (e.hp >= e.maxHp && !e.infected) e.task = Dispatch.T_NONE;
+            if (e.hp >= e.maxHp) e.task = Dispatch.T_NONE;
             wander(e, e.speed * 0.3f);
             return true;
         }
@@ -4799,52 +4793,24 @@ final class World {
     }
 
     /**
-     * The army checks everyone coming into its safe zones for bites. Most bites are found: the person is held in
-     * quarantine and treated if a medic is about, and otherwise sent off to the hospital. Returns true if they
-     * were stopped at the gate.
+     * The army checks everyone coming into its safe zones for bites. Most bites are found, and there's no
+     * treating a bite: the person is turned away. Returns true if they were stopped at the gate.
      */
     private boolean checkpoint(Entity e, Dispatch.SafeZone z) {
         if (!e.infected || e.screened) return false;
         e.screened = true;
         if (rnd.nextFloat() < 0.2f) return false; // The bite was missed.
-        boolean medic = false;
-        for (int i = 0, n = entities.size(); i < n && !medic; i++) {
-            Entity m = entities.get(i);
-            if (m.type == Entity.MEDIC && !m.dead && Math.abs(m.x - z.x) < z.r + 200 && Math.abs(m.y - z.y) < z.r + 200) medic = true;
-        }
-        boolean cured = false;
-        if (!e.cureTried && e.infectTimer > 4) {
-            tryCure(e, medic ? 0.7f : 0.25f);
-            cured = !e.infected;
-        }
         String where = z.place;
-        if (cured) {
-            quarantined++;
-            if (z.checkCd <= 0) {
-                z.checkCd = 20;
-                dispatch.say(Dispatch.WHO_MILITARY, null, "Checkpoint: Bitten civilian caught at the " + where
-                        + " gate. Treated in quarantine" + (medic ? " by our medics." : "."), z.x, z.y);
-            }
-            return false;
-        }
         turnedAway++;
         e.refused = true;
-        e.task = Dispatch.T_HEAL;
+        e.task = Dispatch.T_NONE;
         e.talkTimer = 2;
         if (z.checkCd <= 0) {
             z.checkCd = 20;
             dispatch.say(Dispatch.WHO_MILITARY, null, "Checkpoint: Bite found on someone at the " + where
-                    + " gate. Turned away and sent to the hospital.", z.x, z.y);
+                    + " gate. Turned away.", z.x, z.y);
         }
         return true;
-    }
-
-    private void tryCure(Entity e, float chance) {
-        e.cureTried = true;
-        if (cureReady || (e.infectTimer > 4 && rnd.nextFloat() < chance)) {
-            e.infected = false;
-            cured++;
-        }
     }
 
     /**
@@ -4960,16 +4926,12 @@ final class World {
         else guardCalled = false;
     }
 
-    /** Medics run to the hurt and the infected, patch them up, and keep away from zombies. */
+    /** Medics run to the hurt, patch them up, and keep away from zombies. (There's no treating a bite.) */
     private void thinkMedic(Entity e, float dt) {
         Entity threat = nearest(e, 60, true, true);
         if (e.meleeCd <= 0) {
             Entity z = nearestInReach(e);
-            if (z != null) {
-                // With the cure, a medic can bring the dead back.
-                if (cureReady && revive(z)) e.meleeCd = 1.5f;
-                else shove(e, z, false);
-            }
+            if (z != null) shove(e, z, false);
         }
         if (threat != null) {
             e.fleeTimer = 2;
@@ -4982,18 +4944,16 @@ final class World {
             flee(e, ax / d, ay / d, e.runSpeed);
             return;
         }
-        // Triage: fresh bites first (they can still be saved), then the worst hurt, then whoever is closest.
+        // Triage: the worst hurt first, then whoever is closest.
         Entity patient = null;
         float best = Float.MAX_VALUE;
         for (int i = 0, n = entities.size(); i < n; i++) {
             Entity o = entities.get(i);
             if (o == e || o.dead || o.isZombie() || o.type == Entity.RAIDER) continue;
-            boolean bitten = o.infected && !o.cureTried && o.infectTimer > 4;
-            boolean needs = o.hp < o.maxHp * 0.8f || bitten;
-            if (!needs) continue;
+            if (o.hp >= o.maxHp * 0.8f) continue;
             float ddx = o.x - e.x, ddy = o.y - e.y, d2 = ddx * ddx + ddy * ddy;
             if (d2 > 320 * 320) continue;
-            float urgency = bitten ? 0.25f : 0.4f + o.hp / o.maxHp;
+            float urgency = 0.4f + o.hp / o.maxHp;
             if (o.isArmed()) urgency *= 0.8f;
             float score = d2 * urgency;
             if (score < best) {
@@ -5007,13 +4967,9 @@ final class World {
             if (d < e.radius + patient.radius + 6) {
                 steer(e, 0, 0, 0);
                 e.angle = (float) Math.atan2(ddy, ddx);
+                float before = patient.hp;
                 patient.hp = Math.min(patient.maxHp, patient.hp + 14 * dt);
-                if (patient.infected && !patient.cureTried) {
-                    tryCure(patient, 0.6f);
-                    // Cured civilians are pointed to the nearest safe zone.
-                    if (!patient.infected && patient.type == Entity.CIVILIAN && patient.task == Dispatch.T_NONE
-                            && dispatch.hasRoom()) patient.task = Dispatch.T_SEEK;
-                }
+                if (before < patient.maxHp * 0.8f && patient.hp >= patient.maxHp * 0.8f) healed++;
                 if (rnd.nextFloat() < dt * 6)
                     particle(patient.x + rnd.nextFloat() * 6 - 3, patient.y - 4, 0, -12, 0.6f, 1.2f, 0xFF63E06B, P_DOT);
                 return;
@@ -5357,7 +5313,7 @@ final class World {
         return true;
     }
 
-    // ------------------------------------------------------------------ the war: supplies, cure, escalation
+    // ------------------------------------------------------------------ the war: supplies, escalation
 
     /** Supply trucks: the army keeps safe zones in ammunition, while its own armoury lasts. */
     private void supplies() {
@@ -5383,60 +5339,6 @@ final class World {
                         + best.name + ".", z.x, z.y);
             }
         }
-    }
-
-    /** The hospital works on a cure for as long as it holds out. */
-    float cureProgress;
-    boolean cureReady;
-    private int cureSaid;
-    private static final float CURE_SECONDS = 600;
-
-    private void updateCure() {
-        if (!outbreak || cureReady || hospitalLost) return;
-        City.Facility h = city.nearestFacility(City.FACILITY_HOSPITAL, 0, 0);
-        if (h == null) return;
-        // More medics on hand (and no zombies at the door) means faster work.
-        int medics = counts[Entity.MEDIC];
-        cureProgress += (1 + Math.min(3, medics) * 0.15f) / CURE_SECONDS;
-        int stage = (int) (cureProgress * 4);
-        if (stage > cureSaid && stage < 4) {
-            cureSaid = stage;
-            String[] lines = {"", "Hospital: We've isolated the infection. Work on a cure has begun. Keep this hospital safe.",
-                    "Hospital: The cure is halfway there. Whatever happens, don't let them get in here.",
-                    "Hospital: We're close to a cure. A few more minutes!"};
-            dispatch.say(Dispatch.WHO_INFO, null, lines[stage], h.x, h.y);
-        }
-        if (cureProgress >= 1) {
-            cureProgress = 1;
-            cureReady = true;
-            int saved = 0;
-            for (int i = 0, n = entities.size(); i < n; i++) {
-                Entity e = entities.get(i);
-                if (!e.dead && e.infected) {
-                    e.infected = false;
-                    saved++;
-                }
-            }
-            cured += saved;
-            banner("A CURE!", "Every bitten person is saved, medics can bring back the turned, and every shot might too.");
-            dispatch.say(Dispatch.WHO_INFO, null, "Hospital: WE HAVE A CURE! " + saved + " bitten people treated. Medics and soldiers "
-                    + "are carrying it into the streets.", h.x, h.y);
-        }
-    }
-
-    /** With the cure, the dead can be brought back: a person again, weak but alive. */
-    private boolean revive(Entity z) {
-        if (!cureReady || !z.isZombie() || z.type == Entity.BRUTE || z.type == Entity.BLOATER || z.dead) return false;
-        Entity p = spawn(Entity.CIVILIAN, z.x, z.y);
-        if (p == null) return false;
-        p.hp = p.maxHp * 0.4f;
-        p.nameSeed = z.nameSeed;
-        z.dead = true;
-        z.removed = true;
-        cured++;
-        for (int k = 0; k < 8; k++)
-            particle(z.x, z.y, rnd.nextFloat() * 40 - 20, rnd.nextFloat() * 40 - 20, 0.6f, 1.4f, 0xFF63E06B, P_DOT);
-        return true;
     }
 
     /** The army escalates as the city is lost: first it seals off the worst district, then it bombs it. */
@@ -5923,7 +5825,6 @@ final class World {
                 if (e.kills == 10 || e.kills == 25 || e.kills == 50 || e.kills == 100) killStreak(e);
             }
             if (t.type != Entity.RAIDER) t.killedByZombie = false;
-            if (cureReady && t.hp > 0 && rnd.nextFloat() < 0.12f && revive(t)) return;
             float nx = (t.x - e.x) / d, ny = (t.y - e.y) / d;
             bloodBurst(t.x, t.y, 4, nx, ny);
             tracer(mx, my, t.x + rnd.nextFloat() * 2 - 1, t.y + rnd.nextFloat() * 2 - 1);
@@ -5987,7 +5888,6 @@ final class World {
             if (!e.infected && rnd.nextFloat() < 0.6f) {
                 e.infected = true;
                 e.infectTimer = turnTime(10 + rnd.nextFloat() * 12);
-                e.cureTried = false;
             }
             e.fleeTimer = 3;
             e.threatX = b.doorX;

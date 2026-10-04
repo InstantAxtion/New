@@ -17,7 +17,7 @@ import java.util.ArrayList;
  * damaged or collapsed buildings.
  */
 final class SaveGame {
-    private static final int VERSION = 16;
+    private static final int VERSION = 17;
 
     private SaveGame() {
     }
@@ -38,7 +38,7 @@ final class SaveGame {
             out.writeInt(w.zombiesKilled);
             out.writeInt(w.civiliansLost);
             out.writeInt(w.shotsFired);
-            out.writeInt(w.cured);
+            out.writeInt(w.healed);
             out.writeInt(w.peakZombies);
             out.writeInt(w.peakCops);
             out.writeInt(w.peakSoldiers);
@@ -170,7 +170,7 @@ final class SaveGame {
             // Version 7: police and army history, checkpoints, where it started, the fallen and medkits.
             for (int i = 0; i < w.histCount; i++) out.writeInt(w.histArmed[i]);
             out.writeInt(w.turnedAway);
-            out.writeInt(w.quarantined);
+            out.writeInt(0); // (was: bites treated in quarantine; there's no cure now)
             out.writeUTF(w.outbreakPlace == null ? "" : w.outbreakPlace);
             out.writeInt(w.fallenHeroes.size());
             for (int[] h : w.fallenHeroes) for (int k = 0; k < 4; k++) out.writeInt(h[k]);
@@ -211,9 +211,7 @@ final class SaveGame {
                 out.writeFloat(t[1]);
                 out.writeFloat(t[2]);
             }
-            // The war: the cure, the army's escalation, ammunition.
-            out.writeFloat(w.cureProgress);
-            out.writeBoolean(w.cureReady);
+            // The war: the army's escalation, ammunition. (Version 17: no more cure.)
             out.writeInt(w.escalation);
             out.writeFloat(w.firebombTime);
             out.writeFloat(w.firebombX);
@@ -276,7 +274,6 @@ final class SaveGame {
         out.writeInt(e.origin);
         out.writeBoolean(e.infected);
         out.writeFloat(e.infectTimer);
-        out.writeBoolean(e.cureTried);
         out.writeInt(e.ammo);
         out.writeInt(e.magSize);
         out.writeInt(e.reserve);
@@ -327,7 +324,8 @@ final class SaveGame {
             w.zombiesKilled = in.readInt();
             w.civiliansLost = in.readInt();
             w.shotsFired = in.readInt();
-            w.cured = in.readInt();
+            w.healed = in.readInt();
+            if (version < 17) w.healed = 0; // (it counted cures)
             w.peakZombies = in.readInt();
             if (version >= 4) {
                 w.peakCops = in.readInt();
@@ -435,7 +433,7 @@ final class SaveGame {
             }
             for (int i = 0; i < w.histCount; i++) w.histArmed[i] = in.readInt();
             w.turnedAway = in.readInt();
-            w.quarantined = in.readInt();
+            in.readInt();
             String place = in.readUTF();
             w.outbreakPlace = place.length() == 0 ? null : place;
             int fallen = in.readInt();
@@ -485,8 +483,10 @@ final class SaveGame {
                 for (int i = 0; i < turns; i++) w.turnEvents.add(new float[]{in.readFloat(), in.readFloat(), in.readFloat()});
             }
             if (version >= 13) {
-                w.cureProgress = in.readFloat();
-                w.cureReady = in.readBoolean();
+                if (version < 17) {
+                    in.readFloat();
+                    in.readBoolean();
+                }
                 w.escalation = in.readInt();
                 w.firebombTime = in.readFloat();
                 w.firebombX = in.readFloat();
@@ -545,7 +545,7 @@ final class SaveGame {
         if (e.origin >= 0) e.origin = type(e.origin, version);
         e.infected = in.readBoolean();
         e.infectTimer = in.readFloat();
-        e.cureTried = in.readBoolean();
+        if (version < 17) in.readBoolean();
         e.ammo = in.readInt();
         e.magSize = in.readInt();
         e.reserve = in.readInt();

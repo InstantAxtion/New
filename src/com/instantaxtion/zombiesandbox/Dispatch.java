@@ -363,7 +363,7 @@ final class Dispatch {
         for (int i = 0, n = w.entities.size(); i < n; i++) {
             Entity e = w.entities.get(i);
             if (e.dead || e.type != Entity.CIVILIAN || e.ride != null || e.task == T_SHELTER) continue;
-            float f = e.hp / e.maxHp - (e.infected && !e.cureTried ? 0.3f : 0);
+            float f = e.hp / e.maxHp;
             if (f >= Math.min(worst, 0.5f)) continue;
             if (Math.hypot(e.x - hospital.x, e.y - hospital.y) < 300 || w.countZombiesNear(e.x, e.y, 60) > 0) continue;
             if (w.fleet.hasPatient(e)) continue;

@@ -97,7 +97,7 @@ final class World {
     /** The power station or the hospital has been overrun. */
     boolean blackout, hospitalLost;
     private float powerThreat, hospitalThreat;
-    /** Army checkpoints: bitten people turned away at the gate, and caught and treated in quarantine. */
+    /** Army checkpoints: bitten people turned away at the gate. */
     int turnedAway;
     /** Recruitment: the most cops and soldiers there have been, how many civilians joined up or refused. */
     int peakCops, peakSoldiers, recruits, refused;
@@ -200,8 +200,8 @@ final class World {
     static final String[] TRAIT_NAMES = {"Fast-acting", "Slow-acting", "Virulent", "Weak bite", "Tough", "Frail",
             "Swift", "Restless dead", "Keen senses", "Dull senses"};
     private static final String[] TRAIT_REVEALS = {
-            "Doctors: the bitten are turning in seconds. There's almost no time to treat them.",
-            "Doctors: this infection takes its time. The bitten can still be saved if they're treated quickly.",
+            "Doctors: the bitten are turning in seconds. Get away from anyone who's been bitten.",
+            "Doctors: this infection takes its time. The bitten can walk around for a while before they turn.",
             "Doctors: nearly every bite is infecting people.",
             "Doctors: a lot of bites aren't infecting people at all.",
             "Police: it takes far more bullets to put them down than it should.",
@@ -414,14 +414,23 @@ final class World {
         int stations = 0;
         for (City.Facility f : city.facilities) if (f.kind == City.FACILITY_POLICE) stations++;
         int cops = cfg.cops(city.totalResidents), soldiers = cfg.soldiers(city.totalResidents);
-        int copsAtStations = stations > 0 ? cops / 2 : 0;
+        // Most officers are out in patrol cars, two to a car; the rest are at their precinct.
+        int cars = stations > 0 ? Math.max(1, (int) (cops * 0.6f / 2)) : 0;
+        fleet.patrolTarget = cars;
+        int made = 0;
+        City.Facility[] precincts = new City.Facility[Math.max(1, stations)];
+        int pk = 0;
+        for (City.Facility f : city.facilities) if (f.kind == City.FACILITY_POLICE) precincts[pk++] = f;
+        for (int i = 0; i < cars; i++) if (fleet.startPatrol(precincts[i % precincts.length]) != null) made++;
+        int copsAtStations = stations > 0 ? cops - made * 2 : 0;
         int k = 0;
         for (City.Facility f : city.facilities) {
             if (f.kind != City.FACILITY_POLICE) continue;
             int n = copsAtStations / stations + (k++ < copsAtStations % stations ? 1 : 0);
             for (int i = 0; i < n; i++) spawn(Entity.COP, f.x + rnd.nextFloat() * 40 - 20, f.y + rnd.nextFloat() * 40 - 20);
         }
-        spawnRandom(Entity.COP, cops - copsAtStations);
+        spawnRandom(Entity.COP, cops - copsAtStations - made * 2);
+        fleet.stationEngines();
         int firstSoldier = entities.size();
         if (base != null) {
             for (int i = 0; i < soldiers; i++)
@@ -760,7 +769,7 @@ final class World {
             City.Facility best = null;
             float bd = Float.MAX_VALUE;
             for (City.Facility st : city.facilities) {
-                if (st.kind != City.FACILITY_FIRE || fleet.enginesOut(st) >= 2) continue;
+                if (st.kind != City.FACILITY_FIRE || fleet.idleEngine(st) == null) continue;
                 // An overrun station can't send anyone.
                 if (countZombiesNear(st.x, st.y, 160) > 0) continue;
                 float d = (st.x - f.x) * (st.x - f.x) + (st.y - f.y) * (st.y - f.y);
@@ -1155,6 +1164,10 @@ final class World {
         spawnBirds();
         spawnWildlife();
         fleet.trafficTarget = Fleet.trafficFor(city);
+        fleet.stationEngines();
+        int cops = 0;
+        for (Entity e : entities) if (!e.dead && e.type == Entity.COP) cops++;
+        fleet.patrolTarget = Math.max(1, (int) (cops * 0.6f / 2));
         fleet.spawnTraffic(fleet.trafficTarget);
         buildHash();
         city.computeFields(entities);
@@ -1352,6 +1365,7 @@ final class World {
             Entity e = entities.get(i);
             if (!e.dead) counts[e.type]++;
         }
+        fleet.countCrews(counts);
     }
 
     void recount() {
@@ -1362,6 +1376,7 @@ final class World {
             counts[e.type]++;
             if (e.role == Entity.ROLE_COMMANDER && e.type == Entity.SOLDIER) commanders.add(e);
         }
+        fleet.countCrews(counts);
         hiding = 0;
         visiting = 0;
         civilians = counts[Entity.CIVILIAN];
@@ -1563,6 +1578,7 @@ final class World {
             }
         }
         if (e.leader != null && (e.leader.dead && !e.leader.removed)) e.leader = null;
+        if (e.task == Dispatch.T_BOARD && boardStep(e)) return;
         if (e.isZombie()) thinkZombie(e, dt);
         else if (e.isArmed()) thinkArmed(e, dt);
         else if (e.type == Entity.MEDIC) thinkMedic(e, dt);
@@ -3008,6 +3024,33 @@ final class World {
         return true;
     }
 
+    /**
+     * A crew member walking back to their fire engine or patrol car. Returns true while they're on their way
+     * (or just got in); false if there's nothing to get back to.
+     */
+    private boolean boardStep(Entity e) {
+        Fleet.Vehicle v = e.rig;
+        if (v == null || v.broken || v.parked || !fleet.vehicles.contains(v)) {
+            e.rig = null;
+            e.task = Dispatch.T_NONE;
+            return false;
+        }
+        float ddx = v.x - e.x, ddy = v.y - e.y, d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
+        if (d < 14) {
+            fleet.board(v, e);
+            return true;
+        }
+        e.paused = false;
+        e.aiming = false;
+        steer(e, ddx / d, ddy / d, e.runSpeed * 0.85f);
+        if (e.blocked) {
+            e.blocked = false;
+            e.unstick = 0.5f;
+            e.unstickAngle = (float) Math.atan2(ddy, ddx) + (rnd.nextBoolean() ? 1.3f : -1.3f);
+        }
+        return true;
+    }
+
     /** The home a civilian lives in: the nearest house or apartment block (found once). */
     private City.Building homeOf(Entity e) {
         if (!e.homeChecked) {
@@ -3606,7 +3649,7 @@ final class World {
 
     /** Acid in flight {x, y, vx, vy, life}, acid puddles {x, y, life} and gas clouds {x, y, radius, life}. */
     final ArrayList<float[]> spits = new ArrayList<float[]>(), acids = new ArrayList<float[]>(), gases = new ArrayList<float[]>();
-    /** Medkits {x, y, uses}: anyone hurt nearby is patched up, and fresh bites can be treated. */
+    /** Medkits {x, y, uses}: anyone hurt nearby is patched up. */
     final ArrayList<float[]> medkits = new ArrayList<float[]>();
 
     private void spit(Entity z, Entity t) {
@@ -4918,9 +4961,9 @@ final class World {
                 return;
             }
         }
-        // Fires first: walk up close and hose them down.
+        // Fires first: walk up close and hose them down. (On foot without their engine, only fires close by.)
         Fire f = null;
-        float fd = 450 * 450;
+        float fd = e.rig != null ? 450 * 450 : 160 * 160;
         for (int i = 0, n = fires.size(); i < n; i++) {
             Fire o = fires.get(i);
             float d2 = (o.x - e.x) * (o.x - e.x) + (o.y - e.y) * (o.y - e.y);

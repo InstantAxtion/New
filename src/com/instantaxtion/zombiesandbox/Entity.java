@@ -98,6 +98,8 @@ final class Entity {
     int job;
     /** Knows the dead are walking: no more everyday life, only getting somewhere safe. */
     boolean aware;
+    /** The fire engine or patrol car this person crews (null if none). */
+    Fleet.Vehicle rig;
     /** A walking route (tile indices) to a building, how far along it they are, and where it goes. */
     int[] path;
     int pathIdx;

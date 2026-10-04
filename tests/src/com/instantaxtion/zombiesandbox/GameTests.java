@@ -761,6 +761,50 @@ public final class GameTests {
                 check(old.applyCode("12-44") && old.country() == Country.USA, "old codes are American cities");
             }
         });
+        test("fire engines need a crew to drive them; police patrol in cars", new Check() {
+            public void run() {
+                CityConfig c = new CityConfig();
+                c.v[CityConfig.OPT_ZOMBIES] = 0;
+                c.seed = 21;
+                World w = new World(c);
+                w.populate(c);
+                int cars = 0, aboard = 0;
+                Fleet.Vehicle engine = null;
+                for (Fleet.Vehicle v : w.fleet.vehicles) {
+                    if (v.patrol) {
+                        cars++;
+                        aboard += v.crew.size();
+                    }
+                    if (v.type == Fleet.FIRE_ENGINE) engine = v;
+                }
+                check(cars >= 2 && aboard == cars * 2, "patrol cars with two officers each: " + cars);
+                check(aboard * 2 > w.counts[Entity.COP], "most police are in cars");
+                check(engine != null && engine.crew.isEmpty() && !engine.lightsOn(), "the engine waits at its station, empty");
+                City.Facility station = engine.station;
+                City.Building b = null;
+                float bd = Float.MAX_VALUE;
+                for (City.Building o : w.city.buildings) {
+                    float d = (float) Math.hypot(o.doorX - station.x, o.doorY - station.y);
+                    if (o.kind == City.HOUSE && o.doorX > 0 && d < bd) {
+                        bd = d;
+                        b = o;
+                    }
+                }
+                w.igniteBuilding(b);
+                boolean drovenByCrew = true, drove = false, crewOut = false;
+                for (int i = 0; i < 30 * 150; i++) {
+                    w.update(1 / 30f);
+                    w.evCount = 0;
+                    if (engine.speed > 5) {
+                        drove = true;
+                        if (engine.crew.isEmpty()) drovenByCrew = false;
+                    }
+                    for (Entity e : w.entities) if (!e.dead && e.rig == engine && engine.speed < 1 && engine.lightsOn()) crewOut = true;
+                }
+                check(drove && drovenByCrew, "it only moves with firefighters aboard");
+                check(crewOut, "the crew gets out at the fire");
+            }
+        });
         test("each country's traffic: kei cars in Japan, Beetles in Mexico, utes in Australia", new Check() {
             public void run() {
                 int[][] want = {{Country.JAPAN, Fleet.M_KEI}, {Country.MEXICO, Fleet.M_BEETLE}, {Country.AUSTRALIA, Fleet.M_PICKUP}};

@@ -1196,8 +1196,7 @@ final class GameView extends View implements Menu.Host {
         for (int i = 0, n = world.fleet.vehicles.size(); i < n; i++) {
             Fleet.Vehicle v = world.fleet.vehicles.get(i);
             if (v.broken || Fleet.airborne(v)) continue;
-            boolean lights = v.type == Fleet.CRUISER || v.type == Fleet.FIRE_ENGINE || (v.type == Fleet.AMBULANCE && v.state != 0);
-            if (!lights || v.x < vx0 - 30 || v.x > vx1 + 30 || v.y < vy0 - 30 || v.y > vy1 + 30) continue;
+            if (!v.lightsOn() || v.x < vx0 - 30 || v.x > vx1 + 30 || v.y < vy0 - 30 || v.y > vy1 + 30) continue;
             boolean blink = ((int) (v.anim * 8)) % 2 == 0;
             int col = blink ? 0xFFFF3A30 : v.type == Fleet.FIRE_ENGINE ? 0xFFFFB040 : 0xFF3A7BFF;
             float side = blink ? -1 : 1, ox = (float) -Math.sin(v.angle) * side * 4, oy = (float) Math.cos(v.angle) * side * 4;
@@ -2147,7 +2146,7 @@ final class GameView extends View implements Menu.Host {
             c.drawRect(-hl, hw - 1, hl * 0.5f, hw, fill);
             c.drawRect(-3.5f, -0.8f, 0.5f, 0.8f, fill);
             c.drawRect(-2.3f, -2f, -0.7f, 2f, fill);
-            if (!v.broken && v.state != 0) {
+            if (v.lightsOn()) {
                 boolean blink = ((int) (v.anim * 8)) % 2 == 0;
                 fill.setColor(blink ? 0xFFFF3A30 : 0xFF3A7BFF);
                 c.drawRect(hl * 0.42f, -hw + 1, hl * 0.52f, hw - 1, fill);
@@ -2160,7 +2159,7 @@ final class GameView extends View implements Menu.Host {
             c.drawRect(-hl + 1.5f, -1.6f, hl * 0.4f, -0.9f, fill);
             c.drawRect(-hl + 1.5f, 0.9f, hl * 0.4f, 1.6f, fill);
             for (float x = -hl + 2.5f; x < hl * 0.4f; x += 2.2f) c.drawRect(x, -1.6f, x + 0.5f, 1.6f, fill);
-            if (!v.broken) {
+            if (v.lightsOn()) {
                 boolean blink = ((int) (v.anim * 8)) % 2 == 0;
                 fill.setColor(blink ? 0xFFFF3A30 : 0xFFFFD27A);
                 c.drawRect(hl * 0.42f, -hw + 1, hl * 0.5f, hw - 1, fill);
@@ -2188,10 +2187,11 @@ final class GameView extends View implements Menu.Host {
             fill.setColor(0xFF1E2A33);
             c.drawRect(2.5f, -hw + 1, 5f, hw - 1, fill);
             if (!v.broken) {
-                boolean blink = ((int) (v.anim * 8)) % 2 == 0;
-                fill.setColor(blink ? 0xFFFF3A30 : 0xFF5A1A18);
+                // The light bar: flashing on a call, dark on a quiet patrol.
+                boolean on = v.lightsOn(), blink = ((int) (v.anim * 8)) % 2 == 0;
+                fill.setColor(!on ? 0xFF5A1A18 : blink ? 0xFFFF3A30 : 0xFF5A1A18);
                 c.drawRect(-1f, -hw + 1, 0.5f, 0, fill);
-                fill.setColor(blink ? 0xFF3A5AA0 : 0xFF3A7BFF);
+                fill.setColor(!on ? 0xFF1A2A5A : blink ? 0xFF3A5AA0 : 0xFF3A7BFF);
                 c.drawRect(-1f, 0, 0.5f, hw - 1, fill);
             }
         }

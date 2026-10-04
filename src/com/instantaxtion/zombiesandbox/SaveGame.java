@@ -91,6 +91,12 @@ final class SaveGame {
                     e.y = v.y;
                     all.add(e);
                 }
+                for (Entity e : v.crew) {
+                    e.x = v.x;
+                    e.y = v.y;
+                    e.rig = null;
+                    all.add(e);
+                }
                 if (Fleet.airborne(v) || v.type == Fleet.TRAIN || v.passengers <= 0 || v.state > 1 || v.broken) continue;
                 for (int i = 0; i < v.passengers; i++) {
                     Entity p = w.create(v.passengerType, v.x, v.y);

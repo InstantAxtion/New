@@ -727,6 +727,11 @@ final class City {
             case DT_CAMPUS: maxLeaf = 15 + rnd.nextInt(5); break;
             default: maxLeaf = 13 + rnd.nextInt(6); break;
         }
+        // On the biggest maps a stretch of suburb is laid out as a neighbourhood of its own, not more grid.
+        if (w >= 400 && depth >= 1 && bw >= 44 && bh >= 44 && bw <= 104 && bh <= 104
+                && rnd.nextFloat() < (dt == DT_SUBURB || dt == DT_PARKSIDE ? 0.8f : dt == DT_MIDTOWN ? (d > 0.45f ? 0.55f : 0.2f)
+                        : dt == DT_INDUSTRIAL ? 0.45f : 0f)
+                && neighbourhood(x0, y0, x1, y1, d)) return -1;
         if (d > 0.8f) maxLeaf += 2;
         // Bigger blocks: fewer, longer streets, as in a real town.
         maxLeaf += 3;
@@ -762,6 +767,8 @@ final class City {
         // Old streets wander a little; downtown is laid out on a grid.
         if (dt == DT_OLDTOWN) align = 0.6f;
         else if (dt == DT_DOWNTOWN) align = Math.max(align, 0.95f);
+        // Big-map suburbs grew a bit at a time: more T-junctions, fewer streets running dead straight.
+        if (w >= 400 && (dt == DT_SUBURB || dt == DT_PARKSIDE)) align = Math.min(align, 0.55f);
         // Lines are kept as street centres (doubled, so odd widths stay exact): a narrow street lines up
         // with the middle of a wide one, not with its edge.
         int hint = vertical ? hintX : hintY;
@@ -893,13 +900,13 @@ final class City {
         // Pick blocks for the military base and police stations.
         boolean[] used = new boolean[blocks.size()];
         // Hamlets out in the country are just homes, farms and the odd shop.
-        for (int k = 0; k < blocks.size(); k++) if (blocks.get(k).length > 4 && blocks.get(k)[4] == 2) used[k] = true;
+        for (int k = 0; k < blocks.size(); k++) if (blocks.get(k).length > 4 && blocks.get(k)[4] >= 2) used[k] = true;
         if (cfg.militaryBase()) {
             int best = -1, bestArea = 0;
             for (int k = 0; k < blocks.size(); k++) {
                 int[] b = blocks.get(k);
                 int bw = b[2] - b[0] - 2, bh = b[3] - b[1] - 2;
-                if (bw < 9 || bh < 9) continue;
+                if (used[k] || bw < 9 || bh < 9) continue;
                 if (bw * bh > bestArea) {
                     bestArea = bw * bh;
                     best = k;
@@ -1048,6 +1055,10 @@ final class City {
         for (int k = 0; k < blocks.size(); k++) {
             int[] b = blocks.get(k);
             boolean plot = b.length > 4;
+            if (plot && b[4] == 3) {
+                fillNeighbourhood(b);
+                continue;
+            }
             if (used[k] && !(plot && b[4] == 2)) continue;
             int x0 = b[0], y0 = b[1], x1 = b[2], y1 = b[3];
             if (x1 - x0 < 1 || y1 - y0 < 1) continue;
@@ -2256,6 +2267,402 @@ final class City {
             }
         }
         return made;
+    }
+
+    // ------------------------------------------------------------------ neighbourhoods
+
+    static final int NB_CLOSES = 0, NB_CRESCENT = 1, NB_GREEN = 2, NB_ESTATE = 3, NB_ACRES = 4, NB_GATED = 5, NB_WORKS = 6;
+
+    /**
+     * A stretch of a big map's suburbs laid out as a neighbourhood of its own instead of more grid: a spine road
+     * with closes (cul-de-sacs) off both sides, a crescent round a green, houses round a village green, flats
+     * set in parkland, big plots out on the edge of town, or a gated estate. Its roads are laid now and its
+     * homes with the rest of the blocks (fillNeighbourhood). False if it can't be done here.
+     */
+    private boolean neighbourhood(int x0, int y0, int x1, int y1, float d) {
+        int mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
+        boolean rT = isRoad(mx, y0 - 1), rB = isRoad(mx, y1), rL = isRoad(x0 - 1, my), rR = isRoad(x1, my);
+        if (!rT && !rB && !rL && !rR) return false;
+        int dt = districtType(mx, my);
+        int type;
+        float r = rnd.nextFloat();
+        if (dt == DT_INDUSTRIAL) type = NB_WORKS;
+        else if (d > 0.7f && dt != DT_MIDTOWN && r < 0.35f) type = NB_ACRES;
+        else {
+            r = rnd.nextFloat();
+            if (dt == DT_MIDTOWN) type = r < 0.5f ? NB_ESTATE : NB_GREEN;
+            else type = r < 0.3f ? NB_CLOSES : r < 0.52f ? NB_CRESCENT : r < 0.72f ? NB_GREEN : r < 0.84f ? NB_ESTATE : NB_GATED;
+        }
+        // Next door to one just like it? Try something else: every neighbourhood its own.
+        for (int tries = 0; tries < 3 && type != NB_WORKS && sameNearby(mx, my, type); tries++) {
+            r = rnd.nextFloat();
+            type = dt == DT_MIDTOWN ? (r < 0.5f ? NB_ESTATE : NB_GREEN)
+                    : r < 0.25f ? NB_CLOSES : r < 0.45f ? NB_CRESCENT : r < 0.65f ? NB_GREEN : r < 0.8f ? NB_ESTATE : NB_GATED;
+        }
+        int[] green = null;
+        switch (type) {
+            case NB_CLOSES:
+            case NB_GATED:
+                if (!closes(x0, y0, x1, y1, rT, rB, rL, rR)) return false;
+                break;
+            case NB_CRESCENT:
+            case NB_ESTATE:
+            case NB_WORKS:
+                green = crescent(x0, y0, x1, y1, rT, rB, rL, rR);
+                if (green == null) return false;
+                break;
+            case NB_GREEN:
+                green = villageGreen(x0, y0, x1, y1, rT, rB, rL, rR);
+                if (green == null) return false;
+                break;
+            default:
+                break;
+        }
+        blocks.add(green == null ? new int[]{x0, y0, x1, y1, 3, type}
+                : new int[]{x0, y0, x1, y1, 3, type, green[0], green[1], green[2], green[3]});
+        nameNeighbourhood(x0, y0, x1, y1, type, dt);
+        return true;
+    }
+
+    /** How many neighbourhoods of each kind the town has (NB_CLOSES ... NB_WORKS). */
+    int[] neighbourhoodKinds() {
+        int[] n = new int[7];
+        for (int[] b : blocks) if (b.length > 5 && b[4] == 3) n[b[5]]++;
+        return n;
+    }
+
+    private boolean sameNearby(int x, int y, int type) {
+        for (int[] b : blocks)
+            if (b.length > 5 && b[4] == 3 && (b[5] == type || (type == NB_GATED && b[5] == NB_CLOSES) || (type == NB_CLOSES && b[5] == NB_GATED))
+                    && Math.hypot((b[0] + b[2]) / 2f - x, (b[1] + b[3]) / 2f - y) < 130) return true;
+        return false;
+    }
+
+    /** A two-lane street three tiles wide, running north-south (vertical) from a0 to a1 at column c, or east-west at row c. */
+    private void lane3(boolean vertical, int a0, int a1, int c) {
+        carve(vertical ? new Street(c, a0, c + 3, a1, true, false) : new Street(a0, c, a1, c + 3, false, false));
+    }
+
+    /** A turning circle at the end of a street (vertical or not) whose last row is at a, the street at c..c+2. */
+    private void bulb(boolean vertical, int a, int c, boolean atStart) {
+        int lo = atStart ? a - 1 : a - 3, hi = atStart ? a + 3 : a + 1;
+        for (int along = lo; along <= hi; along++)
+            for (int across = c - 1; across <= c + 3; across++) {
+                boolean corner = (along == lo || along == hi) && (across == c - 1 || across == c + 3);
+                if (corner) continue;
+                int x = vertical ? across : along, y = vertical ? along : across;
+                if (x < 0 || y < 0 || x >= w || y >= h) continue;
+                int i = y * w + x;
+                if (tiles[i] != ROAD) {
+                    tiles[i] = ROAD;
+                    roadDir[i] = (byte) (vertical ? 1 : 2);
+                }
+            }
+    }
+
+    /** A spine road through (or into) the block with closes off it on both sides, staggered. */
+    private boolean closes(int x0, int y0, int x1, int y1, boolean rT, boolean rB, boolean rL, boolean rR) {
+        int bw = x1 - x0, bh = y1 - y0;
+        boolean vert = (rT || rB) && (bh >= bw || !(rL || rR));
+        int a0 = vert ? y0 : x0, a1 = vert ? y1 : x1, c0 = vert ? x0 : y0, c1 = vert ? x1 : y1;
+        boolean s0 = vert ? rT : rL, s1 = vert ? rB : rR;
+        if (a1 - a0 < 36 || c1 - c0 < 34) return false;
+        int c = c0 + (c1 - c0 - 3) / 2 + rnd.nextInt(5) - 2;
+        int sa0 = s0 ? a0 : a0 + 9, sa1 = s1 ? a1 : a1 - 9;
+        lane3(vert, sa0, sa1, c);
+        if (!s0) bulb(vert, sa0, c, true);
+        if (!s1) bulb(vert, sa1 - 1, c, false);
+        for (int side = -1; side <= 1; side += 2) {
+            int depth = side < 0 ? c - c0 : c1 - (c + 3);
+            int len = depth - 10;
+            if (len < 6) continue;
+            int step = 17 + rnd.nextInt(3);
+            for (int a = sa0 + 8 + (side > 0 ? step / 2 : 0); a + 3 <= sa1 - 8; a += step + rnd.nextInt(3)) {
+                // Now and then a gap: a bigger garden, or a footpath through.
+                if (rnd.nextFloat() < 0.15f) continue;
+                int e0 = side < 0 ? c - len : c + 3, e1 = side < 0 ? c : c + 3 + len;
+                lane3(!vert, e0, e1, a);
+                bulb(!vert, side < 0 ? e0 : e1 - 1, a, side < 0);
+            }
+        }
+        return true;
+    }
+
+    /**
+     * A crescent: a loop off one of the streets round the block, its two arms joined at the back, with a green
+     * in the middle. Returns the green {x0, y0, x1, y1}.
+     */
+    private int[] crescent(int x0, int y0, int x1, int y1, boolean rT, boolean rB, boolean rL, boolean rR) {
+        List<Integer> sides = new ArrayList<Integer>();
+        if (rT) sides.add(0);
+        if (rB) sides.add(1);
+        if (rL) sides.add(2);
+        if (rR) sides.add(3);
+        int side = sides.get(rnd.nextInt(sides.size()));
+        boolean legsVert = side < 2;
+        int a0 = legsVert ? x0 : y0, a1 = legsVert ? x1 : y1, c0 = legsVert ? y0 : x0, c1 = legsVert ? y1 : x1;
+        if (a1 - a0 < 36 || c1 - c0 < 30) return null;
+        boolean fromLow = side == 0 || side == 2;
+        int p1 = a0 + 9 + rnd.nextInt(3), p2 = a1 - 12 - rnd.nextInt(3);
+        int depth = c1 - c0 - 10 - rnd.nextInt(4);
+        int l0 = fromLow ? c0 : c1 - depth, l1 = fromLow ? c0 + depth : c1;
+        lane3(legsVert, l0, l1, p1);
+        lane3(legsVert, l0, l1, p2);
+        int cc = fromLow ? c0 + depth - 3 : c1 - depth;
+        lane3(!legsVert, p1, p2 + 3, cc);
+        int g0 = fromLow ? c0 : cc + 3, g1 = fromLow ? cc : c1;
+        return legsVert ? new int[]{p1 + 3, g0, p2, g1} : new int[]{g0, p1 + 3, g1, p2};
+    }
+
+    /** A village green with a road all round it and a road or two out to the streets. Returns the green. */
+    private int[] villageGreen(int x0, int y0, int x1, int y1, boolean rT, boolean rB, boolean rL, boolean rR) {
+        int bw = x1 - x0, bh = y1 - y0;
+        if (bw < 44 || bh < 44) return null;
+        int gw = Math.min(28, bw - 32), gh = Math.min(28, bh - 32);
+        int gx0 = x0 + (bw - gw) / 2 + rnd.nextInt(3) - 1, gy0 = y0 + (bh - gh) / 2 + rnd.nextInt(3) - 1;
+        int rx0 = gx0 - 3, ry0 = gy0 - 3, rx1 = gx0 + gw + 3, ry1 = gy0 + gh + 3;
+        lane3(false, rx0, rx1, ry0);
+        lane3(false, rx0, rx1, ry1 - 3);
+        lane3(true, ry0, ry1, rx0);
+        lane3(true, ry0, ry1, rx1 - 3);
+        // Roads out: one or two (more is just a grid again), off-centre.
+        List<Integer> sides = new ArrayList<Integer>();
+        if (rT) sides.add(0);
+        if (rB) sides.add(1);
+        if (rL) sides.add(2);
+        if (rR) sides.add(3);
+        java.util.Collections.shuffle(sides, rnd);
+        int outs = Math.min(sides.size(), 1 + rnd.nextInt(2));
+        for (int k = 0; k < outs; k++) {
+            int sd = sides.get(k);
+            if (sd < 2) {
+                int c = gx0 + gw / 3 + rnd.nextInt(Math.max(1, gw / 3));
+                if (sd == 0) lane3(true, y0, ry0, c);
+                else lane3(true, ry1, y1, c);
+            } else {
+                int c = gy0 + gh / 3 + rnd.nextInt(Math.max(1, gh / 3));
+                if (sd == 2) lane3(false, x0, rx0, c);
+                else lane3(false, rx1, x1, c);
+            }
+        }
+        return new int[]{gx0, gy0, gx0 + gw, gy0 + gh};
+    }
+
+    private void nameNeighbourhood(int x0, int y0, int x1, int y1, int type, int dt) {
+        if (districtAt == null || districts.size() > 110) return;
+        String[][] ends = {{" Meadows", " Fields", " Chase", " Rise"}, {" Crescent", " Gardens", " Park"},
+                {" Green", " Common"}, {" Estate", " Court", " Towers"}, {" Acres", " Ranch", " Farms"},
+                {" Manor", " Reserve", " Hills"}, {" Business Park", " Trading Estate", " Commerce Park"}};
+        String word = country.districtWords[rnd.nextInt(country.districtWords.length)];
+        String[] e = ends[type];
+        District d = new District();
+        d.type = dt;
+        d.name = country.districtName(word + e[rnd.nextInt(e.length)], word, dt);
+        for (District o : districts) if (o.name.equals(d.name)) return;
+        d.x = (x0 + x1) / 2f;
+        d.y = (y0 + y1) / 2f;
+        d.cx = d.x * T;
+        d.cy = d.y * T;
+        int id = districts.size();
+        districts.add(d);
+        for (int y = Math.max(0, y0); y < Math.min(h, y1); y++)
+            for (int x = Math.max(0, x0); x < Math.min(w, x1); x++) {
+                districts.get(districtAt[y * w + x]).tiles--;
+                districtAt[y * w + x] = (byte) id;
+                d.tiles++;
+            }
+    }
+
+    /** The homes, gardens and green of a neighbourhood laid out by neighbourhood(). */
+    private void fillNeighbourhood(int[] b) {
+        int x0 = b[0], y0 = b[1], x1 = b[2], y1 = b[3], type = b[5];
+        if (x1 - x0 < 4 || y1 - y0 < 4) return;
+        curDistrict = districtType((x0 + x1) / 2, (y0 + y1) / 2);
+        for (int y = y0; y < y1; y++)
+            for (int x = x0; x < x1; x++)
+                if (tiles[y * w + x] != ROAD) tiles[y * w + x] = GRASS;
+        // A pavement round the edge and along every road.
+        for (int y = y0; y < y1; y++)
+            for (int x = x0; x < x1; x++) {
+                int i = y * w + x;
+                if (tiles[i] == ROAD) continue;
+                boolean edge = x == x0 || y == y0 || x == x1 - 1 || y == y1 - 1, by = false;
+                if (type != NB_ACRES)
+                    for (int dy = -1; dy <= 1 && !by; dy++)
+                        for (int dx = -1; dx <= 1 && !by; dx++)
+                            if (inside(x + dx, y + dy, x0, y0, x1, y1) && isRoad(x + dx, y + dy)) by = true;
+                if (edge || by) tiles[i] = SIDEWALK;
+            }
+        // The green, with a ring of homes round it if it's a big one.
+        int[] keep = null;
+        if (b.length >= 10) {
+            int gx0 = b[6] + 1, gy0 = b[7] + 1, gx1 = b[8] - 1, gy1 = b[9] - 1;
+            if (type != NB_GREEN && gx1 - gx0 >= 26 && gy1 - gy0 >= 26) {
+                gx0 += 7;
+                gy0 += 7;
+                gx1 -= 7;
+                gy1 -= 7;
+            }
+            if (gx1 - gx0 >= 4 && gy1 - gy0 >= 4) {
+                keep = new int[]{gx0, gy0, gx1, gy1};
+                int gw = gx1 - gx0, gh = gy1 - gy0;
+                boolean small = gw <= 16 && gh <= 16;
+                if (type == NB_WORKS) {
+                    // A yard with a big distribution depot in the middle.
+                    fill(gx0, gy0, gw, gh, LOT);
+                    if (gw >= 12 && gh >= 12) addLot(gx0 + 3, gy0 + 3, gw - 6, gh - 6, WAREHOUSE);
+                    openAreas.add(new float[]{(gx0 + 1.5f) * T, (gy0 + 1.5f) * T, 2});
+                } else if (type == NB_ESTATE && small && rnd.nextFloat() < 0.5f) {
+                    parking(gx0, gy0, gw, gh);
+                    openAreas.add(new float[]{(gx0 + gx1) / 2f * T, (gy0 + gy1) / 2f * T, 2});
+                } else {
+                    if (gw > 20 && gh > 20) {
+                        // A big green is a park, with a playground in a corner, not a sports complex.
+                        park(gx0, gy0, gw, gh);
+                        if (rnd.nextFloat() < 0.5f) bandstand(gx0, gy0, gw, gh);
+                        int qw = Math.min(8, gw / 3), qh = Math.min(8, gh / 3);
+                        for (int j = gy0 + 1; j < gy0 + 1 + qh; j++)
+                            for (int i = gx0 + 1; i < gx0 + 1 + qw; i++) if (tiles[j * w + i] == TREE) tiles[j * w + i] = GRASS;
+                        addDecor(D_PLAYGROUND, (gx0 + 1) * T + 3, (gy0 + 1) * T + 3, (gx0 + 1 + qw) * T - 2, (gy0 + 1 + qh) * T - 2, 0);
+                    } else parkVariant(gx0, gy0, gw, gh);
+                    openAreas.add(new float[]{(gx0 + gx1) / 2f * T, (gy0 + gy1) / 2f * T, 0});
+                }
+            }
+        }
+        // A gated estate: a fence all round inside the pavement, open only where the road goes in, and a gatehouse.
+        if (type == NB_GATED) {
+            for (int y = y0 + 1; y < y1 - 1; y++)
+                for (int x = x0 + 1; x < x1 - 1; x++) {
+                    if (x != x0 + 1 && x != x1 - 2 && y != y0 + 1 && y != y1 - 2) continue;
+                    if (tiles[y * w + x] == GRASS) tiles[y * w + x] = FENCE;
+                }
+            for (int y = y0 + 1; y < y1 - 1; y++)
+                for (int x = x0 + 1; x < x1 - 1; x++) {
+                    if (tiles[y * w + x] != SIDEWALK || (x != x0 + 1 && x != x1 - 2 && y != y0 + 1 && y != y1 - 2)) continue;
+                    // Just inside the gate, beside the pavement.
+                    int gx = x == x0 + 1 ? x + 1 : x == x1 - 2 ? x - 2 : x + 1, gy = y == y0 + 1 ? y + 1 : y == y1 - 2 ? y - 2 : y + 1;
+                    if (allType(gx, gy, 2, 2, GRASS)) {
+                        addLot(gx, gy, 2, 2, KIOSK);
+                        break;
+                    }
+                }
+        }
+        switch (type) {
+            case NB_ESTATE:
+                frontage(x0, y0, x1, y1, keep, APARTMENT, 8, 11, 2, 3, 0f);
+                frontage(x0, y0, x1, y1, keep, HOUSE, 4, 5, 1, 2, 0.06f);
+                break;
+            case NB_ACRES: {
+                frontage(x0, y0, x1, y1, keep, HOUSE, 5, 6, 5, 8, 0.05f);
+                // Paddocks and crops out the back.
+                int fx0 = x0 + 16, fy0 = y0 + 16, fx1 = x1 - 16, fy1 = y1 - 16;
+                if (fx1 - fx0 >= 10 && fy1 - fy0 >= 10) {
+                    boolean wide = fx1 - fx0 >= fy1 - fy0;
+                    int n = 1 + (Math.max(fx1 - fx0, fy1 - fy0) >= 24 ? 1 : 0), span = (wide ? fx1 - fx0 : fy1 - fy0) / n;
+                    for (int k = 0; k < n; k++) {
+                        int a = (wide ? fx0 : fy0) + k * span, b2 = a + span - (k < n - 1 ? 2 : 0);
+                        int cx0 = wide ? a : fx0, cy0 = wide ? fy0 : a, cx1 = wide ? b2 : fx1, cy1 = wide ? fy1 : b2;
+                        boolean clear = true;
+                        for (int j = cy0; j < cy1 && clear; j++)
+                            for (int i = cx0; i < cx1 && clear; i++) if (tiles[j * w + i] != GRASS && tiles[j * w + i] != TREE) clear = false;
+                        if (!clear) continue;
+                        fill(cx0, cy0, cx1 - cx0, cy1 - cy0, GRASS);
+                        addDecor(D_CROPS, cx0 * T + 3, cy0 * T + 3, cx1 * T - 3, cy1 * T - 3, rnd.nextInt(3));
+                        for (int j = cy0 - 1; j <= cy1; j++)
+                            for (int i = cx0 - 1; i <= cx1; i++) if (tiles[j * w + i] == TREE) tiles[j * w + i] = GRASS;
+                    }
+                    keep = new int[]{fx0 - 1, fy0 - 1, fx1 + 1, fy1 + 1};
+                }
+                break;
+            }
+            case NB_WORKS:
+                frontage(x0, y0, x1, y1, keep, WAREHOUSE, 9, 13, 3, 3, 0f);
+                frontage(x0, y0, x1, y1, keep, OFFICE, 6, 8, 2, 2, 0.1f);
+                break;
+            case NB_GATED:
+                // Inside the fence, every house faces the estate's own roads.
+                frontage(x0 + 1, y0 + 1, x1 - 1, y1 - 1, keep, HOUSE, 4, 5, 1, 2, 0.06f);
+                break;
+            default:
+                frontage(x0, y0, x1, y1, keep, HOUSE, 4, 5, 1, 2, 0.06f);
+                break;
+        }
+        // Trees in the back gardens (orchards and windbreaks out on the big plots).
+        float trees = type == NB_ACRES ? 0.22f : 0.1f;
+        for (int y = y0 + 1; y < y1 - 1; y++)
+            for (int x = x0 + 1; x < x1 - 1; x++) {
+                if (keep != null && inside(x, y, keep[0], keep[1], keep[2], keep[3])) continue;
+                if (tiles[y * w + x] == GRASS && rnd.nextFloat() < trees && !hasNeighbor(x, y, TREE)
+                        && !hasNeighbor(x, y, BUILDING) && !hasNeighbor(x, y, ROAD) && !hasNeighbor(x, y, SIDEWALK))
+                    tiles[y * w + x] = TREE;
+            }
+    }
+
+    private static boolean inside(int x, int y, int x0, int y0, int x1, int y1) {
+        return x >= x0 && y >= y0 && x < x1 && y < y1;
+    }
+
+    private boolean allType(int x, int y, int fw, int fh, byte t) {
+        for (int j = y; j < y + fh; j++)
+            for (int i = x; i < x + fw; i++)
+                if (i < 0 || j < 0 || i >= w || j >= h || tiles[j * w + i] != t) return false;
+        return true;
+    }
+
+    /**
+     * Homes facing the roads: behind every bit of pavement with a road beyond it, one set back a garden's depth
+     * (setback tiles) from the pavement, sizes min..max, at least gap tiles from the next. A few plots stay empty.
+     */
+    private void frontage(int x0, int y0, int x1, int y1, int[] keep, int kind, int min, int max, int setback, int gap, float empty) {
+        int[] ddx = {1, -1, 0, 0}, ddy = {0, 0, 1, -1};
+        for (int y = y0; y < y1; y++)
+            for (int x = x0; x < x1; x++) {
+                if (tiles[y * w + x] != SIDEWALK) continue;
+                for (int k = 0; k < 4; k++) {
+                    int dx = ddx[k], dy = ddy[k];
+                    if (!paved(x + dx, y + dy)) continue;
+                    int hw = min + rnd.nextInt(max - min + 1), hd = min + rnd.nextInt(max - min + 1);
+                    int fx = x - dx * (1 + setback), fy = y - dy * (1 + setback);
+                    int lx, ly, lw, lh;
+                    if (dx != 0) {
+                        lw = hd;
+                        lh = hw;
+                        lx = dx > 0 ? fx - hd + 1 : fx;
+                        ly = y - hw / 2;
+                    } else {
+                        lw = hw;
+                        lh = hd;
+                        lx = x - hw / 2;
+                        ly = dy > 0 ? fy - hd + 1 : fy;
+                    }
+                    if (lx < x0 + 1 || ly < y0 + 1 || lx + lw > x1 - 1 || ly + lh > y1 - 1) continue;
+                    if (keep != null && lx < keep[2] && lx + lw > keep[0] && ly < keep[3] && ly + lh > keep[1]) continue;
+                    if (!allType(lx, ly, lw, lh, GRASS)) continue;
+                    boolean clear = true;
+                    for (int j = ly - gap; j < ly + lh + gap && clear; j++)
+                        for (int i = lx - gap; i < lx + lw + gap && clear; i++)
+                            if (i >= 0 && j >= 0 && i < w && j < h && tiles[j * w + i] == BUILDING) clear = false;
+                    if (!clear) continue;
+                    if (rnd.nextFloat() < empty) {
+                        // An empty plot: mark it taken with a tree so the next house doesn't crowd in.
+                        tiles[(ly + lh / 2) * w + lx + lw / 2] = TREE;
+                        break;
+                    }
+                    addLot(lx, ly, lw, lh, kind);
+                    // A drive from the road to the house.
+                    for (int s = 1; s <= setback; s++) {
+                        int ax = x - dx * s, ay = y - dy * s;
+                        if (tiles[ay * w + ax] == GRASS) tiles[ay * w + ax] = SIDEWALK;
+                    }
+                    if (kind == HOUSE && setback >= 4 && rnd.nextFloat() < 0.4f) {
+                        // Out on the big plots, a barn behind the house.
+                        int bx = dx > 0 ? lx - 6 : dx < 0 ? lx + lw + 2 : lx, by = dy > 0 ? ly - 6 : dy < 0 ? ly + lh + 2 : ly;
+                        if (bx > x0 + 1 && by > y0 + 1 && bx + 4 < x1 - 1 && by + 4 < y1 - 1 && allType(bx - 1, by - 1, 6, 6, GRASS))
+                            addLot(bx, by, 4, 4, BARN);
+                    }
+                    break;
+                }
+            }
     }
 
     /**
@@ -4036,6 +4443,10 @@ final class City {
             }
             if (y <= 0 || y >= h - 1) continue;
             int lo = fromAbove ? railY0 : y, hi = fromAbove ? y + 1 : railY0 + railRows;
+            boolean estate = false;
+            for (int[] b : blocks)
+                if (b.length > 4 && b[4] == 3 && b[2] > st.x0 && b[0] < st.x1 && b[3] > lo && b[1] < hi) estate = true;
+            if (estate) continue;
             carve(new Street(st.x0, lo, st.x1, hi, true, false));
             for (int ry = railY0; ry < railY0 + railRows; ry++)
                 for (int x = st.x0; x < st.x1; x++) roadDir[ry * w + x] = 1;
@@ -4159,6 +4570,7 @@ final class City {
                 if (!crosswalk(ax, ay) || !junctionAt(bx, by)) continue;
                 int id = junctionId[by * w + bx];
                 int type = junctions.get(id)[4];
+                if (type == J_BEND) continue;
                 float hx = st.vertical ? 0 : s, hy = st.vertical ? s : 0, rx = -hy, ry = hx;
                 // The edge of this tile nearest the junction, and the half of the road coming in.
                 float ex = (cx + 0.5f) * T + hx * T / 2, ey = (cy + 0.5f) * T + hy * T / 2;
@@ -4368,7 +4780,7 @@ final class City {
                 int ax = st.vertical ? st.x0 : st.x0 + k - 1, ay = st.vertical ? st.y0 + k - 1 : st.y0;
                 int bx = st.vertical ? st.x0 : st.x0 + k, by = st.vertical ? st.y0 + k : st.y0;
                 boolean ja = junctionAt(ax, ay), jb = junctionAt(bx, by);
-                if (ja == jb) continue;
+                if (ja == jb || bendAt(ja ? ax : bx, ja ? ay : by)) continue;
                 // The crossing sits on the non-junction tile, against the junction.
                 int cx = ja ? bx : ax, cy = ja ? by : ay;
                 if (!paved(cx, cy)) continue;
@@ -5256,6 +5668,19 @@ final class City {
                 for (int x = Math.max(0, x0 - 1); x <= Math.min(w - 1, x1 + 1); x++)
                     if (x > x0 && x < x1 && y > y0 && y < y1 && (tiles[y * w + x] == GRASS || tiles[y * w + x] == TREE)) island = true;
             int type = island ? J_ROUNDABOUT : (x1 - x0 >= 4 || y1 - y0 >= 4) ? J_LIGHTS : J_STOP;
+            // Just two roads meeting at a corner: a bend, not a junction anyone stops at.
+            if (type == J_STOP) {
+                boolean n = false, s = false, e = false, wst = false;
+                for (int x = x0; x <= x1; x++) {
+                    if (paved(x, y0 - 1)) n = true;
+                    if (paved(x, y1 + 1)) s = true;
+                }
+                for (int y = y0; y <= y1; y++) {
+                    if (paved(x0 - 1, y)) wst = true;
+                    if (paved(x1 + 1, y)) e = true;
+                }
+                if ((n ? 1 : 0) + (s ? 1 : 0) + (e ? 1 : 0) + (wst ? 1 : 0) == 2 && (n || s) && (e || wst)) type = J_BEND;
+            }
             junctions.add(new int[]{x0, y0, x1, y1, type, (id * 7919) % 23});
         }
         // Junctions only a tile or two apart are one junction as far as anyone driving is concerned.
@@ -5295,8 +5720,11 @@ final class City {
                 into[1] = Math.min(into[1], from[1]);
                 into[2] = Math.max(into[2], from[2]);
                 into[3] = Math.max(into[3], from[3]);
-                // Lights win over a stop sign; a roundabout stays a roundabout.
-                if (into[4] != J_ROUNDABOUT && from[4] != J_STOP) into[4] = from[4];
+                // Lights win over a stop sign; a roundabout stays a roundabout; a bend next to anything is a stop.
+                if (into[4] == J_BEND || from[4] == J_BEND) {
+                    int o = into[4] == J_BEND ? from[4] : into[4];
+                    into[4] = o == J_BEND ? J_STOP : o;
+                } else if (into[4] != J_ROUNDABOUT && from[4] != J_STOP) into[4] = from[4];
                 // Big enough together (both sides of a divided highway): lights.
                 if (into[4] == J_STOP && (into[2] - into[0] >= 4 || into[3] - into[1] >= 4)) into[4] = J_LIGHTS;
             }
@@ -5313,7 +5741,7 @@ final class City {
         }
     }
 
-    static final int J_STOP = 0, J_LIGHTS = 1, J_ROUNDABOUT = 2;
+    static final int J_STOP = 0, J_LIGHTS = 1, J_ROUNDABOUT = 2, J_BEND = 3;
     /** Junctions: {x0, y0, x1, y1 (tiles, inclusive), type, light timing offset}. */
     final List<int[]> junctions = new ArrayList<int[]>();
     private int[] junctionId;
@@ -5375,6 +5803,13 @@ final class City {
     boolean junctionAt(int x, int y) {
         if (junction == null) computeJunctions();
         return x >= 0 && y >= 0 && x < w && y < h && junction[y * w + x];
+    }
+
+    /** Part of a bend: two roads meeting at a corner, where nobody stops. */
+    boolean bendAt(int x, int y) {
+        if (!junctionAt(x, y)) return false;
+        int id = junctionId[y * w + x];
+        return id >= 0 && junctions.get(id)[4] == J_BEND;
     }
 
     /** A road tile with zebra stripes: next to a junction but not in it. */

@@ -2,11 +2,19 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "9.2";
-    static final int VERSION_CODE = 32;
+    static final String VERSION = "9.3";
+    static final int VERSION_CODE = 33;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "9.3  -  Neighbourhoods",
+                    "Massive maps aren't all grid any more: stretches of suburb are laid out as neighbourhoods of their own, each with its own name on the map.",
+                    "Cul-de-sac estates (a spine road with closes and turning circles off it), crescents round a green, houses round a village green, flats set in parkland, big plots with long drives, barns and crops on the edge of town, and gated estates behind a fence with a gatehouse.",
+                    "Industrial areas get business parks: a loop road lined with warehouses and offices round a depot and its yard.",
+                    "The suburbs have more T-junctions and fewer streets running dead straight, and next-door neighbourhoods are laid out differently.",
+                    "Where two roads just meet at a corner it's a bend: no stop line, and nobody stops.",
+            },
             {
                     "9.2  -  Roads that go somewhere",
                     "Streets no longer stop dead in a field: the stubs left poking out past the edge of town are gone, so streets turn the corner or meet at a junction instead.",

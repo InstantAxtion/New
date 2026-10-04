@@ -1091,6 +1091,8 @@ final class Fleet {
         float stopAt = dist - City.T - v.length() - 1;
         float approach = Math.max(0, stopAt) * 1.8f;
         boolean vertical = diry != 0;
+        // A bend: slow for the corner, but nobody stops.
+        if (j[4] == City.J_BEND) return Float.MAX_VALUE;
         if (j[4] == City.J_LIGHTS && !v.fleeing) {
             int light = city.lightState(id, vertical, w.time);
             if (light == 0) return Float.MAX_VALUE;

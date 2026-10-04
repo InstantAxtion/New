@@ -131,6 +131,10 @@ on the phone, so the APK contains no audio files.
   fire stations.
 - **A sharp map up close**: zoomed in, the area on screen is drawn again in fine detail in the background
   and laid over the map picture.
+- **Neighbourhoods**: on Massive maps, stretches of suburb are laid out as named neighbourhoods instead of
+  more grid: cul-de-sac estates, crescents and village greens, flats in parkland, big plots with barns and
+  crops on the edge of town, gated estates, and business parks in the industrial areas. Corners where two
+  roads simply meet are bends, with no stop.
 - **Roads that go somewhere**: out in the country no street stops dead in a field. Stubs past the edge of
   town are dug up, streets with nothing past a level crossing stop at the tracks, and hamlet streets and
   other loose ends carry on as dirt lanes to the nearest road or off the map.

@@ -763,6 +763,33 @@ public final class GameTests {
                 check(old.applyCode("12-44") && old.country() == Country.USA, "old codes are American cities");
             }
         });
+        test("massive maps have suburbs laid out as neighbourhoods, not just grid", new Check() {
+            public void run() {
+                for (int p : new int[]{0, 2}) {
+                    CityConfig c = new CityConfig();
+                    c.v[CityConfig.OPT_PRESET] = p;
+                    c.v[CityConfig.OPT_SIZE] = 3;
+                    c.seed = 7;
+                    City city = new City(c);
+                    int[] kinds = city.neighbourhoodKinds();
+                    int total = 0, distinct = 0;
+                    for (int k : kinds) {
+                        total += k;
+                        if (k > 0) distinct++;
+                    }
+                    check(total >= 3, CityConfig.PRESETS[p] + " has " + total + " neighbourhoods");
+                    check(distinct >= 2, CityConfig.PRESETS[p] + " has " + distinct + " kinds of neighbourhood");
+                    check(city.deadEnds().size() <= 1, CityConfig.PRESETS[p] + " roads ending in a field: " + city.deadEnds().size());
+                }
+                // Smaller maps keep their grid.
+                CityConfig c = new CityConfig();
+                c.v[CityConfig.OPT_SIZE] = 1;
+                c.seed = 7;
+                int total = 0;
+                for (int k : new City(c).neighbourhoodKinds()) total += k;
+                check(total == 0, "a medium map has " + total + " neighbourhoods");
+            }
+        });
         test("roads out in the country lead somewhere instead of stopping in a field", new Check() {
             public void run() {
                 for (int p : new int[]{0, 3, 8}) {

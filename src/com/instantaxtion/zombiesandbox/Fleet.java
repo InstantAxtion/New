@@ -89,6 +89,8 @@ final class Fleet {
         final ArrayList<Entity> crew = new ArrayList<Entity>();
         /** A patrol car (not a backup cruiser): drives a beat and answers calls. */
         boolean patrol;
+        /** Whose car it is: 0 the city police, 1 highway patrol, 2 the sheriff. */
+        int agency;
         /** The station it belongs to (fire engines and patrol cars), and how many it waits to take aboard. */
         City.Facility station;
         int crewWanted;
@@ -272,6 +274,12 @@ final class Fleet {
     }
 
     private boolean newDestination(Vehicle v) {
+        // Highway patrol keeps to the highway, sheriffs to the country roads.
+        if (v.patrol && v.agency > 0 && v.state == PATROL)
+            for (int tries = 0; tries < 6; tries++) {
+                float[] d = v.agency == 1 ? city.randomHighway(w.rnd) : city.randomCountryRoad(w.rnd);
+                if (d != null && Math.hypot(d[0] - v.x, d[1] - v.y) > 300 && route(v, d[0], d[1])) return true;
+            }
         for (int tries = 0; tries < 12; tries++) {
             float[] d = randomRoad();
             if (d == null || Math.hypot(d[0] - v.x, d[1] - v.y) < (tries < 6 ? 400 : 160)) continue;
@@ -1362,7 +1370,9 @@ final class Fleet {
             float throttle = queue && v.stuckTimer < 3 ? 0.15f : 1f;
             // Waiting at a red light, a stop sign or behind a queue isn't being stuck.
             if (v.held || queue) v.stuckTimer = Math.min(v.stuckTimer, 1);
-            if (!driveStep(v, dt, Math.min(limit, zombiesClose ? 60 : v.fleeing ? 90 : 70), throttle)) {
+            // (On the highway: highway speeds.)
+            float cruise = city.onHighway(v.x, v.y) ? 115 : v.fleeing ? 90 : 70;
+            if (!driveStep(v, dt, Math.min(limit, zombiesClose ? 60 : cruise), throttle)) {
                 arrive(v);
                 // Out of town (where nobody sees it go): gone.
                 if (v.fleeing && !inView(v.x, v.y)) {
@@ -1714,12 +1724,43 @@ final class Fleet {
         return v;
     }
 
+    /** What a patrol car is called on the radio. */
+    String callsign(Vehicle v) {
+        Country c = city.country;
+        return v.agency == 1 ? c.hpName + " " + v.number : v.agency == 2 ? c.ruralName + " " + v.number : "Car " + v.number;
+    }
+
+    /**
+     * A highway patrol car on the highway, or a sheriff's car out on the country roads, with its officer
+     * aboard (at the start of the game).
+     */
+    Vehicle startAgencyPatrol(int agency) {
+        float[] start = agency == 1 ? city.randomHighway(w.rnd) : city.randomCountryRoad(w.rnd);
+        if (start == null) return null;
+        Vehicle v = make(CRUISER);
+        v.x = start[0];
+        v.y = start[1];
+        v.patrol = true;
+        v.agency = agency;
+        v.state = PATROL;
+        v.number = agency * 10 + (++unitCount % 10);
+        if (!newDestination(v)) return null;
+        Entity e = w.create(Entity.COP, v.x, v.y);
+        e.agency = agency;
+        Country c = city.country;
+        e.body = agency == 1 ? c.hpShirt : c.ruralShirt;
+        e.rig = v;
+        v.crew.add(e);
+        vehicles.add(v);
+        return v;
+    }
+
     /** Patrol cars on the streets (not wrecked or abandoned). */
     int patrolCars() {
         int n = 0;
         for (int i = 0, m = vehicles.size(); i < m; i++) {
             Vehicle v = vehicles.get(i);
-            if (v.patrol && !v.broken && !v.parked) n++;
+            if (v.patrol && v.agency == 0 && !v.broken && !v.parked) n++;
         }
         return n;
     }
@@ -1766,6 +1807,7 @@ final class Fleet {
         for (int i = 0, n = vehicles.size(); i < n; i++) {
             Vehicle v = vehicles.get(i);
             if (!v.patrol || v.state != PATROL || v.broken || v.parked || v.crew.isEmpty()) continue;
+            if (v.agency > 0 && city.inTown(x, y) && !city.nearHighway(x, y, 300)) continue;
             float d = (v.x - x) * (v.x - x) + (v.y - y) * (v.y - y);
             if (d < bd) {
                 bd = d;
@@ -1785,8 +1827,8 @@ final class Fleet {
         v.incident = inc;
         v.stuckTimer = 0;
         w.emit(Sfx.SIREN, v.x, v.y);
-        w.dispatch.say(Dispatch.WHO_POLICE, null, "Dispatch: Car " + v.number + ", respond to " + inc.place + ".", inc.x, inc.y);
-        w.dispatch.say(Dispatch.WHO_POLICE, v.crew.get(0), "Car " + v.number + ", en route.", v.x, v.y);
+        w.dispatch.say(Dispatch.WHO_POLICE, null, "Dispatch: " + callsign(v) + ", respond to " + inc.place + ".", inc.x, inc.y);
+        w.dispatch.say(Dispatch.WHO_POLICE, v.crew.get(0), callsign(v) + ", en route.", v.x, v.y);
         return true;
     }
 
@@ -1884,7 +1926,7 @@ final class Fleet {
                 }
             } else if (v.soundCd <= 0 && !out.isEmpty()) {
                 v.soundCd = 4;
-                w.dispatch.say(Dispatch.WHO_POLICE, out.get(0), "Car " + v.number + ", contact on "
+                w.dispatch.say(Dispatch.WHO_POLICE, out.get(0), callsign(v) + ", contact on "
                         + city.placeName(v.x, v.y) + ". We're out of the car.", v.x, v.y);
             }
             return false;
@@ -1931,7 +1973,7 @@ final class Fleet {
         v.stuckTimer += dt;
         boolean queue = carAhead(v);
         if (v.held || queue) v.stuckTimer = Math.min(v.stuckTimer, 1);
-        if (!driveStep(v, dt, Math.min(limit, 60), queue ? 0.15f : 1f) || v.stuckTimer > 10) {
+        if (!driveStep(v, dt, Math.min(limit, city.onHighway(v.x, v.y) ? 105 : 60), queue ? 0.15f : 1f) || v.stuckTimer > 10) {
             v.stuckTimer = 0;
             newDestination(v);
         }

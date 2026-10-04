@@ -2103,7 +2103,9 @@ final class GameView extends View implements Menu.Host {
             }
         }
         boolean civ = v.type == Fleet.CAR;
-        int body = civ ? v.color : truck ? (v.guardUnit ? 0xFF8C8260 : 0xFF4F5A33) : engine ? 0xFFC8302A : amb ? 0xFFF2F2F2 : world.city.country.cruiserBody;
+        Country land0 = world.city.country;
+        int body = civ ? v.color : truck ? (v.guardUnit ? 0xFF8C8260 : 0xFF4F5A33) : engine ? 0xFFC8302A : amb ? 0xFFF2F2F2
+                : v.agency == 1 ? land0.hpBody : v.agency == 2 ? land0.ruralBody : land0.cruiserBody;
         if (v.burnt) body = 0xFF2B2623;
         else if (v.broken) body = City.darken(body, 0.65f);
         fill.setColor(body);
@@ -2166,12 +2168,19 @@ final class GameView extends View implements Menu.Host {
             }
         } else {
             Country land = world.city.country;
-            if (land.cruiserRoof != 0) {
+            boolean city = v.agency == 0;
+            if (!city) {
+                // Highway patrol and sheriff's cars: their own colours, a stripe down each side.
+                fill.setColor(v.broken ? 0xFF9A9A9A : v.agency == 1 ? land.hpDoor : land.ruralDoor);
+                c.drawRect(-hl + 1, -hw, hl - 1, -hw + 1f, fill);
+                c.drawRect(-hl + 1, hw - 1f, hl - 1, hw, fill);
+            }
+            if (city && land.cruiserRoof != 0) {
                 // Japanese patrol cars: white roof and doors over a black body.
                 fill.setColor(v.broken ? 0xFFA0A0A0 : land.cruiserRoof);
                 c.drawRect(-hl * 0.55f, -hw + 0.6f, hl * 0.45f, hw - 0.6f, fill);
             }
-            if (land.cruiserChecks) {
+            if (city && land.cruiserChecks) {
                 // A chequered band down each side.
                 for (int q = 0; q < 6; q++) {
                     float x0 = -hl + 1 + q * (hl * 2 - 2) / 6f, x1 = x0 + (hl * 2 - 2) / 6f;
@@ -2181,7 +2190,7 @@ final class GameView extends View implements Menu.Host {
                     c.drawRect(x0, hw - 1.3f, x1, hw, fill);
                 }
             }
-            fill.setColor(v.broken ? 0xFFA0A0A0 : land.cruiserDoor);
+            fill.setColor(v.broken ? 0xFFA0A0A0 : v.agency == 1 ? land.hpDoor : v.agency == 2 ? land.ruralDoor : land.cruiserDoor);
             c.drawRect(-3f, -hw, 2f, -hw + 1.3f, fill);
             c.drawRect(-3f, hw - 1.3f, 2f, hw, fill);
             fill.setColor(0xFF1E2A33);
@@ -3229,9 +3238,17 @@ final class GameView extends View implements Menu.Host {
         if (scale > 2.5f && (e.type == Entity.CIVILIAN || e.type == Entity.MEDIC || e.type == Entity.ZOMBIE
                 || e.type == Entity.RUNNER || e.type == Entity.SCREAMER)) drawHair(c, e, r);
         if (e.type == Entity.COP) {
-            fill.setColor(0xFF0B1022);
-            oval.set(r * 0.35f, -r * 0.45f, r * 0.85f, r * 0.45f);
-            c.drawOval(oval, fill);
+            if (e.agency > 0) {
+                // Troopers and deputies: a wide-brimmed hat.
+                fill.setColor(e.agency == 2 ? 0xFF5A4630 : 0xFF8A7650);
+                c.drawCircle(r * 0.08f, 0, r * 0.62f, fill);
+                fill.setColor(e.agency == 2 ? 0xFF6E5A3E : 0xFFA08C62);
+                c.drawCircle(r * 0.08f, 0, r * 0.36f, fill);
+            } else {
+                fill.setColor(0xFF0B1022);
+                oval.set(r * 0.35f, -r * 0.45f, r * 0.85f, r * 0.45f);
+                c.drawOval(oval, fill);
+            }
         } else if (e.type == Entity.RAIDER) {
             // Bandana mask.
             fill.setColor(0xFF1A1A1A);
@@ -3644,7 +3661,8 @@ final class GameView extends View implements Menu.Host {
         if (e.type == Entity.DOG) title = Names.dog(e.nameSeed) + "  -  Dog";
         else if (e.type == Entity.ZOMBIE_DOG) title = Names.dog(e.nameSeed) + "  -  Zombie dog";
         else if (e.isZombie()) title = Entity.NAMES[e.type] + (e.origin >= 0 ? "  -  was " + Names.person(e.nameSeed) : "");
-        else if (e.type == Entity.COP) title = "Officer " + Names.person(e.nameSeed) + "  -  " + Dispatch.name(e);
+        else if (e.type == Entity.COP) title = (e.agency == 1 ? world.city.country.hpName + " " : e.agency == 2 ? world.city.country.ruralName + "'s deputy " : "Officer ")
+                + Names.person(e.nameSeed) + "  -  " + Dispatch.name(e);
         else if (e.type == Entity.SOLDIER) title = Names.person(e.nameSeed) + "  -  " + Entity.ROLE_NAMES[e.role] + ", " + Dispatch.name(e);
         else title = Names.person(e.nameSeed) + "  -  " + Entity.NAMES[e.type];
         lines.add(doing(e));

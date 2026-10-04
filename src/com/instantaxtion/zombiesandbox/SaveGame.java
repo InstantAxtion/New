@@ -309,6 +309,7 @@ final class SaveGame {
         out.writeByte(e.melee);
         out.writeByte(e.job);
         out.writeBoolean(e.aware);
+        out.writeByte(e.agency);
     }
 
     static World load(File file) throws IOException {
@@ -579,7 +580,10 @@ final class SaveGame {
             e.melee = in.readByte();
         }
         if (version >= 16) e.job = in.readByte();
-        if (version >= 17) e.aware = in.readBoolean();
+        if (version >= 17) {
+            e.aware = in.readBoolean();
+            e.agency = in.readByte();
+        }
         if (zone >= 0 && zone < d.zones.size()) e.zone = d.zones.get(zone);
         return e;
     }

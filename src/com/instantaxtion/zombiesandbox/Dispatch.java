@@ -159,7 +159,12 @@ final class Dispatch {
     static String name(Entity e) {
         if (e.type == Entity.SOLDIER && e.role == Entity.ROLE_COMMANDER) return "Command";
         if (e.type == Entity.SOLDIER && e.role == Entity.ROLE_SNIPER) return "Overwatch-" + (Math.max(0, e.squad) + 1);
-        if (e.type == Entity.COP) return "Unit " + e.callsign;
+        if (e.type == Entity.COP) {
+            Country c = Country.current;
+            if (e.agency == 1 && c != null) return c.hpShort + " " + e.callsign;
+            if (e.agency == 2 && c != null && c.ruralShort != null) return c.ruralShort + " " + e.callsign;
+            return "Unit " + e.callsign;
+        }
         if (e.type == Entity.SOLDIER) return SQUADS[Math.max(0, e.squad) % SQUADS.length] + "-" + e.member;
         return "Caller";
     }

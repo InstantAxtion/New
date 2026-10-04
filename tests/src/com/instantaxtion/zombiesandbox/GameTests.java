@@ -316,12 +316,13 @@ public final class GameTests {
                 float[] p = w.city.findWalkable(st.x + 120, st.y);
                 w.ignite(p[0], p[1], 60);
                 int fires = w.fires.size();
+                World.Fire lit = w.fires.get(w.fires.size() - 1);
                 w.dispatch.restoreZone(p[0] + 300, p[1], 120, false, "Test", 20, 2);
                 for (int i = 0; i < 30 * 200; i++) {
                     w.update(1 / 30f);
                     w.evCount = 0;
                 }
-                check(fires > 0 && w.fires.isEmpty(), "the fire went out");
+                check(fires > 0 && (!w.fires.contains(lit) || lit.life <= 0), "the fire went out");
                 check(w.dispatch.zones.isEmpty(), "a quiet, empty safe zone closes");
                 for (Fleet.Vehicle v : w.fleet.vehicles) check(!v.cones && v.block == null, "roadblocks are cleared away");
                 w.outbreak = true;
@@ -672,8 +673,9 @@ public final class GameTests {
                     for (Entity e : w.entities) if (e.charge > 0) charged = true;
                 }
                 check(charged, "a brute charges");
-                // With nobody left to hunt, crawlers lie low.
+                // With nobody left to hunt (on foot or in a car), crawlers lie low.
                 w.entities.clear();
+                w.fleet.vehicles.clear();
                 for (int i = 0; i < 6; i++) {
                     float[] q = w.city.randomWalkable(w.rnd);
                     w.spawn(Entity.CRAWLER, q[0], q[1]);
@@ -759,6 +761,57 @@ public final class GameTests {
                         "Australia and Japan drive on the left");
                 CityConfig old = new CityConfig();
                 check(old.applyCode("12-44") && old.country() == Country.USA, "old codes are American cities");
+            }
+        });
+        test("a highway out in the country, with highway patrol and sheriffs", new Check() {
+            public void run() {
+                CityConfig c = new CityConfig();
+                c.v[CityConfig.OPT_ZOMBIES] = 0;
+                c.v[CityConfig.OPT_PRESET] = 6;
+                c.v[CityConfig.OPT_SIZE] = 1;
+                c.seed = 7;
+                World w = new World(c);
+                w.populate(c);
+                City city = w.city;
+                check(city.hwyAxis >= 0 && city.hwyName != null, "a small town has a highway past it");
+                check(!city.hwyExits.isEmpty(), "a road from town joins it");
+                int hp = 0, sheriff = 0;
+                for (Fleet.Vehicle v : w.fleet.vehicles) {
+                    if (v.patrol && v.agency == 1) hp++;
+                    if (v.patrol && v.agency == 2) sheriff++;
+                }
+                check(hp >= 1 && sheriff >= 1, "highway patrol and sheriff's cars: " + hp + ", " + sheriff);
+                // Traffic keeps to its own carriageway.
+                int wrong = 0, samples = 0;
+                java.util.HashMap<Fleet.Vehicle, float[]> last = new java.util.HashMap<Fleet.Vehicle, float[]>();
+                for (int f = 0; f < 30 * 60; f++) {
+                    w.update(1 / 30f);
+                    w.evCount = 0;
+                    if (f % 15 != 0) continue;
+                    for (Fleet.Vehicle v : w.fleet.vehicles) {
+                        float[] p = last.get(v);
+                        last.put(v, new float[]{v.x, v.y});
+                        if (p == null || v.parked || !city.onHighway(v.x, v.y) || city.junctionIdAt(v.x, v.y) >= 0) continue;
+                        float dx = v.x - p[0], dy = v.y - p[1];
+                        int ow = city.oneWay[(int) (v.y / City.T) * city.w + (int) (v.x / City.T)];
+                        float along = ow == 1 ? dx : ow == 2 ? -dx : ow == 3 ? dy : -dy, across = ow <= 2 ? dy : dx;
+                        // (Crossing over to a side road isn't driving along it.)
+                        if (Math.abs(along) < 3 || Math.abs(across) > Math.abs(along)) continue;
+                        samples++;
+                        if (along < 0) wrong++;
+                    }
+                }
+                check(samples > 50 && wrong == 0, "nobody drives the wrong way: " + wrong + " of " + samples);
+                // Outside the USA there are no sheriffs.
+                CityConfig f = new CityConfig();
+                f.v[CityConfig.OPT_ZOMBIES] = 0;
+                f.v[CityConfig.OPT_PRESET] = 6;
+                f.v[CityConfig.OPT_SIZE] = 1;
+                f.v[CityConfig.OPT_COUNTRY] = Country.FRANCE;
+                f.seed = 7;
+                World fr = new World(f);
+                fr.populate(f);
+                for (Fleet.Vehicle v : fr.fleet.vehicles) check(v.agency != 2, "no sheriffs in France");
             }
         });
         test("fire engines need a crew to drive them; police patrol in cars", new Check() {

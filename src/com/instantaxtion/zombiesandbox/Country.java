@@ -437,5 +437,65 @@ final class Country {
                         "Scout", "Pepper", "Bear", "Rosie", "Duke", "Nala", "Biscuit", "Ziggy"};
                 break;
         }
+        agencies();
+    }
+
+    /** Highways the country might have, as {name, what's on the signs}. */
+    String[][] highways;
+    /**
+     * Who polices the highway, and (in the USA) the countryside: the force's name, what an officer is called on
+     * the radio, and their car's body and door colours. ruralName is null where the police cover the country too.
+     */
+    String hpName, hpShort, ruralName, ruralShort;
+    int hpBody, hpDoor, hpShirt, ruralBody, ruralDoor, ruralShirt;
+
+    private void agencies() {
+        switch (id) {
+            case AUSTRALIA:
+                highways = new String[][]{{"Hume Highway", "M31"}, {"Pacific Motorway", "M1"}, {"Bruce Highway", "A1"}, {"Princes Highway", "A1"}};
+                hpName = "Highway Patrol";
+                hpShort = "Highway";
+                hpBody = 0xFFF2F2F2;
+                hpDoor = 0xFFE8B020;
+                hpShirt = 0xFF3A5A8A;
+                break;
+            case JAPAN:
+                highways = new String[][]{{"Tomei Expressway", "E1"}, {"Chuo Expressway", "E20"}, {"Tohoku Expressway", "E4"}};
+                hpName = "Expressway Police";
+                hpShort = "Expressway";
+                hpBody = 0xFF202224;
+                hpDoor = 0xFFF2F2F2;
+                hpShirt = 0xFF2E3E6A;
+                break;
+            case FRANCE:
+                highways = new String[][]{{"Autoroute A6", "A6"}, {"Autoroute A7", "A7"}, {"Autoroute A10", "A10"}};
+                hpName = "Gendarmerie";
+                hpShort = "Gendarme";
+                hpBody = 0xFF1E2E5A;
+                hpDoor = 0xFFF2F2F2;
+                hpShirt = 0xFF1E2E5A;
+                break;
+            case MEXICO:
+                highways = new String[][]{{"Carretera Federal 15", "MEX 15"}, {"Autopista 57D", "MEX 57D"}, {"Carretera Federal 85", "MEX 85"}};
+                hpName = "Guardia Nacional";
+                hpShort = "Guardia";
+                hpBody = 0xFFF2F2F2;
+                hpDoor = 0xFF5A1E2E;
+                hpShirt = 0xFF4A4A3A;
+                break;
+            default:
+                highways = new String[][]{{"Interstate 80", "I-80"}, {"Interstate 40", "I-40"}, {"Interstate 95", "I-95"}, {"Interstate 70", "I-70"}};
+                hpName = "Highway Patrol";
+                hpShort = "Trooper";
+                hpBody = 0xFFC8B48A;
+                hpDoor = 0xFF3A2E22;
+                hpShirt = 0xFFC8B48A;
+                ruralName = "Sheriff";
+                ruralShort = "Deputy";
+                ruralBody = 0xFFF2F2F2;
+                ruralDoor = 0xFF2E5A3A;
+                ruralShirt = 0xFF6A5A3A;
+                break;
+        }
     }
 }

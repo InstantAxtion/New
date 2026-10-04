@@ -802,6 +802,8 @@ final class City {
             split(bx0 + in, by0 + in, bx1 - in, by1 - in, 0, -1, -1);
         }
         if (organic) erodeTown(bx0, by0, bx1, by1);
+        // Out in the country, a highway runs past the town.
+        if (m >= 16) highway(bx0, by0, bx1, by1);
         if (m > 0) {
             int n = w >= 400 ? 3 + rnd.nextInt(3) : w >= 300 ? 1 + rnd.nextInt(2) : rnd.nextInt(2);
             hamlets(n);
@@ -1947,6 +1949,164 @@ final class City {
         }
     }
 
+    // ------------------------------------------------------------------ the highway
+
+    /** The highway: which way it runs (0 east-west, 1 north-south, -1 there isn't one), its first row or column. */
+    int hwyAxis = -1, hwyAt;
+    String hwyName, hwyShield;
+    /** Which way traffic must go on each tile (0 any; 1 east, 2 west, 3 south, 4 north). */
+    byte[] oneWay;
+    /** Where roads join the highway: {x, y} tile at the side of the highway, and which side (+1/-1). */
+    final List<int[]> hwyExits = new ArrayList<int[]>();
+
+    /**
+     * A divided highway across the countryside from one edge of the map to the other, three lanes each way
+     * with a concrete barrier between, and a road or two from town joining it at lights.
+     */
+    private void highway(int bx0, int by0, int bx1, int by1) {
+        boolean ew = railY0 < 0 && rnd.nextBoolean();
+        hwyAxis = ew ? 0 : 1;
+        int lo = ew ? by0 : bx0, hi = ew ? by1 : bx1, len = ew ? h : w, len2 = ew ? w : h;
+        boolean before = rnd.nextBoolean();
+        int at = before ? lo / 2 - 3 : hi + (len - hi) / 2 - 3;
+        at = Math.max(3, Math.min(len - 10, at));
+        hwyAt = at;
+        String[] hn = country.highways[rnd.nextInt(country.highways.length)];
+        hwyName = hn[0];
+        hwyShield = hn[1];
+        oneWay = new byte[w * h];
+        for (int k = 0; k < len2; k++)
+            for (int a = 0; a < 7; a++) {
+                int x = ew ? k : at + a, y = ew ? at + a : k;
+                int i = y * w + x;
+                boolean rail = tiles[i] == RAIL;
+                tiles[i] = a == 3 && !rail ? FENCE : ROAD;
+                roadDir[i] = (byte) (ew ? 2 : 1);
+                mainRoad[i] = true;
+                if (a == 3 || rail) continue;
+                // Keeping right, the first carriageway (north, or west) carries traffic west (or south).
+                boolean firstSide = a < 3, neg = firstSide != country.leftHand;
+                oneWay[i] = (byte) (ew ? (neg ? 2 : 1) : (neg ? 3 : 4));
+            }
+        // At each end, a way across the barrier (where it leaves the map), so nobody is stuck going one way.
+        for (int k : new int[]{0, 1, len2 - 2, len2 - 1}) {
+            int x = ew ? k : at + 3, y = ew ? at + 3 : k;
+            tiles[y * w + x] = ROAD;
+        }
+        // Roads from town: carry a street on out to the highway where one ends facing it.
+        // (side: the way from the town out to the highway; edge: the first row or column beside it, on the town side.)
+        int side = before ? -1 : 1, edge = before ? at + 7 : at - 1;
+        List<int[]> cands = new ArrayList<int[]>();
+        int mid2 = ew ? (bx0 + bx1) / 2 : (by0 + by1) / 2;
+        int runStart = -1, runD = 0;
+        for (int k = 4; k < len2 - 4; k++) {
+            // Walk from the highway towards town across open country; a street that carries straight on into
+            // town from there is one to join up.
+            int d = 0, x = ew ? k : edge, y = ew ? edge : k;
+            while (d < len && x >= 0 && y >= 0 && x < w && y < h
+                    && (tiles[y * w + x] == GRASS || tiles[y * w + x] == DIRT || tiles[y * w + x] == TREE)) {
+                d++;
+                x -= ew ? 0 : side;
+                y -= ew ? side : 0;
+            }
+            boolean ok = d >= 2;
+            for (int j = 0; j < 10 && ok; j++) {
+                int ax = x - (ew ? 0 : side * j), ay = y - (ew ? side * j : 0);
+                if (ax < 0 || ay < 0 || ax >= w || ay >= h || tiles[ay * w + ax] != ROAD) ok = false;
+            }
+            if (ok && runStart < 0) {
+                runStart = k;
+                runD = d;
+            }
+            if ((!ok || k == len2 - 5) && runStart >= 0) {
+                int width = (ok ? k + 1 : k) - runStart;
+                if (width >= 3 && width <= 6) cands.add(new int[]{runStart, width, runD, Math.abs(runStart + width / 2 - mid2)});
+                runStart = -1;
+            }
+            if (ok) runD = Math.max(runD, d);
+        }
+        java.util.Collections.sort(cands, new java.util.Comparator<int[]>() {
+            public int compare(int[] p, int[] q) {
+                return p[3] - q[3];
+            }
+        });
+        int made = 0;
+        List<Integer> used = new ArrayList<Integer>();
+        for (int[] cnd : cands) {
+            if (made >= (len2 > 300 ? 3 : 2)) break;
+            boolean near = false;
+            for (int u : used) if (Math.abs(u - cnd[0]) < 40) near = true;
+            if (near || cnd[1] > 6) continue;
+            used.add(cnd[0]);
+            made++;
+            // The connecting road across the fields (a street of its own, with a name), and a gap in the
+            // barrier so traffic can turn across.
+            int r0 = Math.min(edge, edge - side * (cnd[2] - 1)), r1 = Math.max(edge, edge - side * (cnd[2] - 1)) + 1;
+            carve(ew ? new Street(cnd[0], r0, cnd[0] + cnd[1], r1, true, cnd[1] >= 5) : new Street(r0, cnd[0], r1, cnd[0] + cnd[1], false, cnd[1] >= 5));
+            for (int q = 0; q < cnd[1]; q++) {
+                int k = cnd[0] + q;
+                int x = ew ? k : at + 3, y = ew ? at + 3 : k;
+                tiles[y * w + x] = ROAD;
+            }
+            hwyExits.add(new int[]{cnd[0], cnd[1], side});
+        }
+    }
+
+    /** Whether a car may go (dx, dy) on tile i. */
+    private boolean oneWayOk(int i, int dx, int dy) {
+        switch (oneWay[i]) {
+            case 1: return dx != -1;
+            case 2: return dx != 1;
+            case 3: return dy != -1;
+            case 4: return dy != 1;
+            default: return true;
+        }
+    }
+
+    /** The middle of the carriageway a highway tile is on (across the highway, in world units). */
+    private float hwyCentre(int tx, int ty) {
+        int a = (hwyAxis == 0 ? ty : tx) - hwyAt;
+        return (hwyAt + (a < 3 ? 1.5f : 5.5f)) * T;
+    }
+
+    /** Inside the town (not out in the country). */
+    boolean inTown(float x, float y) {
+        return x >= townX0 * T && x < townX1 * T && y >= townY0 * T && y < townY1 * T;
+    }
+
+    boolean nearHighway(float x, float y, float r) {
+        if (hwyAxis < 0) return false;
+        float c = (hwyAt + 3.5f) * T;
+        return Math.abs((hwyAxis == 0 ? y : x) - c) < r;
+    }
+
+    boolean onHighway(float x, float y) {
+        if (oneWay == null) return false;
+        int tx = (int) (x / T), ty = (int) (y / T);
+        return tx >= 0 && ty >= 0 && tx < w && ty < h && oneWay[ty * w + tx] != 0;
+    }
+
+    /** A random spot on the highway (a tile centre), or null if there's no highway. */
+    float[] randomHighway(Random r) {
+        if (hwyAxis < 0) return null;
+        for (int k = 0; k < 40; k++) {
+            int along = 2 + r.nextInt((hwyAxis == 0 ? w : h) - 4), a = r.nextBoolean() ? 1 : 5;
+            int x = hwyAxis == 0 ? along : hwyAt + a, y = hwyAxis == 0 ? hwyAt + a : along;
+            if (oneWay[y * w + x] != 0) return new float[]{(x + 0.5f) * T, (y + 0.5f) * T};
+        }
+        return null;
+    }
+
+    /** A random spot on a country lane, out of town, or null. */
+    float[] randomCountryRoad(Random r) {
+        for (int k = 0; k < 300; k++) {
+            int x = r.nextInt(w), y = r.nextInt(h);
+            if (x >= townX0 && x < townX1 && y >= townY0 && y < townY1) continue;
+            if (tiles[y * w + x] == DIRT) return new float[]{(x + 0.5f) * T, (y + 0.5f) * T};
+        }
+        return null;
+    }
+
     /** Where a village's streets end, as {x, y, dx, dy}: the lanes out into the country start there. */
     private final List<int[]> villageEnds = new ArrayList<int[]>();
     /** The town's centre and each hamlet's, in world units: where hordes wander between on big maps. */
@@ -2655,6 +2815,7 @@ final class City {
 
         if (drawnRealistic) drawRealGround(c, p);
         drawRoadMarkings(c, p);
+        drawHighway(c, p);
         drawRail(c, p);
         drawStreetFurniture(c, p);
         drawParkingLines(c, p);
@@ -3710,6 +3871,108 @@ final class City {
         c.drawLine(ex + tx * 1.5f, ey + ty * 1.5f, ex + hx * 1.8f, ey + hy * 1.8f, p);
     }
 
+    /** A rectangle on the highway, in tiles along it (k) and across it from its first row (a). */
+    private void hwyRect(Canvas c, Paint p, float k0, float k1, float a0, float a1) {
+        if (hwyAxis == 0) c.drawRect(k0 * T, (hwyAt + a0) * T, k1 * T, (hwyAt + a1) * T, p);
+        else c.drawRect((hwyAt + a0) * T, k0 * T, (hwyAt + a1) * T, k1 * T, p);
+    }
+
+    /**
+     * The highway: smoother, darker asphalt, white edge lines, dashed lane lines, a concrete barrier down the
+     * middle, stop lines at the lights, green signs before each junction and the route shield at each end.
+     */
+    private void drawHighway(Canvas c, Paint p) {
+        if (hwyAxis < 0) return;
+        int len = hwyAxis == 0 ? w : h;
+        for (int k = 0; k < len; k++) {
+            int x = hwyAxis == 0 ? k : hwyAt, y = hwyAxis == 0 ? hwyAt : k;
+            int cx = hwyAxis == 0 ? k : hwyAt + 1, cy = hwyAxis == 0 ? hwyAt + 1 : k;
+            boolean junc = junctionAt(cx, cy) || junctionAt(hwyAxis == 0 ? k : hwyAt + 5, hwyAxis == 0 ? hwyAt + 5 : k);
+            boolean rail = tiles[(hwyAxis == 0 ? hwyAt : y) * w + (hwyAxis == 0 ? x : hwyAt)] == RAIL || (railY0 >= 0 && hwyAxis == 1 && k >= railY0 && k < railY0 + railRows);
+            p.setColor(0xFF303236);
+            hwyRect(c, p, k, k + 1, 0, 3);
+            hwyRect(c, p, k, k + 1, 4, 7);
+            // Gravel shoulders.
+            p.setColor(0xFF6A665E);
+            hwyRect(c, p, k, k + 1, -0.35f, 0);
+            hwyRect(c, p, k, k + 1, 7, 7.35f);
+            if (rail) continue;
+            if (!junc) {
+                p.setColor(0xF0ECECEC);
+                hwyRect(c, p, k, k + 1, 0.12f, 0.24f);
+                hwyRect(c, p, k, k + 1, 6.76f, 6.88f);
+                // The inside edge: yellow next to the barrier in the Americas, white elsewhere.
+                p.setColor(country.id == Country.USA || country.id == Country.MEXICO ? 0xF0E8C440 : 0xF0ECECEC);
+                hwyRect(c, p, k, k + 1, 2.76f, 2.88f);
+                hwyRect(c, p, k, k + 1, 4.12f, 4.24f);
+                if (k % 3 == 0) {
+                    p.setColor(0xE0ECECEC);
+                    hwyRect(c, p, k + 0.2f, k + 1.4f, 1.44f, 1.56f);
+                    hwyRect(c, p, k + 0.2f, k + 1.4f, 5.44f, 5.56f);
+                }
+                // The concrete barrier.
+                if (tiles[(hwyAxis == 0 ? hwyAt + 3 : k) * w + (hwyAxis == 0 ? k : hwyAt + 3)] == FENCE) {
+                    p.setColor(0xFF7A776F);
+                    hwyRect(c, p, k, k + 1, 3.2f, 3.8f);
+                    p.setColor(0xFFC4C0B6);
+                    hwyRect(c, p, k, k + 1, 3.32f, 3.68f);
+                    p.setColor(0xFF9A968C);
+                    hwyRect(c, p, k, k + 0.06f, 3.32f, 3.68f);
+                } else {
+                    p.setColor(0xFF303236);
+                    hwyRect(c, p, k, k + 1, 3, 4);
+                }
+            } else {
+                p.setColor(0xFF303236);
+                hwyRect(c, p, k, k + 1, 3, 4);
+            }
+        }
+        // Stop lines at the lights, and the signs: a green board before each junction, both ways.
+        for (int[] ex : hwyExits) {
+            int k0 = ex[0], k1 = ex[0] + ex[1];
+            int jk0 = k0, jk1 = k1;
+            while (jk0 > 0 && junctionAt(hwyAxis == 0 ? jk0 - 1 : hwyAt + 1, hwyAxis == 0 ? hwyAt + 1 : jk0 - 1)) jk0--;
+            while (jk1 < len - 1 && junctionAt(hwyAxis == 0 ? jk1 : hwyAt + 1, hwyAxis == 0 ? hwyAt + 1 : jk1)) jk1++;
+            p.setColor(0xF0F2F2F2);
+            for (int car = 0; car < 2; car++) {
+                // Traffic on carriageway 0 comes from the high end (it heads to lower k); keeping left flips it.
+                boolean fromHigh = (car == 0) != country.leftHand;
+                if (hwyAxis == 1) fromHigh = !fromHigh;
+                float a0 = car == 0 ? 0.2f : 4.2f, a1 = car == 0 ? 2.8f : 6.8f;
+                float lineK = fromHigh ? jk1 + 0.15f : jk0 - 0.35f;
+                hwyRect(c, p, lineK, lineK + 0.2f, a0, a1);
+                // The sign, on the verge, a good way back.
+                float sk = fromHigh ? jk1 + 9 : jk0 - 11, sa = car == 0 ? -1.6f : 7.6f;
+                p.setColor(0x60000000);
+                hwyRect(c, p, sk + 0.15f, sk + 2.15f, sa + 0.15f, sa + 1.25f);
+                p.setColor(0xFF1E6A3A);
+                hwyRect(c, p, sk, sk + 2, sa, sa + 1.1f);
+                p.setColor(0xFFF2F2F2);
+                hwyRect(c, p, sk + 0.15f, sk + 1.85f, sa + 0.1f, sa + 0.16f);
+                hwyRect(c, p, sk + 0.15f, sk + 1.85f, sa + 0.94f, sa + 1f);
+                p.setColor(0xF0F2F2F2);
+            }
+        }
+        // The route shield at each end of the highway.
+        for (int end = 0; end < 2; end++) {
+            float k = end == 0 ? 3 : len - 5, a = end == 0 ? 7.6f : -1.8f;
+            float sx = hwyAxis == 0 ? k * T : (hwyAt + a) * T, sy = hwyAxis == 0 ? (hwyAt + a) * T : k * T;
+            p.setColor(country.id == Country.USA ? 0xFF1E3A8A : country.id == Country.FRANCE ? 0xFFB02020 : 0xFF1E6A3A);
+            c.drawRect(sx, sy, sx + 26, sy + 14, p);
+            if (country.id == Country.USA) {
+                p.setColor(0xFFB02020);
+                c.drawRect(sx, sy, sx + 26, sy + 4, p);
+            }
+            p.setColor(0xFFF2F2F2);
+            p.setTextSize(7);
+            p.setTextAlign(Paint.Align.CENTER);
+            p.setFakeBoldText(true);
+            c.drawText(hwyShield, sx + 13, sy + 11.5f, p);
+            p.setFakeBoldText(false);
+            p.setTextAlign(Paint.Align.LEFT);
+        }
+    }
+
     private void drawRoadMarkings(Canvas c, Paint p) {
         p.setStrokeWidth(1.2f);
         for (Street st : streets) {
@@ -4405,6 +4668,10 @@ final class City {
 
     /** A street corner name for a world position, like "Oak St & 3rd Ave". */
     String placeName(float x, float y) {
+        if (hwyAxis >= 0) {
+            int t = (int) ((hwyAxis == 0 ? y : x) / T);
+            if (t >= hwyAt - 2 && t <= hwyAt + 8) return hwyName;
+        }
         // The nearest street each way, if the point is beside it.
         Street across = null, along = null;
         float bestV = 6 * T, bestH = 6 * T;
@@ -4544,6 +4811,8 @@ final class City {
                 if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
                 int n = ny * w + nx, c = driveCost(n);
                 if (strict && c > 4) continue;
+                // One way only on the highway (a car here would drive from n to t).
+                if (oneWay != null && c >= 0 && (!oneWayOk(n, tx - nx, ty - ny) || !oneWayOk(t, tx - nx, ty - ny))) continue;
                 // A step across the road (from lane to lane) outside a junction is a last resort: routes keep
                 // to their row of the road and only change rows at the junctions, so cars don't swerve over.
                 if (strict && c >= 0 && junctionId[n] < 0 && junctionId[t] < 0) {
@@ -4664,6 +4933,8 @@ final class City {
                 into[3] = Math.max(into[3], from[3]);
                 // Lights win over a stop sign; a roundabout stays a roundabout.
                 if (into[4] != J_ROUNDABOUT && from[4] != J_STOP) into[4] = from[4];
+                // Big enough together (both sides of a divided highway): lights.
+                if (into[4] == J_STOP && (into[2] - into[0] >= 4 || into[3] - into[1] >= 4)) into[4] = J_LIGHTS;
             }
             for (int i = 0; i < w * h; i++) if (junctionId[i] >= 0) junctionId[i] = newId[junctionId[i]];
             junctions.clear();
@@ -4705,6 +4976,12 @@ final class City {
      * other side of a median counts as the same road.
      */
     float laneOffset(int tx, int ty, int dx, int dy) {
+        // On the highway: the inside lane of your own carriageway.
+        if (oneWay != null && oneWay[ty * w + tx] != 0) {
+            float c = hwyCentre(tx, ty), here = hwyAxis == 0 ? (ty + 0.5f) * T : (tx + 0.5f) * T;
+            float side = hwyAxis == 0 ? dx : -dy;
+            return (c - here) * side + T * 0.7f * (country.leftHand ? -1 : 1);
+        }
         if (junctionAt(tx, ty)) return 4.5f * (country.leftHand ? -1 : 1);
         int rx = -dy, ry = dx;
         int right = 0, left = 0;

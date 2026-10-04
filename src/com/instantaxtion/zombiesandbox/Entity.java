@@ -100,6 +100,8 @@ final class Entity {
     boolean aware;
     /** The fire engine or patrol car this person crews (null if none). */
     Fleet.Vehicle rig;
+    /** For police: 0 the city police, 1 highway patrol, 2 the sheriff's department (see Country). */
+    int agency;
     /** A walking route (tile indices) to a building, how far along it they are, and where it goes. */
     int[] path;
     int pathIdx;

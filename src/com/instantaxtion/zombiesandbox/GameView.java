@@ -4509,7 +4509,7 @@ final class GameView extends View implements Menu.Host {
     /** The building card: what it is, where, who is inside, what's left in it, and what it does for the city. */
     private void drawBuildingInspect(Canvas c, City.Building b) {
         java.util.ArrayList<String> lines = new java.util.ArrayList<String>();
-        String kind = b.kind == City.SHOP ? (b.shopType == 1 ? "Gun store" : b.shopType == 2 ? "Diner" : "Shop")
+        String kind = b.typeName() != null ? b.typeName() : b.kind == City.SHOP ? (b.shopType == 1 ? "Gun store" : b.shopType == 2 ? "Diner" : "Shop")
                 : KIND_NAMES[Math.min(KIND_NAMES.length - 1, b.kind)];
         City.District d = world.city.districtOf((b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2);
         String title = (b.name != null ? b.name + "  -  " + kind : kind) + (d != null ? "  -  " + d.name : "");

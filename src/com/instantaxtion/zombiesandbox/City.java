@@ -90,6 +90,14 @@ final class City {
         int food;
         /** Shops: 0 a general store, 1 a gun store, 2 a diner. */
         int shopType;
+        /** What kind of building it is beyond its basic kind (see {@link Variants}), or -1. */
+        int variant = -1;
+
+        /** "Café", "Factory", "Bank"... or null for a plain building. */
+        String typeName() {
+            Variants.V v = Variants.get(variant);
+            return v != null ? v.name : null;
+        }
         /** Zombies shut inside, waiting. Nobody knows until they burst out (then {@link #infestKnown}). */
         int lurkers;
         /** On fire: the flames firefighters hose (null if not burning). */
@@ -427,7 +435,9 @@ final class City {
             Building b = new Building(l[0] * T, l[1] * T, (l[0] + l[2]) * T, (l[1] + l[3]) * T, height,
                     l[4], l[8], l[5], l[6]);
             int k = l[6];
-            if (k == OFFICE || k == HOUSE || k == WAREHOUSE || k == SHOP || k == CHURCH || k == SCHOOL || k == MARKET
+            b.variant = l.length > 9 ? l[9] : -1;
+            int k2 = k;
+            if (k2 == OFFICE || k2 == HOUSE || k == WAREHOUSE || k == SHOP || k == CHURCH || k == SCHOOL || k == MARKET
                     || k == KIOSK || k == APARTMENT || k == GARAGE || k == PHARMACY || k == TRAIN_STATION || k == MALL
                     || k == BARN || (k == STADIUM && !stadiumNamed)) placeDoor(b, l);
             if (k == MALL) b.capacity = 40;
@@ -465,9 +475,10 @@ final class City {
                 b.name = country.pharmacies[nr.nextInt(country.pharmacies.length)];
                 b.stock = 60;
             } else if (k == SHOP) {
-                // Some shops are gun stores or diners.
+                // Some shops are gun stores or diners (and the rest are whatever kind of shop they are).
                 int roll = nr.nextInt(12);
-                b.shopType = roll == 0 ? 1 : roll < 3 ? 2 : 0;
+                b.shopType = roll == 0 ? 1 : roll < 3 && b.variant < 0 ? 2 : 0;
+                if (b.shopType == 1) b.variant = -1;
                 if (b.shopType == 1) {
                     b.name = country.gunStores[nr.nextInt(country.gunStores.length)];
                     b.stock = 240;
@@ -1228,7 +1239,7 @@ final class City {
             roof = 0xFF5B6B3A;
             wall = 0xFF7C8456;
         }
-        buildingLots.add(new int[]{x, y, lw, lh, roof, rnd.nextInt(100000), kind, floors, wall});
+        addVariantLot(x, y, lw, lh, roof, kind, floors, wall);
     }
 
     /** Fills the inside of one city block according to the map settings. */
@@ -1593,7 +1604,26 @@ final class City {
             wall = oldWall();
             roof = oldRoof();
         }
-        buildingLots.add(new int[]{x, y, lw, lh, roof, rnd.nextInt(100000), kind, floors, wall});
+        addVariantLot(x, y, lw, lh, roof, kind, floors, wall);
+    }
+
+    /**
+     * Records a lot, maybe as one of the country's and district's own kinds of building (a café, a factory,
+     * a konbini...), which sets its roof, walls and height.
+     */
+    private void addVariantLot(int x, int y, int lw, int lh, int roof, int kind, int floors, int wall) {
+        int var = Variants.pick(kind, country.id, districtType(x + lw / 2, y + lh / 2), lw, lh, rnd);
+        Variants.V v = Variants.get(var);
+        if (v != null) {
+            if (v.floorsMin > 0) floors = v.floorsMin + rnd.nextInt(Math.max(1, v.floorsMax - v.floorsMin + 1));
+            // Small lots stay low whatever they are.
+            int min = Math.min(lw, lh);
+            if (min <= 5) floors = Math.min(floors, 6);
+            else if (min <= 8) floors = Math.min(floors, 14);
+            roof = v.roofCol;
+            if (v.wall != 0) wall = v.wall;
+        }
+        buildingLots.add(new int[]{x, y, lw, lh, roof, rnd.nextInt(100000), kind, floors, wall, var});
     }
 
     private void addDecor(int kind, float x0, float y0, float x1, float y1, int variant) {
@@ -3650,6 +3680,7 @@ final class City {
         Random r = new Random(b[5]);
         float bw = x1 - x0, bh = y1 - y0;
         int bi = buildingAt[b[1] * w + b[0]];
+        if (b.length > 9 && b[9] >= 0 && Roofs.drawVariant(this, c, p, b, Variants.get(b[9]))) return;
         if (Roofs.draw(this, c, p, b, bi >= 0 && bi < buildings.size() ? buildings.get(bi).name : null)) return;
         if (kind == HOUSE) {
             // Pitched roof: two slopes meeting at a ridge along the long side.

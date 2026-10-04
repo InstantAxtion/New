@@ -540,6 +540,348 @@ final class Roofs {
         }
     }
 
+    // ------------------------------------------------------------------ building variants
+
+    /** The roof of one of the many kinds of building (see {@link Variants}). */
+    static boolean drawVariant(City city, Canvas c, Paint p, int[] b, Variants.V v) {
+        if (v == null) return false;
+        float T = City.T;
+        float x0 = b[0] * T, y0 = b[1] * T, x1 = (b[0] + b[2]) * T, y1 = (b[1] + b[3]) * T, bw = x1 - x0, bh = y1 - y0;
+        int roof = b[4], acc = v.accent;
+        Random r = new Random(b[5] * 17L + 3);
+        boolean along = bw >= bh;
+        switch (v.roof) {
+            case Variants.R_GABLE: {
+                p.setColor(City.darken(roof, 0.65f));
+                c.drawRect(x0, y0, x1, y1, p);
+                float mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
+                p.setColor(City.lighten(roof, 0.14f));
+                if (along) c.drawRect(x0 + 1, y0 + 1, x1 - 1, my, p);
+                else c.drawRect(x0 + 1, y0 + 1, mx, y1 - 1, p);
+                p.setColor(roof);
+                if (along) c.drawRect(x0 + 1, my, x1 - 1, y1 - 1, p);
+                else c.drawRect(mx, y0 + 1, x1 - 1, y1 - 1, p);
+                courses(c, p, x0 + 1, y0 + 1, x1 - 1, y1 - 1, City.darken(roof, 0.85f), 1.6f, !along);
+                p.setColor(City.darken(roof, 0.5f));
+                if (along) c.drawRect(x0 + 1, my - 0.7f, x1 - 1, my + 0.7f, p);
+                else c.drawRect(mx - 0.7f, y0 + 1, mx + 0.7f, y1 - 1, p);
+                if (r.nextBoolean()) {
+                    p.setColor(0xFF6A5A50);
+                    c.drawRect(x0 + bw * 0.72f, y0 + 3, x0 + bw * 0.72f + 4, y0 + 7, p);
+                }
+                break;
+            }
+            case Variants.R_HIP: {
+                p.setColor(City.darken(roof, 0.6f));
+                c.drawRect(x0, y0, x1, y1, p);
+                hip(c, p, x0 + 0.5f, y0 + 0.5f, x1 - 0.5f, y1 - 0.5f, roof);
+                courses(c, p, x0 + 1, y0 + 1, x1 - 1, y1 - 1, City.darken(roof, 0.82f), 1.5f, !along);
+                break;
+            }
+            case Variants.R_TILES: {
+                p.setColor(City.darken(roof, 0.6f));
+                c.drawRect(x0, y0, x1, y1, p);
+                hip(c, p, x0 + 0.5f, y0 + 0.5f, x1 - 0.5f, y1 - 0.5f, roof);
+                courses(c, p, x0 + 1, y0 + 1, x1 - 1, y1 - 1, City.darken(roof, 0.72f), 1.2f, !along);
+                courses(c, p, x0 + 1, y0 + 1, x1 - 1, y1 - 1, City.darken(roof, 0.88f), 2.4f, along);
+                break;
+            }
+            case Variants.R_MANSARD:
+                mansard(c, p, x0, y0, x1, y1, roof, r);
+                break;
+            case Variants.R_SAWTOOTH: {
+                p.setColor(City.darken(roof, 0.65f));
+                c.drawRect(x0, y0, x1, y1, p);
+                // Rows of north-light teeth: a lit slope and a strip of glass.
+                for (float t = (along ? x0 : y0) + 2; t < (along ? x1 : y1) - 6; t += 8) {
+                    p.setColor(roof);
+                    if (along) c.drawRect(t, y0 + 2, t + 5.5f, y1 - 2, p);
+                    else c.drawRect(x0 + 2, t, x1 - 2, t + 5.5f, p);
+                    p.setColor(0xCC9CC3D9);
+                    if (along) c.drawRect(t + 5.5f, y0 + 2, t + 7.5f, y1 - 2, p);
+                    else c.drawRect(x0 + 2, t + 5.5f, x1 - 2, t + 7.5f, p);
+                }
+                break;
+            }
+            case Variants.R_DOME: {
+                flatBase(c, p, x0, y0, x1, y1, roof);
+                float cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, rad = Math.min(bw, bh) * 0.3f;
+                p.setColor(0x50000000);
+                c.drawCircle(cx + 2, cy + 2.5f, rad, p);
+                p.setColor(City.darken(acc, 0.85f));
+                c.drawCircle(cx, cy, rad, p);
+                p.setColor(acc);
+                c.drawCircle(cx - rad * 0.15f, cy - rad * 0.15f, rad * 0.8f, p);
+                p.setColor(City.lighten(acc, 0.3f));
+                c.drawCircle(cx - rad * 0.35f, cy - rad * 0.35f, rad * 0.3f, p);
+                p.setColor(City.darken(acc, 0.6f));
+                p.setStrokeWidth(0.5f);
+                for (int k = 0; k < 8; k++) {
+                    double a = k * Math.PI / 4;
+                    c.drawLine(cx, cy, cx + (float) Math.cos(a) * rad, cy + (float) Math.sin(a) * rad, p);
+                }
+                // A row of columns along the front.
+                p.setColor(0xFFE8E2D4);
+                for (float u = x0 + 4; u < x1 - 4; u += 5) c.drawRect(u, y1 - 5, u + 2, y1 - 2, p);
+                break;
+            }
+            case Variants.R_GLASS: {
+                p.setColor(City.darken(roof, 0.6f));
+                c.drawRect(x0, y0, x1, y1, p);
+                p.setColor(roof);
+                c.drawRect(x0 + 1.5f, y0 + 1.5f, x1 - 1.5f, y1 - 1.5f, p);
+                p.setColor(City.darken(roof, 0.75f));
+                p.setStrokeWidth(0.6f);
+                for (float u = x0 + 6; u < x1 - 2; u += 6) c.drawLine(u, y0 + 1.5f, u, y1 - 1.5f, p);
+                for (float u = y0 + 6; u < y1 - 2; u += 6) c.drawLine(x0 + 1.5f, u, x1 - 1.5f, u, p);
+                p.setColor(0x40FFFFFF);
+                quad(c, p, 0x40FFFFFF, x0 + 2, y0 + 2, x0 + bw * 0.45f, y0 + 2, x0 + 2, y0 + bh * 0.45f, x0 + 2, y0 + bh * 0.45f);
+                if (b[7] >= 12) {
+                    // A crown of plant and a maintenance cradle on the tallest towers.
+                    p.setColor(0xFF4A4E52);
+                    c.drawRect(x0 + bw * 0.3f, y0 + bh * 0.3f, x0 + bw * 0.7f, y0 + bh * 0.7f, p);
+                    p.setColor(0xFF7A7E82);
+                    c.drawRect(x0 + bw * 0.34f, y0 + bh * 0.34f, x0 + bw * 0.66f, y0 + bh * 0.66f, p);
+                }
+                break;
+            }
+            case Variants.R_GREEN: {
+                flatBase(c, p, x0, y0, x1, y1, roof);
+                p.setColor(0xFF4F8A3A);
+                c.drawRect(x0 + 3, y0 + 3, x1 - 3, y1 - 3, p);
+                for (int k = 0; k < (int) (bw * bh / 50); k++) {
+                    float gx = x0 + 4 + r.nextFloat() * (bw - 8), gy = y0 + 4 + r.nextFloat() * (bh - 8);
+                    p.setColor(r.nextInt(5) == 0 ? acc : r.nextBoolean() ? 0xFF3B742D : 0xFF6AA84F);
+                    c.drawCircle(gx, gy, 1.2f + r.nextFloat() * 1.6f, p);
+                }
+                p.setColor(0xFFB8A888);
+                c.drawRect(x0 + 3, (y0 + y1) / 2 - 0.8f, x1 - 3, (y0 + y1) / 2 + 0.8f, p);
+                break;
+            }
+            case Variants.R_POOL: case Variants.R_HOUSEPOOL: {
+                if (v.roof == Variants.R_HOUSEPOOL) {
+                    // A house roof with the pool in the back garden drawn on the lot's far end.
+                    p.setColor(City.darken(roof, 0.65f));
+                    c.drawRect(x0, y0, x1, y1, p);
+                    hip(c, p, x0 + 0.5f, y0 + 0.5f, x1 - 0.5f, y1 - bh * 0.3f, roof);
+                    p.setColor(0xFFD8D4C8);
+                    c.drawRect(x0, y1 - bh * 0.3f, x1, y1, p);
+                    p.setColor(0xFF4FB8D8);
+                    c.drawRect(x0 + 2, y1 - bh * 0.3f + 2, x1 - 2, y1 - 2, p);
+                    p.setColor(0x60FFFFFF);
+                    c.drawRect(x0 + 3, y1 - bh * 0.3f + 3, x0 + bw * 0.4f, y1 - bh * 0.3f + 4, p);
+                    break;
+                }
+                flatBase(c, p, x0, y0, x1, y1, roof);
+                float pw = Math.min(bw * 0.5f, 40), ph = Math.min(bh * 0.35f, 20);
+                float px = x0 + 5, py = y1 - ph - 5;
+                p.setColor(0xFFE8E2D4);
+                c.drawRect(px - 2, py - 2, px + pw + 2, py + ph + 2, p);
+                p.setColor(0xFF4FB8D8);
+                c.drawRect(px, py, px + pw, py + ph, p);
+                p.setColor(0x60FFFFFF);
+                c.drawRect(px + 1, py + 1, px + pw * 0.5f, py + 2, p);
+                // Sun loungers and parasols.
+                for (float u = px + pw + 5; u < x1 - 6; u += 7) {
+                    p.setColor(0xFFF2F2F2);
+                    c.drawRect(u, py, u + 3, py + 7, p);
+                    p.setColor(acc);
+                    c.drawCircle(u + 1.5f, py - 4, 3, p);
+                }
+                units(c, p, x0, y0, x1, y0 + bh * 0.5f, r, 2);
+                break;
+            }
+            case Variants.R_HELIPAD: {
+                flatBase(c, p, x0, y0, x1, y1, roof);
+                float cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, rad = Math.min(Math.min(bw, bh) * 0.3f, 16);
+                p.setColor(0xFF3F4347);
+                c.drawCircle(cx, cy, rad, p);
+                p.setColor(acc);
+                p.setStyle(Paint.Style.STROKE);
+                p.setStrokeWidth(1.4f);
+                c.drawCircle(cx, cy, rad * 0.82f, p);
+                p.setStyle(Paint.Style.FILL);
+                p.setColor(0xFFEEEEEE);
+                c.drawRect(cx - rad * 0.38f, cy - rad * 0.45f, cx - rad * 0.22f, cy + rad * 0.45f, p);
+                c.drawRect(cx + rad * 0.22f, cy - rad * 0.45f, cx + rad * 0.38f, cy + rad * 0.45f, p);
+                c.drawRect(cx - rad * 0.3f, cy - rad * 0.08f, cx + rad * 0.3f, cy + rad * 0.08f, p);
+                break;
+            }
+            case Variants.R_BARREL: {
+                p.setColor(City.darken(roof, 0.6f));
+                c.drawRect(x0, y0, x1, y1, p);
+                // A curved roof: bands from dark at the edges to light along the crown.
+                int bands = 8;
+                for (int k = 0; k < bands; k++) {
+                    float t0 = k / (float) bands, t1 = (k + 1) / (float) bands;
+                    float light = 1 - Math.abs((t0 + t1) / 2 - 0.4f) * 1.4f;
+                    p.setColor(light > 0.5f ? City.lighten(roof, (light - 0.5f) * 0.4f) : City.darken(roof, 0.75f + light * 0.5f));
+                    if (along) c.drawRect(x0 + 1, y0 + 1 + (bh - 2) * t0, x1 - 1, y0 + 1 + (bh - 2) * t1, p);
+                    else c.drawRect(x0 + 1 + (bw - 2) * t0, y0 + 1, x0 + 1 + (bw - 2) * t1, y1 - 1, p);
+                }
+                courses(c, p, x0 + 1, y0 + 1, x1 - 1, y1 - 1, City.darken(roof, 0.82f), 3f, along);
+                break;
+            }
+            case Variants.R_ANTENNA: {
+                flatBase(c, p, x0, y0, x1, y1, roof);
+                float cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+                p.setColor(City.darken(roof, 0.8f));
+                c.drawRect(cx - bw * 0.25f, cy - bh * 0.25f, cx + bw * 0.25f, cy + bh * 0.25f, p);
+                p.setColor(0xFFB8BCC0);
+                c.drawCircle(cx, cy, 3, p);
+                p.setColor(0xFF8A8E92);
+                p.setStrokeWidth(0.6f);
+                for (int k = 0; k < 4; k++) c.drawLine(cx, cy, cx + (k < 2 ? -1 : 1) * bw * 0.22f, cy + (k % 2 == 0 ? -1 : 1) * bh * 0.22f, p);
+                p.setColor(0xFFE03A30);
+                c.drawCircle(cx, cy, 1.2f, p);
+                // Satellite dishes.
+                for (int k = 0; k < 3; k++) {
+                    p.setColor(0xFFE8E8E8);
+                    c.drawCircle(x0 + 6 + k * 7, y1 - 6, 2.4f, p);
+                }
+                break;
+            }
+            case Variants.R_STACKS: {
+                flatBase(c, p, x0, y0, x1, y1, roof);
+                courses(c, p, x0 + 2, y0 + 2, x1 - 2, y1 - 2, City.darken(roof, 0.88f), 4f, along);
+                int n = Math.max(1, Math.min(4, (int) (Math.max(bw, bh) / 40)));
+                for (int k = 0; k < n; k++) {
+                    float cx = along ? x0 + bw * (k + 0.5f) / n : x0 + bw * 0.3f, cy = along ? y0 + bh * 0.3f : y0 + bh * (k + 0.5f) / n;
+                    p.setColor(0x60000000);
+                    c.drawCircle(cx + 3, cy + 4, 4.5f, p);
+                    p.setColor(0xFFB8B4AC);
+                    c.drawCircle(cx, cy, 4.5f, p);
+                    p.setColor(acc);
+                    c.drawCircle(cx, cy, 3.3f, p);
+                    p.setColor(0xFF1E1E20);
+                    c.drawCircle(cx, cy, 2, p);
+                }
+                // Pipes along the roof.
+                p.setColor(0xFF8A8E92);
+                if (along) c.drawRect(x0 + 3, y1 - 7, x1 - 3, y1 - 5.5f, p);
+                else c.drawRect(x1 - 7, y0 + 3, x1 - 5.5f, y1 - 3, p);
+                break;
+            }
+            case Variants.R_TANKS: {
+                flatBase(c, p, x0, y0, x1, y1, roof);
+                int n = Math.max(2, Math.min(8, (int) (bw * bh / 300)));
+                float rad = Math.min(7, Math.min(bw, bh) / 6);
+                for (int k = 0; k < n; k++) {
+                    float cx = x0 + rad + 3 + (k % 4) * (rad * 2 + 3), cy = y0 + rad + 3 + (k / 4) * (rad * 2 + 3);
+                    if (cx > x1 - rad || cy > y1 - rad) continue;
+                    tank(c, p, cx, cy, rad, k % 2 == 0 ? 0xFFC8CCD0 : City.lighten(acc, 0.4f));
+                }
+                break;
+            }
+            case Variants.R_SOLAR: {
+                if (v.base == City.HOUSE) {
+                    p.setColor(City.darken(roof, 0.6f));
+                    c.drawRect(x0, y0, x1, y1, p);
+                    float[] ridge = hip(c, p, x0 + 0.5f, y0 + 0.5f, x1 - 0.5f, y1 - 0.5f, roof);
+                    solar(c, p, x0 + 3, y0 + 3, x1 - 3, Math.max(y0 + 6, ridge[1] - 1.5f));
+                    break;
+                }
+                flatBase(c, p, x0, y0, x1, y1, roof);
+                for (float t = y0 + 4; t < y1 - 8; t += 9) solar(c, p, x0 + 4, t, x1 - 4, t + 6);
+                break;
+            }
+            case Variants.R_COURTYARD: {
+                // A block round a courtyard: roofs on all four wings, a garden or patio in the middle.
+                float m = Math.min(bw, bh) * 0.3f;
+                p.setColor(City.darken(roof, 0.65f));
+                c.drawRect(x0, y0, x1, y1, p);
+                hip(c, p, x0, y0, x1, y0 + m, roof);
+                hip(c, p, x0, y1 - m, x1, y1, roof);
+                hip(c, p, x0, y0 + m, x0 + m, y1 - m, roof);
+                hip(c, p, x1 - m, y0 + m, x1, y1 - m, roof);
+                p.setColor(v.base == City.HOUSE || r.nextBoolean() ? 0xFF6AA84F : 0xFFD8C8A8);
+                c.drawRect(x0 + m, y0 + m, x1 - m, y1 - m, p);
+                p.setColor(0xFF3B742D);
+                c.drawCircle((x0 + x1) / 2, (y0 + y1) / 2, Math.min(bw, bh) * 0.1f, p);
+                break;
+            }
+            case Variants.R_STRIPES: {
+                // A shop with its striped awning out front and a sign over the door.
+                flatBase(c, p, x0, y0, x1, y1, roof);
+                units(c, p, x0, y0, x1, y0 + bh * 0.6f, r, 1);
+                for (int k = 0; k < 60; k++) {
+                    float a0 = (along ? x0 : y0) + 1 + k * 2.5f;
+                    if (a0 > (along ? x1 - 2 : y1 - 2)) break;
+                    p.setColor(k % 2 == 0 ? acc : 0xFFF2F0EA);
+                    if (along) c.drawRect(a0, y1 - 4.5f, Math.min(a0 + 2.5f, x1 - 1), y1 - 0.5f, p);
+                    else c.drawRect(x1 - 4.5f, a0, x1 - 0.5f, Math.min(a0 + 2.5f, y1 - 1), p);
+                }
+                break;
+            }
+            case Variants.R_CLOCK: {
+                flatBase(c, p, x0, y0, x1, y1, roof);
+                hip(c, p, x0 + 3, y0 + 3, x1 - 3, y1 - 3, roof);
+                float cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, rad = Math.min(bw, bh) * 0.15f;
+                p.setColor(0xFF4A4E56);
+                c.drawRect(cx - rad - 1, cy - rad - 1, cx + rad + 1, cy + rad + 1, p);
+                p.setColor(0xFFF2EEE0);
+                c.drawCircle(cx, cy, rad, p);
+                p.setColor(0xFF2A2A2A);
+                p.setStrokeWidth(0.8f);
+                c.drawLine(cx, cy, cx, cy - rad * 0.8f, p);
+                c.drawLine(cx, cy, cx + rad * 0.5f, cy, p);
+                break;
+            }
+            case Variants.R_PARAPET: {
+                p.setColor(City.darken(roof, 0.55f));
+                c.drawRect(x0, y0, x1, y1, p);
+                p.setColor(City.lighten(roof, 0.1f));
+                c.drawRect(x0 + 1, y0 + 1, x1 - 1, y1 - 1, p);
+                p.setColor(roof);
+                c.drawRect(x0 + 3, y0 + 3, x1 - 3, y1 - 3, p);
+                units(c, p, x0, y0, x1, y1, r, 3);
+                break;
+            }
+            default: {
+                flatBase(c, p, x0, y0, x1, y1, roof);
+                units(c, p, x0, y0, x1, y1, r, 2 + (int) (bw * bh / 900));
+                break;
+            }
+        }
+        if (v.sign != null && bw >= 18 && bh >= 12) sign(c, p, v.sign, x0, y0, x1, y1, acc);
+        return true;
+    }
+
+    private static void flatBase(Canvas c, Paint p, float x0, float y0, float x1, float y1, int roof) {
+        p.setColor(City.darken(roof, 0.65f));
+        c.drawRect(x0, y0, x1, y1, p);
+        p.setColor(roof);
+        c.drawRect(x0 + 1.5f, y0 + 1.5f, x1 - 1.5f, y1 - 1.5f, p);
+        p.setColor(City.lighten(roof, 0.06f));
+        c.drawRect(x0 + 4, y0 + 4, x1 - 4, y1 - 4, p);
+    }
+
+    private static void units(Canvas c, Paint p, float x0, float y0, float x1, float y1, Random r, int n) {
+        for (int k = 0; k < n; k++) {
+            float ux = x0 + 4 + r.nextFloat() * Math.max(1, x1 - x0 - 12), uy = y0 + 4 + r.nextFloat() * Math.max(1, y1 - y0 - 10);
+            acUnit(c, p, ux, uy);
+        }
+    }
+
+    /** The name of the place on a board on the roof (so it can be read from above). */
+    private static void sign(Canvas c, Paint p, String text, float x0, float y0, float x1, float y1, int acc) {
+        float bw = x1 - x0;
+        float size = Math.min(7f, Math.max(3.5f, (bw - 8) / (text.length() * 0.62f)));
+        p.setTextSize(size);
+        p.setFakeBoldText(true);
+        p.setTextAlign(Paint.Align.CENTER);
+        float tw = Math.min(bw - 4, p.measureText(text) + 5);
+        float cx = (x0 + x1) / 2, cy = y0 + Math.max(6, (y1 - y0) * 0.22f);
+        p.setColor(0x60000000);
+        c.drawRect(cx - tw / 2 + 1, cy - size * 0.8f + 1, cx + tw / 2 + 1, cy + size * 0.45f + 1, p);
+        p.setColor(acc);
+        c.drawRect(cx - tw / 2, cy - size * 0.8f, cx + tw / 2, cy + size * 0.45f, p);
+        int lum = ((acc >> 16) & 0xFF) * 3 + ((acc >> 8) & 0xFF) * 6 + (acc & 0xFF);
+        p.setColor(lum > 1500 ? 0xFF1E1E20 : 0xFFF8F8F4);
+        c.drawText(text, cx, cy + size * 0.12f, p);
+        p.setFakeBoldText(false);
+    }
+
     /** A pagoda seen from above: tiers of square tiled roofs shrinking to a gold spire. */
     private static void pagoda(Canvas c, Paint p, float x0, float y0, float x1, float y1) {
         float cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, s = Math.min(x1 - x0, y1 - y0) / 2;

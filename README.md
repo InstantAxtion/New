@@ -131,6 +131,10 @@ on the phone, so the APK contains no audio files.
   fire stations.
 - **A sharp map up close**: zoomed in, the area on screen is drawn again in fine detail in the background
   and laid over the map picture.
+- **Safe driving**: cars keep a safe distance and brake in time, wait at green lights for traffic still
+  crossing, and keep to their own lane (police included, lights on or not); emergency vehicles slow down
+  through junctions. Massive maps are nearly all town, with a thin band of country and a frontage road
+  along the highway.
 - **Neighbourhoods**: on Massive maps, stretches of suburb are laid out as named neighbourhoods instead of
   more grid: cul-de-sac estates, crescents and village greens, flats in parkland, big plots with barns and
   crops on the edge of town, gated estates, and business parks in the industrial areas. Corners where two

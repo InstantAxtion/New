@@ -2,11 +2,19 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "9.3";
-    static final int VERSION_CODE = 33;
+    static final String VERSION = "9.4";
+    static final int VERSION_CODE = 34;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "9.4  -  Safer roads, fuller maps",
+                    "Police keep to their own side of the road: patrol cars no longer turn round across the traffic for each new beat, and cars with their lights on keep to their lane and slow down for corners instead of swinging into the oncoming lane.",
+                    "No more driving the wrong way: routes keep to their lane instead of zig-zagging across the road, through traffic on the highway never turns round when the outbreak starts, and a car pushed onto the far side of the barrier heads the right way.",
+                    "Far fewer crashes: cars keep a safe distance and brake in time for whatever is ahead, wait at a green light for anything still crossing, and emergency vehicles slow down through junctions; a nudge in a queue is no longer a crash.",
+                    "Massive maps are nearly all town now, out to a thin band of country with the highway and a few farms (a frontage road runs along the highway for the streets that reach it). Village maps stay rural.",
+                    "Route finding is faster, so the bigger towns run as smoothly as before.",
+            },
             {
                     "9.3  -  Neighbourhoods",
                     "Massive maps aren't all grid any more: stretches of suburb are laid out as neighbourhoods of their own, each with its own name on the map.",

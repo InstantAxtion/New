@@ -728,7 +728,7 @@ final class City {
             default: maxLeaf = 13 + rnd.nextInt(6); break;
         }
         // On the biggest maps a stretch of suburb is laid out as a neighbourhood of its own, not more grid.
-        if (w >= 400 && depth >= 1 && bw >= 44 && bh >= 44 && bw <= 104 && bh <= 104
+        if (w >= 400 && depth >= 1 && bw >= 44 && bh >= 44 && bw <= 76 && bh <= 76
                 && rnd.nextFloat() < (dt == DT_SUBURB || dt == DT_PARKSIDE ? 0.8f : dt == DT_MIDTOWN ? (d > 0.45f ? 0.55f : 0.2f)
                         : dt == DT_INDUSTRIAL ? 0.45f : 0f)
                 && neighbourhood(x0, y0, x1, y1, d)) return -1;
@@ -869,6 +869,9 @@ final class City {
         }
         if (m > 0) countryside(townX0, townY0, townX1, townY1);
         if (m > 0) tidyDeadEnds();
+        // Each neighbourhood is a place of its own, as far as anyone roaming between places is concerned.
+        for (int[] b : blocks)
+            if (b.length > 5 && b[4] == 3) settlements.add(new float[]{(b[0] + b[2]) / 2f * T, (b[1] + b[3]) / 2f * T});
         // Tree-lined medians down the main roads, open at the junctions.
         for (Street st : streets) {
             if (st.width != 5) continue;
@@ -1071,6 +1074,8 @@ final class City {
             float farmChance = rural ? 0.4f : cfg.style() == CityConfig.STYLE_HOUSES || cfg.density() == 0 ? 0.25f : cfg.density() == 2 ? 0 : 0.1f;
             curDistrict = districtType(ix + iw / 2, iy + ih / 2);
             if (curDistrict != DT_SUBURB && curDistrict != DT_PARKSIDE && curDistrict != DT_OLDTOWN) farmChance = 0;
+            // (A massive map's town runs right out to the country band: only the odd farm inside it.)
+            if (w >= 400) farmChance *= 0.25f;
             if (fd > 0.8f && iw >= 7 && ih >= 7 && rnd.nextFloat() < farmChance) {
                 farm(ix, iy, iw, ih);
                 continue;
@@ -2114,6 +2119,35 @@ final class City {
             }
             hwyExits.add(new int[]{cnd[0], cnd[1], side});
         }
+        // Where town comes right up to the highway, a frontage road runs along beside it, and the streets that
+        // stop just short of it carry on to meet it (instead of ending in the verge).
+        int f0 = before ? at + 8 : at - 4;
+        boolean room = f0 >= 0 && f0 + 3 <= len && (before ? lo - (f0 + 3) : f0 - hi) <= 6;
+        for (int k = 0; k < len2 && room; k++)
+            for (int a = 0; a < 3; a++) {
+                int x = ew ? k : f0 + a, y = ew ? f0 + a : k;
+                byte t = tiles[y * w + x];
+                if (t != GRASS && t != TREE && t != DIRT && t != ROAD && t != RAIL) room = false;
+            }
+        if (room) {
+            carve(ew ? new Street(0, f0, w, f0 + 3, false, false) : new Street(f0, 0, f0 + 3, h, true, false));
+            int step = before ? 1 : -1, from = before ? f0 + 3 : f0 - 1;
+            for (int k = 0; k < len2; k++) {
+                int x = ew ? k : from, y = ew ? from : k, cx = x, cy = y, d = 0;
+                while (d < 7 && cx >= 0 && cy >= 0 && cx < w && cy < h
+                        && (tiles[cy * w + cx] == GRASS || tiles[cy * w + cx] == TREE || tiles[cy * w + cx] == DIRT)) {
+                    d++;
+                    if (ew) cy += step;
+                    else cx += step;
+                }
+                if (d == 0 || d >= 7 || !isRoad(cx, cy) || roadDir[cy * w + cx] != (ew ? 1 : 2)) continue;
+                for (int q = 0; q < d; q++) {
+                    int gx = ew ? x : x + step * q, gy = ew ? y + step * q : y;
+                    tiles[gy * w + gx] = ROAD;
+                    roadDir[gy * w + gx] = (byte) (ew ? 1 : 2);
+                }
+            }
+        }
     }
 
     /** Whether this column of the railway is the bridge over the highway (no level crossing there). */
@@ -2287,7 +2321,7 @@ final class City {
         int type;
         float r = rnd.nextFloat();
         if (dt == DT_INDUSTRIAL) type = NB_WORKS;
-        else if (d > 0.7f && dt != DT_MIDTOWN && r < 0.35f) type = NB_ACRES;
+        else if (d > 0.8f && dt != DT_MIDTOWN && r < 0.15f) type = NB_ACRES;
         else {
             r = rnd.nextFloat();
             if (dt == DT_MIDTOWN) type = r < 0.5f ? NB_ESTATE : NB_GREEN;
@@ -2418,7 +2452,7 @@ final class City {
     private int[] villageGreen(int x0, int y0, int x1, int y1, boolean rT, boolean rB, boolean rL, boolean rR) {
         int bw = x1 - x0, bh = y1 - y0;
         if (bw < 44 || bh < 44) return null;
-        int gw = Math.min(28, bw - 32), gh = Math.min(28, bh - 32);
+        int gw = Math.min(18, bw - 32), gh = Math.min(18, bh - 32);
         int gx0 = x0 + (bw - gw) / 2 + rnd.nextInt(3) - 1, gy0 = y0 + (bh - gh) / 2 + rnd.nextInt(3) - 1;
         int rx0 = gx0 - 3, ry0 = gy0 - 3, rx1 = gx0 + gw + 3, ry1 = gy0 + gh + 3;
         lane3(false, rx0, rx1, ry0);
@@ -2674,18 +2708,23 @@ final class City {
         float cx = (bx0 + bx1) / 2f, cy = (by0 + by1) / 2f, rad = (bx1 - bx0) / 2f;
         float[] amp = new float[4], ph = new float[4];
         for (int k = 0; k < 4; k++) {
-            amp[k] = 0.04f + rnd.nextFloat() * (k == 0 ? 0.14f : 0.08f);
+            amp[k] = w >= 400 ? 0.01f + rnd.nextFloat() * 0.025f : 0.04f + rnd.nextFloat() * (k == 0 ? 0.14f : 0.08f);
             ph[k] = rnd.nextFloat() * (float) Math.PI * 2;
         }
-        float stretch = 0.8f + rnd.nextFloat() * 0.4f;
+        float stretch = w >= 400 ? 1f : 0.8f + rnd.nextFloat() * 0.4f;
         List<int[]> kept = new ArrayList<int[]>();
         for (int[] b : blocks) {
             float x = (b[0] + b[2]) / 2f - cx, y = ((b[1] + b[3]) / 2f - cy) * stretch;
             float a = (float) Math.atan2(y, x), d = (float) Math.sqrt(x * x + y * y) / rad;
-            // Big maps get a properly ragged edge; a small town just loses its corners.
-            float r = w >= 400 ? 0.86f : 1.02f;
+            // A massive town fills its square out to a ragged edge (rounded corners, not a circle in a field);
+            // a small town just loses its corners.
+            if (w >= 400) {
+                float ax = Math.abs(x) / rad, ay = Math.abs(y) / rad;
+                d = (float) Math.pow(Math.pow(ax, 6) + Math.pow(ay, 6), 1 / 6.0);
+            }
+            float r = w >= 400 ? 1.06f : 1.02f;
             for (int k = 0; k < 4; k++) r += amp[k] * (float) Math.sin((k + 2) * a + ph[k]);
-            boolean keep = d < r && !(d > r - 0.14f && rnd.nextFloat() < 0.3f);
+            boolean keep = d < r && !(d > r - 0.14f && rnd.nextFloat() < (w >= 400 ? 0.12f : 0.3f));
             if (keep) kept.add(b);
             else fill(b[0], b[1], b[2] - b[0], b[3] - b[1], GRASS);
         }
@@ -5573,14 +5612,22 @@ final class City {
         Arrays.fill(dist, FAR);
         float[] p = nearestDrivable(x, y);
         if (p == null) return false;
-        java.util.PriorityQueue<Long> pq = new java.util.PriorityQueue<Long>();
+        // Dial's algorithm: step costs are small whole numbers, so a ring of buckets (one per distance) does
+        // the priority queue's job without the boxing.
+        for (int b = 0; b < 32; b++) {
+            if (dialB[b] == null) dialB[b] = new int[256];
+            dialN[b] = 0;
+        }
         int s0 = tileIndex(p[0], p[1]);
         dist[s0] = 0;
-        pq.add((long) s0);
-        while (!pq.isEmpty()) {
-            long top = pq.poll();
-            int t = (int) (top & 0xFFFFFF), d = (int) (top >>> 24);
-            if (d > dist[t]) continue;
+        dialPush(s0, 0);
+        int left = 1;
+        for (int d = 0; left > 0; d++) {
+          int bk = d & 31;
+          while (dialN[bk] > 0) {
+            int t = dialB[bk][--dialN[bk]];
+            left--;
+            if (dist[t] != d) continue;
             int tx = t % w, ty = t / w;
             for (int k = 0; k < 4; k++) {
                 int nx = tx + (k == 0 ? 1 : k == 1 ? -1 : 0), ny = ty + (k == 2 ? 1 : k == 3 ? -1 : 0);
@@ -5591,16 +5638,28 @@ final class City {
                 if (oneWay != null && c >= 0 && (!oneWayOk(n, tx - nx, ty - ny) || !oneWayOk(t, tx - nx, ty - ny))) continue;
                 // A step across the road (from lane to lane) outside a junction is a last resort: routes keep
                 // to their row of the road and only change rows at the junctions, so cars don't swerve over.
-                if (strict && c >= 0 && junctionId[n] < 0 && junctionId[t] < 0) {
+                // (Emergencies too: lights and sirens still keep to their own side.)
+                if (c >= 0 && c <= 4 && junctionId[n] < 0 && junctionId[t] < 0) {
                     byte rd = roadDir[n];
                     if ((rd == 1 && k < 2) || (rd == 2 && k >= 2)) c += 14;
                 }
                 if (c < 0 || d + c >= dist[n]) continue;
                 dist[n] = d + c;
-                pq.add(((long) dist[n] << 24) | n);
+                dialPush(n, d + c);
+                left++;
             }
+          }
         }
         return true;
+    }
+
+    private final int[][] dialB = new int[32][];
+    private final int[] dialN = new int[32];
+
+    private void dialPush(int t, int d) {
+        int b = d & 31;
+        if (dialN[b] == dialB[b].length) dialB[b] = Arrays.copyOf(dialB[b], dialB[b].length * 2);
+        dialB[b][dialN[b]++] = t;
     }
 
     /**

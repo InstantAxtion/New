@@ -660,7 +660,7 @@ public final class GameTests {
                 c.seed = 6;
                 World w = new World(c);
                 w.populate(c);
-                check(w.city.settlements.size() > 1, "a massive map has a town and hamlets");
+                check(w.city.settlements.size() > 1, "a massive map has a town and places round it (hamlets or neighbourhoods)");
                 check(!w.animals.isEmpty(), "deer and foxes in the country");
                 for (int i = 0; i < 6; i++) {
                     float[] p = w.city.randomWalkableInTown(w.rnd);
@@ -761,6 +761,45 @@ public final class GameTests {
                         "Australia and Japan drive on the left");
                 CityConfig old = new CityConfig();
                 check(old.applyCode("12-44") && old.country() == Country.USA, "old codes are American cities");
+            }
+        });
+        test("traffic keeps its distance: hardly any crashes, and patrol cars keep to their side", new Check() {
+            public void run() {
+                CityConfig c = new CityConfig();
+                c.v[CityConfig.OPT_SIZE] = 1;
+                c.v[CityConfig.OPT_ZOMBIES] = 0;
+                c.seed = 3;
+                World w = new World(c);
+                w.populate(c);
+                w.viewX0 = 0;
+                w.viewY0 = 0;
+                w.viewX1 = w.city.worldW();
+                w.viewY1 = w.city.worldH();
+                java.util.HashMap<Fleet.Vehicle, Float> cd = new java.util.HashMap<Fleet.Vehicle, Float>();
+                int crashes = 0, onRoad = 0, wrong = 0;
+                for (int f = 0; f < 30 * 90; f++) {
+                    w.update(1 / 30f);
+                    w.evCount = 0;
+                    for (Fleet.Vehicle v : w.fleet.vehicles) {
+                        Float prev = cd.get(v);
+                        cd.put(v, v.crashCd);
+                        if (prev != null && v.crashCd > prev + 0.05f && v.crashCd > 0.55f) crashes++;
+                        if (!v.patrol || v.parked || v.speed < 10 || f % 10 != 0) continue;
+                        int tx = (int) (v.x / City.T), ty = (int) (v.y / City.T);
+                        if (w.city.junctionIdAt(v.x, v.y) >= 0 || w.city.roadDirAt(tx, ty) == 0) continue;
+                        float fx = (float) Math.cos(v.angle), fy = (float) Math.sin(v.angle);
+                        int dx = Math.abs(fx) > Math.abs(fy) ? (int) Math.signum(fx) : 0, dy = dx == 0 ? (int) Math.signum(fy) : 0;
+                        float act = (v.x - (tx + 0.5f) * City.T) * -dy + (v.y - (ty + 0.5f) * City.T) * dx;
+                        float mine = w.city.laneOffset(tx, ty, dx, dy), theirs = -w.city.laneOffset(tx, ty, -dx, -dy);
+                        if (Math.abs(mine - theirs) < 6) continue;
+                        onRoad++;
+                        if (Math.abs(act - theirs) + 3 < Math.abs(act - mine)) wrong++;
+                    }
+                }
+                // (Each crash shows up on both cars.)
+                check(crashes / 2 <= 6, (crashes / 2) + " crashes in a minute and a half of ordinary traffic");
+                check(onRoad > 50, "patrol cars out on the roads (" + onRoad + " samples)");
+                check(wrong <= onRoad * 0.04f, "patrol cars on the wrong side " + wrong + " of " + onRoad);
             }
         });
         test("massive maps have suburbs laid out as neighbourhoods, not just grid", new Check() {

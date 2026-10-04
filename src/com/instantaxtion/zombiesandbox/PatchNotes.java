@@ -2,11 +2,17 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "9.1";
-    static final int VERSION_CODE = 31;
+    static final String VERSION = "9.2";
+    static final int VERSION_CODE = 32;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "9.2  -  Roads that go somewhere",
+                    "Streets no longer stop dead in a field: the stubs left poking out past the edge of town are gone, so streets turn the corner or meet at a junction instead.",
+                    "Hamlet streets and other roads that ended in open country now carry on as a dirt lane to the nearest road or lane, or off the edge of the map.",
+                    "Level crossings with nothing past the tracks are gone: the street stops at the railway instead.",
+            },
             {
                     "9.1  -  Bridges, bigger services, a sharper map",
                     "The railway crosses the highway on a bridge: highway traffic runs straight underneath and never meets a train (no more pile-ups at the tracks).",

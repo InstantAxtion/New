@@ -861,6 +861,7 @@ final class City {
             hamlets(n);
         }
         if (m > 0) countryside(townX0, townY0, townX1, townY1);
+        if (m > 0) tidyDeadEnds();
         // Tree-lined medians down the main roads, open at the junctions.
         for (Street st : streets) {
             if (st.width != 5) continue;
@@ -2393,6 +2394,241 @@ final class City {
             }
             if (best >= 0) villageEnds.add(new int[]{best % w, best / w, d[0], d[1]});
         }
+    }
+
+    /**
+     * Streets that stop dead in a field look like a mistake. A stub running on past the last houses is dug up
+     * (back to the junction, if that was all it was), and a street that still ends with nothing beyond it
+     * carries on as a dirt lane to the nearest other road or lane, or out to the edge of the map.
+     */
+    private void tidyDeadEnds() {
+        boolean[] dug = new boolean[w * h];
+        for (int[] e : deadEnds()) trimStub(e, dug);
+        fixJunctions(dug);
+        for (int[] e : deadEnds()) laneOn(e);
+    }
+
+    /** Digs up the end of a street where there's open ground on both sides (nothing it serves). */
+    private void trimStub(int[] e, boolean[] dug) {
+        int x = e[0], y = e[1], n = e[2], dx = e[3], dy = e[4];
+        int px = dx == 0 ? 1 : 0, py = 1 - px;
+        byte along = (byte) (dx == 0 ? 1 : 2);
+        int bare = 0;
+        while (bare < 40) {
+            int rx = x - dx * bare, ry = y - dy * bare;
+            // (A level crossing with nothing past it goes too: the street can stop at the tracks.)
+            boolean ok = (open(rx - px, ry - py) && open(rx + px * n, ry + py * n))
+                    || (railAt(rx - px, ry - py) && railAt(rx + px * n, ry + py * n));
+            for (int k = 0; k < n && ok; k++) {
+                int ax = rx + px * k, ay = ry + py * k;
+                ok = ax >= 0 && ay >= 0 && ax < w && ay < h && tiles[ay * w + ax] == ROAD && roadDir[ay * w + ax] == along;
+            }
+            if (!ok) break;
+            bare++;
+        }
+        // A street that's nothing but stub (a lane's worth of road out in a field) is left for the lane.
+        if (bare >= 40) return;
+        for (int b = 0; b < bare; b++)
+            for (int k = 0; k < n; k++) {
+                int rx = x - dx * b, ry = y - dy * b, i = (ry + py * k) * w + rx + px * k;
+                boolean rail = railAt(rx - px, ry - py);
+                unroad(i);
+                if (rail) tiles[i] = RAIL;
+                dug[i] = true;
+            }
+    }
+
+    private boolean railAt(int x, int y) {
+        return x >= 0 && y >= 0 && x < w && y < h && tiles[y * w + x] == RAIL;
+    }
+
+    private boolean dirtAt(int x, int y) {
+        return x >= 0 && y >= 0 && x < w && y < h && tiles[y * w + x] == DIRT;
+    }
+
+    private boolean open(int x, int y) {
+        if (x < 0 || y < 0 || x >= w || y >= h) return false;
+        byte t = tiles[y * w + x];
+        return t == GRASS || t == TREE;
+    }
+
+    /** A junction that lost a street to trimStub is a plain bend or a straight run if that's all it now is. */
+    private void fixJunctions(boolean[] dug) {
+        boolean[] seen = new boolean[w * h];
+        int[] q = new int[w * h];
+        for (int s = 0; s < w * h; s++) {
+            if (seen[s] || tiles[s] != ROAD || roadDir[s] != 3) continue;
+            int head = 0, tail = 0;
+            q[tail++] = s;
+            seen[s] = true;
+            boolean touched = false, ns = false, ew = false;
+            while (head < tail) {
+                int i = q[head++], x = i % w, y = i / w;
+                for (int k = 0; k < 4; k++) {
+                    int nx = x + (k == 0 ? 1 : k == 1 ? -1 : 0), ny = y + (k == 2 ? 1 : k == 3 ? -1 : 0);
+                    if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+                    int j = ny * w + nx;
+                    if (dug[j]) touched = true;
+                    if (tiles[j] != ROAD) continue;
+                    if (roadDir[j] == 3) {
+                        if (!seen[j]) {
+                            seen[j] = true;
+                            q[tail++] = j;
+                        }
+                    } else if (roadDir[j] == 1 && k >= 2) ns = true;
+                    else if (roadDir[j] == 2 && k < 2) ew = true;
+                }
+            }
+            if (!touched || (ns && ew) || (!ns && !ew)) continue;
+            for (int k = 0; k < tail; k++) roadDir[q[k]] = (byte) (ns ? 1 : 2);
+        }
+    }
+
+    /**
+     * Carries a dead end on as a two-tile dirt lane, by the shortest (and straightest) way across open ground
+     * to a road or lane well away from it along the roads, or to the edge of the map.
+     */
+    private void laneOn(int[] e) {
+        int x = e[0], y = e[1], n = e[2], dx = e[3], dy = e[4];
+        int px = dx == 0 ? 1 : 0, py = 1 - px;
+        // How far every road and lane is from this end, going by road.
+        int[] far = new int[w * h];
+        Arrays.fill(far, Integer.MAX_VALUE);
+        int[] q = new int[w * h];
+        int head = 0, tail = 0;
+        for (int k = 0; k < n; k++) {
+            int i = (y + py * k) * w + x + px * k;
+            far[i] = 0;
+            q[tail++] = i;
+        }
+        while (head < tail) {
+            int i = q[head++], cx = i % w, cy = i / w;
+            if (far[i] > 600) continue;
+            for (int k = 0; k < 4; k++) {
+                int nx = cx + (k == 0 ? 1 : k == 1 ? -1 : 0), ny = cy + (k == 2 ? 1 : k == 3 ? -1 : 0);
+                if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+                int j = ny * w + nx;
+                if (far[j] != Integer.MAX_VALUE || (tiles[j] != ROAD && tiles[j] != DIRT)) continue;
+                far[j] = far[i] + 1;
+                q[tail++] = j;
+            }
+        }
+        // The lane's 2x2 footprint, by its top-left tile; it starts just beyond the middle of the end.
+        int a = Math.max(0, n / 2 - 1);
+        int sx = x + px * a + (dx > 0 ? 1 : dx < 0 ? -2 : 0), sy = y + py * a + (dy > 0 ? 1 : dy < 0 ? -2 : 0);
+        if (!laneFits(sx, sy)) return;
+        // Dijkstra over (tile, heading): a step costs 2, a turn 5 more, so lanes run fairly straight.
+        int[] cost = new int[w * h * 4], from = new int[w * h * 4];
+        Arrays.fill(cost, Integer.MAX_VALUE);
+        int startDir = dx > 0 ? 0 : dx < 0 ? 1 : dy > 0 ? 2 : 3;
+        java.util.PriorityQueue<long[]> pq = new java.util.PriorityQueue<long[]>(64, new java.util.Comparator<long[]>() {
+            public int compare(long[] p, long[] r) {
+                return Long.compare(p[0], r[0]);
+            }
+        });
+        int s0 = (sy * w + sx) * 4 + startDir;
+        cost[s0] = 0;
+        from[s0] = -1;
+        pq.add(new long[]{0, s0});
+        int goal = -1;
+        while (!pq.isEmpty()) {
+            long[] top = pq.poll();
+            int st = (int) top[1], c = (int) top[0];
+            if (c != cost[st]) continue;
+            int cell = st / 4, dir = st % 4, cx = cell % w, cy = cell / w;
+            if (laneArrives(cx, cy, far, c / 2)) {
+                goal = st;
+                break;
+            }
+            if (c > 300) break;
+            for (int k = 0; k < 4; k++) {
+                if ((k ^ 1) == dir) continue;
+                int nx = cx + (k == 0 ? 1 : k == 1 ? -1 : 0), ny = cy + (k == 2 ? 1 : k == 3 ? -1 : 0);
+                if (!laneFits(nx, ny)) continue;
+                int ns = (ny * w + nx) * 4 + k, nc = c + 2 + (k != dir ? 5 : 0);
+                if (nc >= cost[ns]) continue;
+                cost[ns] = nc;
+                from[ns] = st;
+                pq.add(new long[]{nc, ns});
+            }
+        }
+        if (goal < 0) return;
+        for (int st = goal; st >= 0; st = from[st]) {
+            int cell = st / 4, cx = cell % w, cy = cell / w;
+            for (int j = cy; j < cy + 2; j++)
+                for (int i = cx; i < cx + 2; i++)
+                    if (open(i, j)) tiles[j * w + i] = DIRT;
+        }
+    }
+
+    /** Open ground for a lane's 2x2 footprint, not up against the highway or the railway. */
+    private boolean laneFits(int x, int y) {
+        if (x < 0 || y < 0 || x + 1 >= w || y + 1 >= h) return false;
+        for (int j = y - 1; j <= y + 2; j++)
+            for (int i = x - 1; i <= x + 2; i++) {
+                boolean inside = i >= x && i <= x + 1 && j >= y && j <= y + 1;
+                if (inside && !open(i, j)) return false;
+                if (i < 0 || j < 0 || i >= w || j >= h) continue;
+                if (tiles[j * w + i] == RAIL || (oneWay != null && oneWay[j * w + i] != 0)) return false;
+            }
+        return true;
+    }
+
+    /** Whether a lane's footprint at (x, y), len tiles out, has reached the map edge or a road worth joining. */
+    private boolean laneArrives(int x, int y, int[] far, int len) {
+        if ((x == 0 || y == 0 || x + 2 >= w || y + 2 >= h) && len < 90) return true;
+        for (int j = y - 1; j <= y + 2; j++)
+            for (int i = x - 1; i <= x + 2; i++) {
+                if ((i == x - 1 || i == x + 2) && (j == y - 1 || j == y + 2)) continue;
+                if (i < 0 || j < 0 || i >= w || j >= h) continue;
+                int f = far[j * w + i];
+                if ((tiles[j * w + i] == ROAD || tiles[j * w + i] == DIRT) && (f == Integer.MAX_VALUE || f > len * 2 + 30))
+                    return true;
+            }
+        return false;
+    }
+
+    /**
+     * Road ends with nowhere to go: {x, y, width, dx, dy} for the last row of a street (its first tile, how
+     * many tiles across) that stops facing (dx, dy) into open fields.
+     */
+    List<int[]> deadEnds() {
+        List<int[]> out = new ArrayList<int[]>();
+        int[][] dirs = {{0, 1}, {0, -1}, {1, 0}, {-1, 0}};
+        for (int[] d : dirs) {
+            int px = d[0] == 0 ? 1 : 0, py = 1 - px;
+            for (int y = 0; y < h; y++)
+                for (int x = 0; x < w; x++) {
+                    if (!endTile(x, y, d) || endTile(x - px, y - py, d)) continue;
+                    int n = 0;
+                    while (endTile(x + px * n, y + py * n, d)) n++;
+                    // (A one-tile gap is a median or a planter, not the end of the road.)
+                    boolean dead = n >= 2;
+                    // A street turning the corner, or ending at a side street, isn't a dead end.
+                    for (int b = 0; b < n + 1 && dead; b++) {
+                        int rx = x - d[0] * b, ry = y - d[1] * b;
+                        if (isRoad(rx - px, ry - py) || isRoad(rx + px * n, ry + py * n)
+                                || dirtAt(rx - px, ry - py) || dirtAt(rx + px * n, ry + py * n)) dead = false;
+                    }
+                    for (int k = 0; k < n && dead; k++)
+                        for (int s = 1; s <= 3 && dead; s++) {
+                            int bx = x + px * k + d[0] * s, by = y + py * k + d[1] * s;
+                            if (bx < 0 || by < 0 || bx >= w || by >= h) dead = s > 1;
+                            else if (tiles[by * w + bx] != GRASS && tiles[by * w + bx] != TREE) dead = false;
+                        }
+                    if (dead) out.add(new int[]{x, y, n, d[0], d[1]});
+                }
+        }
+        return out;
+    }
+
+    /** A tile on the last row of a street running towards (d[0], d[1]), with no road beyond it. */
+    private boolean endTile(int x, int y, int[] d) {
+        if (x < 0 || y < 0 || x >= w || y >= h) return false;
+        int i = y * w + x;
+        if (tiles[i] != ROAD || roadDir[i] != (d[0] == 0 ? 1 : 2)) return false;
+        int bx = x + d[0], by = y + d[1];
+        return bx < 0 || by < 0 || bx >= w || by >= h || tiles[by * w + bx] != ROAD;
     }
 
     private void unroad(int i) {

@@ -131,6 +131,9 @@ on the phone, so the APK contains no audio files.
   fire stations.
 - **A sharp map up close**: zoomed in, the area on screen is drawn again in fine detail in the background
   and laid over the map picture.
+- **Roads that go somewhere**: out in the country no street stops dead in a field. Stubs past the edge of
+  town are dug up, streets with nothing past a level crossing stop at the tracks, and hamlet streets and
+  other loose ends carry on as dirt lanes to the nearest road or off the map.
 - **Sieges**: the dead outside a building with people hiding find their way round to the door and batter
   it together. They leave empty and abandoned vehicles alone.
 - **Squad tactics**: units radio sightings to each other, soldiers move in a wedge, advance by bounding

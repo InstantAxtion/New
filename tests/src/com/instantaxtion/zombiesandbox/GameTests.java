@@ -763,6 +763,19 @@ public final class GameTests {
                 check(old.applyCode("12-44") && old.country() == Country.USA, "old codes are American cities");
             }
         });
+        test("roads out in the country lead somewhere instead of stopping in a field", new Check() {
+            public void run() {
+                for (int p : new int[]{0, 3, 8}) {
+                    CityConfig c = new CityConfig();
+                    c.v[CityConfig.OPT_PRESET] = p;
+                    c.v[CityConfig.OPT_SIZE] = 3;
+                    c.seed = 7;
+                    City city = new City(c);
+                    java.util.List<int[]> ends = city.deadEnds();
+                    check(ends.size() <= 1, CityConfig.PRESETS[p] + " (massive) has " + ends.size() + " roads ending in a field");
+                }
+            }
+        });
         test("a highway out in the country, with highway patrol and sheriffs", new Check() {
             public void run() {
                 CityConfig c = new CityConfig();

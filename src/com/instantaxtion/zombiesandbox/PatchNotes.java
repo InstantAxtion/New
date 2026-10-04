@@ -2,11 +2,22 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "8.0";
-    static final int VERSION_CODE = 29;
+    static final String VERSION = "9.0";
+    static final int VERSION_CODE = 30;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "9.0  -  The city reacts",
+                    "People act like it's the apocalypse: word of the outbreak spreads (first reports, then an emergency broadcast), and anyone who sees one or hears gunfire knows at once. They drop their day and hurry home, to a safe zone, into the nearest building or to the police station. People indoors stay in. Drivers flee town and no new traffic comes in. The all-clear comes once it's over.",
+                    "Most police patrol in cars, two to a car, lights off, keeping to the rules of the road. The nearest car answers each 911 call with lights and siren; officers get out at the scene and drive on once it's quiet.",
+                    "Firefighters really drive their fire engine: it waits at the station until a crew climbs aboard, they get down at the fire, climb back on when it's out and drive home.",
+                    "Highways: wherever there's countryside round the town, a divided highway crosses the map (three lanes each way, a barrier, route shields, green signs, lights where roads from town join). Highway patrol drives it, and in the USA sheriff's deputies patrol the country roads.",
+                    "The cure is gone. A bite is for good; medics still heal wounds.",
+                    "Zombies at a building with people hiding find their way to the door and batter it together instead of getting stuck on the walls. They leave empty and abandoned vehicles alone, and car alarms don't keep them milling about.",
+                    "Easier to follow: zoomed out, everyone is a dot in their side's colour and the ground glows red where the dead gather. Map labels no longer pile on top of each other. Announcements queue in one band, and the radio, the war meter and the air strike countdown each have their own place. The stats shrink to one line when the outbreak starts.",
+                    "Roads: worn wheel tracks, white edge lines, bolder lane lines and wide zebra crossings.",
+            },
             {
                     "8.0  -  Bigger cities, real buildings",
                     "Every map is twice the size it was, so buildings can be built at real-world scale: long terraces, deep office blocks, big-box stores, hospitals and stadiums.",

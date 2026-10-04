@@ -2097,6 +2097,22 @@ final class City {
         return null;
     }
 
+    /**
+     * Through traffic on the highway: where a car comes onto the map on one carriageway and where it leaves
+     * at the far end, as {x0, y0, x1, y1}; null if there's no highway.
+     */
+    float[] highwayRun(Random r) {
+        if (hwyAxis < 0) return null;
+        int a = r.nextBoolean() ? 1 : 5, len = hwyAxis == 0 ? w : h;
+        int x = hwyAxis == 0 ? 0 : hwyAt + a, y = hwyAxis == 0 ? hwyAt + a : 0;
+        int ow = oneWay[y * w + x];
+        // Comes in where the traffic flows from.
+        boolean fromLow = ow == 1 || ow == 3;
+        int k0 = fromLow ? 1 : len - 2, k1 = fromLow ? len - 2 : 1;
+        float c = (hwyAt + a + 0.5f) * T;
+        return hwyAxis == 0 ? new float[]{(k0 + 0.5f) * T, c, (k1 + 0.5f) * T, c} : new float[]{c, (k0 + 0.5f) * T, c, (k1 + 0.5f) * T};
+    }
+
     /** A random spot on a country lane, out of town, or null. */
     float[] randomCountryRoad(Random r) {
         for (int k = 0; k < 300; k++) {

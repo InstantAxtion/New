@@ -134,6 +134,8 @@ final class Fleet {
         boolean pulling;
         /** Getting out of town now everyone knows (runs red lights once it's clear, drives faster). */
         boolean fleeing;
+        /** Through traffic on the highway: leaves the map at the far end. */
+        boolean through;
 
         float length() {
             return type == TANK ? 11f : type == TRUCK || type == FIRE_ENGINE || type == AMBULANCE ? 9.5f
@@ -225,6 +227,21 @@ final class Fleet {
     void spawnTraffic(int n) {
         int buses = 0;
         for (int i = 0; i < n; i++) {
+            // Some of it is through traffic on the highway, end to end.
+            if (city.hwyAxis >= 0 && w.rnd.nextFloat() < 0.3f) {
+                float[] run = city.highwayRun(w.rnd);
+                if (run != null && !inView(run[0], run[1])) {
+                    Vehicle v = make(CAR);
+                    v.state = CRUISE;
+                    v.x = run[0];
+                    v.y = run[1];
+                    pickModel(v, false);
+                    v.angle = (float) Math.atan2(run[3] - run[1], run[2] - run[0]);
+                    v.through = true;
+                    if (route(v, run[2], run[3])) vehicles.add(v);
+                    continue;
+                }
+            }
             float[] start = randomRoad();
             // New cars turn up out of sight, not out of thin air in front of you.
             for (int k = 0; k < 8 && start != null && inView(start[0], start[1]); k++) start = randomRoad();
@@ -253,7 +270,8 @@ final class Fleet {
     private float[] randomRoad() {
         for (int k = 0; k < 200; k++) {
             int tx = w.rnd.nextInt(city.w), ty = w.rnd.nextInt(city.h);
-            if (city.tiles[ty * city.w + tx] == City.ROAD)
+            // (Nobody's trip ends on the highway.)
+            if (city.tiles[ty * city.w + tx] == City.ROAD && (city.oneWay == null || city.oneWay[ty * city.w + tx] == 0))
                 return new float[]{tx * City.T + City.T / 2f, ty * City.T + City.T / 2f};
         }
         return null;
@@ -276,8 +294,24 @@ final class Fleet {
     private boolean newDestination(Vehicle v) {
         // Highway patrol keeps to the highway, sheriffs to the country roads.
         if (v.patrol && v.agency > 0 && v.state == PATROL)
-            for (int tries = 0; tries < 6; tries++) {
+            for (int tries = 0; tries < 12; tries++) {
                 float[] d = v.agency == 1 ? city.randomHighway(w.rnd) : city.randomCountryRoad(w.rnd);
+                // (Highway patrol: on ahead along its own carriageway, so it never has to turn round.)
+                if (d != null && v.agency == 1 && city.onHighway(v.x, v.y)) {
+                    // On ahead to the far end; once there, round onto the other side and back.
+                    float[] mine = null, other = null;
+                    for (int q = 0; q < 8 && (mine == null || other == null); q++) {
+                        float[] run = city.highwayRun(w.rnd);
+                        if (run == null) break;
+                        if (Math.abs(city.hwyAxis == 0 ? run[1] - v.y : run[0] - v.x) < 3 * City.T) mine = run;
+                        else other = run;
+                    }
+                    if (mine == null || other == null) continue;
+                    float[] run = Math.hypot(mine[2] - v.x, mine[3] - v.y) < 300 ? other : mine;
+                    d = new float[]{run[2], run[3]};
+                }
+                // (Sheriffs keep to their own patch of country rather than crossing town.)
+                if (d != null && v.agency == 2 && tries < 10 && Math.hypot(d[0] - v.x, d[1] - v.y) > 1400) continue;
                 if (d != null && Math.hypot(d[0] - v.x, d[1] - v.y) > 300 && route(v, d[0], d[1])) return true;
             }
         for (int tries = 0; tries < 12; tries++) {
@@ -1375,11 +1409,11 @@ final class Fleet {
             if (!driveStep(v, dt, Math.min(limit, zombiesClose ? 60 : cruise), throttle)) {
                 arrive(v);
                 // Out of town (where nobody sees it go): gone.
-                if (v.fleeing && !inView(v.x, v.y)) {
+                if ((v.fleeing || v.through) && !inView(v.x, v.y)) {
                     dropRiders(v, false);
                     return true;
                 }
-                if (v.fleeing) {
+                if (v.fleeing || v.through) {
                     // (At the edge of town, in sight: pull in and wait.)
                     dropRiders(v, false);
                     v.parked = true;

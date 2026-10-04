@@ -792,6 +792,9 @@ public final class GameTests {
                         float[] p = last.get(v);
                         last.put(v, new float[]{v.x, v.y});
                         if (p == null || v.parked || !city.onHighway(v.x, v.y) || city.junctionIdAt(v.x, v.y) >= 0) continue;
+                        // (The turnarounds at the very ends of the map are for turning round.)
+                        float alongMap = city.hwyAxis == 0 ? v.x : v.y, lenMap = city.hwyAxis == 0 ? city.worldW() : city.worldH();
+                        if (alongMap < 5 * City.T || alongMap > lenMap - 5 * City.T) continue;
                         float dx = v.x - p[0], dy = v.y - p[1];
                         int ow = city.oneWay[(int) (v.y / City.T) * city.w + (int) (v.x / City.T)];
                         float along = ow == 1 ? dx : ow == 2 ? -dx : ow == 3 ? dy : -dy, across = ow <= 2 ? dy : dx;

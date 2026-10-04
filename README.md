@@ -103,16 +103,33 @@ on the phone, so the APK contains no audio files.
 - **Hiding**: civilians barricade themselves in buildings; zombies batter the doors down.
 - **Weapons and ammo**: some civilians are armed, dropped guns can be picked up, and ammo runs out
   (units resupply at the station or base). Anyone can shove a zombie away.
-- **Medics and the hospital** heal the injured and can cure fresh bites.
+- **Medics and the hospital** heal the injured. There is no cure: a bite is for good.
 - **Zombies** head for gunfire and explosions. Crawlers are hard to hit; screamers call the horde;
   spitters lob acid from a distance; bloaters burst into infectious gas. Zombies see far in front but
   only notice what is close behind, remember where they last saw someone and search there, and their
   moans draw in others.
 - **Everyday life**: civilians have homes and run errands (shops, the mall, church, school) while the
-  city is calm; when they hear about the outbreak they go home and lock the door.
+  city is calm.
+- **When the dead walk, people know it**: word spreads (first reports, then an emergency broadcast once
+  it's serious), and anyone who sees one or hears gunfire knows at once. Then nobody carries on with
+  their day: they hurry home, to a safe zone, into the nearest building with room or to the police
+  station; people indoors stay in; drivers head for the nearest road out of town and new traffic stops.
+  The all-clear comes once the last of them has been gone a while.
+- **Police on patrol**: most officers drive a beat in patrol cars, two to a car, keeping to the rules of
+  the road with the lights off. The nearest car takes each 911 call with lights and siren; officers who
+  see one from the car pull up and get out, and drive on once it's quiet. Stations put new cars out when
+  two officers are free.
+- **Firefighters drive their engine**: each station's engine waits outside until a crew runs out and
+  climbs aboard. They get down at the fire, climb back aboard when it's out (or too dangerous) and drive
+  back to the station.
+- **Highways**: wherever there's countryside round the town, a divided highway crosses the map with three
+  lanes each way, a concrete barrier, route shields and green signs; roads from town join it at lights.
+  Highway patrol drives it, and in the USA sheriff's deputies patrol the country roads.
+- **Sieges**: the dead outside a building with people hiding find their way round to the door and batter
+  it together. They leave empty and abandoned vehicles alone.
 - **Squad tactics**: units radio sightings to each other, soldiers move in a wedge, advance by bounding
-  overwatch and send flankers round the side, the wounded pull back to a medic, police form a cordon
-  around a call, and medics treat fresh bites first.
+  overwatch and send flankers round the side, the wounded pull back to a medic, and police form a cordon
+  around a call.
 - **Checkpoints and roadblocks**: soldiers screen people entering a military safe zone for bites;
   police park cruisers across the roads around their safe zones.
 - **Riot police** block bites with their shields; **K9 units** bring a police dog.
@@ -131,13 +148,15 @@ in front of them, notice only what's close behind, and hear gunfire; the dead ca
 streets away, not across town. A
 tug-of-war bar under the stats shows who is ahead, banners mark the turning points, and the war ends with
 "The city survives" or "The city has fallen" (once 85% of its people are gone). In simulated games with
-default settings across all the maps, 20 zombies take the city about half the time, and 50 zombies about 7 times in 10.
+default settings, with no cure the dead win more often than they used to; a big outbreak usually takes the city.
+
+**Reading the map**: zoomed out, everyone is a dot in the colour of their side (the same colours as the
+counts), and wherever the dead gather the ground glows red. Labels go most important first (safe zones,
+911 calls, buildings under attack) and are left out rather than drawn on top of each other. Announcements
+(the war turning, achievements) queue up and show one at a time in a single band.
 
 ## The war
 
-- **The cure**: while the hospital holds, doctors work on a cure (shown under the tug-of-war bar). When
-  it's ready every bitten person is saved, medics can bring zombies back to life, and soldiers' and
-  cops' shots sometimes do too. Lose the hospital and the work stops.
 - **Escalation**: if the city is being lost, the army seals off the worst district (barricades across
   every road out) and, later, announces an air strike with a 60-second countdown. People run; then the
   district is firebombed.
@@ -247,7 +266,7 @@ military safe zone.
 - **Pick a tool** in the bottom bar, then **tap or drag on the city**:
   - Buttons with a dot open a **picker** with a short description of each choice: tap one, then tap
     the city. Tap the button again (or anywhere else) to close it.
-  - **People**: civilians (wander and run from zombies), medics (heal and cure fresh bites),
+  - **People**: civilians (wander and run from zombies), medics (heal the hurt),
     firefighters, dogs and raiders.
   - **Police**: cops (12-round pistol), riot cops and K9 units.
   - **Military**: soldiers (3-round bursts, grenades), commanders, snipers, gunners and the National

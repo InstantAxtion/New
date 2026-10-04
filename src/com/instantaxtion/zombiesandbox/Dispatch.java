@@ -219,7 +219,7 @@ final class Dispatch {
         inc.place = city.placeName(zombie.x, zombie.y);
         inc.reported = inc.lastLogged = count;
         inc.field = new int[city.w * city.h];
-        city.fieldFromPoints(inc.field, new float[]{inc.x}, new float[]{inc.y}, 1);
+        city.walkFieldFromPoints(inc.field, new float[]{inc.x}, new float[]{inc.y}, 1);
         incidents.add(inc);
         String line = CALLS[rnd.nextInt(CALLS.length)];
         String text = line.contains("%d") ? String.format(line, count, inc.place) : String.format(line, inc.place);
@@ -303,7 +303,7 @@ final class Dispatch {
         float[] p = city.findWalkable(x, y);
         if (p == null || units.isEmpty()) return;
         int[] field = new int[city.w * city.h];
-        city.fieldFromPoints(field, new float[]{p[0]}, new float[]{p[1]}, 1);
+        city.walkFieldFromPoints(field, new float[]{p[0]}, new float[]{p[1]}, 1);
         for (int i = 0; i < units.size(); i++) {
             Entity e = units.get(i);
             release(e);
@@ -1133,6 +1133,6 @@ final class Dispatch {
             ys[n] = zones.get(i).y;
             n++;
         }
-        city.fieldFromPoints(zoneField, xs, ys, n);
+        city.walkFieldFromPoints(zoneField, xs, ys, n);
     }
 }

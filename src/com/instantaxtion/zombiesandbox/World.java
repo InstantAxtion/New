@@ -3270,9 +3270,20 @@ final class World {
                     if (e.spot == null) return false;
                     e.jobTimer = 0;
                 }
-                if (walkToArea(e, e.spot, 50, e.speed)) {
+                if (walkToArea(e, e.spot, 70, e.speed)) {
                     e.jobTimer += dt;
-                    wander(e, e.speed * 0.4f);
+                    // Amble about the park, drifting back towards the middle rather than bouncing off an edge.
+                    float[] mid = areaPoint(e.spot);
+                    if (Math.hypot(mid[0] - e.x, mid[1] - e.y) > 45 && e.jobStep != 1) {
+                        // Head back in on a slant, so the next stretch takes them somewhere new in the park.
+                        e.wanderAngle = (float) Math.atan2(mid[1] - e.y, mid[0] - e.x) + (rnd.nextFloat() - 0.5f) * 2.2f;
+                        e.wanderTimer = 3 + rnd.nextFloat() * 3;
+                        e.paused = false;
+                        e.jobStep = 1;
+                    } else if (Math.hypot(mid[0] - e.x, mid[1] - e.y) < 30) e.jobStep = 0;
+                    // Stop a while (on a bench, watching the dog), then wander on.
+                    if (((int) ((e.jobTimer + (e.nameSeed & 7)) / 7)) % 2 == 0) steer(e, 0, 0, 0);
+                    else wander(e, e.speed * 0.4f);
                 }
                 if (e.jobTimer > 60 + (e.nameSeed & 127)) {
                     e.spot = null;
@@ -6241,7 +6252,7 @@ final class World {
         if (d > z.r * 2.5f) {
             if (z.field == null) {
                 z.field = new int[city.w * city.h];
-                city.fieldFromPoints(z.field, new float[]{z.x}, new float[]{z.y}, 1);
+                city.walkFieldFromPoints(z.field, new float[]{z.x}, new float[]{z.y}, 1);
             }
             if (followField(e, z.field, e.runSpeed * speedFactor)) return;
         }
@@ -6276,7 +6287,12 @@ final class World {
             e.blocked = false;
             e.wanderTimer = 2 + rnd.nextFloat() * 4;
             e.paused = !e.isZombie() && rnd.nextFloat() < 0.2f;
-            e.wanderAngle = rnd.nextInt(4) * TAU / 4 + (rnd.nextFloat() - 0.5f) * 0.4f;
+            // Mostly carry on or turn a corner; only now and then turn right round (which looks like pacing).
+            float roll = rnd.nextFloat();
+            float base = Math.round(e.wanderAngle / (TAU / 4)) * (TAU / 4);
+            e.wanderAngle = (e.isZombie() || e.wanderTimer < -1 ? rnd.nextInt(4) * TAU / 4
+                    : roll < 0.5f ? base : roll < 0.92f ? base + (rnd.nextBoolean() ? 1 : -1) * TAU / 4 : base + TAU / 2)
+                    + (rnd.nextFloat() - 0.5f) * 0.4f;
             // People who saw a zombie recently keep away from where it was.
             if (e.fear > 0 && !e.isZombie() && !e.isArmed()) {
                 float tx = e.threatX - e.x, ty = e.threatY - e.y;
@@ -6293,7 +6309,16 @@ final class World {
             if ((nx != tx || ny != ty) && city.tileIndex(ax, ay) >= 0 && city.tiles[city.tileIndex(ax, ay)] == City.ROAD
                     && city.tiles[city.tileIndex(e.x, e.y)] != City.ROAD) {
                 if (!city.crosswalk(nx, ny)) {
-                    e.wanderAngle += (float) Math.PI + (rnd.nextFloat() - 0.5f) * 1.2f;
+                    // At the kerb: turn to walk along the pavement (whichever way isn't road), not back.
+                    float left = e.wanderAngle - TAU / 4, right = e.wanderAngle + TAU / 4;
+                    boolean lOk = city.tiles[city.tileIndex(e.x + (float) Math.cos(left) * City.T, e.y + (float) Math.sin(left) * City.T)] != City.ROAD
+                            && !city.solidAt(e.x + (float) Math.cos(left) * City.T, e.y + (float) Math.sin(left) * City.T);
+                    boolean rOk = city.tiles[city.tileIndex(e.x + (float) Math.cos(right) * City.T, e.y + (float) Math.sin(right) * City.T)] != City.ROAD
+                            && !city.solidAt(e.x + (float) Math.cos(right) * City.T, e.y + (float) Math.sin(right) * City.T);
+                    if (lOk && (!rOk || rnd.nextBoolean())) e.wanderAngle = left;
+                    else if (rOk) e.wanderAngle = right;
+                    else e.wanderAngle += (float) Math.PI;
+                    e.wanderTimer = Math.max(e.wanderTimer, 3);
                 } else if (carComing(ax, ay)) {
                     steer(e, 0, 0, 0);
                     return;
@@ -6306,7 +6331,13 @@ final class World {
 
     /** Ordinary folk going about their day mind the traffic; anyone running for their life doesn't. */
     private boolean keepsRules(Entity e) {
-        return e.type == Entity.CIVILIAN && e.fleeTimer <= 0 && e.fear <= 0 && e.task != Dispatch.T_SEEK && e != controlled;
+        if (e == controlled) return false;
+        if (e.type == Entity.CIVILIAN) return e.fleeTimer <= 0 && e.fear <= 0 && e.task != Dispatch.T_SEEK;
+        // Police and soldiers on an ordinary patrol walk on the pavement too; in a fight, anything goes.
+        if (e.type == Entity.COP || e.type == Entity.SOLDIER || e.type == Entity.MEDIC)
+            return (e.task == Dispatch.T_NONE || e.task == Dispatch.T_POST || e.task == Dispatch.T_GUARD)
+                    && city.fieldAt(city.zombieDist, e.x, e.y) > 18 && !e.aiming;
+        return false;
     }
 
     /** A vehicle on the ground heading for this spot and close enough that stepping out would be a mistake. */

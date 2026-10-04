@@ -1772,7 +1772,9 @@ final class City {
                 break;
             case 3:
                 fill(x, y, bw, bh, LOT);
-                int courtsX = bw >= 9 ? 2 : 1, courtsY = bh >= 9 ? 2 : 1;
+                // Courts at their real size, as many as fit (each about 11 x 7 tiles with its run-off).
+                boolean longX = bw >= bh;
+                int courtsX = Math.max(1, Math.min(4, bw / (longX ? 12 : 8))), courtsY = Math.max(1, Math.min(4, bh / (longX ? 8 : 12)));
                 float cw = bw * T / (float) courtsX, chh = bh * T / (float) courtsY;
                 for (int a = 0; a < courtsX; a++)
                     for (int b = 0; b < courtsY; b++)
@@ -2995,6 +2997,129 @@ final class City {
     }
 
     /** Courts, sports fields, playgrounds, gardens, graves and skateparks. */
+    /**
+     * The biggest rectangle of the given shape (long side / short side) that fits in the box, no longer than
+     * maxLen, centred, along the box's long side. Returns {x0, y0, x1, y1, 1 if it runs across}.
+     */
+    private static float[] fit(float x0, float y0, float x1, float y1, float ratio, float maxLen) {
+        float bw = x1 - x0, bh = y1 - y0;
+        boolean wide = bw >= bh;
+        float lng = wide ? bw : bh, shrt = wide ? bh : bw;
+        float L = Math.min(maxLen, Math.min(lng, shrt * ratio)), S = L / ratio;
+        float cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+        return wide ? new float[]{cx - L / 2, cy - S / 2, cx + L / 2, cy + S / 2, 1}
+                : new float[]{cx - S / 2, cy - L / 2, cx + S / 2, cy + L / 2, 0};
+    }
+
+    /** A point on a court: a along its length (0..1), b across it (0..1). */
+    private static float cxAt(float[] ct, float a, float b) {
+        return ct[4] > 0 ? ct[0] + (ct[2] - ct[0]) * a : ct[0] + (ct[2] - ct[0]) * b;
+    }
+
+    private static float cyAt(float[] ct, float a, float b) {
+        return ct[4] > 0 ? ct[1] + (ct[3] - ct[1]) * b : ct[1] + (ct[3] - ct[1]) * a;
+    }
+
+    private static void line(Canvas c, Paint p, float[] ct, float a0, float b0, float a1, float b1) {
+        c.drawLine(cxAt(ct, a0, b0), cyAt(ct, a0, b0), cxAt(ct, a1, b1), cyAt(ct, a1, b1), p);
+    }
+
+    private static void box(Canvas c, Paint p, float[] ct, float a0, float b0, float a1, float b1) {
+        float xa = cxAt(ct, a0, b0), ya = cyAt(ct, a0, b0), xb = cxAt(ct, a1, b1), yb = cyAt(ct, a1, b1);
+        c.drawRect(Math.min(xa, xb), Math.min(ya, yb), Math.max(xa, xb), Math.max(ya, yb), p);
+    }
+
+    private static float lenOf(float[] ct) {
+        return ct[4] > 0 ? ct[2] - ct[0] : ct[3] - ct[1];
+    }
+
+    /** A basketball court: keys, free-throw circles, three-point arcs (inside the court), centre circle. */
+    private static void basketball(Canvas c, Paint p, float[] ct) {
+        float L = lenOf(ct);
+        p.setColor(0xFFB0663A);
+        c.drawRect(ct[0], ct[1], ct[2], ct[3], p);
+        p.setColor(0xFF8A4A2A);
+        // The painted keys.
+        box(c, p, ct, 0, 0.5f - 4.9f / 30, 5.8f / 28, 0.5f + 4.9f / 30);
+        box(c, p, ct, 1 - 5.8f / 28, 0.5f - 4.9f / 30, 1, 0.5f + 4.9f / 30);
+        p.setStyle(Paint.Style.STROKE);
+        p.setStrokeWidth(1.1f);
+        p.setColor(0xEEFFFFFF);
+        c.drawRect(ct[0], ct[1], ct[2], ct[3], p);
+        line(c, p, ct, 0.5f, 0, 0.5f, 1);
+        c.drawCircle(cxAt(ct, 0.5f, 0.5f), cyAt(ct, 0.5f, 0.5f), L * 1.8f / 28, p);
+        box(c, p, ct, 0, 0.5f - 4.9f / 30, 5.8f / 28, 0.5f + 4.9f / 30);
+        box(c, p, ct, 1 - 5.8f / 28, 0.5f - 4.9f / 30, 1, 0.5f + 4.9f / 30);
+        c.drawCircle(cxAt(ct, 5.8f / 28, 0.5f), cyAt(ct, 5.8f / 28, 0.5f), L * 1.8f / 28, p);
+        c.drawCircle(cxAt(ct, 1 - 5.8f / 28, 0.5f), cyAt(ct, 1 - 5.8f / 28, 0.5f), L * 1.8f / 28, p);
+        // Three-point lines: arcs round each basket, kept inside the court.
+        c.save();
+        c.clipRect(ct[0], ct[1], ct[2], ct[3]);
+        c.drawCircle(cxAt(ct, 1.575f / 28, 0.5f), cyAt(ct, 1.575f / 28, 0.5f), L * 6.75f / 28, p);
+        c.drawCircle(cxAt(ct, 1 - 1.575f / 28, 0.5f), cyAt(ct, 1 - 1.575f / 28, 0.5f), L * 6.75f / 28, p);
+        c.restore();
+        p.setStyle(Paint.Style.FILL);
+        // Hoops.
+        p.setColor(0xFFE0702E);
+        c.drawCircle(cxAt(ct, 1.575f / 28, 0.5f), cyAt(ct, 1.575f / 28, 0.5f), 1.4f, p);
+        c.drawCircle(cxAt(ct, 1 - 1.575f / 28, 0.5f), cyAt(ct, 1 - 1.575f / 28, 0.5f), 1.4f, p);
+    }
+
+    /** A tennis court: doubles and singles sidelines, service boxes, the net. */
+    private static void tennis(Canvas c, Paint p, float[] ct) {
+        p.setColor(0xFF4E946A);
+        c.drawRect(ct[0], ct[1], ct[2], ct[3], p);
+        p.setStyle(Paint.Style.STROKE);
+        p.setStrokeWidth(1f);
+        p.setColor(0xEEFFFFFF);
+        c.drawRect(ct[0], ct[1], ct[2], ct[3], p);
+        float alley = (1 - 8.23f / 10.97f) / 2, svc = 6.4f / 23.77f;
+        line(c, p, ct, 0, alley, 1, alley);
+        line(c, p, ct, 0, 1 - alley, 1, 1 - alley);
+        line(c, p, ct, 0.5f - svc, alley, 0.5f - svc, 1 - alley);
+        line(c, p, ct, 0.5f + svc, alley, 0.5f + svc, 1 - alley);
+        line(c, p, ct, 0.5f - svc, 0.5f, 0.5f + svc, 0.5f);
+        p.setStrokeWidth(1.8f);
+        p.setColor(0xFF2A2A2A);
+        line(c, p, ct, 0.5f, -0.04f, 0.5f, 1.04f);
+        p.setStyle(Paint.Style.FILL);
+    }
+
+    /** A football pitch: halfway line, centre circle, penalty and goal areas, penalty arcs, goals. */
+    private static void football(Canvas c, Paint p, float[] ct) {
+        float L = lenOf(ct);
+        p.setStyle(Paint.Style.STROKE);
+        p.setStrokeWidth(1.3f);
+        p.setColor(0xEEFFFFFF);
+        c.drawRect(ct[0], ct[1], ct[2], ct[3], p);
+        line(c, p, ct, 0.5f, 0, 0.5f, 1);
+        c.drawCircle(cxAt(ct, 0.5f, 0.5f), cyAt(ct, 0.5f, 0.5f), L * 9.15f / 105, p);
+        float pb = 16.5f / 105, pw = 40.3f / 68 / 2, gb = 5.5f / 105, gw = 18.3f / 68 / 2;
+        box(c, p, ct, 0, 0.5f - pw, pb, 0.5f + pw);
+        box(c, p, ct, 1 - pb, 0.5f - pw, 1, 0.5f + pw);
+        box(c, p, ct, 0, 0.5f - gw, gb, 0.5f + gw);
+        box(c, p, ct, 1 - gb, 0.5f - gw, 1, 0.5f + gw);
+        // The "D" on each penalty area: the part of the circle round the spot outside the box.
+        for (int end = 0; end < 2; end++) {
+            float spot = end == 0 ? 11f / 105 : 1 - 11f / 105;
+            c.save();
+            float ea = end == 0 ? pb : 1 - pb;
+            float xa = cxAt(ct, ea, 0), ya = cyAt(ct, ea, 0), xb = cxAt(ct, end == 0 ? 0.5f : 0.5f, 1), yb = cyAt(ct, 0.5f, 1);
+            c.clipRect(Math.min(xa, xb), Math.min(ya, yb), Math.max(xa, xb), Math.max(ya, yb));
+            c.drawCircle(cxAt(ct, spot, 0.5f), cyAt(ct, spot, 0.5f), L * 9.15f / 105, p);
+            c.restore();
+        }
+        p.setStyle(Paint.Style.FILL);
+        p.setColor(0xEEFFFFFF);
+        c.drawCircle(cxAt(ct, 11f / 105, 0.5f), cyAt(ct, 11f / 105, 0.5f), 1.1f, p);
+        c.drawCircle(cxAt(ct, 1 - 11f / 105, 0.5f), cyAt(ct, 1 - 11f / 105, 0.5f), 1.1f, p);
+        c.drawCircle(cxAt(ct, 0.5f, 0.5f), cyAt(ct, 0.5f, 0.5f), 1.1f, p);
+        // Goals.
+        p.setColor(0xFFF2F2F2);
+        box(c, p, ct, -0.012f, 0.5f - 3.66f / 68, 0, 0.5f + 3.66f / 68);
+        box(c, p, ct, 1, 0.5f - 3.66f / 68, 1.012f, 0.5f + 3.66f / 68);
+    }
+
     private void drawDecor(Canvas c, Paint p, float[] d) {
         int kind = (int) d[0], variant = (int) d[5];
         float x0 = d[1], y0 = d[2], x1 = d[3], y1 = d[4], cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
@@ -3003,33 +3128,12 @@ final class City {
         p.setStyle(Paint.Style.FILL);
         switch (kind) {
             case D_COURT: {
-                p.setColor(variant == 0 ? 0xFFB0663A : 0xFF3F7F5A);
+                // The surface round the court, then a court of the right shape in the middle of it.
+                p.setColor(variant == 0 ? 0xFF6E6E70 : 0xFF3F6A50);
                 c.drawRect(x0, y0, x1, y1, p);
-                p.setColor(variant == 0 ? 0xFFC47A4A : 0xFF4E946A);
-                c.drawRect(x0 + 4, y0 + 4, x1 - 4, y1 - 4, p);
-                p.setStyle(Paint.Style.STROKE);
-                p.setStrokeWidth(1.2f);
-                p.setColor(0xDDFFFFFF);
-                c.drawRect(x0 + 4, y0 + 4, x1 - 4, y1 - 4, p);
-                if (wide) c.drawLine(cx, y0 + 4, cx, y1 - 4, p);
-                else c.drawLine(x0 + 4, cy, x1 - 4, cy, p);
-                if (variant == 0) {
-                    c.drawCircle(cx, cy, Math.min(dw, dh) * 0.15f, p);
-                    float r = Math.min(dw, dh) * 0.25f;
-                    if (wide) {
-                        c.drawCircle(x0 + 4, cy, r, p);
-                        c.drawCircle(x1 - 4, cy, r, p);
-                    } else {
-                        c.drawCircle(cx, y0 + 4, r, p);
-                        c.drawCircle(cx, y1 - 4, r, p);
-                    }
-                } else {
-                    p.setStrokeWidth(2f);
-                    p.setColor(0xFF2A2A2A);
-                    if (wide) c.drawLine(cx, y0 + 1, cx, y1 - 1, p);
-                    else c.drawLine(x0 + 1, cy, x1 - 1, cy, p);
-                }
-                p.setStyle(Paint.Style.FILL);
+                float[] ct = fit(x0 + 3, y0 + 3, x1 - 3, y1 - 3, variant == 0 ? 28f / 15f : 23.77f / 10.97f, variant == 0 ? 160 : 140);
+                if (variant == 0) basketball(c, p, ct);
+                else tennis(c, p, ct);
                 break;
             }
             case D_FIELD: {
@@ -3039,22 +3143,8 @@ final class City {
                     if (wide) c.drawRect(x0 + dw * i / stripes, y0, x0 + dw * (i + 1) / stripes, y1, p);
                     else c.drawRect(x0, y0 + dh * i / stripes, x1, y0 + dh * (i + 1) / stripes, p);
                 }
-                p.setStyle(Paint.Style.STROKE);
-                p.setStrokeWidth(1.4f);
-                p.setColor(0xEEFFFFFF);
-                c.drawRect(x0 + 3, y0 + 3, x1 - 3, y1 - 3, p);
-                c.drawCircle(cx, cy, Math.min(dw, dh) * 0.14f, p);
-                float gb = Math.min(dw, dh) * 0.3f, gd = Math.max(dw, dh) * 0.12f;
-                if (wide) {
-                    c.drawLine(cx, y0 + 3, cx, y1 - 3, p);
-                    c.drawRect(x0 + 3, cy - gb, x0 + 3 + gd, cy + gb, p);
-                    c.drawRect(x1 - 3 - gd, cy - gb, x1 - 3, cy + gb, p);
-                } else {
-                    c.drawLine(x0 + 3, cy, x1 - 3, cy, p);
-                    c.drawRect(cx - gb, y0 + 3, cx + gb, y0 + 3 + gd, p);
-                    c.drawRect(cx - gb, y1 - 3 - gd, cx + gb, y1 - 3, p);
-                }
-                p.setStyle(Paint.Style.FILL);
+                float[] ct = fit(x0 + 4, y0 + 4, x1 - 4, y1 - 4, 105f / 68f, 560);
+                football(c, p, ct);
                 break;
             }
             case D_PLAYGROUND: {

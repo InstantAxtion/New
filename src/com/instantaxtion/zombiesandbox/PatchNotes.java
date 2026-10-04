@@ -2,11 +2,17 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "9.0";
-    static final int VERSION_CODE = 30;
+    static final String VERSION = "9.1";
+    static final int VERSION_CODE = 31;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "9.1  -  Bridges, bigger services, a sharper map",
+                    "The railway crosses the highway on a bridge: highway traffic runs straight underneath and never meets a train (no more pile-ups at the tracks).",
+                    "More police, firefighters and medics, growing with the city: more officers for every resident, an extra police station on Large maps and two on Massive ones, more fire stations on big maps with five firefighters each, and medics at the hospital and the fire stations (every town has a fire station now).",
+                    "The map stays sharp when you zoom in: the area on screen is drawn again in fine detail a moment after you zoom.",
+            },
             {
                     "9.0  -  The city reacts",
                     "People act like it's the apocalypse: word of the outbreak spreads (first reports, then an emergency broadcast), and anyone who sees one or hears gunfire knows at once. They drop their day and hurry home, to a safe zone, into the nearest building or to the police station. People indoors stay in. Drivers flee town and no new traffic comes in. The all-clear comes once it's over.",

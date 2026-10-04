@@ -209,7 +209,8 @@ final class CityConfig implements OptionSet {
      * has on shift, so the war is a fair fight), a couple per station, at least four.
      */
     int cops(int residents) {
-        return Math.max(4, Math.min(80, Math.round(residents / 80f) + policeStations() * 2));
+        // About one officer for every 45 residents the game simulates, plus a few for each station.
+        return Math.max(6, Math.min(160, Math.round(residents / 45f) + policeStations() * 4));
     }
 
     /** Soldiers at the base (if the map has one): a garrison that grows with the city. */
@@ -240,12 +241,27 @@ final class CityConfig implements OptionSet {
     int parks() { return map(3); }
     int traffic() { return map(4); }
     int layout() { return map(5); }
-    int policeStations() { return map(6); }
+    /** Police stations: the map's own number, and more on Large and Massive maps. */
+    int policeStations() {
+        int n = map(6);
+        return n == 0 ? 0 : n + (v[OPT_SIZE] >= 2 ? 1 : 0) + (v[OPT_SIZE] >= 3 ? 1 : 0);
+    }
+
+    /** Medics: the hospital's, and the paramedics at the fire stations, growing with the city. */
+    int medics(int residents) {
+        return Math.max(4, Math.min(36, Math.round(residents / 110f)));
+    }
     boolean militaryBase() { return map(7) == 1; }
 
     /** How many of a landmark (0 church, 1 school, 2 fire station, 3 supermarket, 4 gas station, 5 cemetery). */
     int landmarks(int kind) {
         int n = LANDMARKS[v[OPT_PRESET]][kind];
+        // Fire stations: one more on a Large map, two more on a Massive one.
+        // (Every town has at least one.)
+        if (kind == 2) {
+            n = Math.max(1, n);
+            if (v[OPT_SIZE] >= 2) return n + v[OPT_SIZE] - 1;
+        }
         if (v[OPT_SIZE] == 0) return n > 1 ? 1 : n;
         if (v[OPT_SIZE] == 2) return n + (n + 1) / 2;
         return n;

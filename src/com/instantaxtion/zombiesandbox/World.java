@@ -403,12 +403,18 @@ final class World {
             if (e.type == Entity.CIVILIAN && rnd.nextFloat() < 0.07f) armCivilian(e, 12 + rnd.nextInt(3) * 6);
         }
         City.Facility hospital = city.nearestFacility(City.FACILITY_HOSPITAL, 0, 0);
-        if (hospital != null)
-            for (int i = 0; i < 3; i++) spawn(Entity.MEDIC, hospital.x + rnd.nextFloat() * 40 - 20, hospital.y + rnd.nextFloat() * 40 - 20);
-        // A crew at every fire station.
-        for (City.Facility f : city.facilities)
-            if (f.kind == City.FACILITY_FIRE)
-                for (int i = 0; i < 3; i++) spawn(Entity.FIREFIGHTER, f.x + rnd.nextFloat() * 30 - 15, f.y + rnd.nextFloat() * 30 - 15);
+        // Medics: most at the hospital, and paramedics at each fire station so help is never far.
+        java.util.ArrayList<City.Facility> fireStations = new java.util.ArrayList<City.Facility>();
+        for (City.Facility f : city.facilities) if (f.kind == City.FACILITY_FIRE) fireStations.add(f);
+        int medics = cfg.medics(city.totalResidents);
+        for (int i = 0; i < medics; i++) {
+            City.Facility at = hospital == null || (i % 2 == 1 && !fireStations.isEmpty()) ? (fireStations.isEmpty() ? null : fireStations.get(i / 2 % fireStations.size())) : hospital;
+            if (at == null) break;
+            spawn(Entity.MEDIC, at.x + rnd.nextFloat() * 40 - 20, at.y + rnd.nextFloat() * 40 - 20);
+        }
+        // A crew at every fire station: enough for the engine and a couple to spare.
+        for (City.Facility f : fireStations)
+            for (int i = 0; i < 5; i++) spawn(Entity.FIREFIGHTER, f.x + rnd.nextFloat() * 30 - 15, f.y + rnd.nextFloat() * 30 - 15);
         // Half the cops start at their precinct, the rest on patrol; soldiers start on base.
         City.Facility base = city.nearestFacility(City.FACILITY_BASE, 0, 0);
         int stations = 0;

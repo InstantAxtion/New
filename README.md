@@ -124,7 +124,13 @@ on the phone, so the APK contains no audio files.
   back to the station.
 - **Highways**: wherever there's countryside round the town, a divided highway crosses the map with three
   lanes each way, a concrete barrier, route shields and green signs; roads from town join it at lights.
-  Highway patrol drives it, and in the USA sheriff's deputies patrol the country roads.
+  Highway patrol drives it, and in the USA sheriff's deputies patrol the country roads. Where the railway
+  meets the highway it crosses on a bridge, with the traffic running underneath.
+- **Emergency services grow with the city**: more officers for every resident and more police stations on
+  Large and Massive maps; more fire stations with five firefighters each; medics at the hospital and at the
+  fire stations.
+- **A sharp map up close**: zoomed in, the area on screen is drawn again in fine detail in the background
+  and laid over the map picture.
 - **Sieges**: the dead outside a building with people hiding find their way round to the door and batter
   it together. They leave empty and abandoned vehicles alone.
 - **Squad tactics**: units radio sightings to each other, soldiers move in a wedge, advance by bounding

@@ -944,6 +944,105 @@ final class GameView extends View implements Menu.Host {
     private final android.graphics.Rect mapSrc = new android.graphics.Rect();
     private final RectF mapDst = new RectF();
 
+    // ------------------------------------------------------------------ sharp close-ups of the map
+
+    /**
+     * The map picture holds about one pixel per world unit, so zoomed in it would look soft. Close in, the
+     * squares of map on screen are drawn again at several pixels per unit (in the background, a few at a time)
+     * and laid over it; the last few dozen are kept.
+     */
+    private static final float CHUNK = 192;
+    private static final int MAX_CHUNKS = 30;
+    private final java.util.concurrent.ConcurrentHashMap<Long, android.graphics.Bitmap> chunks =
+            new java.util.concurrent.ConcurrentHashMap<Long, android.graphics.Bitmap>();
+    private final java.util.Set<Long> chunkPending = java.util.Collections.newSetFromMap(
+            new java.util.concurrent.ConcurrentHashMap<Long, Boolean>());
+    private final java.util.concurrent.LinkedBlockingDeque<Object[]> chunkJobs = new java.util.concurrent.LinkedBlockingDeque<Object[]>();
+    private final java.util.HashSet<Long> chunksWanted = new java.util.HashSet<Long>();
+    private volatile java.util.Set<Long> chunksOnScreen = new java.util.HashSet<Long>();
+    private volatile City chunkCity;
+    private volatile int chunkVersion;
+    private Thread chunkWorker;
+
+    private void drawCloseUps(Canvas c) {
+        City city = world.city;
+        if (city != chunkCity || city.renderVersion != chunkVersion) {
+            chunkCity = city;
+            chunkVersion = city.renderVersion;
+            chunks.clear();
+            chunkJobs.clear();
+            chunkPending.clear();
+        }
+        // Only once the map picture is being stretched noticeably.
+        if (scale < city.detail * 1.6f) return;
+        int res = scale >= 3.2f ? 4 : 2;
+        int cx0 = Math.max(0, (int) (camX / CHUNK)), cy0 = Math.max(0, (int) (camY / CHUNK));
+        int cx1 = (int) ((camX + getWidth() / scale) / CHUNK), cy1 = (int) ((camY + barTop / scale) / CHUNK);
+        int nx = (int) Math.ceil(city.worldW() / CHUNK), ny = (int) Math.ceil(city.worldH() / CHUNK);
+        cx1 = Math.min(nx - 1, cx1);
+        cy1 = Math.min(ny - 1, cy1);
+        chunksWanted.clear();
+        float mx = camX + getWidth() / scale / 2, my = camY + barTop / scale / 2;
+        for (int cy = cy0; cy <= cy1; cy++)
+            for (int cx = cx0; cx <= cx1; cx++) {
+                long key = ((long) res << 40) | ((long) cy << 20) | cx;
+                chunksWanted.add(key);
+                android.graphics.Bitmap b = chunks.get(key);
+                if (b == null) {
+                    // A coarser one will do until the finer one is ready.
+                    b = chunks.get(((long) (6 - res) << 40) | ((long) cy << 20) | cx);
+                    if (chunkPending.add(key)) {
+                        Object[] job = {city, key, cx * CHUNK, cy * CHUNK, (float) res, chunkVersion};
+                        // Nearest the middle of the screen first.
+                        if (Math.abs((cx + 0.5f) * CHUNK - mx) < CHUNK && Math.abs((cy + 0.5f) * CHUNK - my) < CHUNK) chunkJobs.addFirst(job);
+                        else chunkJobs.addLast(job);
+                    }
+                }
+                if (b == null) continue;
+                mapSrc.set(0, 0, b.getWidth(), b.getHeight());
+                mapDst.set(cx * CHUNK, cy * CHUNK, (cx + 1) * CHUNK, (cy + 1) * CHUNK);
+                c.drawBitmap(b, mapSrc, mapDst, bmpPaint);
+            }
+        chunksOnScreen = new java.util.HashSet<Long>(chunksWanted);
+        // Forget the ones furthest from view when there are too many.
+        if (chunks.size() > MAX_CHUNKS)
+            for (Long k : chunks.keySet()) {
+                if (chunks.size() <= MAX_CHUNKS) break;
+                if (!chunksWanted.contains(k)) chunks.remove(k);
+            }
+        if (chunkWorker == null) {
+            chunkWorker = new Thread(new Runnable() {
+                public void run() {
+                    while (true) {
+                        Object[] job;
+                        try {
+                            job = chunkJobs.takeFirst();
+                        } catch (InterruptedException e) {
+                            return;
+                        }
+                        City jc = (City) job[0];
+                        long key = (Long) job[1];
+                        // (Skipped if the view has moved on, or the map has changed since.)
+                        if (jc != chunkCity || (Integer) job[5] != chunkVersion || !chunksOnScreen.contains(key)) {
+                            chunkPending.remove(key);
+                            continue;
+                        }
+                        try {
+                            android.graphics.Bitmap b = jc.renderRegion((Float) job[2], (Float) job[3], CHUNK, (Float) job[4]);
+                            if (jc == chunkCity && (Integer) job[5] == chunkVersion) chunks.put(key, b);
+                        } catch (Throwable t) {
+                            // (Out of memory or similar: the soft picture will do.)
+                        }
+                        chunkPending.remove(key);
+                    }
+                }
+            }, "map close-ups");
+            chunkWorker.setDaemon(true);
+            chunkWorker.setPriority(Thread.MIN_PRIORITY);
+            chunkWorker.start();
+        }
+    }
+
     private void drawWorld(Canvas c) {
         c.drawColor(0xFF1B1C1F);
         c.save();
@@ -965,6 +1064,7 @@ final class GameView extends View implements Menu.Host {
             mapDst.set(0, 0, world.city.worldW(), world.city.worldH());
             c.drawBitmap(world.city.bitmap, mapSrc, mapDst, bmpPaint);
         }
+        drawCloseUps(c);
 
         float vx0 = camX - 20, vy0 = camY - 20;
         float vx1 = camX + getWidth() / scale + 20, vy1 = camY + getHeight() / scale + 20;
@@ -1232,6 +1332,7 @@ final class GameView extends View implements Menu.Host {
                 }
             }
         }
+        drawRailBridge(c, vx0, vx1, vy0, vy1);
 
         if (detailed) {
             for (int i = 0, n = world.entities.size(); i < n; i++) {
@@ -2459,6 +2560,42 @@ final class GameView extends View implements Menu.Host {
                     }
                 }
             }
+        }
+    }
+
+    /**
+     * Where the railway crosses the highway it's on a bridge: the deck is drawn over the traffic underneath
+     * (with its shadow on the road), and any train on it over the deck.
+     */
+    private void drawRailBridge(Canvas c, float vx0, float vx1, float vy0, float vy1) {
+        City city = world.city;
+        if (city.railY0 < 0 || city.hwyAxis != 1) return;
+        float x0 = (city.hwyAt - 1) * City.T, x1 = (city.hwyAt + 8) * City.T;
+        float y0 = city.railY0 * City.T - 3, y1 = (city.railY0 + city.railRows) * City.T + 3;
+        if (x1 < vx0 || x0 > vx1 || y1 < vy0 || y0 > vy1) return;
+        fill.setColor(0x40000000);
+        c.drawRect(x0, y1, x1, y1 + 7, fill);
+        // Deck, parapets and the track across it.
+        fill.setColor(0xFF8E8A82);
+        c.drawRect(x0, y0, x1, y1, fill);
+        fill.setColor(0xFFB4B0A6);
+        c.drawRect(x0, y0, x1, y0 + 2.5f, fill);
+        c.drawRect(x0, y1 - 2.5f, x1, y1, fill);
+        fill.setColor(0xFF6E5A46);
+        float ry = (city.railY0 + city.railRows / 2f) * City.T;
+        for (float x = x0 + 2; x < x1; x += 5) c.drawRect(x, ry - 7, x + 2.5f, ry + 7, fill);
+        fill.setColor(0xFFB8BCC2);
+        c.drawRect(x0, ry - 4.5f, x1, ry - 3.5f, fill);
+        c.drawRect(x0, ry + 3.5f, x1, ry + 4.5f, fill);
+        for (int i = 0, n = world.fleet.vehicles.size(); i < n; i++) {
+            Fleet.Vehicle v = world.fleet.vehicles.get(i);
+            if (v.type != Fleet.TRAIN) continue;
+            float dir = (float) Math.cos(v.angle), back = v.x - dir * Fleet.TRAIN_LENGTH;
+            if (Math.max(v.x, back) < x0 || Math.min(v.x, back) > x1) continue;
+            c.save();
+            c.clipRect(x0, y0 - 10, x1, y1 + 10);
+            drawTrain(c, v);
+            c.restore();
         }
     }
 

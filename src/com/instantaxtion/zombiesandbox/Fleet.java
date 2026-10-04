@@ -773,7 +773,7 @@ final class Fleet {
 
     /** A train is on the line near this car's crossing: wait. */
     private boolean trainComing(Vehicle v) {
-        if (city.railY0 < 0) return false;
+        if (city.railY0 < 0 || city.underRailBridge((int) (v.x / City.T))) return false;
         float ry = (city.railY0 + city.railRows / 2f) * City.T;
         float dy = ry - v.y;
         if (Math.abs(dy) > 60 || Math.abs(dy) < 26) return false;
@@ -848,10 +848,12 @@ final class Fleet {
         v.speed += (cruise - v.speed) * Math.min(1, dt * (cruise < v.speed ? 1.2f : 0.35f));
         v.x += dir * v.speed * dt;
         // Anything on the line gets hit: zombies go flying, people are knocked aside, cars are wrecked.
-        for (float k = 0; k < TRAIN_LENGTH; k += 16) w.runOver(v.x - dir * k, v.y, 9, v.speed, v.angle);
+        // (Not on the bridge: the highway runs underneath.)
+        for (float k = 0; k < TRAIN_LENGTH; k += 16)
+            if (!city.underRailBridge((int) ((v.x - dir * k) / City.T))) w.runOver(v.x - dir * k, v.y, 9, v.speed, v.angle);
         for (int i = 0; i < vehicles.size(); i++) {
             Vehicle o = vehicles.get(i);
-            if (o == v || airborne(o) || o.type == TRAIN || o.broken) continue;
+            if (o == v || airborne(o) || o.type == TRAIN || o.broken || city.underRailBridge((int) (o.x / City.T))) continue;
             float along = (o.x - v.x) * dir;
             if (along < 8 && along > -TRAIN_LENGTH && Math.abs(o.y - v.y) < 14) damage(o, 500, true);
         }

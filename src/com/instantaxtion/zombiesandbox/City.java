@@ -504,6 +504,7 @@ final class City {
      * building, or null.
      */
     Building applyEdit(int tx, int ty, int kind, boolean live) {
+        if (live) renderVersion++;
         if (tx < 1 || ty < 1 || tx >= w - 1 || ty >= h - 1) return null;
         int i = ty * w + tx;
         if (kind == ED_HOUSE || kind == ED_SHOP) {
@@ -548,8 +549,59 @@ final class City {
         for (Facility f : facilities) fieldFromPoints(f.field, new float[]{f.x}, new float[]{f.y}, 1);
     }
 
+    // ------------------------------------------------------------------ close-ups
+
+    /** Randomness for drawing, seeded from each tile's position (see tileSeed). */
+    private final Random prnd = new Random();
+    /** While drawing a close-up: only this region (in tiles, with a margin). */
+    private boolean regionOnly;
+    private int rx0, ry0, rx1, ry1;
+    private float rwx0, rwy0, rwx1, rwy1;
+    /** Goes up whenever the map picture changes after it's drawn (rubble, scorch marks, edits). */
+    volatile int renderVersion;
+
+    private long tileSeed(int x, int y, int pass) {
+        return (x * 73856093L) ^ (y * 19349663L) ^ (pass * 83492791L) ^ (cfg.seed * 2654435761L);
+    }
+
+    /** True when drawing a close-up and this box (with room for shadows) is nowhere near it. */
+    private boolean offRegion(float x0, float y0, float x1, float y1) {
+        return regionOnly && (x1 < rwx0 - 90 || x0 > rwx1 + 30 || y1 < rwy0 - 90 || y0 > rwy1 + 30);
+    }
+
+    /**
+     * A sharp close-up of part of the map: the square from (wx0, wy0), size world units across, drawn at res
+     * pixels per world unit, exactly as the whole map is drawn (just more finely).
+     */
+    synchronized Bitmap renderRegion(float wx0, float wy0, float size, float res) {
+        int px = Math.max(1, Math.round(size * res));
+        Bitmap out = Bitmap.createBitmap(px, px, Bitmap.Config.RGB_565);
+        Canvas c = new Canvas(out);
+        c.scale(res, res);
+        c.translate(-wx0, -wy0);
+        c.clipRect(wx0, wy0, wx0 + size, wy0 + size);
+        regionOnly = true;
+        rwx0 = wx0;
+        rwy0 = wy0;
+        rwx1 = wx0 + size;
+        rwy1 = wy0 + size;
+        rx0 = Math.max(0, (int) (wx0 / T) - 3);
+        ry0 = Math.max(0, (int) (wy0 / T) - 3);
+        rx1 = Math.min(w, (int) ((wx0 + size) / T) + 3);
+        ry1 = Math.min(h, (int) ((wy0 + size) / T) + 3);
+        try {
+            render(c);
+            for (Building b : buildings) if (b.collapsed && !offRegion(b.x0, b.y0, b.x1, b.y1)) drawRubble(c, b);
+            for (int[] t : charred) charTile(c, t[0], t[1]);
+        } finally {
+            regionOnly = false;
+        }
+        return out;
+    }
+
     /** Draws (or redraws, after the Graphics setting changes) the ground bitmap. */
-    void redraw() {
+    synchronized void redraw() {
+        renderVersion++;
         trees.clear();
         computeJunctions();
         Canvas canvas = new Canvas(bitmap);
@@ -867,7 +919,7 @@ final class City {
                 float cx = (b[0] + b[2]) / 2f * T, cy = (b[1] + b[3]) / 2f * T;
                 boolean near = false;
                 for (Facility f : facilities)
-                    if ((f.kind == FACILITY_POLICE && Math.hypot(f.x - cx, f.y - cy) < w * T / 3f)
+                    if ((f.kind == FACILITY_POLICE && Math.hypot(f.x - cx, f.y - cy) < w * T / (cfg.policeStations() > 3 ? 4.5f : 3f))
                             || Math.hypot(f.x - cx, f.y - cy) < Math.max(20, w / 6f) * T) near = true;
                 if (!near) options.add(k);
             }
@@ -1027,7 +1079,7 @@ final class City {
 
         if (railY0 >= 0)
             for (int x = 0; x < w; x++) {
-                if (tiles[railY0 * w + x] != ROAD) continue;
+                if (tiles[railY0 * w + x] != ROAD || underRailBridge(x)) continue;
                 int x0 = x;
                 while (x < w && tiles[railY0 * w + x] == ROAD) x++;
                 crossings.add(new int[]{x0, x});
@@ -1979,11 +2031,11 @@ final class City {
             for (int a = 0; a < 7; a++) {
                 int x = ew ? k : at + a, y = ew ? at + a : k;
                 int i = y * w + x;
-                boolean rail = tiles[i] == RAIL;
-                tiles[i] = a == 3 && !rail ? FENCE : ROAD;
+                // (The railway crosses on a bridge: the highway carries on underneath, a pier in the middle.)
+                tiles[i] = a == 3 ? FENCE : ROAD;
                 roadDir[i] = (byte) (ew ? 2 : 1);
                 mainRoad[i] = true;
-                if (a == 3 || rail) continue;
+                if (a == 3) continue;
                 // Keeping right, the first carriageway (north, or west) carries traffic west (or south).
                 boolean firstSide = a < 3, neg = firstSide != country.leftHand;
                 oneWay[i] = (byte) (ew ? (neg ? 2 : 1) : (neg ? 3 : 4));
@@ -2050,6 +2102,17 @@ final class City {
             }
             hwyExits.add(new int[]{cnd[0], cnd[1], side});
         }
+    }
+
+    /** Whether this column of the railway is the bridge over the highway (no level crossing there). */
+    boolean underRailBridge(int tx) {
+        return railY0 >= 0 && hwyAxis == 1 && tx >= hwyAt - 1 && tx <= hwyAt + 7;
+    }
+
+    boolean underRailBridge(float x, float y) {
+        if (!underRailBridge((int) (x / T))) return false;
+        float ry = (railY0 + railRows / 2f) * T;
+        return Math.abs(y - ry) < (railRows / 2f + 3) * T;
     }
 
     /** Whether a car may go (dx, dy) on tile i. */
@@ -2633,6 +2696,11 @@ final class City {
     private void drawRubble(Building b) {
         Canvas c = new Canvas(bitmap);
         if (detail != 1f) c.scale(detail, detail);
+        drawRubble(c, b);
+        renderVersion++;
+    }
+
+    private void drawRubble(Canvas c, Building b) {
         Paint p = new Paint();
         p.setAntiAlias(true);
         Random r = new Random(b.seed * 31L + 7);
@@ -2664,6 +2732,15 @@ final class City {
     void charTile(int tx, int ty) {
         Canvas c = new Canvas(bitmap);
         if (detail != 1f) c.scale(detail, detail);
+        charred.add(new int[]{tx, ty});
+        charTile(c, tx, ty);
+        renderVersion++;
+    }
+
+    /** Burnt-out cars scorched into the map, so a close-up picture of the area shows them too. */
+    private final List<int[]> charred = new ArrayList<int[]>();
+
+    private void charTile(Canvas c, int tx, int ty) {
         Paint p = new Paint();
         p.setAntiAlias(true);
         float cx = tx * T + T / 2f, cy = ty * T + T / 2f;
@@ -2717,9 +2794,11 @@ final class City {
         Paint p = new Paint();
         p.setAntiAlias(true);
         c.drawColor(0xFF1B1C1F);
+        // (Drawing just one region of the map, at a higher resolution: only the tiles in and around it.)
+        int X0 = regionOnly ? rx0 : 0, Y0 = regionOnly ? ry0 : 0, X1 = regionOnly ? rx1 : w, Y1 = regionOnly ? ry1 : h;
 
-        for (int y = 0; y < h; y++) {
-            for (int x = 0; x < w; x++) {
+        for (int y = Y0; y < Y1; y++) {
+            for (int x = X0; x < X1; x++) {
                 byte t = tiles[y * w + x];
                 int col;
                 boolean real = drawnRealistic;
@@ -2743,13 +2822,15 @@ final class City {
 
         // Ground texture.
         p.setStrokeWidth(1f);
-        for (int y = 0; y < h; y++) {
-            for (int x = 0; x < w; x++) {
+        for (int y = Y0; y < Y1; y++) {
+            for (int x = X0; x < X1; x++) {
                 byte t = tiles[y * w + x];
                 float fx = x * T, fy = y * T;
+                // Each tile's own randomness, so it looks the same however much of the map is drawn.
+                prnd.setSeed(tileSeed(x, y, 1));
                 if (t == SIDEWALK) {
                     // Paving slabs, a few of them newer or stained.
-                    float roll = rnd.nextFloat();
+                    float roll = prnd.nextFloat();
                     if (roll < 0.08f) {
                         p.setColor(roll < 0.04f ? 0xFF999791 : 0xFF84827C);
                         c.drawRect(fx + (roll < 0.06f ? 0 : T / 2f), fy, fx + (roll < 0.06f ? T / 2f : T), fy + T, p);
@@ -2760,21 +2841,21 @@ final class City {
                     c.drawLine(fx + T / 2f, fy, fx + T / 2f, fy + T, p);
                 } else if (t == GRASS || t == TREE) {
                     for (int k = 0; k < 6; k++) {
-                        p.setColor(rnd.nextBoolean() ? 0xFF578A3F : 0xFF426B30);
-                        c.drawCircle(fx + rnd.nextFloat() * T, fy + rnd.nextFloat() * T, 0.9f, p);
+                        p.setColor(prnd.nextBoolean() ? 0xFF578A3F : 0xFF426B30);
+                        c.drawCircle(fx + prnd.nextFloat() * T, fy + prnd.nextFloat() * T, 0.9f, p);
                     }
                     // Tufts and the odd wildflower.
-                    if (rnd.nextFloat() < 0.35f) {
+                    if (prnd.nextFloat() < 0.35f) {
                         p.setColor(0xFF3A6128);
-                        float gx = fx + rnd.nextFloat() * T, gy = fy + rnd.nextFloat() * T;
+                        float gx = fx + prnd.nextFloat() * T, gy = fy + prnd.nextFloat() * T;
                         c.drawLine(gx, gy, gx - 1, gy - 2, p);
                         c.drawLine(gx, gy, gx + 1, gy - 2, p);
                     }
-                    if (rnd.nextFloat() < 0.05f) {
+                    if (prnd.nextFloat() < 0.05f) {
                         int[] flowers = {0xFFF2E86B, 0xFFF2F2F2, 0xFFE87BB0, 0xFFB08AE8};
-                        p.setColor(flowers[rnd.nextInt(flowers.length)]);
+                        p.setColor(flowers[prnd.nextInt(flowers.length)]);
                         for (int k = 0; k < 3; k++)
-                            c.drawCircle(fx + rnd.nextFloat() * T, fy + rnd.nextFloat() * T, 0.8f, p);
+                            c.drawCircle(fx + prnd.nextFloat() * T, fy + prnd.nextFloat() * T, 0.8f, p);
                     }
                 } else if (t == DIRT) {
                     // Packed earth: wheel ruts and pebbles.
@@ -2788,35 +2869,35 @@ final class City {
                         c.drawRect(fx, fy + 10, fx + T, fy + 12, p);
                     }
                     for (int k = 0; k < 4; k++) {
-                        p.setColor(rnd.nextBoolean() ? 0xFFA08A68 : 0xFF6E5A40);
-                        c.drawCircle(fx + rnd.nextFloat() * T, fy + rnd.nextFloat() * T, 0.7f, p);
+                        p.setColor(prnd.nextBoolean() ? 0xFFA08A68 : 0xFF6E5A40);
+                        c.drawCircle(fx + prnd.nextFloat() * T, fy + prnd.nextFloat() * T, 0.7f, p);
                     }
                 } else if (t == PLAZA) {
                     p.setColor(0xFFA29376);
                     c.drawLine(fx, fy, fx + T, fy, p);
                     c.drawLine(fx, fy, fx, fy + T, p);
                 } else if (t == ROAD || t == CAR) {
-                    if (rnd.nextFloat() < 0.25f) {
+                    if (prnd.nextFloat() < 0.25f) {
                         p.setColor(0x22000000);
-                        c.drawCircle(fx + rnd.nextFloat() * T, fy + rnd.nextFloat() * T, 1 + rnd.nextFloat() * 3, p);
+                        c.drawCircle(fx + prnd.nextFloat() * T, fy + prnd.nextFloat() * T, 1 + prnd.nextFloat() * 3, p);
                     }
-                    float roll = rnd.nextFloat();
+                    float roll = prnd.nextFloat();
                     if (roll < 0.03f) {
                         // Patched asphalt.
                         p.setColor(0xFF33363B);
-                        float pw = 5 + rnd.nextFloat() * 8, ph = 4 + rnd.nextFloat() * 6;
-                        float px = fx + rnd.nextFloat() * (T - pw), py = fy + rnd.nextFloat() * (T - ph);
+                        float pw = 5 + prnd.nextFloat() * 8, ph = 4 + prnd.nextFloat() * 6;
+                        float px = fx + prnd.nextFloat() * (T - pw), py = fy + prnd.nextFloat() * (T - ph);
                         c.drawRect(px, py, px + pw, py + ph, p);
                     } else if (roll < 0.07f) {
                         // Cracks.
                         p.setColor(0xFF2A2C30);
-                        float cx0 = fx + rnd.nextFloat() * T, cy0 = fy + rnd.nextFloat() * T;
-                        float cx1 = cx0 + rnd.nextFloat() * 8 - 4, cy1 = cy0 + rnd.nextFloat() * 8 - 4;
+                        float cx0 = fx + prnd.nextFloat() * T, cy0 = fy + prnd.nextFloat() * T;
+                        float cx1 = cx0 + prnd.nextFloat() * 8 - 4, cy1 = cy0 + prnd.nextFloat() * 8 - 4;
                         c.drawLine(cx0, cy0, cx1, cy1, p);
-                        c.drawLine(cx1, cy1, cx1 + rnd.nextFloat() * 6 - 3, cy1 + rnd.nextFloat() * 6 - 3, p);
+                        c.drawLine(cx1, cy1, cx1 + prnd.nextFloat() * 6 - 3, cy1 + prnd.nextFloat() * 6 - 3, p);
                     } else if (roll < 0.085f && t == ROAD) {
                         // Manhole cover.
-                        float mx = fx + 4 + rnd.nextFloat() * (T - 8), my = fy + 4 + rnd.nextFloat() * (T - 8);
+                        float mx = fx + 4 + prnd.nextFloat() * (T - 8), my = fy + 4 + prnd.nextFloat() * (T - 8);
                         p.setColor(0xFF26282B);
                         c.drawCircle(mx, my, 2.6f, p);
                         p.setColor(0xFF4A4C50);
@@ -2851,7 +2932,7 @@ final class City {
         }
         p.setStyle(Paint.Style.FILL);
 
-        for (float[] d : decor) drawDecor(c, p, d);
+        for (float[] d : decor) if (!offRegion(d[1], d[2], d[3], d[4])) drawDecor(c, p, d);
 
         // Building shadows (longer for taller buildings), then roofs. The roof art is drawn at the
         // footprint and GameView lifts it to the building's height.
@@ -2859,6 +2940,7 @@ final class City {
         if (drawnRealistic) {
             // Soft light: ambient darkening hugging each building, and a pale penumbra past the shadow's edge.
             for (Building b : buildings) {
+                if (offRegion(b.x0, b.y0, b.x1, b.y1)) continue;
                 for (int k = 3; k >= 1; k--) {
                     p.setColor(0x16000000);
                     c.drawRect(b.x0 - k * 1.6f, b.y0 - k * 1.6f, b.x1 + k * 1.6f, b.y1 + k * 1.6f, p);
@@ -2878,6 +2960,7 @@ final class City {
         }
         p.setColor(drawnRealistic ? 0x46000000 : 0x50000000);
         for (Building b : buildings) {
+            if (offRegion(b.x0, b.y0, b.x1, b.y1)) continue;
             float sx = b.height * 0.28f, sy = b.height * 0.38f;
             shadow.reset();
             shadow.moveTo(b.x0, b.y0);
@@ -2889,8 +2972,9 @@ final class City {
             shadow.close();
             c.drawPath(shadow, p);
         }
-        for (int[] b : buildingLots) drawBuilding(c, p, b);
-        if (drawnRealistic) for (int[] b : buildingLots) weatherRoof(c, p, b);
+        for (int[] b : buildingLots) if (!offRegion(b[0] * T, b[1] * T, (b[0] + b[2]) * T, (b[1] + b[3]) * T)) drawBuilding(c, p, b);
+        if (drawnRealistic)
+            for (int[] b : buildingLots) if (!offRegion(b[0] * T, b[1] * T, (b[0] + b[2]) * T, (b[1] + b[3]) * T)) weatherRoof(c, p, b);
 
         for (int[] f : statues) {
             // A statue on a stepped stone plinth.
@@ -2907,8 +2991,8 @@ final class City {
             c.drawCircle(cx - 1.2f, cy - 1.2f, 2.6f, p);
         }
 
-        for (int y = 0; y < h; y++)
-            for (int x = 0; x < w; x++)
+        for (int y = Y0; y < Y1; y++)
+            for (int x = X0; x < X1; x++)
                 if (tiles[y * w + x] == CAR) drawCar(c, p, x, y);
 
         for (float[] pu : pumps) {
@@ -2944,22 +3028,23 @@ final class City {
             c.drawCircle(l[0], l[1], 1.1f, p);
         }
 
-        for (int y = 0; y < h; y++)
-            for (int x = 0; x < w; x++)
+        for (int y = Y0; y < Y1; y++)
+            for (int x = X0; x < X1; x++)
                 if (tiles[y * w + x] == TREE) {
                     float cx = x * T + T / 2f, cy = y * T + T / 2f;
-                    float r = 7.5f + rnd.nextFloat() * 2f;
+                    prnd.setSeed(tileSeed(x, y, 2));
+                    float r = 7.5f + prnd.nextFloat() * 2f;
                     p.setColor(0x50000000);
                     c.drawCircle(cx + TREE_HEIGHT * 0.28f, cy + TREE_HEIGHT * 0.38f, r, p);
                     p.setColor(0xFF4A3524);
                     c.drawCircle(cx, cy, 2f, p);
-                    trees.add(new float[]{cx, cy, r});
+                    if (!regionOnly) trees.add(new float[]{cx, cy, r});
                 }
 
         // Street trees along the pavement, their canopies over people's heads.
         if (cfg.parks() > 0)
-            for (int y = 1; y < h - 1; y++)
-                for (int x = 1; x < w - 1; x++) {
+            for (int y = Math.max(1, Y0); y < Math.min(h - 1, Y1); y++)
+                for (int x = Math.max(1, X0); x < Math.min(w - 1, X1); x++) {
                     if (tiles[y * w + x] != SIDEWALK || ((x * 7 + y * 13) % (cfg.parks() >= 2 ? 5 : 8)) != 0) continue;
                     boolean nextToRoad = tiles[y * w + x - 1] == ROAD || tiles[y * w + x + 1] == ROAD
                             || tiles[(y - 1) * w + x] == ROAD || tiles[(y + 1) * w + x] == ROAD;
@@ -2974,7 +3059,7 @@ final class City {
                     c.drawRect(cx - 3.5f, cy - 3.5f, cx + 3.5f, cy + 3.5f, p);
                     p.setColor(0xFF4A3524);
                     c.drawCircle(cx, cy, 1.6f, p);
-                    trees.add(new float[]{cx, cy, r});
+                    if (!regionOnly) trees.add(new float[]{cx, cy, r});
                 }
     }
 
@@ -3662,15 +3747,16 @@ final class City {
     private void drawRail(Canvas c, Paint p) {
         if (railY0 < 0) return;
         float y0 = railY0 * T, y1 = (railY0 + railRows) * T, cy = (y0 + y1) / 2;
-        for (int x = 0; x < w; x++) {
+        for (int x = regionOnly ? rx0 : 0; x < (regionOnly ? rx1 : w); x++) {
+            prnd.setSeed(tileSeed(x, 0, 4));
             float fx = x * T;
             boolean crossing = tiles[railY0 * w + x] == ROAD;
             if (!crossing) {
                 p.setColor(0xFF6E665C);
                 c.drawRect(fx, y0 + 6, fx + T, y1 - 6, p);
                 for (int k = 0; k < 10; k++) {
-                    p.setColor(rnd.nextBoolean() ? 0xFF7E766A : 0xFF5E574E);
-                    c.drawCircle(fx + rnd.nextFloat() * T, y0 + 6 + rnd.nextFloat() * (y1 - y0 - 12), 0.8f, p);
+                    p.setColor(prnd.nextBoolean() ? 0xFF7E766A : 0xFF5E574E);
+                    c.drawCircle(fx + prnd.nextFloat() * T, y0 + 6 + prnd.nextFloat() * (y1 - y0 - 12), 0.8f, p);
                 }
                 p.setColor(0xFF4A3A2C);
                 for (float sx = fx + 1; sx < fx + T; sx += 4) c.drawRect(sx, cy - 8, sx + 2, cy + 8, p);
@@ -3731,8 +3817,9 @@ final class City {
 
     /** Benches, bins, fire hydrants, bus stops and traffic lights along the pavements. */
     private void drawStreetFurniture(Canvas c, Paint p) {
-        for (int y = 1; y < h - 1; y++)
-            for (int x = 1; x < w - 1; x++) {
+        for (int y = Math.max(1, regionOnly ? ry0 : 0); y < Math.min(h - 1, regionOnly ? ry1 : h); y++)
+            for (int x = Math.max(1, regionOnly ? rx0 : 0); x < Math.min(w - 1, regionOnly ? rx1 : w); x++) {
+                prnd.setSeed(tileSeed(x, y, 5));
                 if (tiles[y * w + x] != SIDEWALK) continue;
                 // Which side faces the road?
                 int dx = 0, dy = 0;
@@ -3743,7 +3830,7 @@ final class City {
                 if (dx == 0 && dy == 0) continue;
                 boolean corner = (paved(x - 1, y) || paved(x + 1, y)) && (paved(x, y - 1) || paved(x, y + 1));
                 float cx = x * T + T / 2f + dx * 5, cy = y * T + T / 2f + dy * 5;
-                float roll = rnd.nextFloat();
+                float roll = prnd.nextFloat();
                 if (corner) {
                     if (roll < 0.35f && onMainRoad(x - 2, y - 2, x + 2, y + 2)) {
                         // Traffic light.
@@ -4504,6 +4591,7 @@ final class City {
     }
 
     private void drawCar(Canvas c, Paint p, int x, int y) {
+        prnd.setSeed(tileSeed(x, y, 3));
         boolean vertical;
         if (isLotCar(x, y)) vertical = true;
         else vertical = roadDir[y * w + x] == 1;
@@ -4514,7 +4602,7 @@ final class City {
         RectF rect = vertical ? new RectF(cx - hw, cy - hl, cx + hw, cy + hl) : new RectF(cx - hl, cy - hw, cx + hl, cy + hw);
         if (kind == 4) vertical = true;
         int color = kind == 4 ? 0xFFC8302A : kind == 1 ? 0xFF1C1D22 : kind == 2 ? 0xFF4F5A33 : kind == 3 ? 0xFFF2F2F2
-                : CAR_COLORS[rnd.nextInt(CAR_COLORS.length)];
+                : CAR_COLORS[prnd.nextInt(CAR_COLORS.length)];
         p.setColor(0x55000000);
         rect.offset(1.5f, 1.5f);
         c.drawRoundRect(rect, 2.5f, 2.5f, p);

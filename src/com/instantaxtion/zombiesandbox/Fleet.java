@@ -136,6 +136,8 @@ final class Fleet {
         boolean fleeing;
         /** Through traffic on the highway: leaves the map at the far end. */
         boolean through;
+        /** After failing to find somewhere to go (or a way out), a while before trying again: routes are costly. */
+        float destCd, fleeCd;
 
         float length() {
             return type == TANK ? 11f : type == TRUCK || type == FIRE_ENGINE || type == AMBULANCE ? 9.5f
@@ -292,6 +294,15 @@ final class Fleet {
     }
 
     private boolean newDestination(Vehicle v) {
+        if (v.destCd > 0) return false;
+        boolean ok = pickDestination(v);
+        if (!ok) v.destCd = 2 + w.rnd.nextFloat() * 2;
+        return ok;
+    }
+
+    private boolean pickDestination(Vehicle v) {
+        // (At most a few full route searches each time.)
+        int routes = 0;
         // Highway patrol keeps to the highway, sheriffs to the country roads.
         if (v.patrol && v.agency > 0 && v.state == PATROL)
             for (int tries = 0; tries < 12; tries++) {
@@ -312,7 +323,10 @@ final class Fleet {
                 }
                 // (Sheriffs keep to their own patch of country rather than crossing town.)
                 if (d != null && v.agency == 2 && tries < 10 && Math.hypot(d[0] - v.x, d[1] - v.y) > 1400) continue;
-                if (d != null && Math.hypot(d[0] - v.x, d[1] - v.y) > 300 && route(v, d[0], d[1])) return true;
+                if (d != null && Math.hypot(d[0] - v.x, d[1] - v.y) > 300) {
+                    if (route(v, d[0], d[1])) return true;
+                    if (++routes >= 3) break;
+                }
             }
         for (int tries = 0; tries < 12; tries++) {
             float[] d = randomRoad();
@@ -321,11 +335,12 @@ final class Fleet {
             float hx = (float) Math.cos(v.angle), hy = (float) Math.sin(v.angle);
             if (tries < 8 && (d[0] - v.x) * hx + (d[1] - v.y) * hy < 0) continue;
             if (route(v, d[0], d[1])) {
-                if (tries >= 3 || v.type != CAR) return true;
+                if (tries >= 3 || v.type != CAR || routes >= 2) return true;
                 // And the way there starts ahead too (not a U-turn across the lanes).
                 int t = city.tileIndex(v.x, v.y), n = downhill(v.field, t);
                 if (n == t || (n % city.w - t % city.w) * hx + (n / city.w - t / city.w) * hy > -0.5f) return true;
             }
+            if (++routes >= 4) break;
         }
         return false;
     }
@@ -882,6 +897,7 @@ final class Fleet {
             }
             v.anim += dt;
             v.soundCd -= dt;
+            v.destCd -= dt;
             v.crashCd -= dt;
             boolean done;
             if (v.player != null) done = updatePlayerVehicle(v, dt);
@@ -1386,7 +1402,9 @@ final class Fleet {
         }
         v.timer += dt;
         // Everyone knows: drop the errand and get out of town.
-        if (w.alert >= 2 && !v.fleeing && !v.rescue && v.player == null) {
+        v.fleeCd -= dt;
+        if (w.alert >= 2 && !v.fleeing && !v.rescue && v.player == null && v.fleeCd <= 0) {
+            v.fleeCd = 4 + w.rnd.nextFloat() * 3;
             float[] exit = exitNear(v.x, v.y);
             if (exit != null && route(v, exit[0], exit[1])) v.fleeing = true;
         }
@@ -1422,13 +1440,14 @@ final class Fleet {
                     pullOver(v);
                     return false;
                 }
-                if (!newDestination(v)) v.stuckTimer = 99;
+                // (Nowhere yet: wait a moment and look again before giving up.)
+                if (!newDestination(v)) v.stuckTimer = Math.max(v.stuckTimer, 5);
             } else {
                 hit(v, w.runOver(v.x, v.y, 8, v.speed, v.angle));
                 if (v.broken) return false;
             }
         }
-        if (v.stuckTimer > 8 && !zombiesClose) {
+        if (v.stuckTimer > 8 && !zombiesClose && v.destCd <= 0) {
             v.stuckTimer = 0;
             if (!newDestination(v)) {
                 if (!inView(v.x, v.y)) {

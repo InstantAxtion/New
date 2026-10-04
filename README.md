@@ -131,6 +131,8 @@ on the phone, so the APK contains no audio files.
   fire stations.
 - **A sharp map up close**: zoomed in, the area on screen is drawn again in fine detail in the background
   and laid over the map picture.
+- **Loading**: cities are built (and saved games loaded) in the background behind a "Building the city"
+  screen; each car keeps only its route's corridor, so even a Massive city fits comfortably in a phone's memory.
 - **Safe driving**: cars keep a safe distance and brake in time, wait at green lights for traffic still
   crossing, and keep to their own lane (police included, lights on or not); emergency vehicles slow down
   through junctions. Massive maps are nearly all town, with a thin band of country and a frontage road

@@ -2,11 +2,18 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "9.4";
-    static final int VERSION_CODE = 34;
+    static final String VERSION = "9.5";
+    static final int VERSION_CODE = 35;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "9.5  -  No more crashing at the start",
+                    "Fixed the game crashing when creating a city: big maps ran the phone out of memory, because every car kept a route map the size of the whole city. Routes now keep just the way there, and a Massive city needs about a third of the memory it did.",
+                    "The city is built in the background with a \"Building the city\" screen, instead of freezing the app until Android gave up on it. Saved games load the same way.",
+                    "If a city still can't be built (or a save loaded), the game says so and carries on instead of closing.",
+                    "The game may use more of the phone's memory when it needs to.",
+            },
             {
                     "9.4  -  Safer roads, fuller maps",
                     "Police keep to their own side of the road: patrol cars no longer turn round across the traffic for each new beat, and cars with their lights on keep to their lane and slow down for corners instead of swinging into the oncoming lane.",

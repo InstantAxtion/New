@@ -290,21 +290,10 @@ final class GameView extends View implements Menu.Host {
 
     @Override
     public boolean loadSlot(int slot) {
-        try {
-            world = SaveGame.load(slotFile(slot));
-        } catch (Exception e) {
-            return false;
-        }
-        applySettings();
-        hasGame = true;
-        follow = null;
-        selection.clear();
-        inspectB = null;
-        lastAction.clear();
-        tool = TOOL_PAN;
-        lastMessageCount = world.dispatch.messageCount;
-        centerCamera();
-        menu.screen = Menu.NONE;
+        java.io.File f = slotFile(slot);
+        if (!f.exists()) return false;
+        // (Loaded on the loader thread; if it fails the screen says so.)
+        loadSave(f);
         return true;
     }
 
@@ -361,22 +350,9 @@ final class GameView extends View implements Menu.Host {
     @Override
     public void continueGame() {
         if (!hasGame && menu.screen == Menu.MAIN) {
-            // Pick up the saved game.
-            try {
-                world = SaveGame.load(saveFile());
-                applySettings();
-                hasGame = true;
-                follow = null;
-                selection.clear();
-                tool = TOOL_PAN;
-                lastMessageCount = world.dispatch.messageCount;
-                centerCamera();
-                menu.screen = Menu.NONE;
-                return;
-            } catch (Exception e) {
-                saveFile().delete();
-                return;
-            }
+            // Pick up the saved game (on the loader thread).
+            if (saveFile().exists()) loadSave(saveFile());
+            return;
         }
         if (menu.screen == Menu.MAIN) {
             camX = savedCamX;
@@ -386,11 +362,106 @@ final class GameView extends View implements Menu.Host {
         menu.screen = Menu.NONE;
     }
 
+    /**
+     * A new city is built on a thread of its own (a massive one takes a while on a phone, and doing it on the
+     * screen's thread froze the app until Android gave up on it); meanwhile the screen says so.
+     */
+    private volatile World built;
+    private volatile Throwable buildError;
+    private Thread loader;
+    private boolean loading;
+    private float loadingTime;
+    private String loadFailed;
+    private float loadFailedTime;
+
+    /** What the loader is doing: a new city, or a saved game (and which file). */
+    private boolean loadingSave;
+    private java.io.File loadingFile;
+
     @Override
-    public void startGame(CityConfig cfg) {
+    public void startGame(final CityConfig cfg) {
+        final int maxPop = settings.maxPopulation();
+        final boolean gore = settings.gore();
+        startLoader(false, null, new Runnable() {
+            @Override
+            public void run() {
+                World w = new World(cfg);
+                w.setMaxPopulation(maxPop);
+                w.gore = gore;
+                w.populate(cfg);
+                built = w;
+            }
+        });
+    }
+
+    /** Loads a saved game on the loader thread. */
+    private void loadSave(final java.io.File f) {
+        startLoader(true, f, new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    built = SaveGame.load(f);
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                }
+            }
+        });
+    }
+
+    private void startLoader(boolean save, java.io.File f, final Runnable job) {
+        if (loading) return;
+        loading = true;
+        loadingSave = save;
+        loadingFile = f;
+        loadingTime = 0;
+        built = null;
+        buildError = null;
+        loader = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    job.run();
+                } catch (Throwable e) {
+                    buildError = e;
+                }
+            }
+        }, "city builder");
+        loader.start();
+        invalidate();
+    }
+
+    /** A saved game is ready: into it. */
+    private void finishLoad() {
+        world = built;
+        built = null;
+        loading = false;
+        applySettings();
+        hasGame = true;
+        follow = null;
+        selection.clear();
+        inspectB = null;
+        lastAction.clear();
+        tool = TOOL_PAN;
+        lastMessageCount = world.dispatch.messageCount;
+        centerCamera();
+        menu.screen = Menu.NONE;
+    }
+
+    /** Waits for a city being built (for the tests). */
+    void awaitLoad() throws InterruptedException {
+        if (loader != null) loader.join();
+    }
+
+    /** The city is ready: into the game. */
+    private void finishStart() {
+        world = built;
+        built = null;
+        loading = false;
+        follow = null;
+        inspectB = null;
+        if (getWidth() > 0) centerCamera();
         records.gameStarted();
         autoCollapsed = false;
-        loadWorld(cfg);
         applySettings();
         hasGame = true;
         selection.clear();
@@ -428,6 +499,7 @@ final class GameView extends View implements Menu.Host {
 
     /** System back button. Returns false when the app should close. */
     boolean onBack() {
+        if (loading) return true;
         boolean handled = menu.back();
         if (handled) click();
         return handled;
@@ -521,6 +593,30 @@ final class GameView extends View implements Menu.Host {
         float rawDt = (now - lastFrame) / 1e9f;
         float dt = Math.min(0.05f, rawDt);
         lastFrame = now;
+        if (loading) {
+            loadingTime += dt;
+            if (built != null) {
+                if (loadingSave) finishLoad();
+                else finishStart();
+            } else if (buildError != null) {
+                loading = false;
+                boolean oom = buildError instanceof OutOfMemoryError;
+                if (loadingSave) {
+                    loadFailed = oom ? "Not enough memory to load that game on this phone." : "That save couldn't be loaded.";
+                    // (A broken autosave goes, so Continue doesn't keep failing; one too big for memory stays.)
+                    if (!oom && loadingFile != null && loadingFile.equals(saveFile())) loadingFile.delete();
+                } else loadFailed = oom
+                        ? "Not enough memory for a city that big on this phone. Try a smaller map size."
+                        : "Couldn't build that city (" + buildError.getClass().getSimpleName() + "). Try another.";
+                loadFailedTime = 6;
+                buildError = null;
+                System.gc();
+            } else {
+                drawLoading(c);
+                if (running) postInvalidateOnAnimation();
+                return;
+            }
+        }
         fpsFrames++;
         fpsTimer += rawDt;
         if (fpsTimer >= 0.5f) {
@@ -603,6 +699,11 @@ final class GameView extends View implements Menu.Host {
         drawWorld(c);
         if (menu.isOpen()) menu.draw(c, getWidth(), getHeight(), dt);
         else if (!hudHidden) drawUi(c);
+        if (loadFailed != null) {
+            loadFailedTime -= dt;
+            if (loadFailedTime <= 0) loadFailed = null;
+            else drawBanner(c, loadFailed);
+        }
         if (settings.showFps()) {
             text.setTextSize(12 * dp);
             text.setTextAlign(Paint.Align.RIGHT);
@@ -614,6 +715,39 @@ final class GameView extends View implements Menu.Host {
             if (!settings.batterySaver()) postInvalidateOnAnimation();
             else postInvalidateDelayed(simPaused && !menu.isOpen() || menu.screen == Menu.PAUSE ? 100 : 33);
         }
+    }
+
+    /** "Building the city", over a dark screen, with a little spinner. */
+    private void drawLoading(Canvas c) {
+        c.drawColor(0xFF15171B);
+        float cx = getWidth() / 2f, cy = getHeight() / 2f;
+        text.setTextAlign(Paint.Align.CENTER);
+        text.setTextSize(20 * dp);
+        text.setColor(0xFFE8E8E8);
+        c.drawText("Building the city…", cx, cy - 18 * dp, text);
+        text.setTextSize(13 * dp);
+        text.setColor(0xFF9AA0A8);
+        c.drawText("Streets, homes, traffic and everyone in them", cx, cy + 8 * dp, text);
+        fill.setStyle(Paint.Style.FILL);
+        for (int k = 0; k < 8; k++) {
+            double a = loadingTime * 5 + k * Math.PI / 4;
+            int alpha = 60 + (int) (195 * ((k + (int) (loadingTime * 8)) % 8) / 7f);
+            fill.setColor((Math.min(255, alpha) << 24) | 0x9BE070);
+            c.drawCircle(cx + (float) Math.cos(a) * 14 * dp, cy + 44 * dp + (float) Math.sin(a) * 14 * dp, 3 * dp, fill);
+        }
+    }
+
+    /** A message across the bottom of the screen. */
+    private void drawBanner(Canvas c, String msg) {
+        text.setTextSize(14 * dp);
+        text.setTextAlign(Paint.Align.CENTER);
+        float tw = Math.min(getWidth() - 24 * dp, text.measureText(msg) + 32 * dp);
+        float y = getHeight() - 70 * dp;
+        fill.setStyle(Paint.Style.FILL);
+        fill.setColor(0xEE3A1E1E);
+        c.drawRoundRect(new RectF(getWidth() / 2f - tw / 2, y - 26 * dp, getWidth() / 2f + tw / 2, y + 12 * dp), 10 * dp, 10 * dp, fill);
+        text.setColor(0xFFFFE0E0);
+        c.drawText(msg, getWidth() / 2f, y, text);
     }
 
     // ------------------------------------------------------------------ music, director cam, minimap
@@ -4565,6 +4699,7 @@ final class GameView extends View implements Menu.Host {
 
     @Override
     public boolean onTouchEvent(MotionEvent ev) {
+        if (loading) return true;
         if (hudHidden && !menu.isOpen()) {
             // The first tap brings the buttons back.
             if (ev.getActionMasked() == MotionEvent.ACTION_UP) hudHidden = false;

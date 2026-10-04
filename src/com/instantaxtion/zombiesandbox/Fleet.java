@@ -42,7 +42,7 @@ final class Fleet {
         int model;
         /** The tile of its route it is driving along, and the route that belongs to. */
         int pathT = -1;
-        int[] pathField;
+        Route pathField;
         /** At junctions: the one it has been let through, the one it is waiting at and for how long. */
         int clearedJ = -1, waitJ = -1;
         float waitT;
@@ -53,7 +53,7 @@ final class Fleet {
         /** Rounds fired by the door gunner (it fires in short bursts). */
         int burst;
         float tx, ty, homeX, homeY;
-        int[] field;
+        Route field;
         int passengerType, passengers;
         Dispatch.Incident incident;
         Dispatch.SafeZone zone;
@@ -140,7 +140,7 @@ final class Fleet {
         /** Through traffic on the highway: leaves the map at the far end. */
         boolean through;
         /** After failing to find somewhere to go (or a way out), a while before trying again: routes are costly. */
-        float destCd, fleeCd;
+        float destCd, fleeCd, rerouteCd;
 
         float length() {
             return type == TANK ? 11f : type == TRUCK || type == FIRE_ENGINE || type == AMBULANCE ? 9.5f
@@ -282,6 +282,105 @@ final class Fleet {
         return null;
     }
 
+    /**
+     * A vehicle's route, kept compact: the distance to go on each tile of a corridor three tiles either side of
+     * the way from where it set off (everything else is off the route). A whole-map field per car took most of
+     * a phone's memory on the big maps.
+     */
+    static final class Route {
+        private int[] keys, vals;
+        private int mask, size;
+
+        Route(int entries) {
+            int n = 16;
+            while (n < entries * 2) n <<= 1;
+            keys = new int[n];
+            vals = new int[n];
+            java.util.Arrays.fill(keys, -1);
+            mask = n - 1;
+        }
+
+        private void grow() {
+            int[] ok = keys, ov = vals;
+            keys = new int[ok.length * 2];
+            vals = new int[ok.length * 2];
+            java.util.Arrays.fill(keys, -1);
+            mask = keys.length - 1;
+            size = 0;
+            for (int i = 0; i < ok.length; i++) if (ok[i] != -1) put(ok[i], ov[i]);
+        }
+
+        private int slot(int k) {
+            int h = k * 0x9E3779B1;
+            return (h ^ (h >>> 15)) & mask;
+        }
+
+        void put(int k, int v) {
+            if ((size + 1) * 2 > keys.length) grow();
+            int i = slot(k);
+            while (keys[i] != -1 && keys[i] != k) i = (i + 1) & mask;
+            if (keys[i] == -1) size++;
+            keys[i] = k;
+            vals[i] = v;
+        }
+
+        int get(int k) {
+            int i = slot(k);
+            while (true) {
+                int key = keys[i];
+                if (key == k) return vals[i];
+                if (key == -1) return City.FAR;
+                i = (i + 1) & mask;
+            }
+        }
+    }
+
+    /** One whole-map buffer the route searches share. */
+    private int[] scratch;
+
+    private int[] scratchField() {
+        if (scratch == null || scratch.length != city.w * city.h) scratch = new int[city.w * city.h];
+        return scratch;
+    }
+
+    /** The corridor along the way down a full field from (x, y). */
+    private Route corridor(int[] field, float x, float y) {
+        int W = city.w, H = city.h, ti = city.tileIndex(x, y), tx0 = ti % W, ty0 = ti / W, t = ti, best = City.FAR;
+        // From its own tile if that's on the way (not the nearest low tile, which may be over the barrier on the
+        // other carriageway); otherwise from the best road beside it.
+        if (field[ti] >= City.FAR)
+            for (int j = ty0 - 2; j <= ty0 + 2; j++)
+                for (int i = tx0 - 2; i <= tx0 + 2; i++)
+                    if (i >= 0 && j >= 0 && i < W && j < H && field[j * W + i] < best) {
+                        best = field[j * W + i];
+                        t = j * W + i;
+                    }
+        int[] path = new int[64];
+        int n = 0;
+        path[n++] = ti;
+        for (int guard = 0; guard < W * H; guard++) {
+            if (n == path.length) path = java.util.Arrays.copyOf(path, n * 2);
+            path[n++] = t;
+            if (field[t] <= 4) break;
+            int next = downhillRaw(field, t);
+            if (next == t) break;
+            t = next;
+        }
+        Route r = new Route(n * 10 + 64);
+        for (int q = 0; q < n; q++) {
+            int px = path[q] % W, py = path[q] / W;
+            // (Along the highway, both carriageways and the verges: a car that ends up on the other side of the
+            // barrier must still know which way is on.)
+            int R = city.nearHighway((px + 0.5f) * City.T, (py + 0.5f) * City.T, 6 * City.T) ? 9 : 3;
+            for (int j = Math.max(0, py - R); j <= Math.min(H - 1, py + R); j++)
+                for (int i = Math.max(0, px - R); i <= Math.min(W - 1, px + R); i++) {
+                    int f = field[j * W + i];
+                    if (f < City.FAR) r.put(j * W + i, f);
+                }
+        }
+        return r;
+    }
+
     /** The route's distance at (x, y), or from the road right next to it. */
     private int nearField(int[] field, float x, float y) {
         int ti = city.tileIndex(x, y), tx = ti % city.w, ty = ti / city.w, best = City.FAR;
@@ -390,11 +489,11 @@ final class Fleet {
 
     /** Points the vehicle at a new goal. Returns false if it can't be reached by road. */
     private boolean route(Vehicle v, float x, float y) {
-        int[] field = new int[city.w * city.h];
+        int[] field = scratchField();
         // (Everyday traffic and patrol cars keep to the roads; emergencies cut across whatever's paved.)
         if (!city.driveField(field, x, y, v.type == CAR || (v.patrol && v.state != DRIVE)) || nearField(field, v.x, v.y) >= City.FAR)
             return false;
-        v.field = field;
+        v.field = corridor(field, v.x, v.y);
         v.tx = x;
         v.ty = y;
         v.lastDist = Float.MAX_VALUE;
@@ -438,8 +537,9 @@ final class Fleet {
                  Dispatch.SafeZone zone, String place) {
         float[] start = city.nearestDrivable(fromX, fromY);
         if (start == null) return false;
-        int[] field = new int[city.w * city.h];
-        if (!city.driveField(field, toX, toY) || field[city.tileIndex(start[0], start[1])] >= City.FAR) return false;
+        int[] full = scratchField();
+        if (!city.driveField(full, toX, toY) || full[city.tileIndex(start[0], start[1])] >= City.FAR) return false;
+        Route field = corridor(full, start[0], start[1]);
         boolean cops = unitType == Entity.COP;
         int cars = cops ? (count + 1) / 2 : 1;
         for (int i = 0; i < cars; i++) {
@@ -912,6 +1012,7 @@ final class Fleet {
             v.anim += dt;
             v.soundCd -= dt;
             v.destCd -= dt;
+            v.rerouteCd -= dt;
             v.crashCd -= dt;
             boolean done;
             if (v.player != null) done = updatePlayerVehicle(v, dt);
@@ -1208,7 +1309,27 @@ final class Fleet {
     }
 
     /** The next tile down a route from tile t (t itself at the end). */
-    private int downhill(int[] field, int t) {
+    private int downhill(Route field, int t) {
+        int W = city.w, tx = t % W, ty = t / W, here = field.get(t), best = Integer.MAX_VALUE, bt = t;
+        boolean inJ = city.junctionAt(tx, ty);
+        for (int k = 0; k < 4; k++) {
+            int nx = tx + (k == 0 ? 1 : k == 1 ? -1 : 0), ny = ty + (k == 2 ? 1 : k == 3 ? -1 : 0);
+            if (nx < 0 || ny < 0 || nx >= W || ny >= city.h) continue;
+            int d = field.get(ny * W + nx);
+            if (d >= here) continue;
+            // Downhill, but on a tie keep to the lane: a step across the road outside a junction only if
+            // it's really the shorter way.
+            int rd = city.roadDirAt(nx, ny);
+            if (!inJ && !city.junctionAt(nx, ny) && ((rd == 1 && k < 2) || (rd == 2 && k >= 2))) d += 14;
+            if (d < best) {
+                best = d;
+                bt = ny * W + nx;
+            }
+        }
+        return bt;
+    }
+
+    private int downhillRaw(int[] field, int t) {
         int W = city.w, tx = t % W, ty = t / W, here = field[t], best = Integer.MAX_VALUE, bt = t;
         boolean inJ = city.junctionAt(tx, ty);
         for (int k = 0; k < 4; k++) {
@@ -1425,34 +1546,49 @@ final class Fleet {
         max = Math.min(max, followLimit(v));
         int W = city.w;
         // Follow the route tile by tile (the "path tile"), and drive in the lane beside it.
-        if (v.pathField != v.field || v.pathT < 0 || v.field[v.pathT] >= City.FAR
+        if (v.pathField != v.field || v.pathT < 0 || v.field.get(v.pathT) >= City.FAR
                 || Math.hypot((v.pathT % W + 0.5f) * City.T - v.x, (v.pathT / W + 0.5f) * City.T - v.y) > 44) {
             v.pathField = v.field;
             v.pathT = -1;
             int ti = city.tileIndex(v.x, v.y), tx0 = ti % W, ty0 = ti / W, bestV = City.FAR;
-            // Knocked off the road: head back to the nearest bit of the route.
+            // On the route where it is: carry on from here. Knocked off the road: head back to the nearest bit.
+            if (v.field.get(ti) < City.FAR) v.pathT = ti;
             for (int r = 0; r <= 2 && v.pathT < 0; r++)
                 for (int y = ty0 - r; y <= ty0 + r; y++)
                     for (int x = tx0 - r; x <= tx0 + r; x++) {
                         if (x < 0 || y < 0 || x >= W || y >= city.h) continue;
-                        int fv = v.field[y * W + x];
+                        int fv = v.field.get(y * W + x);
                         if (fv < bestV) {
                             bestV = fv;
                             v.pathT = y * W + x;
                         }
                     }
-            if (v.pathT < 0) return false;
+            if (v.pathT < 0) {
+                // Off the route's corridor altogether (shoved aside, or round something): plan it again from here.
+                if (v.rerouteCd > 0 || !route(v, v.tx, v.ty)) return false;
+                v.rerouteCd = 1;
+                v.pathField = null;
+                return driveStep(v, dt, max, throttle);
+            }
         }
         // Pushed over onto the far side of a barrier (or a kerb) from its route tile: carry on from where it is
         // instead of driving along the barrier towards a lane it can't reach (the wrong way, on the highway).
         {
             int own = city.tileIndex(v.x, v.y);
-            if (own != v.pathT && v.field[own] < City.FAR) {
+            if (own != v.pathT) {
                 int mid = city.tileIndex(((v.pathT % W + 0.5f) * City.T + v.x) / 2, ((v.pathT / W + 0.5f) * City.T + v.y) / 2);
-                if (v.field[mid] >= City.FAR) v.pathT = own;
+                if (v.field.get(mid) >= City.FAR) {
+                    if (v.field.get(own) < City.FAR) v.pathT = own;
+                    else if (v.rerouteCd <= 0 && route(v, v.tx, v.ty)) {
+                        // (Off the route on the wrong side: plan the way again from where it is.)
+                        v.rerouteCd = 1;
+                        v.pathField = null;
+                        return driveStep(v, dt, max, throttle);
+                    }
+                }
             }
         }
-        int cur = v.field[v.pathT];
+        int cur = v.field.get(v.pathT);
         if (cur <= 4) return false;
         int tx = v.pathT % W, ty = v.pathT / W, nt = downhill(v.field, v.pathT), bx = nt % W, by = nt / W;
         if (bx == tx && by == ty) return false;

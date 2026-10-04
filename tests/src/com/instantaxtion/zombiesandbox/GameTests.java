@@ -676,6 +676,9 @@ public final class GameTests {
                 // With nobody left to hunt (on foot or in a car), crawlers lie low.
                 w.entities.clear();
                 w.fleet.vehicles.clear();
+                // (No new traffic, and nobody indoors to come out either: nobody at all.)
+                w.fleet.trafficTarget = 0;
+                for (City.Building b : w.city.buildings) b.occupants.clear();
                 for (int i = 0; i < 6; i++) {
                     float[] q = w.city.randomWalkable(w.rnd);
                     w.spawn(Entity.CRAWLER, q[0], q[1]);
@@ -1091,6 +1094,8 @@ public final class GameTests {
                     CityConfig c = new CityConfig();
                     c.v[CityConfig.OPT_ZOMBIES] = 3;
                     v.startGame(c);
+                    v.awaitLoad();
+                    draw(v, size);
                     m.screen = Menu.NONE;
                     for (int k = 0; k < 20; k++) draw(v, size);
                     // Every spawn picker opens and draws.

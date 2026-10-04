@@ -1498,7 +1498,10 @@ final class GameView extends View implements Menu.Host {
         }
         box(c, x0, y0, x1, y1, floorCol);
         int dark = City.darken(floorCol, 0.62f);
-        switch (k) {
+        int inside = Interiors.insideOf(b);
+        Interiors.Plan plan = inside >= 0 ? planOf(b, inside) : null;
+        if (plan != null) drawPlan(c, plan, a);
+        else switch (k) {
             case City.HOUSE: case City.APARTMENT: {
                 // Rooms: a kitchen, a living room with a sofa and rug, bedrooms, a bathroom.
                 float mx = x0 + w * (0.45f + irand() * 0.1f), my = y0 + h * (0.45f + irand() * 0.1f);
@@ -1682,14 +1685,13 @@ final class GameView extends View implements Menu.Host {
         oval.set(x0, y0, x1, y1);
         c.drawRect(oval, stroke);
         if (a < 0.5f) return;
-        // The people hiding here, huddled away from the door.
-        int cols = Math.max(1, (int) ((w - 8) / 9));
-        for (int i = 0, n = b.occupants.size() + b.visitors.size(); i < n; i++) {
+        // The people inside, each at their own spot (a seat, a desk, a bed...), moving between them now
+        // and then. Whoever doesn't fit on the ground floor is upstairs.
+        java.util.ArrayList<float[]> spots = plan != null ? plan.spots : looseSpots(b, x0, y0, x1, y1);
+        int ns = spots.size();
+        for (int i = 0, n = Math.min(ns, b.occupants.size() + b.visitors.size()); i < n; i++) {
             Entity o = i < b.occupants.size() ? b.occupants.get(i) : b.visitors.get(i - b.occupants.size());
-            int row = i / cols;
-            o.x = x0 + 6 + (i % cols) * 9 + ((i * 7) % 3);
-            o.y = y0 + 6 + (row % Math.max(1, (int) ((h - 8) / 9))) * 9;
-            o.angle = (i * 1.7f + b.seed) % 6.28f;
+            placeInside(o, i, b, spots, plan);
             o.aiming = false;
             drawEntity(c, o, false);
         }
@@ -1703,6 +1705,106 @@ final class GameView extends View implements Menu.Host {
             fill.setColor(alpha(0xFF7C9A5E, a * 0.75f));
             c.drawCircle(lx + sway + 0.4f, ly, 2f, fill);
         }
+    }
+
+    private final java.util.HashMap<City.Building, Interiors.Plan> plans = new java.util.HashMap<City.Building, Interiors.Plan>();
+    private final java.util.HashMap<City.Building, java.util.ArrayList<float[]>> loose = new java.util.HashMap<City.Building, java.util.ArrayList<float[]>>();
+
+    private Interiors.Plan planOf(City.Building b, int inside) {
+        Interiors.Plan p = plans.get(b);
+        if (p == null) {
+            if (plans.size() > 400) plans.clear();
+            p = Interiors.make(b, inside);
+            plans.put(b, p);
+        }
+        return p;
+    }
+
+    /** Floors, furniture and inside walls of a floor plan. */
+    private void drawPlan(Canvas c, Interiors.Plan p, float a) {
+        for (int i = 0, n = p.rooms.size(); i < n; i++) {
+            float[] r = p.rooms.get(i);
+            box(c, r[0], r[1], r[2], r[3], Interiors.floorOf((int) r[4]));
+        }
+        for (int i = 0, n = p.items.size(); i < n; i++) {
+            float[] it = p.items.get(i);
+            if (it[5] > 0) {
+                fill.setColor(alpha((int) it[4], a));
+                c.drawCircle((it[0] + it[2]) / 2, (it[1] + it[3]) / 2, (it[2] - it[0]) / 2, fill);
+            } else box(c, it[0], it[1], it[2], it[3], (int) it[4]);
+        }
+        stroke.setColor(alpha(0xFF4A4440, a));
+        stroke.setStrokeWidth(1.4f);
+        for (int i = 0, n = p.walls.size(); i < n; i++) {
+            float[] wl = p.walls.get(i);
+            c.drawLine(wl[0], wl[1], wl[2], wl[3], stroke);
+        }
+    }
+
+    /** Spots spread over the floor of a building without a plan (a warehouse floor, a barracks...). */
+    private java.util.ArrayList<float[]> looseSpots(City.Building b, float x0, float y0, float x1, float y1) {
+        java.util.ArrayList<float[]> s = loose.get(b);
+        if (s != null) return s;
+        if (loose.size() > 400) loose.clear();
+        s = new java.util.ArrayList<float[]>();
+        java.util.Random r = new java.util.Random(b.seed);
+        for (float y = y0 + 6; y < y1 - 4; y += 12)
+            for (float x = x0 + 6; x < x1 - 4; x += 12)
+                s.add(new float[]{x + r.nextFloat() * 4 - 2, y + r.nextFloat() * 4 - 2, 0, r.nextFloat() * 6.28f});
+        loose.put(b, s);
+        return s;
+    }
+
+    /**
+     * Where someone inside is right now: at one spot for a while, then walking to the next (through the
+     * doorways if it's in another room). Everyone in a building moves on the same beat to different spots,
+     * so nobody ends up on top of anyone else.
+     */
+    private void placeInside(Entity o, int i, City.Building b, java.util.ArrayList<float[]> spots, Interiors.Plan plan) {
+        int n = spots.size();
+        float cycle = 14 + (b.seed & 7);
+        float t = world.time + (b.seed & 255) * 0.13f;
+        int k = (int) (t / cycle);
+        float f = t / cycle - k;
+        int off = (b.seed >>> 4) & 1023;
+        float[] A = spots.get((i + k * 3 + off) % n), B = spots.get((i + (k + 1) * 3 + off) % n);
+        // Some stay put through a whole cycle (sitting at a desk, in bed, reading).
+        boolean stays = ((o.nameSeed >>> (k & 15)) & 3) == 0;
+        float walkFrom = 0.7f + ((o.nameSeed & 15) / 15f) * 0.12f;
+        if (stays || f < walkFrom || A == B) {
+            o.x = A[0];
+            o.y = A[1];
+            o.angle = A[3];
+            if (stays) {
+                B = A;
+            }
+            return;
+        }
+        float g = (f - walkFrom) / (1 - walkFrom);
+        float px, py, qx, qy;
+        if (plan != null && A[2] != B[2]) {
+            // Out through this room's doorway and in through the other's.
+            float[] ra = plan.rooms.get((int) A[2]), rb = plan.rooms.get((int) B[2]);
+            float[][] pts = {{A[0], A[1]}, {ra[5], ra[6]}, {rb[5], rb[6]}, {B[0], B[1]}};
+            float seg = g * 3;
+            int si = Math.min(2, (int) seg);
+            float u = seg - si;
+            px = pts[si][0];
+            py = pts[si][1];
+            qx = pts[si + 1][0];
+            qy = pts[si + 1][1];
+            o.x = px + (qx - px) * u;
+            o.y = py + (qy - py) * u;
+        } else {
+            px = A[0];
+            py = A[1];
+            qx = B[0];
+            qy = B[1];
+            o.x = px + (qx - px) * g;
+            o.y = py + (qy - py) * g;
+        }
+        if (Math.abs(qx - px) + Math.abs(qy - py) > 0.5f) o.angle = (float) Math.atan2(qy - py, qx - px);
+        o.phase += 0.2f;
     }
 
     /** Draws one wall from ground edge a-b up to roof edge ta-tb, with windows and doors on it. */

@@ -96,6 +96,8 @@ final class Entity {
      * whatever they're doing now (a run, a delivery round, a stall, a chat).
      */
     int job;
+    /** Knows the dead are walking: no more everyday life, only getting somewhere safe. */
+    boolean aware;
     /** A walking route (tile indices) to a building, how far along it they are, and where it goes. */
     int[] path;
     int pathIdx;

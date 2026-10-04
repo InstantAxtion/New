@@ -106,6 +106,11 @@ final class World {
     /** Counters for records and achievements. */
     int firesOut, tanksDeployed, collapsedCount, carsWrecked, biggestHorde;
     float outbreakTime, calmTime;
+    /**
+     * How far word of the outbreak has got: 0 nobody knows, 1 the first reports (word spreads person to
+     * person), 2 everyone knows (emergency broadcast). Anyone who hears gunfire or sees one knows anyway.
+     */
+    int alert;
     boolean recovering;
     private float lifeTimer;
     private float recruitTimer, lastRecruitSay = -100;
@@ -1590,6 +1595,14 @@ final class World {
                     o.noiseY = y + rnd.nextFloat() * 30 - 15;
                     o.noiseTimer = 14;
                 }
+                // People who hear it know something is wrong (once there's anything to be wrong about).
+                if (zombies > 0)
+                    for (int k = cellStart[c] + zCount[c], end = cellStart[c] + cellCount[c]; k < end; k++) {
+                        Entity o = sorted[k];
+                        if (o.dead || o.type != Entity.CIVILIAN || o.aware) continue;
+                        float ddx = o.x - x, ddy = o.y - y;
+                        if (ddx * ddx + ddy * ddy < radius * radius * 0.6f) o.aware = true;
+                    }
             }
     }
 
@@ -2717,6 +2730,7 @@ final class World {
             }
             e.fleeTimer = 4f;
             e.fear = 40;
+            e.aware = true;
             e.threatX = threat.x;
             e.threatY = threat.y;
             float ddx = threat.x - e.x, ddy = threat.y - e.y;
@@ -2930,6 +2944,70 @@ final class World {
         }
     }
 
+    /** Once a second: word of the outbreak gets round. */
+    private void updateAlert() {
+        // A good while after the last of them is gone, the all-clear: people get back to their lives.
+        if (alert > 0 && zombies == 0 && lurking == 0 && calmTime > 90) {
+            alert = 0;
+            for (int i = 0, n = entities.size(); i < n; i++) entities.get(i).aware = false;
+            dispatch.say(Dispatch.WHO_INFO, null, "News: The all-clear has been given. Residents can go about their day.",
+                    city.worldW() / 2, city.worldH() / 2);
+            return;
+        }
+        if (!outbreak || zombies == 0) return;
+        int was = alert;
+        if (alert < 1 && (dispatch.calls >= 2 || bites >= 3 || outbreakTime > 15)) alert = 1;
+        if (alert < 2 && (outbreakTime > 50 || zombies >= 8 || dispatch.calls >= 8)) alert = 2;
+        if (alert == was) return;
+        String where = outbreakPlace != null ? outbreakPlace : "the city";
+        if (alert == 1) {
+            dispatch.say(Dispatch.WHO_INFO, null, "News: Reports of people attacking people near " + where
+                    + ". Police urge residents to stay indoors.", city.worldW() / 2, city.worldH() / 2);
+        } else {
+            banner("EMERGENCY BROADCAST", "Get indoors and lock your doors. Do not approach the infected.");
+            for (int i = 0, n = entities.size(); i < n; i++) {
+                Entity e = entities.get(i);
+                if (!e.dead && e.type == Entity.CIVILIAN) e.aware = true;
+            }
+        }
+    }
+
+    /**
+     * Someone who knows what's happening drops whatever they were doing and gets somewhere safe, quickly:
+     * home if it's near enough, a safe zone if one is taking people, any building with room, or the police.
+     * Returns true while they're on their way.
+     */
+    private boolean getToSafety(Entity e, City.Building home) {
+        e.paused = false;
+        e.errand = null;
+        if (home != null && home.occupants.size() < home.capacity && home.barricade >= 40 && !home.collapsed
+                && (home.doorX - e.x) * (home.doorX - e.x) + (home.doorY - e.y) * (home.doorY - e.y) < 700 * 700
+                && countZombiesNear(home.doorX, home.doorY, 50) == 0) {
+            e.task = Dispatch.T_HIDE;
+            e.building = home;
+            return false;
+        }
+        if (dispatch.hasRoom() && !e.refused && !blackout) {
+            e.task = Dispatch.T_SEEK;
+            return false;
+        }
+        if (e.taskTimer <= 0) {
+            e.taskTimer = 2;
+            City.Building b = shelterNear(e, 260);
+            if (b != null) {
+                e.task = Dispatch.T_HIDE;
+                e.building = b;
+                return false;
+            }
+        }
+        // Nowhere to hide yet: hurry to the police station, and keep moving.
+        City.Facility police = city.nearestFacility(City.FACILITY_POLICE, e.x, e.y);
+        if (police != null && police.field != null && Math.hypot(police.x - e.x, police.y - e.y) > police.r * 0.8f
+                && followField(e, police.field, e.speed * 1.6f)) return true;
+        wander(e, e.speed * 1.5f);
+        return true;
+    }
+
     /** The home a civilian lives in: the nearest house or apartment block (found once). */
     private City.Building homeOf(Entity e) {
         if (!e.homeChecked) {
@@ -2954,16 +3032,13 @@ final class World {
      * home again, stopping a while at each. Once they've heard about the outbreak they go home and stay there.
      */
     private boolean routine(Entity e, float dt) {
-        if (e.leader != null || e.task != Dispatch.T_NONE || e.hasGun) return false;
+        if (e.leader != null || e.task != Dispatch.T_NONE || (e.hasGun && !e.aware)) return false;
         City.Building home = homeOf(e);
-        boolean outbreak = zombies > 0 && (e.fear > 0 || (outbreakTime > 60 && zombies >= 10));
-        if (outbreak) {
-            if (home == null || home.occupants.size() >= home.capacity || home.barricade < 40) return false;
-            float ddx = home.doorX - e.x, ddy = home.doorY - e.y;
-            if (ddx * ddx + ddy * ddy > 300 * 300) return false;
-            e.task = Dispatch.T_HIDE;
-            e.building = home;
-            return false;
+        // Word gets round: a phone call, a neighbour shouting, the radio.
+        if (alert >= 1 && !e.aware && rnd.nextFloat() < dt * (alert >= 2 ? 10 : 0.05f)) e.aware = true;
+        if (e.aware || (zombies > 0 && e.fear > 0)) {
+            e.aware = true;
+            return getToSafety(e, home);
         }
         if (e.job == Entity.J_NONE) assignJob(e);
         else if (e.work == null && (e.job == Entity.J_WORKER || e.job == Entity.J_SHOPKEEPER || e.job == Entity.J_STUDENT)) {
@@ -3050,8 +3125,10 @@ final class World {
             while (!b.visitors.isEmpty()) leaveBuilding(b.visitors.remove(b.visitors.size() - 1), b, true);
             return;
         }
-        if (countZombiesNear(b.doorX, b.doorY, 120) > 0) {
+        if (countZombiesNear(b.doorX, b.doorY, 120) > 0 || alert >= 2) {
+            // (Once everyone knows, nobody inside comes out to carry on with their day.)
             while (!b.visitors.isEmpty()) {
+                b.visitors.get(b.visitors.size() - 1).aware = true;
                 b.occupants.add(b.visitors.remove(b.visitors.size() - 1));
                 b.calmTimer = 0;
             }
@@ -3987,6 +4064,7 @@ final class World {
     /** Once a second: the infection evolves, and after it's over the city slowly recovers. */
     private void cityLife() {
         keyBuildings();
+        updateAlert();
         callNationalGuard();
         escalate();
         supplies();
@@ -5863,8 +5941,12 @@ final class World {
 
     /** A building with room whose door is close and not swarmed. */
     private City.Building shelterNear(Entity e) {
+        return shelterNear(e, 80);
+    }
+
+    private City.Building shelterNear(Entity e, float range) {
         City.Building best = null;
-        float bd = 80 * 80;
+        float bd = range * range;
         for (int i = 0, n = city.buildings.size(); i < n; i++) {
             City.Building b = city.buildings.get(i);
             if (b.capacity == 0 || b.occupants.size() >= b.capacity || b.barricade < 40) continue;

@@ -97,6 +97,8 @@ final class Fleet {
         /** A stopped car rolls over to the kerb. */
         float pullX, pullY;
         boolean pulling;
+        /** Getting out of town now everyone knows (runs red lights once it's clear, drives faster). */
+        boolean fleeing;
 
         float length() {
             return type == TANK ? 11f : type == TRUCK || type == FIRE_ENGINE || type == AMBULANCE ? 9.5f
@@ -248,6 +250,38 @@ final class Fleet {
             }
         }
         return false;
+    }
+
+    /** Road tiles on the edge of the map: the ways out of town. */
+    private int[] exits;
+
+    /** The nearest way out of town by road (a tile centre), or null. */
+    float[] exitNear(float x, float y) {
+        if (exits == null) {
+            java.util.ArrayList<Integer> list = new java.util.ArrayList<Integer>();
+            int W = city.w, H = city.h;
+            for (int i = 0; i < W; i += 1) {
+                if (city.tiles[i] == City.ROAD) list.add(i);
+                if (city.tiles[(H - 1) * W + i] == City.ROAD) list.add((H - 1) * W + i);
+            }
+            for (int j = 1; j < H - 1; j++) {
+                if (city.tiles[j * W] == City.ROAD) list.add(j * W);
+                if (city.tiles[j * W + W - 1] == City.ROAD) list.add(j * W + W - 1);
+            }
+            exits = new int[list.size()];
+            for (int i = 0; i < exits.length; i++) exits[i] = list.get(i);
+        }
+        float best = Float.MAX_VALUE;
+        int bt = -1;
+        for (int t : exits) {
+            float ex = (t % city.w + 0.5f) * City.T, ey = (t / city.w + 0.5f) * City.T;
+            float d = (ex - x) * (ex - x) + (ey - y) * (ey - y) + w.rnd.nextFloat() * 90000;
+            if (d < best) {
+                best = d;
+                bt = t;
+            }
+        }
+        return bt < 0 ? null : new float[]{(bt % city.w + 0.5f) * City.T, (bt / city.w + 0.5f) * City.T};
     }
 
     /** Points the vehicle at a new goal. Returns false if it can't be reached by road. */
@@ -704,7 +738,7 @@ final class Fleet {
         }
         if (trafficTimer <= 0) {
             trafficTimer = 6;
-            if (movingTraffic() < trafficTarget && w.zombieCount() < 10) spawnTraffic(1);
+            if (movingTraffic() < trafficTarget && w.zombieCount() < 10 && w.alert < 2) spawnTraffic(1);
             int parked = 0;
             // Old wrecks and parked cars are towed away, but never while you're watching.
             for (int i = vehicles.size() - 1; i >= 0; i--) {
@@ -916,7 +950,7 @@ final class Fleet {
         float stopAt = dist - City.T - v.length() - 1;
         float approach = Math.max(0, stopAt) * 1.8f;
         boolean vertical = diry != 0;
-        if (j[4] == City.J_LIGHTS) {
+        if (j[4] == City.J_LIGHTS && !v.fleeing) {
             int light = city.lightState(id, vertical, w.time);
             if (light == 0) return Float.MAX_VALUE;
             // Amber: carry on only if it's too late to stop.
@@ -1228,6 +1262,11 @@ final class Fleet {
             if (w.hail(v)) v.waitTimer = 4;
         }
         v.timer += dt;
+        // Everyone knows: drop the errand and get out of town.
+        if (w.alert >= 2 && !v.fleeing && !v.rescue && v.player == null) {
+            float[] exit = exitNear(v.x, v.y);
+            if (exit != null && route(v, exit[0], exit[1])) v.fleeing = true;
+        }
         float limit = junctionRule(v, dt);
         boolean person = w.personAhead(v.x, v.y, v.angle) || trainComing(v);
         if ((person && v.timer < 2.5f) || (v.waitTimer > 0 && !zombiesClose) || trainComing(v)) {
@@ -1242,8 +1281,22 @@ final class Fleet {
             float throttle = queue && v.stuckTimer < 3 ? 0.15f : 1f;
             // Waiting at a red light, a stop sign or behind a queue isn't being stuck.
             if (v.held || queue) v.stuckTimer = Math.min(v.stuckTimer, 1);
-            if (!driveStep(v, dt, Math.min(limit, zombiesClose ? 60 : 70), throttle)) {
+            if (!driveStep(v, dt, Math.min(limit, zombiesClose ? 60 : v.fleeing ? 90 : 70), throttle)) {
                 arrive(v);
+                // Out of town (where nobody sees it go): gone.
+                if (v.fleeing && !inView(v.x, v.y)) {
+                    dropRiders(v, false);
+                    return true;
+                }
+                if (v.fleeing) {
+                    // (At the edge of town, in sight: pull in and wait.)
+                    dropRiders(v, false);
+                    v.parked = true;
+                    v.speed = 0;
+                    v.field = null;
+                    pullOver(v);
+                    return false;
+                }
                 if (!newDestination(v)) v.stuckTimer = 99;
             } else {
                 hit(v, w.runOver(v.x, v.y, 8, v.speed, v.angle));

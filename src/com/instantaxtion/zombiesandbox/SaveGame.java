@@ -213,6 +213,7 @@ final class SaveGame {
             }
             // The war: the army's escalation, ammunition. (Version 17: no more cure.)
             out.writeInt(w.escalation);
+            out.writeInt(w.alert);
             out.writeFloat(w.firebombTime);
             out.writeFloat(w.firebombX);
             out.writeFloat(w.firebombY);
@@ -301,6 +302,7 @@ final class SaveGame {
         out.writeByte(e.weapon);
         out.writeByte(e.melee);
         out.writeByte(e.job);
+        out.writeBoolean(e.aware);
     }
 
     static World load(File file) throws IOException {
@@ -488,6 +490,7 @@ final class SaveGame {
                     in.readBoolean();
                 }
                 w.escalation = in.readInt();
+                if (version >= 17) w.alert = in.readInt();
                 w.firebombTime = in.readFloat();
                 w.firebombX = in.readFloat();
                 w.firebombY = in.readFloat();
@@ -570,6 +573,7 @@ final class SaveGame {
             e.melee = in.readByte();
         }
         if (version >= 16) e.job = in.readByte();
+        if (version >= 17) e.aware = in.readBoolean();
         if (zone >= 0 && zone < d.zones.size()) e.zone = d.zones.get(zone);
         return e;
     }

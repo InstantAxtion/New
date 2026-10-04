@@ -3983,6 +3983,28 @@ final class City {
                 // Only between junctions.
                 int mx = st.vertical ? st.x0 + st.width / 2 : x, my = st.vertical ? y : st.y0 + st.width / 2;
                 if (mx >= w || my >= h || roadDir[my * w + mx] != dir || !paved(mx, my)) continue;
+                float base = (st.vertical ? st.x0 : st.y0) * T, span = st.width * T;
+                // Wear: darker tracks where the wheels run, two to each lane.
+                int lanes = st.width >= 5 ? 4 : 2;
+                p.setColor(0x14000000);
+                for (int ln = 0; ln < lanes; ln++) {
+                    float lc = base + span * (ln + 0.5f) / lanes;
+                    for (int side = -1; side <= 1; side += 2) {
+                        float wc = lc + side * 3.2f;
+                        if (st.vertical) c.drawRect(wc - 1.2f, y * T, wc + 1.2f, y * T + T, p);
+                        else c.drawRect(x * T, wc - 1.2f, x * T + T, wc + 1.2f, p);
+                    }
+                }
+                // Solid white edge lines along the kerbs (not across a side road or a driveway).
+                p.setColor(0xB8E4E4E0);
+                for (int side = 0; side < 2; side++) {
+                    int ox = st.vertical ? (side == 0 ? st.x0 - 1 : st.x1) : x, oy = st.vertical ? y : (side == 0 ? st.y0 - 1 : st.y1);
+                    if (paved(ox, oy) || tiles[Math.max(0, Math.min(h - 1, oy)) * w + Math.max(0, Math.min(w - 1, ox))] == DIRT) continue;
+                    float e = side == 0 ? base + 1.6f : base + span - 2.4f;
+                    if (st.vertical) c.drawRect(e, y * T, e + 0.8f, y * T + T, p);
+                    else c.drawRect(x * T, e, x * T + T, e + 0.8f, p);
+                }
+                p.setStrokeWidth(1.5f);
                 if (st.width == 5) {
                     p.setColor(0xCCE8E8E8);
                     if (st.vertical) {
@@ -3994,9 +4016,10 @@ final class City {
                     }
                 } else if (st.width == 3 && !country.ringRoad.equals(st.name)) {
                     p.setColor(country.centreLine);
-                    if (st.vertical) c.drawLine((st.x0 + 1.5f) * T, y * T + 3, (st.x0 + 1.5f) * T, y * T + 11, p);
-                    else c.drawLine(x * T + 3, (st.y0 + 1.5f) * T, x * T + 11, (st.y0 + 1.5f) * T, p);
+                    if (st.vertical) c.drawLine((st.x0 + 1.5f) * T, y * T + 2, (st.x0 + 1.5f) * T, y * T + 12, p);
+                    else c.drawLine(x * T + 2, (st.y0 + 1.5f) * T, x * T + 12, (st.y0 + 1.5f) * T, p);
                 }
+                p.setStrokeWidth(1.2f);
             }
             if (st.width == 5) turnLanes(c, p, st, n);
             stopLines(c, p, st, n);
@@ -4013,13 +4036,14 @@ final class City {
                 for (int o = 0; o < st.width; o++) {
                     int tx = st.vertical ? st.x0 + o : cx, ty = st.vertical ? cy : st.y0 + o;
                     if (!paved(tx, ty)) continue;
-                    for (float q = 2; q + 2 <= T - 1; q += 5) {
+                    // Bold zebra bars, as wide as the gaps between them.
+                    for (float q = 1.5f; q + 3 <= T; q += 6) {
                         if (st.vertical) {
-                            float yy = ja ? ty * T + 2 : ty * T + T - 9;
-                            c.drawRect(tx * T + q, yy, tx * T + q + 2.5f, yy + 7, p);
+                            float yy = ja ? ty * T + 1.5f : ty * T + T - 11.5f;
+                            c.drawRect(tx * T + q, yy, tx * T + q + 3.2f, yy + 10, p);
                         } else {
-                            float xx = ja ? tx * T + 2 : tx * T + T - 9;
-                            c.drawRect(xx, ty * T + q, xx + 7, ty * T + q + 2.5f, p);
+                            float xx = ja ? tx * T + 1.5f : tx * T + T - 11.5f;
+                            c.drawRect(xx, ty * T + q, xx + 10, ty * T + q + 3.2f, p);
                         }
                     }
                 }

@@ -122,7 +122,7 @@ final class GameView extends View implements Menu.Host {
     /** Director cam: the camera goes wherever the action is. */
     private boolean director;
     private final RectF[] clearRects = new RectF[CLEAR_NAMES.length];
-    private boolean statsCollapsed;
+    private boolean statsCollapsed, autoCollapsed;
     /** Units picked with the Orders tool. */
     private final java.util.ArrayList<Entity> selection = new java.util.ArrayList<Entity>();
     private float orderX, orderY, orderMarker;
@@ -389,6 +389,7 @@ final class GameView extends View implements Menu.Host {
     @Override
     public void startGame(CityConfig cfg) {
         records.gameStarted();
+        autoCollapsed = false;
         loadWorld(cfg);
         applySettings();
         hasGame = true;
@@ -1134,18 +1135,21 @@ final class GameView extends View implements Menu.Host {
             c.drawRect(m[0] - 2.2f, m[1] - 0.7f, m[0] + 2.2f, m[1] + 0.7f, fill);
         }
 
+        if (scale < 1.8f) drawDanger(c, vx0, vy0, vx1, vy1);
         for (int i = 0, n = world.entities.size(); i < n; i++) {
             Entity e = world.entities.get(i);
             if (e.x < vx0 || e.x > vx1 || e.y < vy0 || e.y > vy1) continue;
             if (detailed) drawEntity(c, e, settings.healthBars());
             else {
-                // Zoomed out: a body in its colour with a head dot, so types stay readable.
-                fill.setColor(e.isZombie() ? 0xFF5FAF35 : e.body);
-                c.drawCircle(e.x, e.y, e.radius * 1.35f, fill);
-                if (scale > 0.8f) {
-                    fill.setColor(e.isZombie() ? 0xFF2E5A1A : e.head);
-                    c.drawCircle(e.x, e.y, e.radius * 0.7f, fill);
-                }
+                // Zoomed out: a dot in the colour of their side (the same colours as the counts), outlined so it
+                // stands out on any ground, and never smaller than a few pixels.
+                int side = e.isZombie() ? 5 : e.type == Entity.COP ? 1 : e.type == Entity.SOLDIER ? 2 : e.type == Entity.MEDIC ? 3
+                        : e.type == Entity.FIREFIGHTER ? 4 : 0;
+                float r = Math.max(e.radius * 1.35f, 2.6f * dp / scale);
+                fill.setColor(0xD0101010);
+                c.drawCircle(e.x, e.y, r + 1.1f * dp / scale, fill);
+                fill.setColor(e.type == Entity.RAIDER ? 0xFFE0483A : e.type == Entity.DOG ? 0xFFB08A5A : ROW_COLORS[side]);
+                c.drawCircle(e.x, e.y, r, fill);
             }
         }
         if (boxing) {
@@ -2740,8 +2744,58 @@ final class GameView extends View implements Menu.Host {
 
     /** Names over safe zones and 911 markers, drawn at screen size so they stay readable. */
     /** True if a label would sit under the stats panel, the radio feed or the top buttons. */
+    /**
+     * Zoomed out, where the dead are thick on the ground glows red (the more of them, the stronger), so the
+     * front lines read at a glance. Counted on a coarse grid a few times a second.
+     */
+    private int[] dangerGrid;
+    private float dangerTimer;
+    private static final int DANGER_CELL = 96;
+
+    private void drawDanger(Canvas c, float vx0, float vy0, float vx1, float vy1) {
+        int gw = (int) (world.city.worldW() / DANGER_CELL) + 1, gh = (int) (world.city.worldH() / DANGER_CELL) + 1;
+        if (dangerGrid == null || dangerGrid.length != gw * gh) dangerGrid = new int[gw * gh];
+        dangerTimer -= 1 / 60f;
+        if (dangerTimer <= 0) {
+            dangerTimer = 0.3f;
+            java.util.Arrays.fill(dangerGrid, 0);
+            for (int i = 0, n = world.entities.size(); i < n; i++) {
+                Entity e = world.entities.get(i);
+                if (e.dead || !e.isZombie()) continue;
+                int gx = (int) (e.x / DANGER_CELL), gy = (int) (e.y / DANGER_CELL);
+                if (gx >= 0 && gy >= 0 && gx < gw && gy < gh) dangerGrid[gy * gw + gx]++;
+            }
+        }
+        float alphaScale = Math.min(1, (1.8f - scale) / 0.8f);
+        for (int gy = Math.max(0, (int) (vy0 / DANGER_CELL)); gy <= Math.min(gh - 1, (int) (vy1 / DANGER_CELL)); gy++)
+            for (int gx = Math.max(0, (int) (vx0 / DANGER_CELL)); gx <= Math.min(gw - 1, (int) (vx1 / DANGER_CELL)); gx++) {
+                int n = dangerGrid[gy * gw + gx];
+                if (n < 2) continue;
+                float a = Math.min(0.42f, 0.08f + n * 0.025f) * alphaScale;
+                float cx = (gx + 0.5f) * DANGER_CELL, cy = (gy + 0.5f) * DANGER_CELL;
+                fill.setColor(alpha(0xFFE0302A, a * 0.5f));
+                c.drawCircle(cx, cy, DANGER_CELL * 0.95f, fill);
+                fill.setColor(alpha(0xFFE0302A, a));
+                c.drawCircle(cx, cy, DANGER_CELL * 0.6f, fill);
+            }
+    }
+
+    /** Map labels already placed this frame: a label that would land on one of them (or on the panels) is skipped. */
+    private final RectF[] placed = new RectF[80];
+    private int placedCount;
+
+    private boolean claim(RectF r) {
+        if (uiCovers(r)) return false;
+        for (int i = 0; i < placedCount; i++) if (overlaps(r, placed[i])) return false;
+        if (placedCount < placed.length) {
+            if (placed[placedCount] == null) placed[placedCount] = new RectF();
+            placed[placedCount++].set(r);
+        }
+        return true;
+    }
+
     private boolean uiCovers(RectF r) {
-        if (overlaps(r, statsShown)) return true;
+        if (overlaps(r, statsShown) || overlaps(r, meterRect)) return true;
         for (int i = 0; i < feedCount; i++) if (overlaps(r, feedLines[i])) return true;
         for (RectF t : topRects) if (overlaps(r, t)) return true;
         if (overlaps(r, miniRect) || overlaps(r, camChip)) return true;
@@ -2754,21 +2808,61 @@ final class GameView extends View implements Menu.Host {
 
     private void drawMapLabels(Canvas c) {
         text.setTextAlign(Paint.Align.CENTER);
-        // Zoomed out: the names of the districts across the map.
-        float districtAlpha = Math.max(0, Math.min(1, (3.2f - scale) / 1.2f));
-        if (districtAlpha > 0) {
-            text.setTextSize(15 * dp);
-            for (int i = 0, n = world.city.districts.size(); i < n; i++) {
-                City.District d = world.city.districts.get(i);
-                if (d.tiles < 40) continue;
-                float sx = screenX(d.cx), sy = screenY(d.cy);
-                if (sx < -150 * dp || sx > getWidth() + 150 * dp || sy < 0 || sy > barTop) continue;
-                String label = d.name.toUpperCase();
-                text.setColor(alpha(0xFF000000, districtAlpha * 0.6f));
-                c.drawText(label, sx + 1.5f * dp, sy + 1.5f * dp, text);
-                text.setColor(alpha(0xFFF4EED8, districtAlpha * 0.85f));
-                c.drawText(label, sx, sy, text);
-            }
+        placedCount = 0;
+        // Most important first: what can't be missed gets its place, the rest fits round it.
+        text.setTextSize(11.5f * dp);
+        for (int i = 0, n = world.dispatch.zones.size(); i < n; i++) {
+            Dispatch.SafeZone z = world.dispatch.zones.get(i);
+            float sx = screenX(z.x), sy = screenY(z.y - z.r) - 10 * dp;
+            if (sx < -100 * dp || sx > getWidth() + 100 * dp || sy < 0 || sy > barTop) continue;
+            String label = !z.open ? (z.military ? "MILITARY" : "POLICE") + " SAFE ZONE  -  SETTING UP " + (int) (z.built * 100)
+                    + "%" + (z.onSite == 0 ? " (on the way)" : "")
+                    : (z.military ? "MILITARY" : "POLICE") + " SAFE ZONE  -  " + z.sheltered + "/" + z.capacity
+                    + (z.full ? "  FULL" : z.fallingBack ? "  FALLING BACK" : "") + "  -  ammo " + z.ammo + (z.supplyComing ? " (truck coming)" : "");
+            float tw = text.measureText(label);
+            oval.set(sx - tw / 2 - 8 * dp, sy - 14 * dp, sx + tw / 2 + 8 * dp, sy + 5 * dp);
+            if (!claim(oval)) continue;
+            fill.setColor(z.military ? 0xD0304A20 : 0xD0203A66);
+            c.drawRoundRect(oval, 8 * dp, 8 * dp, fill);
+            text.setColor(0xFFFFFFFF);
+            c.drawText(label, sx, sy, text);
+        }
+        for (int i = 0, n = world.dispatch.incidents.size(); i < n; i++) {
+            Dispatch.Incident inc = world.dispatch.incidents.get(i);
+            float sx = screenX(inc.x), sy = screenY(inc.y) - 22 * dp;
+            if (sx < -60 * dp || sx > getWidth() + 60 * dp || sy < 0 || sy > barTop) continue;
+            int coming = inc.cops + inc.soldiers + world.fleet.inbound(inc);
+            String label = "911  -  " + inc.zombiesNear + (inc.zombiesNear == 1 ? " zombie" : " zombies")
+                    + (coming > 0 ? "  -  " + coming + " police on the way" : "  -  nobody sent yet");
+            float tw = text.measureText(label);
+            oval.set(sx - tw / 2 - 7 * dp, sy - 13 * dp, sx + tw / 2 + 7 * dp, sy + 5 * dp);
+            if (!claim(oval)) continue;
+            fill.setColor(0xD8A01E16);
+            c.drawRoundRect(oval, 7 * dp, 7 * dp, fill);
+            text.setColor(0xFFFFFFFF);
+            c.drawText(label, sx, sy, text);
+        }
+        text.setTextSize(10.5f * dp);
+        for (int i = 0, n = world.city.buildings.size(); i < n; i++) {
+            City.Building b = world.city.buildings.get(i);
+            if (b.occupants.isEmpty()) continue;
+            // (Zoomed out, only the ones under attack.)
+            boolean attacked = b.barricade < 99 && world.countZombiesNear(b.doorX, b.doorY, 40) > 0;
+            if (scale / dp < 1.3f && !attacked) continue;
+            float sx = screenX(b.doorX), sy = screenY(b.doorY) - 12 * dp;
+            if (sx < -60 * dp || sx > getWidth() + 60 * dp || sy < 0 || sy > barTop) continue;
+            String label = b.occupants.size() + " hiding" + (attacked ? " - UNDER ATTACK" : "");
+            float tw = text.measureText(label);
+            oval.set(sx - tw / 2 - 6 * dp, sy - 12 * dp, sx + tw / 2 + 6 * dp, sy + 7 * dp);
+            if (!claim(oval)) continue;
+            fill.setColor(attacked ? 0xD0802018 : 0xC0302418);
+            c.drawRoundRect(oval, 6 * dp, 6 * dp, fill);
+            text.setColor(0xFFFFFFFF);
+            c.drawText(label, sx, sy, text);
+            float f = Math.max(0, b.barricade) / 100f;
+            fill.setColor(f > 0.5f ? 0xFFB08A5A : 0xFFFF6B4A);
+            c.drawRect(oval.left + 4 * dp, oval.bottom - 3 * dp, oval.left + 4 * dp + (oval.width() - 8 * dp) * f,
+                    oval.bottom - 1.5f * dp, fill);
         }
         text.setTextSize(11.5f * dp);
         text.setTextSize(10.5f * dp);
@@ -2785,60 +2879,11 @@ final class GameView extends View implements Menu.Host {
             String label = f.name.toUpperCase();
             float tw = text.measureText(label);
             oval.set(sx - tw / 2 - 7 * dp, sy - 13 * dp, sx + tw / 2 + 7 * dp, sy + 5 * dp);
-            if (uiCovers(oval)) continue;
+            if (!claim(oval)) continue;
             fill.setColor(f.kind == City.FACILITY_BASE ? 0xB0303A1E : f.kind == City.FACILITY_FIRE ? 0xB0802018
                     : f.kind == City.FACILITY_HOSPITAL ? 0xB0703030 : 0xB01E2E50);
             c.drawRoundRect(oval, 7 * dp, 7 * dp, fill);
             text.setColor(0xFFE6E6E6);
-            c.drawText(label, sx, sy, text);
-        }
-        text.setTextSize(10.5f * dp);
-        for (int i = 0, n = world.city.buildings.size(); i < n; i++) {
-            City.Building b = world.city.buildings.get(i);
-            if (b.occupants.isEmpty()) continue;
-            float sx = screenX(b.doorX), sy = screenY(b.doorY) - 12 * dp;
-            if (sx < -60 * dp || sx > getWidth() + 60 * dp || sy < 0 || sy > barTop) continue;
-            String label = b.occupants.size() + " hiding";
-            float tw = text.measureText(label);
-            oval.set(sx - tw / 2 - 6 * dp, sy - 12 * dp, sx + tw / 2 + 6 * dp, sy + 7 * dp);
-            if (uiCovers(oval)) continue;
-            fill.setColor(0xC0302418);
-            c.drawRoundRect(oval, 6 * dp, 6 * dp, fill);
-            text.setColor(0xFFFFFFFF);
-            c.drawText(label, sx, sy, text);
-            float f = Math.max(0, b.barricade) / 100f;
-            fill.setColor(f > 0.5f ? 0xFFB08A5A : 0xFFFF6B4A);
-            c.drawRect(oval.left + 4 * dp, oval.bottom - 3 * dp, oval.left + 4 * dp + (oval.width() - 8 * dp) * f,
-                    oval.bottom - 1.5f * dp, fill);
-        }
-        text.setTextSize(11.5f * dp);
-        for (int i = 0, n = world.dispatch.zones.size(); i < n; i++) {
-            Dispatch.SafeZone z = world.dispatch.zones.get(i);
-            float sx = screenX(z.x), sy = screenY(z.y - z.r) - 10 * dp;
-            if (sx < -100 * dp || sx > getWidth() + 100 * dp || sy < 0 || sy > barTop) continue;
-            String label = !z.open ? (z.military ? "MILITARY" : "POLICE") + " SAFE ZONE  -  SETTING UP " + (int) (z.built * 100)
-                    + "%" + (z.onSite == 0 ? " (on the way)" : "")
-                    : (z.military ? "MILITARY" : "POLICE") + " SAFE ZONE  -  " + z.sheltered + "/" + z.capacity
-                    + (z.full ? "  FULL" : z.fallingBack ? "  FALLING BACK" : "") + "  -  ammo " + z.ammo + (z.supplyComing ? " (truck coming)" : "");
-            float tw = text.measureText(label);
-            oval.set(sx - tw / 2 - 8 * dp, sy - 14 * dp, sx + tw / 2 + 8 * dp, sy + 5 * dp);
-            if (uiCovers(oval)) continue;
-            fill.setColor(z.military ? 0xD0304A20 : 0xD0203A66);
-            c.drawRoundRect(oval, 8 * dp, 8 * dp, fill);
-            text.setColor(0xFFFFFFFF);
-            c.drawText(label, sx, sy, text);
-        }
-        for (int i = 0, n = world.dispatch.incidents.size(); i < n; i++) {
-            Dispatch.Incident inc = world.dispatch.incidents.get(i);
-            float sx = screenX(inc.x), sy = screenY(inc.y) - 22 * dp;
-            if (sx < -60 * dp || sx > getWidth() + 60 * dp || sy < 0 || sy > barTop) continue;
-            String label = "911  " + inc.zombiesNear + (inc.cops + inc.soldiers > 0 ? "  -  " + (inc.cops + inc.soldiers) + " responding" : "");
-            float tw = text.measureText(label);
-            oval.set(sx - tw / 2 - 7 * dp, sy - 13 * dp, sx + tw / 2 + 7 * dp, sy + 5 * dp);
-            if (uiCovers(oval)) continue;
-            fill.setColor(0xD8A01E16);
-            c.drawRoundRect(oval, 7 * dp, 7 * dp, fill);
-            text.setColor(0xFFFFFFFF);
             c.drawText(label, sx, sy, text);
         }
         // Names over people when zoomed right in, and the outbreak's first victim.
@@ -2854,12 +2899,9 @@ final class GameView extends View implements Menu.Host {
                 if (label == null) continue;
                 float tw = text.measureText(label);
                 oval.set(sx - tw / 2 - 3 * dp, sy - 9 * dp, sx + tw / 2 + 3 * dp, sy + 3 * dp);
-                if (uiCovers(oval)) continue;
-                // Skip a tag that would sit on top of one already drawn (in a crowd).
-                boolean overlaps = false;
-                for (int k = 0; k < placed && !overlaps; k++) if (RectF.intersects(tagRects[k], oval)) overlaps = true;
-                if (overlaps) continue;
-                if (placed < tagRects.length) tagRects[placed++].set(oval);
+                // (Skipped if it would sit on a panel, or on a tag already drawn in a crowd.)
+                if (!claim(oval)) continue;
+                if (++placed > 60) break;
                 fill.setColor(0x90000000);
                 c.drawRoundRect(oval, 4 * dp, 4 * dp, fill);
                 text.setColor(e.type == Entity.RAIDER ? 0xFFFF8A7A : e.isArmed() ? 0xFFA8C8FF : 0xFFF2F2F2);
@@ -2874,7 +2916,7 @@ final class GameView extends View implements Menu.Host {
                 String label = "PATIENT ZERO";
                 float tw = text.measureText(label);
                 oval.set(sx - tw / 2 - 5 * dp, sy - 11 * dp, sx + tw / 2 + 5 * dp, sy + 4 * dp);
-                if (!uiCovers(oval)) {
+                if (claim(oval)) {
                     fill.setColor(0xD04A7A1A);
                     c.drawRoundRect(oval, 6 * dp, 6 * dp, fill);
                     text.setColor(0xFFFFFFFF);
@@ -2888,13 +2930,15 @@ final class GameView extends View implements Menu.Host {
         for (int i = 0, n = world.fleet.vehicles.size(); i < n; i++) {
             Fleet.Vehicle v = world.fleet.vehicles.get(i);
             if (v.type == Fleet.CAR && !close) continue;
+            // Zoomed out, only the ones on a call (lights going) or in the air.
+            if (!close && !v.lightsOn() && !Fleet.airborne(v) && v.type != Fleet.TANK) continue;
             String label = world.fleet.status(v);
             if (label == null) continue;
             float sx = screenX(v.x), sy = screenY(v.y) - (v.type == Fleet.HELI ? 22 + 14 * v.alt : 14) * dp;
             if (sx < -80 * dp || sx > getWidth() + 80 * dp || sy < 0 || sy > barTop) continue;
             float tw = text.measureText(label);
             oval.set(sx - tw / 2 - 6 * dp, sy - 11 * dp, sx + tw / 2 + 6 * dp, sy + 4 * dp);
-            if (uiCovers(oval)) continue;
+            if (!claim(oval)) continue;
             int col = v.type == Fleet.HELI || v.type == Fleet.TANK || v.type == Fleet.TRUCK ? 0xC8304A20
                     : v.type == Fleet.FIRE_ENGINE ? 0xC8802018 : v.type == Fleet.AMBULANCE ? 0xC8A03030
                     : v.type == Fleet.CRUISER ? 0xC8203A66 : 0xB0202226;
@@ -2902,6 +2946,26 @@ final class GameView extends View implements Menu.Host {
             c.drawRoundRect(oval, 6 * dp, 6 * dp, fill);
             text.setColor(0xFFF2F2F2);
             c.drawText(label, sx, sy, text);
+        }
+            text.setTextAlign(Paint.Align.CENTER);
+        // Zoomed out: the names of the districts across the map.
+        float districtAlpha = Math.max(0, Math.min(1, (3.2f - scale) / 1.2f));
+        if (districtAlpha > 0) {
+            text.setTextSize(15 * dp);
+            for (int i = 0, n = world.city.districts.size(); i < n; i++) {
+                City.District d = world.city.districts.get(i);
+                if (d.tiles < 40) continue;
+                float sx = screenX(d.cx), sy = screenY(d.cy);
+                if (sx < -150 * dp || sx > getWidth() + 150 * dp || sy < 0 || sy > barTop) continue;
+                String label = d.name.toUpperCase();
+                float tw = text.measureText(label);
+                oval.set(sx - tw / 2, sy - 14 * dp, sx + tw / 2, sy + 3 * dp);
+                if (!claim(oval)) continue;
+                text.setColor(alpha(0xFF000000, districtAlpha * 0.6f));
+                c.drawText(label, sx + 1.5f * dp, sy + 1.5f * dp, text);
+                text.setColor(alpha(0xFFF4EED8, districtAlpha * 0.85f));
+                c.drawText(label, sx, sy, text);
+            }
         }
     }
 
@@ -3374,6 +3438,7 @@ final class GameView extends View implements Menu.Host {
         meterRect.setEmpty();
         if (world.outbreak || world.warBannerTime > 0) {
             float left = statsShown.left, right = Math.max(statsShown.right, left + 200 * dp), top = statsShown.bottom + 8 * dp;
+            if (!portrait) right = Math.min(right, Math.max(statsRect.right, topRects[0].left - 8 * dp));
             float bh = 10 * dp, b = Math.max(0.03f, Math.min(0.97f, world.warBalance));
             // An air strike on the way gets a red line of its own inside the panel.
             boolean strike = world.firebombTime > 0 && world.firebombPlace != null;
@@ -3421,6 +3486,11 @@ final class GameView extends View implements Menu.Host {
     private void drawUi(Canvas c) {
         int w = getWidth(), h = getHeight();
 
+        // Once the outbreak starts the panel shrinks to one line (tap for the rest), to leave the map clear.
+        if (world.outbreak && !autoCollapsed) {
+            autoCollapsed = true;
+            statsCollapsed = true;
+        }
         // Stats panel: one column in landscape, two in portrait. Tap it to collapse to one line.
         float lh = 17 * dp;
         Dispatch d = world.dispatch;
@@ -3430,7 +3500,10 @@ final class GameView extends View implements Menu.Host {
         if (statsCollapsed) {
             String line = "People " + (world.humanCount() + world.hiding + world.riding + world.visiting) + "   Zombies " + world.zombieCount()
                     + "   (tap for more)";
-            float tw = text.measureText(line);
+            // (Short of the buttons along the top in landscape.)
+            float room = (portrait ? getWidth() - 10 * dp : topRects[0].left - 8 * dp) - statsRect.left - 24 * dp;
+            if (text.measureText(line) > room) line = line.substring(0, line.indexOf("   (tap"));
+            float tw = Math.min(text.measureText(line), room);
             oval.set(statsRect.left, statsRect.top, statsRect.left + tw + 24 * dp, statsRect.top + 28 * dp);
             statsShown.set(oval);
             fill.setColor(0xB0101114);

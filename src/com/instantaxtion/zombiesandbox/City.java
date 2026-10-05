@@ -39,6 +39,8 @@ final class City {
         /** Rounds of ammunition in the armoury. */
         int ammo;
         boolean dryAnnounced;
+        /** Military bases: which kind (see BASE_TYPES). */
+        int baseType;
         /** Guard posts (station entrance, base gates) as {x, y}. */
         final List<float[]> posts = new ArrayList<float[]>();
 
@@ -368,6 +370,20 @@ final class City {
     private byte[] carKind;
     private final List<float[]> helipads = new ArrayList<float[]>();
     private final List<float[]> tents = new ArrayList<float[]>();
+    /**
+     * Military bases come in kinds, each laid out its own way inside the same fence and barracks: an air base
+     * with a runway and hangars, an armoured base with its tank park, a training camp with ranges and an
+     * assault course, and so on. (Chosen with numbers of their own, so the rest of the city doesn't move.)
+     */
+    static final String[] BASE_TYPES = {"Garrison", "Air Base", "Armoured Base", "Training Camp", "Special Forces Base",
+            "Supply Depot", "Radar Station", "Guard Armory"};
+    static final int BT_GARRISON = 0, BT_AIR = 1, BT_ARMOUR = 2, BT_TRAINING = 3, BT_SPECIAL = 4, BT_SUPPLY = 5,
+            BT_RADAR = 6, BT_GUARD = 7;
+    static final int BD_RUNWAY = 0, BD_HANGAR = 1, BD_TANK = 2, BD_RANGE = 3, BD_OBSTACLE = 4, BD_RADAR = 5,
+            BD_DISH = 6, BD_FUEL = 7, BD_CONTAINER = 8, BD_MAST = 9, BD_SANDBAGS = 10, BD_KILLHOUSE = 11, BD_JET = 12,
+            BD_SHED = 13, BD_FLAG = 14, BD_HARDSTAND = 15;
+    /** What's inside a base beyond barracks: {kind, x0, y0, x1, y1} in world units. */
+    private final List<float[]> baseDecor = new ArrayList<float[]>();
     private final List<float[]> paths = new ArrayList<float[]>();
     final List<Facility> facilities = new ArrayList<Facility>();
     final List<float[]> decor = new ArrayList<float[]>();
@@ -1250,10 +1266,10 @@ final class City {
         }
         addFacilityLot(ax, ay + ah - 2, 2, 2, TOWER, 3);
         addFacilityLot(ax + aw - 2, ay, 2, 2, TOWER, 3);
-        // Helipad and tents in the open lower half, trucks parked along the bottom right.
-        helipads.add(new float[]{(ax + aw * 0.3f) * T, (ay + ah * 0.72f) * T});
-        for (int i = 0; i < 4; i++)
-            tents.add(new float[]{(ax + aw * 0.55f + (i % 2) * 2.2f) * T, (ay + ah * 0.55f + (i / 2) * 2f) * T});
+        // The open lower half depends on what kind of base it is (trucks are parked along the bottom right).
+        Random bt = new Random(cfg.seed * 977L + 13);
+        int type = bt.nextInt(BASE_TYPES.length);
+        baseLayout(type, ax, ay, aw, ah, bt);
         for (int i = ax + aw / 2 + 2; i < ax + aw - 1; i++) {
             int ty = ay + ah - 2;
             if (rnd.nextFloat() < 0.75f && tiles[ty * w + i] == BASE && !hasNeighbor(i, ty, CAR)) {
@@ -1267,6 +1283,8 @@ final class City {
         float r = Math.min(110, Math.min(aw, ah) * T * 0.42f);
         Facility base = new Facility(FACILITY_BASE, c[0], c[1], r, (gx + 1.5f) * T, (y + bh - 2.5f) * T,
                 country.bases[rnd.nextInt(country.bases.length)]);
+        base.baseType = type;
+        if (type != BT_GARRISON) base.name += "  -  " + BASE_TYPES[type];
         // Two guards inside each gate.
         float[][] gates = {{(gx + 1.5f) * T, (y + bh - 2.5f) * T}, {(gx + 1.5f) * T, (y + 1.5f) * T},
                 {(x + bw - 2.5f) * T, (gy + 1.5f) * T}};
@@ -1278,6 +1296,312 @@ final class City {
             }
         }
         facilities.add(base);
+    }
+
+    /** Lays out the open part of a base for its kind: what stands there, and its helipads and tents. */
+    private void baseLayout(int type, int ax, int ay, int aw, int ah, Random r) {
+        float x0 = (ax + 2) * T, x1 = (ax + aw - 1) * T, y0 = (ay + ah / 2 + 1) * T, y1 = (ay + ah - 2) * T;
+        if (y1 - y0 < 3 * T) y0 = y1 - 3 * T;
+        float bw = x1 - x0, bh = y1 - y0;
+        switch (type) {
+            case BT_AIR: {
+                // A runway across the bottom, hangars and parked jets above it, helipads at the end.
+                float rh = Math.min(46, bh * 0.3f);
+                baseDecor.add(new float[]{BD_RUNWAY, x0, y1 - rh, x1, y1});
+                int hangars = Math.max(1, Math.min(3, (int) (bw / 70)));
+                float hw = Math.min(56, bw * 0.6f / hangars);
+                for (int k = 0; k < hangars; k++) {
+                    float hx = x0 + 4 + k * (hw + 6);
+                    baseDecor.add(new float[]{BD_HANGAR, hx, y0 + 2, hx + hw, Math.max(y0 + 14, y1 - rh - 18)});
+                }
+                for (int k = 0; k < 3; k++) {
+                    float jx = x0 + bw * 0.62f + k * 18, jy = y1 - rh - 10;
+                    if (jx + 12 < x1) baseDecor.add(new float[]{BD_JET, jx, jy - 7, jx + 12, jy + 7});
+                }
+                helipads.add(new float[]{x1 - 26, y0 + 22});
+                break;
+            }
+            case BT_ARMOUR: {
+                // A concrete tank park with rows of tanks, a vehicle shed, and the helipad.
+                float px0 = x0 + bw * 0.08f, px1 = x0 + bw * 0.7f;
+                baseDecor.add(new float[]{BD_HARDSTAND, px0, y0 + 2, px1, y1 - 2});
+                int cols = Math.max(2, (int) ((px1 - px0 - 8) / 24)), rows = Math.max(1, Math.min(4, (int) ((bh - 10) / 34)));
+                for (int q = 0; q < rows; q++)
+                    for (int k = 0; k < cols; k++) {
+                        float tx = px0 + 6 + k * 24, ty = y0 + 14 + q * 34;
+                        baseDecor.add(new float[]{BD_TANK, tx, ty, tx + 14, ty + 20});
+                    }
+                baseDecor.add(new float[]{BD_SHED, px1 + 6, y0 + 2, x1 - 4, y0 + Math.min(70, bh * 0.5f)});
+                helipads.add(new float[]{x1 - 26, y1 - 24});
+                break;
+            }
+            case BT_TRAINING: {
+                // A firing range with targets at the far end, an assault course, and rows of tents.
+                float rh = Math.min(60, bh * 0.32f);
+                baseDecor.add(new float[]{BD_RANGE, x0 + 2, y1 - rh, x0 + bw * 0.75f, y1 - 2});
+                baseDecor.add(new float[]{BD_OBSTACLE, x0 + 4, y0 + 4, x0 + bw * 0.45f, y0 + Math.min(70, bh * 0.4f)});
+                for (int i = 0; i < 8; i++)
+                    tents.add(new float[]{x0 + bw * 0.52f + (i % 4) * 24, y0 + 14 + (i / 4) * 20});
+                helipads.add(new float[]{x1 - 24, y1 - 24});
+                break;
+            }
+            case BT_SPECIAL: {
+                // A kill house for close-quarters training, two helipads, a mast and sandbagged positions.
+                baseDecor.add(new float[]{BD_KILLHOUSE, x0 + 4, y0 + 4, x0 + Math.min(120, bw * 0.4f), y0 + Math.min(90, bh - 8)});
+                helipads.add(new float[]{x0 + bw * 0.55f, y0 + bh * 0.5f});
+                helipads.add(new float[]{x0 + bw * 0.82f, y0 + bh * 0.5f});
+                baseDecor.add(new float[]{BD_MAST, x1 - 10, y0 + 4, x1 - 4, y0 + 10});
+                for (int k = 0; k < 3; k++) {
+                    float sx = x0 + bw * (0.48f + k * 0.18f);
+                    baseDecor.add(new float[]{BD_SANDBAGS, sx - 7, y1 - 14, sx + 7, y1 - 2});
+                }
+                break;
+            }
+            case BT_SUPPLY: {
+                // A fuel farm, stacks of containers and a long store shed.
+                float fs = Math.min(34, bh * 0.3f);
+                int fuel = Math.max(2, Math.min(4, (int) (bw * 0.4f / (fs + 6))));
+                for (int k = 0; k < fuel; k++) {
+                    float fx = x0 + 6 + k * (fs + 6);
+                    baseDecor.add(new float[]{BD_FUEL, fx, y0 + 4, fx + fs, y0 + 4 + fs});
+                }
+                for (int q = 0; q < 3; q++)
+                    for (int k = 0; k < 5; k++) {
+                        float cx = x0 + bw * 0.45f + k * 13, cy = y0 + 6 + q * 10;
+                        if (cx + 11 < x1) baseDecor.add(new float[]{BD_CONTAINER, cx, cy, cx + 11, cy + 7, r.nextInt(5)});
+                    }
+                baseDecor.add(new float[]{BD_SHED, x0 + 4, y1 - Math.min(50, bh * 0.35f), x0 + bw * 0.7f, y1 - 2});
+                helipads.add(new float[]{x1 - 24, y1 - 24});
+                break;
+            }
+            case BT_RADAR: {
+                // Radar domes and a dish on its tower, aerial masts, and a helipad.
+                float ds = Math.min(44, bh * 0.45f);
+                int domes = Math.max(1, Math.min(3, (int) (bw * 0.55f / (ds + 10))));
+                for (int k = 0; k < domes; k++) {
+                    float dx = x0 + 10 + k * (ds + 10);
+                    baseDecor.add(new float[]{BD_RADAR, dx, y0 + 6, dx + ds, y0 + 6 + ds});
+                }
+                baseDecor.add(new float[]{BD_DISH, x0 + bw * 0.64f, y0 + 6, x0 + bw * 0.64f + ds * 1.1f, y0 + 6 + ds * 1.1f});
+                for (int k = 0; k < 3; k++) {
+                    float mx = x0 + 10 + k * 26;
+                    baseDecor.add(new float[]{BD_MAST, mx, y1 - 12, mx + 6, y1 - 6});
+                }
+                helipads.add(new float[]{x1 - 24, y1 - 24});
+                break;
+            }
+            case BT_GUARD: {
+                // A parade ground with its flagpole, the vehicle shed, and a few tents.
+                baseDecor.add(new float[]{BD_HARDSTAND, x0 + 4, y0 + 2, x0 + bw * 0.55f, y1 - 2});
+                baseDecor.add(new float[]{BD_FLAG, x0 + bw * 0.3f - 3, y0 + bh * 0.5f - 3, x0 + bw * 0.3f + 3, y0 + bh * 0.5f + 3});
+                baseDecor.add(new float[]{BD_SHED, x0 + bw * 0.6f, y0 + 2, x1 - 4, y0 + Math.min(34, bh * 0.5f)});
+                for (int i = 0; i < 2; i++) tents.add(new float[]{x0 + bw * 0.66f + i * 22, y1 - 12});
+                helipads.add(new float[]{x1 - 24, y1 - 24});
+                break;
+            }
+            default:
+                // A garrison: the helipad and a block of tents.
+                helipads.add(new float[]{(ax + aw * 0.3f) * T, (ay + ah * 0.72f) * T});
+                for (int i = 0; i < 4; i++)
+                    tents.add(new float[]{(ax + aw * 0.55f + (i % 2) * 2.2f) * T, (ay + ah * 0.55f + (i / 2) * 2f) * T});
+        }
+    }
+
+    /** Draws what stands inside a base (see baseLayout). */
+    private void drawBaseDecor(Canvas c, Paint p) {
+        for (float[] d : baseDecor) {
+            int kind = (int) d[0];
+            float x0 = d[1], y0 = d[2], x1 = d[3], y1 = d[4], w = x1 - x0, h = y1 - y0, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+            switch (kind) {
+                case BD_RUNWAY: {
+                    p.setColor(0xFF3A3C3E);
+                    c.drawRect(x0, y0, x1, y1, p);
+                    p.setColor(0xFFE8E8E8);
+                    for (float x = x0 + 14; x < x1 - 14; x += 14) c.drawRect(x, cy - 0.6f, x + 7, cy + 0.6f, p);
+                    for (int k = 0; k < 4; k++) {
+                        float ty = y0 + 3 + k * (h - 6) / 4f;
+                        c.drawRect(x0 + 2, ty, x0 + 9, ty + (h - 6) / 8f, p);
+                        c.drawRect(x1 - 9, ty, x1 - 2, ty + (h - 6) / 8f, p);
+                    }
+                    p.setColor(0xFFE8D24A);
+                    c.drawRect(x0, y0, x1, y0 + 0.7f, p);
+                    c.drawRect(x0, y1 - 0.7f, x1, y1, p);
+                    break;
+                }
+                case BD_HANGAR: {
+                    // An arched roof: ribbed, lighter along its crown.
+                    p.setColor(0x60000000);
+                    c.drawRect(x0 + 2, y0 + 2, x1 + 2, y1 + 2, p);
+                    p.setColor(0xFF7C848A);
+                    c.drawRect(x0, y0, x1, y1, p);
+                    p.setColor(0xFF9AA2A8);
+                    c.drawRect(x0, cy - h * 0.18f, x1, cy + h * 0.18f, p);
+                    p.setColor(0xFF6A7076);
+                    for (float x = x0 + 4; x < x1; x += 5) c.drawRect(x, y0, x + 0.6f, y1, p);
+                    p.setColor(0xFF2A2E32);
+                    c.drawRect(x0 + w * 0.15f, y1 - 1.5f, x1 - w * 0.15f, y1, p);
+                    break;
+                }
+                case BD_JET: {
+                    p.setColor(0xFF6E7A82);
+                    c.drawRect(x0, cy - 1.2f, x1, cy + 1.2f, p);
+                    c.drawRect(cx - 1.5f, y0, cx + 1.5f, y1, p);
+                    c.drawRect(x0, cy - 3f, x0 + 2.5f, cy + 3f, p);
+                    p.setColor(0xFF3A4A5A);
+                    c.drawRect(x1 - 3, cy - 0.8f, x1 - 1, cy + 0.8f, p);
+                    break;
+                }
+                case BD_HARDSTAND: {
+                    p.setColor(0xFF8E9088);
+                    c.drawRect(x0, y0, x1, y1, p);
+                    p.setColor(0xFF7E8078);
+                    for (float x = x0 + 10; x < x1; x += 10) c.drawRect(x, y0, x + 0.5f, y1, p);
+                    for (float y = y0 + 10; y < y1; y += 10) c.drawRect(x0, y, x1, y + 0.5f, p);
+                    break;
+                }
+                case BD_TANK: {
+                    p.setColor(0x50000000);
+                    c.drawRect(x0 + 1.5f, y0 + 1.5f, x1 + 1.5f, y1 + 1.5f, p);
+                    p.setColor(0xFF2E3320);
+                    c.drawRect(x0, y0, x0 + 2.5f, y1, p);
+                    c.drawRect(x1 - 2.5f, y0, x1, y1, p);
+                    p.setColor(0xFF4F5A33);
+                    c.drawRect(x0 + 2, y0 + 1, x1 - 2, y1 - 1, p);
+                    p.setColor(0xFF5F6B3D);
+                    c.drawCircle(cx, cy + 1, 3.5f, p);
+                    p.setColor(0xFF3A4226);
+                    c.drawRect(cx - 0.8f, y0 - 6, cx + 0.8f, cy, p);
+                    break;
+                }
+                case BD_SHED: {
+                    p.setColor(0x60000000);
+                    c.drawRect(x0 + 2, y0 + 2, x1 + 2, y1 + 2, p);
+                    p.setColor(0xFF6E7660);
+                    c.drawRect(x0, y0, x1, y1, p);
+                    p.setColor(0xFF7E8670);
+                    for (float y = y0 + 3; y < y1; y += 6) c.drawRect(x0, y, x1, y + 2.5f, p);
+                    p.setColor(0xFF2A2E32);
+                    for (float x = x0 + 4; x + 8 < x1; x += 12) c.drawRect(x, y1 - 1.5f, x + 8, y1, p);
+                    break;
+                }
+                case BD_RANGE: {
+                    p.setColor(0xFF9A8A62);
+                    c.drawRect(x0, y0, x1, y1, p);
+                    p.setColor(0xFFC8BC98);
+                    int lanes = Math.max(3, (int) (h / 6));
+                    for (int k = 1; k < lanes; k++) c.drawRect(x0, y0 + k * h / lanes - 0.3f, x1, y0 + k * h / lanes + 0.3f, p);
+                    for (int k = 0; k < lanes; k++) {
+                        float ty = y0 + (k + 0.5f) * h / lanes;
+                        p.setColor(0xFFF2F2F2);
+                        c.drawCircle(x1 - 4, ty, 2f, p);
+                        p.setColor(0xFFD02A2A);
+                        c.drawCircle(x1 - 4, ty, 0.9f, p);
+                    }
+                    p.setColor(0xFF5A6670);
+                    c.drawRect(x0, y0, x0 + 4, y1, p);
+                    p.setColor(0xFF7A6A4A);
+                    c.drawRect(x1 - 1.5f, y0, x1, y1, p);
+                    break;
+                }
+                case BD_OBSTACLE: {
+                    p.setColor(0xFF8A7A52);
+                    c.drawRect(x0, y0, x1, y1, p);
+                    p.setColor(0xFF6A4A2A);
+                    for (float x = x0 + 4; x < x1 - 2; x += 8) c.drawRect(x, y0 + 2, x + 1.5f, y1 - 2, p);
+                    p.setColor(0xFF4A4E52);
+                    for (float x = x0 + 8; x < x1 - 2; x += 16) {
+                        c.drawRect(x, cy - 3, x + 4, cy + 3, p);
+                    }
+                    break;
+                }
+                case BD_RADAR: {
+                    p.setColor(0x60000000);
+                    c.drawCircle(cx + 2, cy + 2, w / 2, p);
+                    p.setColor(0xFFE8ECEE);
+                    c.drawCircle(cx, cy, w / 2, p);
+                    p.setColor(0xFFC8CED2);
+                    for (int k = 1; k < 4; k++) c.drawCircle(cx + w * 0.1f, cy + w * 0.1f, w / 2 * (1 - k * 0.22f), p);
+                    p.setColor(0xFFFFFFFF);
+                    c.drawCircle(cx - w * 0.15f, cy - w * 0.15f, w * 0.12f, p);
+                    break;
+                }
+                case BD_DISH: {
+                    p.setColor(0xFF6A7076);
+                    c.drawRect(cx - 3, cy - 3, cx + 3, cy + 3, p);
+                    p.setColor(0xFFD8DCE0);
+                    c.drawCircle(cx, cy, w / 2, p);
+                    p.setColor(0xFFB8BEC4);
+                    c.drawCircle(cx + 1, cy + 1, w / 2 * 0.7f, p);
+                    p.setColor(0xFF4A4E52);
+                    c.drawCircle(cx, cy, 1.5f, p);
+                    break;
+                }
+                case BD_MAST: {
+                    p.setColor(0xFFC8302A);
+                    c.drawRect(x0, y0, x1, y1, p);
+                    p.setColor(0xFFF2F2F2);
+                    c.drawRect(x0 + w * 0.25f, y0 + h * 0.25f, x1 - w * 0.25f, y1 - h * 0.25f, p);
+                    break;
+                }
+                case BD_SANDBAGS: {
+                    p.setColor(0xFF8E7A50);
+                    c.drawRect(x0, y0, x1, y0 + 3, p);
+                    c.drawRect(x0, y0, x0 + 3, y1, p);
+                    c.drawRect(x1 - 3, y0, x1, y1, p);
+                    p.setColor(0xFFC4AA78);
+                    for (float x = x0; x < x1; x += 3) c.drawRect(x + 0.3f, y0 + 0.3f, x + 2.7f, y0 + 2.7f, p);
+                    break;
+                }
+                case BD_KILLHOUSE: {
+                    // Walls without a roof: rooms and doorways seen from above.
+                    p.setColor(0xFF9A9488);
+                    c.drawRect(x0, y0, x1, y1, p);
+                    p.setColor(0xFF5A5650);
+                    float t = 1.4f;
+                    c.drawRect(x0, y0, x1, y0 + t, p);
+                    c.drawRect(x0, y1 - t, x1, y1, p);
+                    c.drawRect(x0, y0, x0 + t, y1, p);
+                    c.drawRect(x1 - t, y0, x1, y1, p);
+                    for (float x = x0 + 14; x < x1 - 6; x += 14) {
+                        c.drawRect(x, y0, x + t, cy - 3, p);
+                        c.drawRect(x, cy + 3, x + t, y1, p);
+                    }
+                    c.drawRect(x0, cy - t / 2, cx - 3, cy + t / 2, p);
+                    c.drawRect(cx + 3, cy - t / 2, x1, cy + t / 2, p);
+                    break;
+                }
+                case BD_FUEL: {
+                    p.setColor(0x60000000);
+                    c.drawCircle(cx + 2, cy + 2, w / 2, p);
+                    p.setColor(0xFFD8DCD0);
+                    c.drawCircle(cx, cy, w / 2, p);
+                    p.setColor(0xFFB8BCB0);
+                    c.drawCircle(cx, cy, w / 2 - 2, p);
+                    p.setColor(0xFF8A8E84);
+                    c.drawCircle(cx, cy, 1.6f, p);
+                    break;
+                }
+                case BD_CONTAINER: {
+                    int[] cols = {0xFFB03A2E, 0xFF2E5FB0, 0xFF3C7A4E, 0xFFD4A21C, 0xFF6A6E74};
+                    p.setColor(cols[(int) d[5] % cols.length]);
+                    c.drawRect(x0, y0, x1, y1, p);
+                    p.setColor(0x30000000);
+                    for (float x = x0 + 1.5f; x < x1; x += 2) c.drawRect(x, y0, x + 0.5f, y1, p);
+                    break;
+                }
+                case BD_FLAG: {
+                    p.setColor(0xFFE8E8E8);
+                    c.drawCircle(cx, cy, 2.5f, p);
+                    p.setColor(0xFF4A4E52);
+                    c.drawCircle(cx, cy, 1f, p);
+                    p.setColor(0xFFD02A2A);
+                    c.drawRect(cx, cy - 6, cx + 8, cy - 1.5f, p);
+                    break;
+                }
+                default:
+                    break;
+            }
+        }
     }
 
     /** A precinct with police cruisers, or a hospital with ambulances, parked next to it. */
@@ -4013,6 +4337,7 @@ final class City {
                 p.setColor(0xFF4A4E52);
                 c.drawCircle(cx, cy, 1.6f, p);
             }
+        drawBaseDecor(c, p);
         for (float[] hp : helipads) {
             p.setColor(0xFF4A4E46);
             c.drawCircle(hp[0], hp[1], 22, p);

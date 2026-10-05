@@ -405,6 +405,7 @@ final class World {
     void populate(CityConfig cfg) {
         scatterWeapons();
         stockArmouries();
+        baseStrengths();
         int people = Math.min(cfg.civilians(city.totalResidents), maxEntities * 4 / 5);
         residents(people);
         // A few strays.
@@ -466,6 +467,11 @@ final class World {
         for (int i = firstSoldier, n = entities.size(); i < n; i++) {
             Entity e = entities.get(i);
             if (e.type != Entity.SOLDIER) continue;
+            if (base != null && base.baseType == City.BT_SPECIAL) {
+                // Special forces: more rounds and a grenade or two more each.
+                e.reserve += e.reserve / 2;
+                e.grenades += 1;
+            }
             if (e.member == 4) applyRole(e, Entity.ROLE_GUNNER);
             else if (e.member == 3 && snipers > 0) {
                 applyRole(e, Entity.ROLE_SNIPER);
@@ -2503,6 +2509,21 @@ final class World {
     }
 
     /** Every precinct and base starts with a limited supply of ammunition. */
+    /** The army base's kind makes its own difference to the war (only if the city has reserves at all). */
+    private void baseStrengths() {
+        City.Facility base = city.nearestFacility(City.FACILITY_BASE, 0, 0);
+        if (base == null) return;
+        switch (base.baseType) {
+            case City.BT_AIR: if (dispatch.airSorties > 0) dispatch.airSorties++; break;
+            case City.BT_ARMOUR: if (dispatch.tankReserve > 0) dispatch.tankReserve++; break;
+            case City.BT_TRAINING: if (dispatch.squadReserve > 0) dispatch.squadReserve++; break;
+            case City.BT_SPECIAL: base.ammo += base.ammo / 3; break;
+            case City.BT_SUPPLY: base.ammo *= 2; break;
+            case City.BT_RADAR: if (dispatch.airSorties > 0) dispatch.airSorties++; break;
+            default: break;
+        }
+    }
+
     void stockArmouries() {
         for (City.Facility f : city.facilities) {
             if (f.kind == City.FACILITY_POLICE) f.ammo = 3000;
@@ -5277,7 +5298,11 @@ final class World {
      * Guard (once): two trucks of guardsmen drive in from the edge of town to protect the civilians.
      */
     void callNationalGuard() {
-        if (guardCalled || !outbreak || outbreakTime < 90 || warBalance > 0.45f || dispatch.squadReserve > 0 || readiness == 1) return;
+        // (A Guard armory in town: the governor doesn't wait so long.)
+        City.Facility armory = city.nearestFacility(City.FACILITY_BASE, 0, 0);
+        boolean local = armory != null && armory.baseType == City.BT_GUARD;
+        if (guardCalled || !outbreak || outbreakTime < (local ? 50 : 90) || warBalance > (local ? 0.55f : 0.45f)
+                || (dispatch.squadReserve > 0 && !local) || readiness == 1) return;
         guardCalled = true;
         float tx = city.worldW() / 2, ty = city.worldH() / 2;
         if (!dispatch.zones.isEmpty()) {

@@ -2,11 +2,18 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.2";
-    static final int VERSION_CODE = 40;
+    static final String VERSION = "10.3";
+    static final int VERSION_CODE = 41;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.3  -  Bases and buildings",
+                    "Eight kinds of military base, one picked per map and named on it: a Garrison, an Air Base with a runway, hangars and jets (more air strikes), an Armoured Base with tank parks and a firing range (a spare tank), a Training Camp with an obstacle course and barracks tents (a spare squad), a Special Forces Base with a kill house (better-armed soldiers with extra grenades), a Supply Depot with fuel tanks and container rows (twice the ammunition), a Radar Station with domes and a dish (more air strikes), and a Guard Armory (the National Guard comes sooner).",
+                    "205 new kinds of building (504 in all): about thirteen more of each country's own, from bagel shops, urgent care and Elks lodges in the USA to leagues clubs and wool stores in Australia, soba shops and sake breweries in Japan, préfectures and opéras in France, torterías and tequileras in Mexico, Metzgereien and Kurhäuser in Switzerland, officetels and wedding halls in Korea, roti canai stalls and palm oil mills in Malaysia, churrasqueiras and cork factories in Portugal, zaouias and fondouks in Morocco, and shaurma stands and garazhi in Russia.",
+                    "More for every kind of district everywhere: law firm towers and embassies downtown, tailors and dance studios on main streets, guildhalls and apothecaries in the old town, kindergartens and swimming pools in the suburbs, scrapyards and glassworks in industry, medical schools and planetariums on campus, and glasshouses, stables and pavilions in the parks.",
+                    "Saved cities keep their streets and buildings.",
+            },
             {
                     "10.2  -  Six more countries",
                     "Switzerland: chalets and steep roofs, Bahnhofstrasse and Kirchgasse, chocolateries, watchmakers, Käsereien and fondue Stübli, white and orange police cars, Autobahnpolizei on the A1.",

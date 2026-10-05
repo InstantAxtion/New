@@ -428,6 +428,231 @@ final class Variants {
         s("Vet clinic", ALL, SUB | MID, R_FLAT, 0xFFE4E8EC, 0xFF3FB8B0, "VET", I_WARD);
         o("Research institute", ALL, UNI | IND, R_SOLAR, 0xFF8A8E94, 0xFF3FB8B0, "INSTITUTE", I_LAB, 3, 6);
         s("Student bar", ALL, UNI, R_FLAT, 0xFF3A3A40, 0xFFE0C040, "BAR", I_BAR);
+
+        // 10.3: more of each country's own, and more for every kind of district.
+        // USA.
+        s("Sandwich deli", US, MID | DOWN, R_FLAT, 0xFF9AA0A6, 0xFF2E5FB0, "DELI", I_RESTAURANT);
+        s("Bagel shop", US, TOWN, R_STRIPES, 0xFF3A4656, 0xFFE0C040, "BAGELS", I_CAFE);
+        s("Thrift store", US, MID | SUB, R_FLAT, 0xFF7A6A5C, 0xFFE0702E, "THRIFT", I_SHELVES);
+        s("Vape shop", US, MID | SUB, R_FLAT, 0xFF8A4A32, 0xFF2E5FB0, "VAPE", I_SHELVES);
+        s("Nail salon", US, TOWN, R_FLAT, 0xFF5C6670, 0xFFE0C040, "NAILS", I_SALON);
+        s("Check cashing", US, MID | IND, R_FLAT, 0xFF6A6E74, 0xFF7A5AC0, "CHECKS CASHED", I_OFFICE);
+        s("Frozen yogurt", US, SUB | MID | PARK, R_STRIPES, 0xFF7A6A5C, 0xFFE0702E, "FROYO", I_CAFE);
+        s("Steakhouse", US, DOWN | MID | SUB, R_GABLE, 0xFF866E5E, 0xFFB03A2E, "STEAKHOUSE", I_RESTAURANT);
+        o("Elks lodge", US, SUB | MID, R_GABLE, 0xFF5C6670, 0xFF3FA860, "LODGE", I_BAR, 1, 2);
+        o("Urgent care", US, SUB | MID, R_FLAT, 0xFF6A6E74, 0xFF2E4F3A, "URGENT CARE", I_WARD, 1, 1);
+        wh("Feed store", US, PARK | IND, R_GABLE, 0xFF9AA0A6, 0xFF2E4F3A, "FEED & SEED", I_SHELVES);
+        wh("Truck stop", US, IND | PARK, R_FLAT, 0xFF59646B, 0xFFE07AA0, "TRUCK STOP", I_RESTAURANT);
+        hs("Split-level house", US, R_GABLE, 0xFF7C7C74, 0xFFD8CBB0, 2);
+        hs("Cape Cod", US, R_GABLE, 0xFF3A4656, 0xFFD8CBB0, 2);
+        ap("Garden apartments", US, SUB | MID, R_GABLE, 0xFF59646B, 0xFFB8A48A, I_HOME, 2, 3);
+        // Australia.
+        s("Hot bread shop", AU, TOWN, R_STRIPES, 0xFF6E5D5A, 0xFFE0702E, "HOT BREAD", I_KITCHEN);
+        s("Bait and tackle", AU, PARK | SUB, R_FLAT, 0xFF6A6E74, 0xFF2A2A2A, "BAIT & TACKLE", I_SHELVES);
+        s("Thai takeaway", AU, SUB | MID, R_STRIPES, 0xFF6E5D5A, 0xFF3FB8B0, "THAI", I_RESTAURANT);
+        s("Discount pharmacy", AU, MID | SUB, R_FLAT, 0xFF8A4A32, 0xFF3FB8B0, "PHARMACY", I_SHELVES);
+        s("Barbershop", AU, TOWN, R_STRIPES, 0xFF8A7F70, 0xFFE0702E, "BARBER", I_SALON);
+        s("Brunch café", AU, MID | OLD, R_STRIPES, 0xFF866E5E, 0xFF2E5FB0, "BRUNCH", I_CAFE);
+        s("Surf school", AU, PARK | SUB, R_FLAT, 0xFF8A4A32, 0xFF2E5FB0, "SURF SCHOOL", I_GYM);
+        o("Leagues club", AU, SUB | MID, R_FLAT, 0xFF5C6670, 0xFFE03A3A, "LEAGUES", I_BAR, 2, 2);
+        o("Racecourse grandstand", AU, PARK, R_BARREL, 0xFF8A7F70, 0xFF2A2A2A, "RACES", I_SEATS, 2, 3);
+        o("Council chambers", AU, OLD | MID, R_CLOCK, 0xFF6A7468, 0xFF2E4F3A, "COUNCIL", I_OFFICE, 2, 3);
+        wh("Stock and station agent", AU, PARK | IND, R_GABLE, 0xFF6E5D5A, 0xFF2E4F3A, "STOCK & STATION", I_SHELVES);
+        wh("Wool store", AU, IND | OLD, R_SAWTOOTH, 0xFF5C6670, 0xFFE0C040, "WOOL", I_RACKS);
+        hs("Brick veneer", AU, R_HIP, 0xFF7C7C74, 0xFFB8A48A, 1);
+        hs("Beach shack", AU, R_FLAT, 0xFF7C7C74, 0xFFD8CBB0, 1);
+        ap("Six-pack flats", AU, SUB | MID, R_HIP, 0xFF6A7468, 0xFFD8CBB0, I_HOME, 2, 2);
+        // Japan.
+        s("Bento shop", JP, TOWN, R_FLAT, 0xFF6A6E74, 0xFFE0702E, "BENTO", I_KITCHEN);
+        s("Tonkatsu", JP, TOWN, R_TILES, 0xFFB0583A, 0xFF2A2A2A, "TONKATSU", I_RESTAURANT);
+        s("Soba shop", JP, OLD | MID, R_TILES, 0xFF8A7F70, 0xFF2E4F3A, "SOBA", I_RESTAURANT);
+        s("Hanaya florist", JP, TOWN, R_FLAT, 0xFF3A4656, 0xFFE0C040, "花", I_SHELVES);
+        s("Used bookshop", JP, MID | UNI, R_FLAT, 0xFF59646B, 0xFF7A5AC0, "BOOKS", I_LIBRARY);
+        s("Taiyaki stand", JP, TOWN | PARK, R_STRIPES, 0xFF6E5D5A, 0xFF2E5FB0, "TAIYAKI", I_CAFE);
+        s("Kissaten", JP, OLD | MID, R_TILES, 0xFF6E5D5A, 0xFFE07AA0, "喫茶", I_CAFE);
+        o("Business hotel", JP, DOWN | MID, R_FLAT, 0xFF7C7C74, 0xFF2E5FB0, "HOTEL", I_HOTEL, 8, 12);
+        o("Ward office", JP, MID, R_FLAT, 0xFF5C6670, 0xFF2A2A2A, "区役所", I_OFFICE, 4, 6);
+        o("Kendo dojo", JP, OLD | SUB, R_HIP, 0xFF4F5A66, 0xFF2E5FB0, "道場", I_GYM, 1, 1);
+        wh("Sake brewery", JP, OLD | IND, R_TILES, 0xFF5C6670, 0xFF2E4F3A, "酒", I_FACTORY);
+        wh("Fish market", JP, IND | MID, R_BARREL, 0xFFB0583A, 0xFF3FB8B0, "市場", I_SHELVES);
+        hs("Prefab house", JP, R_GABLE, 0xFF3A4656, 0xFFF2EEE4, 2);
+        ap("Mansion tower", JP, DOWN | MID, R_HELIPAD, 0xFF7A6A5C, 0xFFB8C8D0, I_HOME, 15, 25);
+        // France.
+        s("Charcuterie", FR, TOWN, R_STRIPES, 0xFFB0583A, 0xFF2E5FB0, "CHARCUTERIE", I_SHELVES);
+        s("Poissonnerie", FR, TOWN, R_STRIPES, 0xFF8A4A32, 0xFF2E5FB0, "POISSONNERIE", I_SHELVES);
+        s("Opticien", FR, MID | DOWN, R_FLAT, 0xFF6A7468, 0xFF2A2A2A, "OPTIQUE", I_SALON);
+        s("Bouquiniste", FR, OLD | UNI, R_STRIPES, 0xFF6A7468, 0xFF3FA860, "LIVRES", I_LIBRARY);
+        s("Bar PMU", FR, MID | SUB, R_FLAT, 0xFFB0583A, 0xFFD8B040, "PMU", I_BAR);
+        s("Traiteur", FR, MID | OLD, R_STRIPES, 0xFF4F5A66, 0xFF3FB8B0, "TRAITEUR", I_KITCHEN);
+        s("Coiffeur", FR, TOWN, R_STRIPES, 0xFF8A4A32, 0xFFE03A3A, "COIFFEUR", I_SALON);
+        o("Préfecture", FR, OLD | DOWN, R_MANSARD, 0xFFB0583A, 0xFF2A2A2A, "PRÉFECTURE", I_OFFICE, 3, 4);
+        o("Musée d'art", FR, OLD | PARK, R_DOME, 0xFF6E5D5A, 0xFF2E4F3A, "MUSÉE", I_LIBRARY, 2, 3);
+        o("Opéra", FR, DOWN | OLD, R_DOME, 0xFF866E5E, 0xFFE0C040, "OPÉRA", I_SEATS, 3, 4);
+        wh("Coopérative laitière", FR, IND | PARK, R_TANKS, 0xFF9AA0A6, 0xFFE0C040, "LAITERIE", I_FACTORY);
+        wh("Hypermarché", FR, SUB | IND, R_PARAPET, 0xFF59646B, 0xFF2E4F3A, "HYPER", I_SHELVES);
+        hs("Pavillon", FR, R_TILES, 0xFF7C7C74, 0xFFD8CBB0, 1);
+        ap("Résidence", FR, SUB | MID, R_FLAT, 0xFF4F5A66, 0xFFB8A48A, I_HOME, 5, 7);
+        // Mexico.
+        s("Tortería", MX, TOWN, R_FLAT, 0xFF59646B, 0xFFE0702E, "TORTAS", I_RESTAURANT);
+        s("Pozolería", MX, TOWN, R_STRIPES, 0xFF7C7C74, 0xFFB03A2E, "POZOLE", I_RESTAURANT);
+        s("Nevería", MX, TOWN | PARK, R_STRIPES, 0xFF8A7F70, 0xFFD8B040, "NIEVES", I_CAFE);
+        s("Mueblería", MX, MID | SUB, R_FLAT, 0xFF7C7C74, 0xFFB03A2E, "MUEBLES", I_SHOWROOM);
+        s("Dulcería", MX, TOWN, R_STRIPES, 0xFF6E5D5A, 0xFFE03A3A, "DULCES", I_SHELVES);
+        s("Recaudería", MX, TOWN, R_FLAT, 0xFF7A6A5C, 0xFF3FB8B0, "FRUTAS", I_SHELVES);
+        s("Vulcanizadora", MX, IND | SUB, R_FLAT, 0xFF8A4A32, 0xFFE03A3A, "LLANTAS", I_SHOWROOM);
+        o("Palacio municipal", MX, OLD | MID, R_CLOCK, 0xFF866E5E, 0xFF2A2A2A, "PALACIO MUNICIPAL", I_OFFICE, 2, 3);
+        o("Casa de cultura", MX, OLD | MID, R_COURTYARD, 0xFF59646B, 0xFF2E4F3A, "CASA DE CULTURA", I_SEATS, 1, 2);
+        o("Clínica del IMSS", MX, MID | SUB, R_FLAT, 0xFF9AA0A6, 0xFF2A2A2A, "IMSS", I_WARD, 2, 4);
+        wh("Bodega de abarrotes", MX, IND | MID, R_BARREL, 0xFF6A6E74, 0xFF2E5FB0, "BODEGA", I_RACKS);
+        wh("Tequilera", MX, IND | PARK, R_TANKS, 0xFF9AA0A6, 0xFF7A5AC0, "TEQUILA", I_FACTORY);
+        hs("Casa de ladrillo", MX, R_FLAT, 0xFF5C6670, 0xFFD6C8A8, 1);
+        ap("Condominio", MX, MID | SUB, R_FLAT, 0xFF7C7C74, 0xFFE0D6C4, I_HOME, 4, 6);
+        // Switzerland.
+        s("Metzgerei", CH, TOWN, R_STRIPES, 0xFF5C6670, 0xFFE0702E, "METZGEREI", I_SHELVES);
+        s("Konditorei", CH, OLD | MID, R_STRIPES, 0xFF6A6E74, 0xFF2E4F3A, "KONDITOREI", I_CAFE);
+        s("Sportgeschäft", CH, MID | DOWN, R_FLAT, 0xFF7A6A5C, 0xFFE0C040, "SPORT", I_SHOWROOM);
+        s("Velo-Laden", CH, MID | SUB, R_FLAT, 0xFF7A6A5C, 0xFFE0C040, "VELO", I_SHOWROOM);
+        s("Tabak-Kiosk", CH, TOWN, R_FLAT, 0xFF866E5E, 0xFF2E5FB0, "KIOSK", I_SHELVES);
+        s("Apotheke", CH, TOWN, R_FLAT, 0xFF8A7F70, 0xFFD8B040, "APOTHEKE", I_SHELVES);
+        o("Gemeindehaus", CH, OLD | MID, R_GABLE, 0xFF5C6670, 0xFF7A5AC0, "GEMEINDE", I_OFFICE, 2, 3);
+        o("Kurhaus", CH, PARK, R_MANSARD, 0xFF6E5D5A, 0xFF3FA860, "KURHAUS", I_HOTEL, 4, 5);
+        o("Turnhalle", CH, SUB | UNI, R_BARREL, 0xFF5C6670, 0xFF2A2A2A, "TURNHALLE", I_GYM, 1, 2);
+        wh("Sägerei", CH, IND | PARK, R_GABLE, 0xFF9AA0A6, 0xFF3FB8B0, "SÄGEREI", I_FACTORY);
+        wh("Molkerei", CH, IND | PARK, R_TANKS, 0xFF866E5E, 0xFFE07AA0, "MOLKEREI", I_FACTORY);
+        hs("Holzhaus", CH, R_GABLE, 0xFF9AA0A6, 0xFFB8C8D0, 2);
+        ap("Terrassenhaus", CH, SUB | PARK, R_GREEN, 0xFF6A7468, 0xFFE0D6C4, I_HOME, 3, 4);
+        // South Korea.
+        s("Ppang bakery", KR, TOWN, R_FLAT, 0xFF866E5E, 0xFF3FB8B0, "빵집", I_KITCHEN);
+        s("Tteokbokki stand", KR, TOWN, R_STRIPES, 0xFF6E5D5A, 0xFF2A2A2A, "떡볶이", I_RESTAURANT);
+        s("Phone shop", KR, DOWN | MID, R_FLAT, 0xFFB0583A, 0xFFB03A2E, "휴대폰", I_SHOWROOM);
+        s("Coin laundry", KR, SUB | UNI, R_FLAT, 0xFF6A7468, 0xFFE0C040, "빨래방", I_LAUNDRY);
+        s("Hof", KR, DOWN | MID | UNI, R_FLAT, 0xFF866E5E, 0xFF3FB8B0, "호프", I_BAR);
+        s("Gimbap shop", KR, TOWN, R_FLAT, 0xFF8A7F70, 0xFF2E5FB0, "김밥", I_RESTAURANT);
+        s("Pyeonuijeom", KR, TOWN, R_FLAT, 0xFF8A7F70, 0xFF3FB8B0, "편의점", I_SHELVES);
+        o("Officetel", KR, DOWN | MID, R_FLAT, 0xFF7C7C74, 0xFF2E5FB0, null, I_OFFICE, 12, 20);
+        o("Wedding hall", KR, MID | SUB, R_PARAPET, 0xFF6A7468, 0xFFD8B040, "웨딩홀", I_SEATS, 3, 5);
+        o("Gu office", KR, MID, R_FLAT, 0xFF7A6A5C, 0xFFE07AA0, "구청", I_OFFICE, 5, 8);
+        wh("Traditional market", KR, OLD | MID, R_BARREL, 0xFF866E5E, 0xFFE0C040, "시장", I_SHELVES);
+        wh("Electronics plant", KR, IND, R_SAWTOOTH, 0xFF3A4656, 0xFF2A2A2A, null, I_FACTORY);
+        hs("Dandok house", KR, R_FLAT, 0xFF866E5E, 0xFFD6C8A8, 2);
+        // Malaysia.
+        s("Roti canai stall", MY, TOWN, R_STRIPES, 0xFF8A4A32, 0xFFE03A3A, "ROTI CANAI", I_RESTAURANT);
+        s("Bak kut teh", MY, OLD | MID, R_TILES, 0xFF5C6670, 0xFFB03A2E, "BAK KUT TEH", I_RESTAURANT);
+        s("Teh tarik stall", MY, TOWN, R_STRIPES, 0xFF8A4A32, 0xFFD8B040, "TEH TARIK", I_CAFE);
+        s("Kedai kain", MY, OLD | MID, R_TILES, 0xFF8A7F70, 0xFF2E5FB0, "KAIN", I_SHELVES);
+        s("Kedai emas", MY, OLD | DOWN, R_FLAT, 0xFF59646B, 0xFFB03A2E, "EMAS", I_SHELVES);
+        s("Medan selera", MY, TOWN, R_FLAT, 0xFF5C6670, 0xFF7A5AC0, "MEDAN SELERA", I_RESTAURANT);
+        s("Kedai telefon", MY, DOWN | MID, R_FLAT, 0xFFB0583A, 0xFFB03A2E, "TELEFON", I_SHOWROOM);
+        o("Hindu temple", MY, OLD | MID, R_PAGODA, 0xFF8A4A32, 0xFF3FA860, "KUIL", I_PEWS, 1, 2);
+        o("Masjid", MY, TOWN, R_DOME, 0xFFB0583A, 0xFF2E5FB0, "MASJID", I_PEWS, 1, 2);
+        o("Dewan orang ramai", MY, SUB | MID, R_GABLE, 0xFFB0583A, 0xFFE07AA0, "DEWAN", I_SEATS, 1, 1);
+        wh("Palm oil mill", MY, IND | PARK, R_TANKS, 0xFF866E5E, 0xFFE03A3A, "KILANG SAWIT", I_FACTORY);
+        hs("Rumah kayu", MY, R_HIP, 0xFF4F5A66, 0xFFF2EEE4, 1);
+        ap("Kondominium", MY, DOWN | MID, R_POOL, 0xFF8A4A32, 0xFFD8CBB0, I_HOME, 15, 25);
+        // Portugal.
+        s("Leitaria", PT, TOWN, R_STRIPES, 0xFF7C7C74, 0xFFB03A2E, "LEITARIA", I_CAFE);
+        s("Churrasqueira", PT, TOWN, R_TILES, 0xFF59646B, 0xFF7A5AC0, "CHURRASQUEIRA", I_RESTAURANT);
+        s("Mercearia", PT, TOWN, R_STRIPES, 0xFF866E5E, 0xFF3FA860, "MERCEARIA", I_SHELVES);
+        s("Retrosaria", PT, OLD, R_STRIPES, 0xFF59646B, 0xFFB03A2E, "RETROSARIA", I_SHELVES);
+        s("Talho", PT, TOWN, R_FLAT, 0xFF5C6670, 0xFF3FA860, "TALHO", I_SHELVES);
+        s("Papelaria", PT, MID | SUB | UNI, R_FLAT, 0xFF9AA0A6, 0xFF2E5FB0, "PAPELARIA", I_SHELVES);
+        s("Cervejaria", PT, DOWN | MID, R_TILES, 0xFF6E5D5A, 0xFF3FB8B0, "CERVEJARIA", I_BAR);
+        o("Câmara Municipal", PT, OLD | MID, R_CLOCK, 0xFF866E5E, 0xFFE07AA0, "CÂMARA MUNICIPAL", I_OFFICE, 2, 3);
+        o("Teatro", PT, DOWN | OLD, R_BARREL, 0xFF8A7F70, 0xFF2E5FB0, "TEATRO", I_SEATS, 3, 3);
+        o("Pousada", PT, OLD | PARK, R_TILES, 0xFFB0583A, 0xFFE0C040, "POUSADA", I_HOTEL, 2, 3);
+        wh("Fábrica de cortiça", PT, IND | PARK, R_SAWTOOTH, 0xFF59646B, 0xFF3FA860, "CORTIÇA", I_FACTORY);
+        hs("Casa de xisto", PT, R_GABLE, 0xFF8A4A32, 0xFFC8A47A, 1);
+        ap("Prédio de azulejo", PT, OLD | MID, R_TILES, 0xFF6E5D5A, 0xFFE0D6C4, I_HOME, 3, 4);
+        // Morocco.
+        s("Pâtisserie marocaine", MA, TOWN, R_FLAT, 0xFF3A4656, 0xFF2E5FB0, "PÂTISSERIE", I_CAFE);
+        s("Hanout", MA, TOWN, R_FLAT, 0xFF8A4A32, 0xFFE07AA0, "HANOUT", I_SHELVES);
+        s("Boucherie halal", MA, TOWN, R_FLAT, 0xFF866E5E, 0xFF2E4F3A, "BOUCHERIE", I_SHELVES);
+        s("Tapis shop", MA, OLD, R_STRIPES, 0xFF6E5D5A, 0xFFE0702E, "TAPIS", I_SHELVES);
+        s("Dinandier", MA, OLD, R_FLAT, 0xFF7A6A5C, 0xFFE03A3A, "CUIVRE", I_SHELVES);
+        s("Snack", MA, MID | SUB, R_FLAT, 0xFF3A4656, 0xFFE0702E, "SNACK", I_RESTAURANT);
+        s("Téléboutique", MA, MID | SUB, R_FLAT, 0xFF3A4656, 0xFF2E4F3A, "TÉLÉBOUTIQUE", I_SHELVES);
+        o("Zaouia", MA, OLD, R_DOME, 0xFF59646B, 0xFF3FB8B0, "ZAOUIA", I_PEWS, 1, 1);
+        o("Palais", MA, OLD | PARK, R_COURTYARD, 0xFF7C7C74, 0xFFE0702E, "PALAIS", I_HOTEL, 2, 2);
+        o("Fondouk", MA, OLD | MID, R_COURTYARD, 0xFF866E5E, 0xFF2E5FB0, "FONDOUK", I_HOTEL, 2, 2);
+        wh("Huilerie", MA, IND | PARK, R_TANKS, 0xFF7C7C74, 0xFFB03A2E, "HUILERIE", I_FACTORY);
+        hs("Maison en pisé", MA, R_FLAT, 0xFF3A4656, 0xFFC8A47A, 1);
+        ap("Résidence fermée", MA, MID | SUB, R_FLAT, 0xFF8A7F70, 0xFFD6C8A8, I_HOME, 5, 8);
+        // Russia.
+        s("Shaurma", RU, TOWN, R_FLAT, 0xFF6E5D5A, 0xFF7A5AC0, "ШАУРМА", I_RESTAURANT);
+        s("Bulochnaya", RU, TOWN, R_FLAT, 0xFF8A7F70, 0xFF3FB8B0, "БУЛОЧНАЯ", I_KITCHEN);
+        s("Univermag", RU, DOWN | MID, R_PARAPET, 0xFF866E5E, 0xFF3FB8B0, "УНИВЕРМАГ", I_SHELVES);
+        s("Rybny magazin", RU, TOWN, R_FLAT, 0xFF9AA0A6, 0xFFE0702E, "РЫБА", I_SHELVES);
+        s("Parikmakherskaya", RU, TOWN, R_FLAT, 0xFF6A7468, 0xFFD8B040, "ПАРИКМАХЕРСКАЯ", I_SALON);
+        s("Remont obuvi", RU, MID | SUB, R_FLAT, 0xFF7C7C74, 0xFFE07AA0, "РЕМОНТ ОБУВИ", I_SHOWROOM);
+        s("Pivnaya", RU, MID | IND, R_FLAT, 0xFF866E5E, 0xFFE0702E, "ПИВО", I_BAR);
+        o("Poliklinika", RU, MID | SUB, R_FLAT, 0xFF6E5D5A, 0xFF2E4F3A, "ПОЛИКЛИНИКА", I_WARD, 3, 5);
+        o("Drama theatre", RU, DOWN | OLD, R_PARAPET, 0xFF866E5E, 0xFFB03A2E, "ТЕАТР", I_SEATS, 3, 4);
+        o("Administratsiya", RU, MID | OLD, R_CLOCK, 0xFF59646B, 0xFF2E4F3A, "АДМИНИСТРАЦИЯ", I_OFFICE, 4, 6);
+        wh("Garazhi", RU, SUB | IND, R_FLAT, 0xFF4F5A66, 0xFF3FA860, "ГАРАЖИ", I_RACKS);
+        wh("Teplitsa", RU, PARK, R_GLASS, 0xFF7C7C74, 0xFF2A2A2A, null, I_SHELVES);
+        hs("Kottedzh", RU, R_HIP, 0xFF6E5D5A, 0xFFE8C890, 2);
+        ap("Novostroyka", RU, SUB | MID, R_FLAT, 0xFF866E5E, 0xFFF2EEE4, I_HOME, 17, 25);
+        // Every country: downtown.
+        o("Law firm tower", ALL, DOWN, R_GLASS, 0xFF866E5E, 0xFF2E4F3A, null, I_OFFICE, 10, 18);
+        o("Insurance building", ALL, DOWN, R_ANTENNA, 0xFF7C7C74, 0xFFD8B040, null, I_OFFICE, 8, 14);
+        o("Media centre", ALL, DOWN, R_GLASS, 0xFFB0583A, 0xFF2E5FB0, "MEDIA", I_OFFICE, 6, 10);
+        s("Luxury boutique", ALL, DOWN, R_PARAPET, 0xFF8A7F70, 0xFF3FA860, "LUXE", I_SHELVES);
+        o("Rooftop-bar hotel", ALL, DOWN, R_POOL, 0xFF6A6E74, 0xFFB03A2E, "HOTEL", I_HOTEL, 10, 16);
+        s("Wine bar", ALL, DOWN | OLD, R_FLAT, 0xFF8A4A32, 0xFFD8B040, "WINE", I_BAR);
+        o("Co-working space", ALL, DOWN | MID, R_GREEN, 0xFF8A7F70, 0xFF7A5AC0, "COWORK", I_OFFICE, 4, 6);
+        o("Embassy", ALL, DOWN, R_PARAPET, 0xFF6E5D5A, 0xFF2E5FB0, null, I_OFFICE, 3, 4);
+        // Everyday streets.
+        s("Tailor", ALL, MID | OLD, R_STRIPES, 0xFF866E5E, 0xFFD8B040, "TAILOR", I_SHELVES);
+        s("Print shop", ALL, MID, R_FLAT, 0xFF6A6E74, 0xFFB03A2E, "PRINT", I_SHOWROOM);
+        s("Locksmith", ALL, MID | SUB, R_FLAT, 0xFFB0583A, 0xFF3FB8B0, "KEYS", I_SHOWROOM);
+        s("Phone repair", ALL, MID | DOWN, R_FLAT, 0xFF8A7F70, 0xFFE0702E, "REPAIR", I_SHOWROOM);
+        s("Tea shop", ALL, MID | OLD, R_STRIPES, 0xFF8A4A32, 0xFF2E4F3A, "TEA", I_CAFE);
+        s("Board game café", ALL, MID | UNI, R_FLAT, 0xFF9AA0A6, 0xFF3FB8B0, "GAMES", I_CAFE);
+        o("Dance studio", ALL, MID, R_FLAT, 0xFF6A7468, 0xFF3FB8B0, "DANCE", I_GYM, 2, 2);
+        o("Music school", ALL, MID | UNI, R_PARAPET, 0xFF9AA0A6, 0xFF2E4F3A, "MUSIC", I_CLASSROOM, 2, 3);
+        s("Camera shop", ALL, MID | DOWN, R_FLAT, 0xFF866E5E, 0xFFB03A2E, "CAMERAS", I_SHELVES);
+        // Old town.
+        s("Watch repairer", ALL, OLD, R_STRIPES, 0xFF6E5D5A, 0xFF3FA860, "WATCHES", I_SHELVES);
+        s("Tea room", ALL, OLD | PARK, R_STRIPES, 0xFF6A6E74, 0xFF2A2A2A, "TEA ROOM", I_CAFE);
+        s("Apothecary", ALL, OLD, R_PARAPET, 0xFF8A7F70, 0xFFD8B040, "APOTHECARY", I_SHELVES);
+        o("Guildhall", ALL, OLD, R_GABLE, 0xFF4F5A66, 0xFFE0702E, null, I_SEATS, 2, 3);
+        o("Old customs house", ALL, OLD, R_PARAPET, 0xFF6A7468, 0xFFE0C040, null, I_OFFICE, 2, 3);
+        s("Candle maker", ALL, OLD, R_TILES, 0xFF7C7C74, 0xFFE07AA0, "CANDLES", I_SHELVES);
+        s("Map shop", ALL, OLD | UNI, R_STRIPES, 0xFF6E5D5A, 0xFF2E4F3A, "MAPS", I_LIBRARY);
+        o("Puppet theatre", ALL, OLD, R_BARREL, 0xFF3A4656, 0xFF7A5AC0, "PUPPETS", I_SEATS, 1, 2);
+        // Suburbs.
+        s("Video rental", ALL, SUB, R_FLAT, 0xFF3A4656, 0xFF2A2A2A, "VIDEO", I_SHELVES);
+        s("Takeaway pizza", ALL, SUB, R_STRIPES, 0xFF5C6670, 0xFF2E5FB0, "PIZZA", I_RESTAURANT);
+        o("Kindergarten", ALL, SUB, R_FLAT, 0xFF4F5A66, 0xFFE0C040, "KINDERGARTEN", I_CLASSROOM, 1, 1);
+        o("Retirement home", ALL, SUB | PARK, R_HIP, 0xFF8A4A32, 0xFF2A2A2A, null, I_WARD, 2, 3);
+        o("Swimming pool", ALL, SUB | PARK, R_BARREL, 0xFF6A6E74, 0xFF2E4F3A, "POOL", I_BATH, 1, 1);
+        s("Driving school", ALL, SUB | MID, R_FLAT, 0xFF7C7C74, 0xFFE0702E, "DRIVING SCHOOL", I_CLASSROOM);
+        o("Scout hall", ALL, SUB, R_GABLE, 0xFF6E5D5A, 0xFF7A5AC0, null, I_GYM, 1, 1);
+        // Industry.
+        wh("Scrapyard", ALL, IND, R_FLAT, 0xFF8A7F70, 0xFF2A2A2A, "SCRAP", I_RACKS);
+        wh("Paint factory", ALL, IND, R_STACKS, 0xFF8A4A32, 0xFFE03A3A, null, I_FACTORY);
+        wh("Bakery plant", ALL, IND, R_FLAT, 0xFF4F5A66, 0xFF2E5FB0, "BAKERY", I_FACTORY);
+        wh("Furniture factory", ALL, IND, R_SAWTOOTH, 0xFF9AA0A6, 0xFF2A2A2A, null, I_FACTORY);
+        wh("Tyre depot", ALL, IND | SUB, R_FLAT, 0xFF4F5A66, 0xFFD8B040, "TYRES", I_RACKS);
+        wh("Glassworks", ALL, IND, R_STACKS, 0xFF4F5A66, 0xFFE07AA0, null, I_FACTORY);
+        wh("Truck wash", ALL, IND, R_FLAT, 0xFF5C6670, 0xFFE07AA0, "TRUCK WASH", I_SHOWROOM);
+        wh("Bus depot", ALL, IND | MID, R_SAWTOOTH, 0xFF59646B, 0xFFE03A3A, "BUS DEPOT", I_SHOWROOM);
+        wh("Ice factory", ALL, IND, R_FLAT, 0xFF6E5D5A, 0xFF2A2A2A, "ICE", I_RACKS);
+        // Campus.
+        o("Medical school", ALL, UNI, R_FLAT, 0xFF9AA0A6, 0xFFE07AA0, null, I_LAB, 4, 6);
+        o("Engineering faculty", ALL, UNI | IND, R_SAWTOOTH, 0xFF7C7C74, 0xFFE03A3A, null, I_LAB, 3, 5);
+        o("Law faculty", ALL, UNI, R_PARAPET, 0xFF4F5A66, 0xFFE03A3A, null, I_CLASSROOM, 3, 4);
+        s("Campus bookstore", ALL, UNI, R_FLAT, 0xFF59646B, 0xFF2E5FB0, "BOOKSTORE", I_LIBRARY);
+        o("Planetarium", ALL, UNI | PARK, R_DOME, 0xFF866E5E, 0xFF2A2A2A, null, I_SEATS, 1, 2);
+        o("Innovation hub", ALL, UNI | DOWN, R_GLASS, 0xFF59646B, 0xFFE07AA0, null, I_OFFICE, 3, 6);
+        // Parks.
+        s("Kiosk café", ALL, PARK, R_STRIPES, 0xFF5C6670, 0xFF3FB8B0, "KIOSK", I_CAFE);
+        o("Visitor centre", ALL, PARK, R_GREEN, 0xFF5C6670, 0xFFE03A3A, null, I_LIBRARY, 1, 1);
+        o("Botanic glasshouse", ALL, PARK, R_GLASS, 0xFF3A4656, 0xFF7A5AC0, null, I_SHELVES, 1, 2);
+        o("Riding stables", ALL, PARK, R_GABLE, 0xFF9AA0A6, 0xFFD8B040, null, I_RACKS, 1, 1);
+        o("Park pavilion", ALL, PARK, R_HIP, 0xFF59646B, 0xFFE03A3A, null, I_CAFE, 1, 1);
+        wh("Plant nursery", ALL, PARK | SUB, R_GLASS, 0xFF4F5A66, 0xFF3FB8B0, "NURSERY", I_SHELVES);
+        o("Mini golf club", ALL, PARK, R_FLAT, 0xFF59646B, 0xFF2E4F3A, "MINI GOLF", I_GYM, 1, 1);
     }
 
     /**

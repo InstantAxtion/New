@@ -225,7 +225,7 @@ counts), and wherever the dead gather the ground glows red. Labels go most impor
   blackout (no sirens, no safe-zone broadcasts); if the hospital falls, nobody can be treated.
 - **Zombies inside**: some buildings hide zombies that burst out when someone comes near or tries to
   shelter there. Idle zombies lurk in empty buildings, smash shop windows and set off car alarms.
-- **299 kinds of building**: each with its own roof, colours and sign, picked by country and by
+- **504 kinds of building**: each with its own roof, colours and sign, picked by country and by
   district. Diners, drive-thrus and motels in the USA; corner pubs, milk bars, RSL clubs and
   Queenslanders in Australia; konbini, izakayas, pachinko parlours, ryokan and danchi blocks in
   Japan; boulangeries, brasseries, mairies and Haussmann blocks in France; taquerías, tortillerías,
@@ -266,7 +266,11 @@ the maps.
 **Police stations** hold parked cruisers; some cops start there, backup officers leave from there and
 police prefer to set up their safe zone there. The **military base** is a fenced compound with gates,
 barracks, a helipad and trucks; soldiers start there, squads deploy from its gate, and it becomes the
-military safe zone.
+military safe zone. Each map gets one of eight kinds of base: a Garrison,
+an Air Base (runway, hangars, more air strikes), an Armoured Base (tank parks, a spare tank), a
+Training Camp (obstacle course, a spare squad), a Special Forces Base (kill house, better-armed
+soldiers), a Supply Depot (fuel tanks, twice the ammunition), a Radar Station (more air strikes) or
+a Guard Armory (the National Guard comes sooner).
 
 ## 911, radio and safe zones
 

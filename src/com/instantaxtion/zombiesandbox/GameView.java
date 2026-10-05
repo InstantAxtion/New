@@ -1969,7 +1969,7 @@ final class GameView extends View implements Menu.Host {
             case City.CHURCH: case City.SPIRE: case City.CRYPT: floorCol = 0xFF9C8C76; break;
             case City.MARKET: case City.KIOSK: case City.PHARMACY: case City.MALL: floorCol = 0xFFDCDCD4; break;
             case City.HOSPITAL: floorCol = 0xFFD8E2E6; break;
-            case City.WAREHOUSE: case City.POWER: case City.GARAGE: case City.FIRE_STATION: floorCol = 0xFF8A8A84; break;
+            case City.WAREHOUSE: case City.POWER: case City.GARAGE: case City.FIRE_STATION: case City.WORKS: floorCol = 0xFF8A8A84; break;
             case City.BARRACKS: case City.TOWER: floorCol = 0xFF7E806E; break;
             case City.STATION: floorCol = 0xFFB4B8BE; break;
             case City.SCHOOL: floorCol = 0xFFC8B89A; break;
@@ -5594,7 +5594,8 @@ final class GameView extends View implements Menu.Host {
     private static final String[] KIND_NAMES = {"Offices", "House", "Warehouse", "Police station", "Barracks",
             "Watchtower", "Hospital", "Shop", "Church", "School", "Fire station", "Supermarket", "Gas station",
             "Steeple", "Crypt", "Apartment block", "Parking garage", "Pharmacy", "Train station", "Shopping mall",
-            "Stadium", "Power station", "Barn", "Silo"};
+            "Stadium", "Power station", "Barn", "Silo", "City hall", "Courthouse", "Jail", "Emergency call centre",
+            "Public works depot"};
 
     /** The building card: what it is, where, who is inside, what's left in it, and what it does for the city. */
     private void drawBuildingInspect(Canvas c, City.Building b) {
@@ -5638,6 +5639,15 @@ final class GameView extends View implements Menu.Host {
             case City.PHARMACY: role = "Patches people up and sometimes stops a bite"; break;
             case City.FIRE_STATION: role = "Sends fire engines to burning wrecks"; break;
             case City.HOUSE: case City.APARTMENT: role = "Home: the people who live here run back to it"; break;
+            case City.CITY_HALL: role = world.hallLost ? "FALLEN: no emergency broadcasts, no volunteers, no one to call the Guard"
+                    : "Runs the emergency: broadcasts, calls for volunteers, asks for the National Guard"; break;
+            case City.COURTHOUSE: role = "Its holding cells and evidence room: police restock here; can become a safe zone"; break;
+            case City.JAIL: role = world.jailBroken ? "EMPTY: the inmates broke out"
+                    : world.inmates + " inmates locked up. If it's overrun or the power fails, they break out"; break;
+            case City.CALL_CENTRE: role = world.callsLost ? "FALLEN: 911 calls go unanswered and nobody is watching the cameras"
+                    : "Answers 911 calls and watches the cameras: police are sent to trouble quicker"; break;
+            case City.WORKS: role = world.worksLost ? "FALLEN: no crews out boarding up or clearing the streets"
+                    : "Crews board up shelters during the outbreak and clear the streets after it"; break;
         }
         if (role != null) lines.add(role);
         text.setTextAlign(Paint.Align.LEFT);
@@ -5655,7 +5665,7 @@ final class GameView extends View implements Menu.Host {
         text.setTextSize(12.5f * dp);
         for (int i = 0; i < lines.size(); i++) {
             String l = lines.get(i);
-            text.setColor(l.startsWith("INFESTED") || l.startsWith("BLACKOUT") || l.startsWith("FALLEN") ? 0xFFFF8A6A : 0xFFB8BDC4);
+            text.setColor(l.startsWith("INFESTED") || l.startsWith("BLACKOUT") || l.startsWith("FALLEN") || l.startsWith("EMPTY") ? 0xFFFF8A6A : 0xFFB8BDC4);
             c.drawText(l, left + 14 * dp, top + 22 * dp + (i + 1) * lh, text);
         }
         // Outline the building on the map so it's clear which one this is.

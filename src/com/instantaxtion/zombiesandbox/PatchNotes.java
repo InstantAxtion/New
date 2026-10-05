@@ -2,11 +2,21 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.3";
-    static final int VERSION_CODE = 41;
+    static final String VERSION = "10.4";
+    static final int VERSION_CODE = 42;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.4  -  City Hall",
+                    "Government buildings in every town: City Hall on its own square with a fountain, flags and flower beds; a courthouse with a walled jail and exercise yard behind it; an emergency call centre with a radio mast; and a public works depot full of orange trucks, salt and gravel. Each is named and signed in the country's own words (Hôtel de Ville, Palacio Municipal, Stadthaus, 市役所, 시청, Meriya...).",
+                    "City Hall runs the emergency: the broadcast goes out sooner, it calls for volunteers, and the Mayor asks the governor for the National Guard. If the dead take it, the broadcasts stop, nobody recruits and the Guard is a long time coming.",
+                    "The jail holds a dozen or so inmates. If the dead get in, the power fails or the last guards leave, they break out (some already bitten, a few armed, the rest heading for the nearest gun store).",
+                    "The call centre watches the cameras and keeps more calls going, so police reach trouble quicker. If it's overrun, most 911 calls ring out and nobody spots new outbreaks.",
+                    "Police can restock at the courthouse armoury. Public works crews board up buildings where people are sheltering, and clear the streets twice as fast once it's over. Every one of them comes back once it's cleared and people return.",
+                    "Tap any of them for its card: what it does, and whether it's fallen. Clerks, court officers, dispatchers and road crews go to work there.",
+                    "Military bases are now named \"Camp Redstone (Air Base)\" and so on. New cities are laid out with the government quarter (so a city code from before 10.4 builds a slightly different town); saved games load their own city exactly as it was.",
+            },
             {
                     "10.3  -  Bases and buildings",
                     "Eight kinds of military base, one picked per map and named on it: a Garrison, an Air Base with a runway, hangars and jets (more air strikes), an Armoured Base with tank parks and a firing range (a spare tank), a Training Camp with an obstacle course and barracks tents (a spare squad), a Special Forces Base with a kill house (better-armed soldiers with extra grenades), a Supply Depot with fuel tanks and container rows (twice the ammunition), a Radar Station with domes and a dish (more air strikes), and a Guard Armory (the National Guard comes sooner).",

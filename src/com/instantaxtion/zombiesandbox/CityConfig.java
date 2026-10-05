@@ -98,6 +98,12 @@ final class CityConfig implements OptionSet {
     long seed = new Random().nextInt(1000000);
     /** Start the next game on the city from {@link #code()} instead of a new random one. */
     boolean keepCity;
+    /** The city has its government quarter (since 10.4; games saved before that rebuild without it). */
+    boolean civic = true;
+
+    int preset() {
+        return v[OPT_PRESET];
+    }
 
     /**
      * A short code that rebuilds this exact city: map preset and size, then the seed, e.g. "12-483920".

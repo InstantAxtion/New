@@ -203,6 +203,14 @@ final class Dispatch {
         calls++;
         caller.phoneTimer = 3f;
         w.emit(Sfx.PHONE, caller.x, caller.y);
+        // With the call centre overrun, most calls just ring out.
+        if (w.callsLost && rnd.nextFloat() < 0.6f) {
+            if (w.time - unansweredSaid > 40) {
+                unansweredSaid = w.time;
+                say(WHO_911, null, "(The line rings and rings. Nobody at " + city.callCentre.name + " picks up.)", caller.x, caller.y);
+            }
+            return;
+        }
         int count = Math.max(1, w.countZombiesNear(zombie.x, zombie.y, 90));
         for (int i = 0; i < incidents.size(); i++) {
             Incident inc = incidents.get(i);
@@ -265,7 +273,7 @@ final class Dispatch {
         updateZones(step);
     }
 
-    private float sweepCd = 3, mobiliseCd = 2;
+    private float sweepCd = 3, mobiliseCd = 2, unansweredSaid = -100;
 
     /**
      * Command keeps the whole outbreak in mind, not just the last 911 call: once the city knows, every few
@@ -275,8 +283,12 @@ final class Dispatch {
     private void sweep(float step) {
         sweepCd -= step;
         if (sweepCd > 0 || w.alert < 1) return;
-        sweepCd = 3;
-        int max = city.w >= 400 ? 18 : city.w >= 300 ? 14 : 12;
+        // The call centre watches the traffic cameras: it spots trouble sooner and keeps more calls going.
+        // With it overrun, nobody's watching.
+        boolean centre = city.callCentre != null;
+        if (centre && w.callsLost) return;
+        sweepCd = centre ? 2 : 3;
+        int max = (city.w >= 400 ? 18 : city.w >= 300 ? 14 : 12) + (centre ? 4 : 0);
         if (incidents.size() >= max) return;
         int cell = 192, gw = (int) (city.worldW() / cell) + 1, gh = (int) (city.worldH() / cell) + 1;
         int[] count = new int[gw * gh];
@@ -981,7 +993,7 @@ final class Dispatch {
         float bestScore = -Float.MAX_VALUE;
         for (int i = 0, n = city.buildings.size(); i < n; i++) {
             City.Building b = city.buildings.get(i);
-            if (b.collapsed || b.name == null || (military && b.kind == City.CHURCH)) continue;
+            if (b.collapsed || b.name == null || (military && b.kind == City.CHURCH) || b.kind == City.JAIL) continue;
             boolean taken = false;
             for (int k = 0; k < zones.size(); k++)
                 if (Math.hypot(zones.get(k).x - b.doorX, zones.get(k).y - b.doorY) < 150) taken = true;

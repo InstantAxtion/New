@@ -369,6 +369,12 @@ final class World {
         zFill = new int[gw * gh];
         cellCount = new int[gw * gh];
         cellFill = new int[gw * gh];
+        if (city.courthouse != null) {
+            City.Building b = city.courthouse;
+            courtArmoury = new City.Facility(City.FACILITY_POLICE, b.doorX, b.doorY, 40, b.doorX, b.doorY, b.name);
+            courtArmoury.field = new int[city.w * city.h];
+            city.walkFieldFromPoints(courtArmoury.field, new float[]{b.doorX}, new float[]{b.doorY}, 1);
+        }
     }
 
     /** The Build tool: an edit that's remembered in the city code. */
@@ -406,6 +412,8 @@ final class World {
         scatterWeapons();
         stockArmouries();
         baseStrengths();
+        if (courtArmoury != null) courtArmoury.ammo = 1200;
+        inmates = city.jail != null ? 6 + rnd.nextInt(9) : 0;
         int people = Math.min(cfg.civilians(city.totalResidents), maxEntities * 4 / 5);
         residents(people);
         // A few strays.
@@ -3026,7 +3034,7 @@ final class World {
         if (e.task == Dispatch.T_SHELTER && dispatch.zones.isEmpty()) e.task = Dispatch.T_NONE;
         if (e.task == Dispatch.T_SEEK && (!room || e.refused)) e.task = Dispatch.T_NONE;
         // With the power out, nobody hears the broadcasts about safe zones any more.
-        if (e.task == Dispatch.T_NONE && room && !e.refused && (e.fleeTimer > 0 || (!blackout && readiness != 2 && rnd.nextFloat() < dt * 0.03f)))
+        if (e.task == Dispatch.T_NONE && room && !e.refused && (e.fleeTimer > 0 || (broadcasting() && readiness != 2 && rnd.nextFloat() < dt * 0.03f)))
             e.task = Dispatch.T_SEEK;
         if (e.task == Dispatch.T_SEEK) {
             Dispatch.SafeZone z = dispatch.zoneAt(e.x, e.y, 0.7f);
@@ -3117,14 +3125,19 @@ final class World {
         if (!outbreak || zombies == 0) return;
         int was = alert;
         if (alert < 1 && (dispatch.calls >= 2 || bites >= 3 || outbreakTime > 15)) alert = 1;
-        if (alert < 2 && (outbreakTime > 50 || zombies >= 8 || dispatch.calls >= 8)) alert = 2;
+        // (City Hall puts out the emergency broadcast sooner; with City Hall lost it's left to the news.)
+        boolean hall = city.cityHall != null, hallUp = hall && !hallLost;
+        float t2 = hallUp ? 35 : hall ? 80 : 50;
+        int z2 = hallUp ? 6 : hall ? 14 : 8, c2 = hallUp ? 6 : hall ? 12 : 8;
+        if (alert < 2 && (outbreakTime > t2 || zombies >= z2 || dispatch.calls >= c2)) alert = 2;
         if (alert == was) return;
         String where = outbreakPlace != null ? outbreakPlace : "the city";
         if (alert == 1) {
             dispatch.say(Dispatch.WHO_INFO, null, "News: Reports of people attacking people near " + where
                     + ". Police urge residents to stay indoors.", city.worldW() / 2, city.worldH() / 2);
         } else {
-            banner("EMERGENCY BROADCAST", "Get indoors and lock your doors. Do not approach the infected.");
+            banner("EMERGENCY BROADCAST", (city.cityHall != null && !hallLost ? "From " + city.cityHall.name + ": g" : "G")
+                    + "et indoors and lock your doors. Do not approach the infected.");
             for (int i = 0, n = entities.size(); i < n; i++) {
                 Entity e = entities.get(i);
                 if (!e.dead && e.type == Entity.CIVILIAN) e.aware = true;
@@ -3147,7 +3160,7 @@ final class World {
             e.building = home;
             return false;
         }
-        if (dispatch.hasRoom() && !e.refused && !blackout) {
+        if (dispatch.hasRoom() && !e.refused && broadcasting()) {
             e.task = Dispatch.T_SEEK;
             return false;
         }
@@ -3405,7 +3418,8 @@ final class World {
             ArrayList<City.Building> offices = new ArrayList<City.Building>();
             for (City.Building b : city.buildings) {
                 if (b.doorX == 0 || b.collapsed) continue;
-                if (b.kind == City.HOSPITAL || b.kind == City.SCHOOL || b.kind == City.MALL || b.kind == City.MARKET)
+                if (b.kind == City.HOSPITAL || b.kind == City.SCHOOL || b.kind == City.MALL || b.kind == City.MARKET
+                        || b.kind == City.CITY_HALL || b.kind == City.COURTHOUSE || b.kind == City.CALL_CENTRE || b.kind == City.WORKS)
                     workplaces.add(b);
                 else if (b.kind == City.OFFICE || b.kind == City.WAREHOUSE) offices.add(b);
             }
@@ -3665,6 +3679,10 @@ final class World {
                     case City.WAREHOUSE: return "Warehouse worker";
                     case City.MALL: return "Works at " + at;
                     case City.MARKET: return "Cashier at " + at;
+                    case City.CITY_HALL: return "Clerk at " + at;
+                    case City.COURTHOUSE: return "Court officer at " + at;
+                    case City.CALL_CENTRE: return "911 dispatcher at " + at;
+                    case City.WORKS: return "Road crew, " + at;
                     default: return "Office worker";
                 }
             case Entity.J_SHOPKEEPER: return "Runs " + at;
@@ -4215,6 +4233,164 @@ final class World {
         b.calmTimer = 0;
     }
 
+    // ------------------------------------------------------------------ the government
+
+    /** Government buildings overrun (each comes back once it's cleared and people are there again). */
+    boolean hallLost, callsLost, worksLost;
+    /** Inmates still locked up in the jail, and whether they've broken out. */
+    int inmates;
+    boolean jailBroken;
+    /** Crews from the works depot have boarded up this many shelters. */
+    int boardedUp;
+    /** The courthouse's armoury, where police can restock (not one of the city's facilities). */
+    City.Facility courtArmoury;
+    private float hallThreat, callsThreat, worksThreat, jailThreat, noGuards, crewTimer;
+
+    /** Broadcasts get out: the power's on and City Hall (if the city has one) is still running. */
+    boolean broadcasting() {
+        return !blackout && !(city.cityHall != null && hallLost);
+    }
+
+    /** Once a second: what the government buildings are doing, and whether they've fallen. */
+    private void government() {
+        City.Building h = city.cityHall;
+        if (h != null) {
+            int was = hallLost ? 1 : 0;
+            hallThreat = threat(h, hallThreat);
+            hallLost = lost(h, hallThreat, hallLost);
+            if (hallLost && was == 0)
+                dispatch.say(Dispatch.WHO_INFO, null, h.name + " has been overrun. The Mayor's office has gone silent: no more emergency broadcasts or calls for volunteers.",
+                        h.doorX, h.doorY);
+            else if (!hallLost && was == 1)
+                dispatch.say(Dispatch.WHO_INFO, null, "The Mayor's staff are back in " + h.name + ". Broadcasts are going out again.", h.doorX, h.doorY);
+        }
+        City.Building c = city.callCentre;
+        if (c != null) {
+            boolean was = callsLost;
+            callsThreat = threat(c, callsThreat);
+            callsLost = lost(c, callsThreat, callsLost);
+            if (callsLost && !was)
+                dispatch.say(Dispatch.WHO_POLICE, null, "Dispatch: " + c.name + " has been overrun. 911 calls are going unanswered and the cameras are down.",
+                        c.doorX, c.doorY);
+            else if (!callsLost && was)
+                dispatch.say(Dispatch.WHO_POLICE, null, "Dispatch: " + c.name + " is back on the air. We're taking calls again.", c.doorX, c.doorY);
+        }
+        City.Building wd = city.worksDepot;
+        if (wd != null) {
+            boolean was = worksLost;
+            worksThreat = threat(wd, worksThreat);
+            worksLost = lost(wd, worksThreat, worksLost);
+            if (worksLost && !was)
+                dispatch.say(Dispatch.WHO_INFO, null, wd.name + " has been overrun. The road crews have scattered.", wd.doorX, wd.doorY);
+            else if (!worksLost && was)
+                dispatch.say(Dispatch.WHO_INFO, null, "Crews are back at " + wd.name + ".", wd.doorX, wd.doorY);
+            if (!worksLost && !wd.collapsed && outbreak && alert >= 1 && aftermath == AFTER_NONE) boardUp();
+        }
+        jail();
+    }
+
+    /** How long the dead have held a building (it falls at 15). */
+    private float threat(City.Building b, float t) {
+        boolean held = b.collapsed || countZombiesNear(b.doorX, b.doorY, 90) >= 5;
+        return held ? t + 1 : Math.max(0, t - 2);
+    }
+
+    private boolean lost(City.Building b, float t, boolean lost) {
+        if (!lost) return t > 15;
+        return !(t == 0 && !b.collapsed && countZombiesNear(b.doorX, b.doorY, 200) == 0 && peopleNear(b.doorX, b.doorY, 120));
+    }
+
+    /**
+     * Road crews out in the trucks during the outbreak: every so often they board up a building where people
+     * are sheltering (one nobody's fighting at).
+     */
+    private void boardUp() {
+        crewTimer -= 1;
+        if (crewTimer > 0) return;
+        crewTimer = 12;
+        City.Building best = null;
+        for (int i = 0, n = city.buildings.size(); i < n; i++) {
+            City.Building b = city.buildings.get(i);
+            if (b.collapsed || b.occupants.isEmpty() || b.barricade >= 70 || b.fighting) continue;
+            if (countZombiesNear(b.doorX, b.doorY, 80) > 0) continue;
+            if (best == null || b.occupants.size() > best.occupants.size()) best = b;
+        }
+        if (best == null) return;
+        best.barricade = Math.min(100, best.barricade + 35);
+        boardedUp++;
+        if (boardedUp == 1 || boardedUp % 10 == 0)
+            dispatch.say(Dispatch.WHO_INFO, null, "News: Crews from " + city.worksDepot.name + " are boarding up buildings with people sheltering inside ("
+                    + boardedUp + " so far).", best.doorX, best.doorY);
+    }
+
+    /**
+     * The jail: its inmates stay locked up unless the dead get in (some are bitten, the rest run), the power
+     * fails (the cell doors open), or there are no police left to guard them.
+     */
+    private void jail() {
+        City.Building j = city.jail;
+        if (j == null || jailBroken || inmates <= 0) return;
+        jailThreat = threat(j, jailThreat);
+        noGuards = outbreak && outbreakTime > 150 && peakCops > 0 && counts[Entity.COP] <= Math.max(1, peakCops / 8) ? noGuards + 1 : 0;
+        String why = null;
+        int bitten = 0;
+        if (jailThreat > 10) {
+            why = "The dead have got into " + j.name + ".";
+            bitten = Math.max(1, inmates / 3);
+        } else if (blackout) why = "With the power out, the cell doors at " + j.name + " have failed.";
+        else if (noGuards > 30) why = "The last of the guards have abandoned " + j.name + ".";
+        if (why == null) return;
+        jailBroken = true;
+        int n = inmates;
+        inmates = 0;
+        Entity boss = null;
+        int armed = 0;
+        for (int i = 0; i < n; i++) {
+            float[] p = city.findWalkable(j.doorX + rnd.nextFloat() * 30 - 15, j.doorY + rnd.nextFloat() * 30 - 15);
+            if (p == null) p = new float[]{j.doorX, j.doorY};
+            if (i < bitten) {
+                Entity z = spawn(Entity.ZOMBIE, p[0], p[1]);
+                if (z != null) turned++;
+                continue;
+            }
+            Entity r = spawn(Entity.RAIDER, p[0], p[1]);
+            if (r == null) continue;
+            r.body = 0xFFE07A2A;
+            // (Most of them break out with nothing; a few raid the guards' lockers.)
+            if (rnd.nextFloat() < 0.65f) {
+                r.hasGun = false;
+                r.ammo = r.reserve = 0;
+            } else armed++;
+            if (boss == null) boss = r;
+            else r.leader = boss;
+        }
+        if (boss != null) {
+            float[] gun = gunStoreNear(j.doorX, j.doorY);
+            boss.noiseX = gun != null ? gun[0] : city.worldW() / 2;
+            boss.noiseY = gun != null ? gun[1] : city.worldH() / 2;
+            boss.noiseTimer = 90;
+        }
+        banner("JAILBREAK", why + " " + (n - bitten) + " inmates are loose" + (armed > 0 ? ", " + armed + " of them armed." : "."));
+        dispatch.say(Dispatch.WHO_POLICE, null, "Police Command: Jailbreak at " + j.name + ". " + (n - bitten)
+                + " escaped inmates heading into town. Approach with caution.", j.doorX, j.doorY);
+    }
+
+    /** The nearest gun store that still has stock, as {x, y} (or null). */
+    private float[] gunStoreNear(float x, float y) {
+        float[] best = null;
+        float bd = Float.MAX_VALUE;
+        for (int i = 0, n = city.buildings.size(); i < n; i++) {
+            City.Building b = city.buildings.get(i);
+            if (b.kind != City.SHOP || b.shopType != 1 || b.stock <= 0 || b.collapsed) continue;
+            float d = (b.doorX - x) * (b.doorX - x) + (b.doorY - y) * (b.doorY - y);
+            if (d < bd) {
+                bd = d;
+                best = new float[]{b.doorX, b.doorY};
+            }
+        }
+        return best;
+    }
+
     private City.Building powerStation;
     private boolean powerChecked;
 
@@ -4255,6 +4431,7 @@ final class World {
     /** Once a second: the infection evolves, and after it's over the city slowly recovers. */
     private void cityLife() {
         keyBuildings();
+        government();
         updateAlert();
         callNationalGuard();
         escalate();
@@ -4653,6 +4830,8 @@ final class World {
         peakCops = Math.max(peakCops, counts[Entity.COP]);
         peakSoldiers = Math.max(peakSoldiers, counts[Entity.SOLDIER]);
         if (peakZombies < 5) return;
+        // (Volunteer drives are run from City Hall.)
+        if (city.cityHall != null && hallLost) return;
         policeDrive = drive(Entity.COP, City.FACILITY_POLICE, peakCops, policeDrive);
         armyDrive = drive(Entity.SOLDIER, City.FACILITY_BASE, peakSoldiers, armyDrive);
     }
@@ -5301,7 +5480,10 @@ final class World {
         // (A Guard armory in town: the governor doesn't wait so long.)
         City.Facility armory = city.nearestFacility(City.FACILITY_BASE, 0, 0);
         boolean local = armory != null && armory.baseType == City.BT_GUARD;
-        if (guardCalled || !outbreak || outbreakTime < (local ? 50 : 90) || warBalance > (local ? 0.55f : 0.45f)
+        // (The Mayor asks the governor; with City Hall gone, the governor takes a lot longer to hear.)
+        boolean hall = city.cityHall != null;
+        float wait = local ? 50 : hall && !hallLost ? 70 : hall ? 200 : 90;
+        if (guardCalled || !outbreak || outbreakTime < wait || warBalance > (local ? 0.55f : 0.45f)
                 || (dispatch.squadReserve > 0 && !local) || readiness == 1) return;
         guardCalled = true;
         float tx = city.worldW() / 2, ty = city.worldH() / 2;
@@ -5315,7 +5497,8 @@ final class World {
         for (int k = 0; k < 2; k++) fleet.send(Entity.SOLDIER, 6, edge[0], edge[1], tx, ty, null, null, city.placeName(tx, ty));
         for (int i = before; i < fleet.vehicles.size(); i++) fleet.vehicles.get(i).guardUnit = true;
         if (fleet.vehicles.size() > before)
-            dispatch.say(Dispatch.WHO_MILITARY, null, "Governor: I'm calling out the National Guard. Two trucks of guardsmen are on their way to "
+            dispatch.say(Dispatch.WHO_MILITARY, null, "Governor: " + (hall && !hallLost ? "At the Mayor's request, I" : "I")
+                    + "'m calling out the National Guard. Two trucks of guardsmen are on their way to "
                     + city.placeName(tx, ty) + ".", tx, ty);
         else guardCalled = false;
     }
@@ -5980,7 +6163,21 @@ final class World {
     }
 
     private void recovery() {
-        int t = (int) afterTime;
+        recoveryStep((int) afterTime);
+        // (The public works crews make it go twice as fast.)
+        if (city.worksDepot != null && !worksLost && !city.worksDepot.collapsed) {
+            if (afterTime > 20 && (afterSaid & 64) == 0) {
+                afterSaid |= 64;
+                dispatch.say(Dispatch.WHO_INFO, null, "News: " + city.worksDepot.name + " has every truck out clearing the streets.",
+                        city.worksDepot.doorX, city.worksDepot.doorY);
+            }
+            recoveryStep((int) afterTime + 1);
+        }
+        recoveryRest();
+    }
+
+    /** The clean-up work done this second (bodies, glass, wrecks and repairs). */
+    private void recoveryStep(int t) {
         if (t >= 20 && (afterSaid & 1) == 0) {
             afterSaid |= 1;
             banner("RECOVERY", "Survivors are coming out. Clean-up crews are on the streets.");
@@ -6029,6 +6226,10 @@ final class World {
                 }
             }
         }
+    }
+
+    private void recoveryRest() {
+        int t = (int) afterTime;
         // Survivor groups take their barricades down and go home.
         if (afterTime > 90)
             for (int i = 0; i < holdouts.size(); i++) {
@@ -6515,6 +6716,10 @@ final class World {
     private City.Facility supplyPoint(Entity e) {
         City.Facility f = city.nearestFacility(e.type == Entity.SOLDIER ? City.FACILITY_BASE : City.FACILITY_POLICE, e.x, e.y);
         if (f == null) f = city.nearestFacility(e.type == Entity.SOLDIER ? City.FACILITY_POLICE : City.FACILITY_BASE, e.x, e.y);
+        // Police can also restock from the courthouse's armoury, if it's nearer and has some left.
+        City.Facility c = courtArmoury;
+        if (e.type != Entity.SOLDIER && c != null && c.ammo > 0 && !city.courthouse.collapsed
+                && (f == null || Math.hypot(c.x - e.x, c.y - e.y) < Math.hypot(f.x - e.x, f.y - e.y))) f = c;
         return f;
     }
 

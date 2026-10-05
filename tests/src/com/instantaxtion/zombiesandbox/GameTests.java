@@ -252,14 +252,68 @@ public final class GameTests {
                     for (String n : own[country]) if (names.contains(n)) found++;
                     check(found >= 2, "country " + country + ": " + found + " of its new kinds of building");
                 }
-                // (The same city as version 10.0 built from this seed, building for building.)
+                // (The same city as version 10.0 built from this seed, building for building, for games saved
+                // before the government quarter.)
                 CityConfig c = new CityConfig();
                 c.seed = 42;
                 c.v[CityConfig.OPT_SIZE] = 1;
+                c.civic = false;
                 City city = new City(c);
                 long h = 17;
                 for (City.Building b : city.buildings) h = h * 31 + (long) (b.x0 * 7 + b.y0 * 13 + b.x1 * 17 + b.y1 * 19 + b.kind);
                 check(city.buildings.size() == 377 && h == 0xd953e0baab71cfb8L, "same layout as before (" + city.buildings.size() + ", " + Long.toHexString(h) + ")");
+            }
+        });
+        test("government buildings on every map, and what happens when they fall", new Check() {
+            public void run() {
+                for (int preset = 0; preset < CityConfig.PRESETS.length; preset++) {
+                    CityConfig c = new CityConfig();
+                    c.seed = 11 + preset;
+                    c.v[CityConfig.OPT_PRESET] = preset;
+                    c.v[CityConfig.OPT_SIZE] = 1;
+                    City city = new City(c);
+                    check(city.cityHall != null && city.cityHall.doorX > 0, CityConfig.PRESETS[preset] + ": a city hall with a door");
+                    if (preset != 9)
+                        check(city.courthouse != null && city.jail != null && city.worksDepot != null,
+                                CityConfig.PRESETS[preset] + ": courthouse, jail and works depot");
+                    check(city.jail == null || city.jail.capacity == 0, "nobody shelters in the cells");
+                }
+                CityConfig c = new CityConfig();
+                c.seed = 5;
+                c.v[CityConfig.OPT_SIZE] = 1;
+                c.v[CityConfig.OPT_ZOMBIES] = 0;
+                World w = new World(c);
+                w.populate(c);
+                check(w.city.callCentre != null && w.inmates > 0, "a 911 centre, and inmates in the jail (" + w.inmates + ")");
+                check(w.broadcasting(), "City Hall is broadcasting");
+                // The dead take City Hall and the 911 centre and hold them.
+                java.util.ArrayList<Entity> horde = new java.util.ArrayList<Entity>();
+                City.Building[] held = {w.city.cityHall, w.city.callCentre};
+                for (City.Building b : held)
+                    for (int k = 0; k < 7; k++) horde.add(w.spawn(Entity.ZOMBIE, b.doorX, b.doorY));
+                for (int f = 0; f < 30 * 25; f++) {
+                    for (int k = 0; k < horde.size(); k++) {
+                        Entity z = horde.get(k);
+                        City.Building b = held[k / 7];
+                        // (Any the police put down are replaced.)
+                        if (z == null || z.dead) {
+                            z = w.spawn(Entity.ZOMBIE, b.doorX, b.doorY);
+                            horde.set(k, z);
+                            if (z == null) continue;
+                        }
+                        z.x = b.doorX + (k % 7) * 3 - 9;
+                        z.y = b.doorY;
+                    }
+                    w.update(1 / 30f);
+                }
+                check(w.hallLost && !w.broadcasting(), "City Hall overrun: no more broadcasts");
+                check(w.callsLost, "the 911 centre overrun");
+                // The power fails: the cell doors open.
+                int before = w.counts[Entity.RAIDER];
+                w.blackout = true;
+                for (int f = 0; f < 30 * 2; f++) w.update(1 / 30f);
+                check(w.jailBroken && w.inmates == 0 && w.counts[Entity.RAIDER] > before, "jailbreak when the power fails ("
+                        + (w.counts[Entity.RAIDER] - before) + " escaped)");
             }
         });
         test("traffic keeps its distance: hardly any crashes, and patrol cars keep to their side", new Check() {

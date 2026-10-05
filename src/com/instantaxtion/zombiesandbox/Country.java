@@ -83,6 +83,41 @@ final class Country {
     }
 
     /** A sign on a roof in the local language. */
+    /** Government buildings: city hall, courthouse, jail, 911 centre and public works depot. */
+    static final int GOV_HALL = 0, GOV_COURT = 1, GOV_JAIL = 2, GOV_CALLS = 3, GOV_WORKS = 4;
+
+    /** What the country calls its government buildings: {names}, then {roof signs}. */
+    String[][] gov() {
+        return gov(id);
+    }
+
+    static String[][] gov(int id) {
+        switch (id) {
+            case AUSTRALIA: return new String[][]{{"Town Hall", "Magistrates Court", "Remand Centre", "Triple Zero Centre", "Council Works Depot"},
+                    {"TOWN HALL", "COURT", "REMAND CENTRE", "000", "COUNCIL DEPOT"}};
+            case JAPAN: return new String[][]{{"City Hall", "District Court", "Detention House", "110 Command Centre", "Public Works Office"},
+                    {"市役所", "裁判所", "拘置所", "指令センター", "土木事務所"}};
+            case FRANCE: return new String[][]{{"Hôtel de Ville", "Palais de Justice", "Maison d'Arrêt", "Centre 17-112", "Services Techniques"},
+                    {"HÔTEL DE VILLE", "JUSTICE", "MAISON D'ARRÊT", "112", "SERVICES TECHNIQUES"}};
+            case MEXICO: return new String[][]{{"Palacio Municipal", "Palacio de Justicia", "Centro Penitenciario", "Centro C5", "Obras Públicas"},
+                    {"PALACIO MUNICIPAL", "JUSTICIA", "CERESO", "C5 911", "OBRAS PÚBLICAS"}};
+            case SWITZERLAND: return new String[][]{{"Stadthaus", "Bezirksgericht", "Gefängnis", "Notrufzentrale", "Werkhof"},
+                    {"STADTHAUS", "GERICHT", "GEFÄNGNIS", "112", "WERKHOF"}};
+            case KOREA: return new String[][]{{"City Hall", "District Court", "Detention Center", "112 Situation Room", "Road Works Office"},
+                    {"시청", "법원", "구치소", "112", "도로사업소"}};
+            case MALAYSIA: return new String[][]{{"Dewan Bandaraya", "Mahkamah", "Penjara", "Pusat 999", "Depoh Kerja Raya"},
+                    {"DEWAN BANDARAYA", "MAHKAMAH", "PENJARA", "999", "JKR"}};
+            case PORTUGAL: return new String[][]{{"Paços do Concelho", "Palácio da Justiça", "Estabelecimento Prisional", "Centro 112", "Armazém Municipal"},
+                    {"PAÇOS DO CONCELHO", "TRIBUNAL", "PRISÃO", "112", "ARMAZÉM MUNICIPAL"}};
+            case MOROCCO: return new String[][]{{"Hôtel de Ville", "Tribunal", "Prison Locale", "Centre 19", "Services Municipaux"},
+                    {"HÔTEL DE VILLE", "TRIBUNAL", "PRISON", "19", "SERVICES MUNICIPAUX"}};
+            case RUSSIA: return new String[][]{{"Meriya", "Gorodskoy Sud", "SIZO", "Dezhurnaya Chast 112", "ZhKKh Depot"},
+                    {"МЭРИЯ", "СУД", "СИЗО", "112", "ЖКХ"}};
+            default: return new String[][]{{"City Hall", "County Courthouse", "County Jail", "911 Dispatch Center", "Public Works Yard"},
+                    {"CITY HALL", "COURTHOUSE", "COUNTY JAIL", "911", "PUBLIC WORKS"}};
+        }
+    }
+
     String sign(String english) {
         String[][] words;
         switch (id) {

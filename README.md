@@ -223,9 +223,24 @@ counts), and wherever the dead gather the ground glows red. Labels go most impor
   when it runs out. Supermarkets and gun stores stock ammo, pharmacies medicine.
 - **Functions**: gun stores arm frightened civilians; if the power station is overrun there is a
   blackout (no sirens, no safe-zone broadcasts); if the hospital falls, nobody can be treated.
+- **Government**: every town has a city hall on its own square (fountain, flags and flower beds),
+  and most have a courthouse with a walled jail behind it, an emergency call centre with a radio
+  mast, and a public works depot full of orange trucks, each named in the country's own words
+  (Hôtel de Ville, Palacio Municipal, 市役所, Meriya...). They all have a job:
+  - **City Hall** puts out the emergency broadcast sooner, runs the volunteer drives and asks the
+    governor for the National Guard. If it's overrun, the broadcasts stop, nobody recruits and the
+    Guard comes much later.
+  - **The courthouse** has an armoury where police can restock.
+  - **The jail** holds inmates. If the dead get in, the power fails or the guards are gone, they
+    break out as a gang (a few armed, the rest after guns) and some come out already bitten.
+  - **The call centre** watches the cameras, so police are sent to trouble quicker. If it's
+    overrun, most 911 calls ring out and nobody spots new outbreaks.
+  - **Public works** crews board up buildings where people are sheltering during the outbreak, and
+    clear the streets twice as fast afterwards.
+  Each comes back once it's cleared and people return.
 - **Zombies inside**: some buildings hide zombies that burst out when someone comes near or tries to
   shelter there. Idle zombies lurk in empty buildings, smash shop windows and set off car alarms.
-- **504 kinds of building**: each with its own roof, colours and sign, picked by country and by
+- **559 kinds of building**: each with its own roof, colours and sign, picked by country and by
   district. Diners, drive-thrus and motels in the USA; corner pubs, milk bars, RSL clubs and
   Queenslanders in Australia; konbini, izakayas, pachinko parlours, ryokan and danchi blocks in
   Japan; boulangeries, brasseries, mairies and Haussmann blocks in France; taquerías, tortillerías,

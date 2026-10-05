@@ -653,6 +653,36 @@ final class Variants {
         o("Park pavilion", ALL, PARK, R_HIP, 0xFF59646B, 0xFFE03A3A, null, I_CAFE, 1, 1);
         wh("Plant nursery", ALL, PARK | SUB, R_GLASS, 0xFF4F5A66, 0xFF3FB8B0, "NURSERY", I_SHELVES);
         o("Mini golf club", ALL, PARK, R_FLAT, 0xFF59646B, 0xFF2E4F3A, "MINI GOLF", I_GYM, 1, 1);
+        government();
+    }
+
+    /** The government buildings, one look for each country (only ever chosen by {@link #gov}). */
+    private static void government() {
+        // Roof styles and colours by country (USA, AU, JP, FR, MX, CH, KR, MY, PT, MA, RU).
+        int[] hallRoof = {R_DOME, R_CLOCK, R_GLASS, R_MANSARD, R_COURTYARD, R_HIP, R_GLASS, R_DOME, R_TILES, R_COURTYARD, R_PARAPET};
+        int[] hallCol = {0xFFD8D4C8, 0xFF8A4A32, 0xFF7A8A96, 0xFF4A5560, 0xFFC89A6A, 0xFF8A3A2E, 0xFF5E7A8A, 0xFFE8DCC0, 0xFFB0583A,
+                0xFF2E6A4E, 0xFFD8C890};
+        int[] courtRoof = {R_PARAPET, R_PARAPET, R_FLAT, R_MANSARD, R_COURTYARD, R_HIP, R_FLAT, R_DOME, R_TILES, R_COURTYARD, R_PARAPET};
+        int[] courtCol = {0xFFC8C4B8, 0xFFB8AE9C, 0xFF8A8E92, 0xFF505A64, 0xFFB89A7A, 0xFF7A4A3A, 0xFF8A9096, 0xFFD8D0B8, 0xFFB86A48,
+                0xFF8A6A4A, 0xFFB8B4A8};
+        for (int id = 0; id < 11; id++) {
+            String[][] g = Country.gov(id);
+            int bit = 1 << id;
+            ALL_VARIANTS.add(new V("City hall", City.CITY_HALL, bit, ANY, hallRoof[id], hallCol[id], 0xFFD8B040, g[1][0], I_OFFICE, 3, 4, 0));
+            ALL_VARIANTS.add(new V("Courthouse", City.COURTHOUSE, bit, ANY, courtRoof[id], courtCol[id], 0xFF2E4F3A, g[1][1], I_SEATS, 2, 3, 0));
+            ALL_VARIANTS.add(new V("Jail", City.JAIL, bit, ANY, R_FLAT, 0xFF7C7F82, 0xFF2A2A2A, g[1][2], I_DORM, 2, 2, 0));
+            ALL_VARIANTS.add(new V("Emergency call centre", City.CALL_CENTRE, bit, ANY, R_ANTENNA, 0xFF59646B, 0xFFE03A3A, g[1][3], I_OFFICE, 2, 3, 0));
+            ALL_VARIANTS.add(new V("Public works depot", City.WORKS, bit, ANY, R_SAWTOOTH, 0xFF8A7F70, 0xFFE0702E, g[1][4], I_SHOWROOM, 1, 1, 0));
+        }
+    }
+
+    /** The look of a government building in this country, or -1. */
+    static int gov(int kind, int countryId) {
+        for (int i = LEGACY; i < ALL_VARIANTS.size(); i++) {
+            V v = ALL_VARIANTS.get(i);
+            if (v.base == kind && (v.countries & (1 << countryId)) != 0) return i;
+        }
+        return -1;
     }
 
     /**

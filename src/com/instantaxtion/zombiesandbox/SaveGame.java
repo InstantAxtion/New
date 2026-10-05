@@ -17,7 +17,7 @@ import java.util.ArrayList;
  * damaged or collapsed buildings.
  */
 final class SaveGame {
-    private static final int VERSION = 18;
+    private static final int VERSION = 19;
 
     private SaveGame() {
     }
@@ -263,6 +263,14 @@ final class SaveGame {
             out.writeFloat(w.afterTime);
             out.writeInt(w.flareUps);
             out.writeBoolean(w.retakeSent);
+            // Version 19: the government buildings.
+            out.writeBoolean(w.hallLost);
+            out.writeBoolean(w.callsLost);
+            out.writeBoolean(w.worksLost);
+            out.writeBoolean(w.jailBroken);
+            out.writeInt(w.inmates);
+            out.writeInt(w.boardedUp);
+            out.writeInt(w.courtArmoury != null ? w.courtArmoury.ammo : 0);
         } finally {
             out.close();
         }
@@ -340,6 +348,8 @@ final class SaveGame {
             }
             cfg.seed = in.readLong();
             if (version >= 15) cfg.setEdits(in.readUTF());
+            // (Cities saved before 10.4 were built without their government quarter.)
+            cfg.civic = version >= 19;
             World w = new World(cfg);
 
             w.time = in.readFloat();
@@ -561,9 +571,19 @@ final class SaveGame {
                 w.aftermath = in.readInt();
                 w.afterTime = in.readFloat();
                 // (What's already been announced isn't announced again.)
-                if (w.afterTime > 50) w.afterSaid = 7;
+                if (w.afterTime > 50) w.afterSaid = 7 | 64;
                 w.flareUps = in.readInt();
                 w.retakeSent = in.readBoolean();
+            }
+            if (version >= 19) {
+                w.hallLost = in.readBoolean();
+                w.callsLost = in.readBoolean();
+                w.worksLost = in.readBoolean();
+                w.jailBroken = in.readBoolean();
+                w.inmates = in.readInt();
+                w.boardedUp = in.readInt();
+                int court = in.readInt();
+                if (w.courtArmoury != null) w.courtArmoury.ammo = court;
             }
             d.copCount = copCount;
             d.soldierCount = soldierCount;

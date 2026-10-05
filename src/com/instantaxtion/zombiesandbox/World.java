@@ -450,7 +450,8 @@ final class World {
         spawnRandom(Entity.COP, cops - copsAtStations - made * 2);
         fleet.stationEngines();
         // Out of town: highway patrol on the highway, and (in the USA) sheriff's deputies on the country roads.
-        if (city.hwyAxis >= 0) for (int i = 0; i < (city.w > 300 ? 3 : 2); i++) fleet.startAgencyPatrol(1);
+        // (About one patrol car to every fifty tiles of highway, four at the least.)
+        if (city.hwyAxis >= 0) for (int i = 0, n = Math.max(4, (city.hwyAxis == 0 ? city.w : city.h) / 50); i < n; i++) fleet.startAgencyPatrol(1);
         if (city.country.ruralName != null && city.townX0 > 0) for (int i = 0; i < (city.w > 300 ? 3 : 2); i++) fleet.startAgencyPatrol(2);
         int firstSoldier = entities.size();
         if (base != null) {

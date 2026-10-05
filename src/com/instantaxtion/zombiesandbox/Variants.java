@@ -51,6 +51,10 @@ final class Variants {
     }
 
     static final ArrayList<V> ALL_VARIANTS = new ArrayList<V>();
+    /** How many variants there were before 10.1 (the ones pick() chooses from). */
+    static int LEGACY;
+    /** The random numbers for swap(), apart from the city's own (so adding variants never moves the streets). */
+    static Random extra = new Random(1);
 
     private static void s(String name, int countries, int districts, int roof, int roofCol, int accent, String sign, int inside) {
         ALL_VARIANTS.add(new V(name, City.SHOP, countries, districts, roof, roofCol, accent, sign, inside, 0, 0, 0));
@@ -254,6 +258,87 @@ final class Variants {
         hs("Casa de dos pisos", MX, R_FLAT, 0xFFD2C6B2, 0xFFE07A8C, 2);
         ap("Vecindad", MX, OLD | MID, R_COURTYARD, 0xFFB4583A, 0xFFE8873A, I_HOME, 2, 3);
         wh("Mercado municipal", MX, MID | OLD, R_BARREL, 0xFFC9BFAE, 0xFFE8504A, "MERCADO", I_SHELVES);
+
+        // (Everything above was in the game before 10.1; the city generator picks from it exactly as it
+        // always did, so saved cities rebuild the same. What follows is swapped in afterwards, see swap().)
+        LEGACY = ALL_VARIANTS.size();
+
+        // More of each country's own.
+        // USA.
+        s("Barber shop", US, TOWN, R_STRIPES, 0xFF8A3A3A, 0xFF2E5FB0, "BARBER", I_SALON);
+        s("Tattoo parlor", US, MID | DOWN, R_FLAT, 0xFF2A2A30, 0xFFE03A3A, "TATTOO", I_SALON);
+        s("Sports bar", US, DOWN | MID | SUB, R_FLAT, 0xFF3A3A40, 0xFF2E8A3A, "SPORTS BAR", I_BAR);
+        s("Bail bonds", US, DOWN | MID, R_FLAT, 0xFF6A6A60, 0xFFF0C040, "BAIL BONDS", I_OFFICE);
+        s("BBQ smokehouse", US, SUB | IND | MID, R_GABLE, 0xFF5A3A2A, 0xFFE0702E, "BBQ", I_RESTAURANT);
+        s("Mattress store", US, SUB | MID, R_PARAPET, 0xFFC8C4BC, 0xFF2E5FB0, "MATTRESSES", I_SHOWROOM);
+        o("Megachurch", US, SUB | MID, R_BARREL, 0xFFE4E0D8, 0xFF2E5FB0, "CHURCH", I_PEWS, 1, 2);
+        wh("Auto parts store", US, IND | SUB, R_PARAPET, 0xFFB8BCC0, 0xFFE03A3A, "AUTO PARTS", I_SHELVES);
+        wh("Grain elevator", US, PARK | IND, R_TANKS, 0xFFB8B4A8, 0xFF8A6A4A, null, I_RACKS);
+        hs("Trailer home", US, R_FLAT, 0xFFD8DCE0, 0xFF9AA8B4, 1);
+        ap("Brownstone", US, OLD | MID, R_PARAPET, 0xFF6A4A3A, 0xFF8A5A40, I_HOME, 4, 5);
+
+        // Australia.
+        s("Pie shop", AU, TOWN, R_STRIPES, 0xFF8A6A3E, 0xFFC8963A, "PIES", I_KITCHEN);
+        s("Chemist", AU, TOWN, R_FLAT, 0xFFE4E8EC, 0xFF2FA84F, "CHEMIST", I_SHELVES);
+        s("TAB", AU, MID | SUB, R_FLAT, 0xFF2E5A3A, 0xFFE0C040, "TAB", I_ARCADE);
+        s("Chinese takeaway", AU, SUB | MID, R_STRIPES, 0xFFB03A2E, 0xFFE0C040, "TAKEAWAY", I_RESTAURANT);
+        o("Bowls club", AU, PARK | SUB, R_FLAT, 0xFFE4E0D8, 0xFF2E6A3A, "BOWLS", I_BAR, 1, 1);
+        o("Surf life saving club", AU, PARK | SUB, R_FLAT, 0xFFE0C040, 0xFFE03A3A, "SURF CLUB", I_GYM, 2, 2);
+        wh("Ute dealer", AU, IND | SUB, R_GLASS, 0xFF9CC3D9, 0xFF2E6A3A, "UTES", I_SHOWROOM);
+        hs("Terrace house", AU, R_TILES, 0xFF7A2E28, 0xFFE2D6C4, 2);
+        hs("Fibro shack", AU, R_FLAT, 0xFFC8CCC4, 0xFFE8E4D8, 1);
+        ap("Walk-up flats", AU, MID | SUB, R_TILES, 0xFF8A4A32, 0xFFC9A888, I_HOME, 3, 3);
+
+        // Japan.
+        o("Shinto shrine", JP, OLD | PARK | SUB, R_PAGODA, 0xFF3A4656, 0xFFE03A2E, "神社", I_PEWS, 1, 1);
+        o("Buddhist temple", JP, OLD | PARK, R_PAGODA, 0xFF2E3640, 0xFFD8B040, "寺", I_PEWS, 1, 2);
+        s("Yakitori stand", JP, TOWN, R_STRIPES, 0xFF3A3A40, 0xFFE0702E, "YAKITORI", I_BAR);
+        s("Okonomiyaki shop", JP, TOWN, R_TILES, 0xFF3A4656, 0xFFE0C040, "OKONOMIYAKI", I_RESTAURANT);
+        s("Tatami shop", JP, OLD | MID, R_TILES, 0xFF2E3640, 0xFF6B8A4A, "TATAMI", I_SHELVES);
+        o("Onsen", JP, OLD | PARK, R_HIP, 0xFF2E3640, 0xFF3A8AE0, "♨", I_BATH, 1, 2);
+        o("Cram school", JP, MID | SUB | UNI, R_FLAT, 0xFFE8EAE4, 0xFF2E5FB0, "JUKU", I_CLASSROOM, 3, 5);
+        wh("Batting centre", JP, SUB | MID, R_BARREL, 0xFF6A7078, 0xFF3FA860, "BATTING", I_GYM);
+        hs("Gasshō farmhouse", JP, R_GABLE, 0xFF7A6A4A, 0xFF5A4A3A, 2);
+        ap("Apāto block", JP, SUB | MID, R_FLAT, 0xFFD8D4CC, 0xFFE8E4DC, I_HOME, 2, 2);
+
+        // France.
+        s("Pharmacie", FR, TOWN, R_FLAT, 0xFF7A8490, 0xFF2FA84F, "PHARMACIE", I_SHELVES);
+        s("Bistrot", FR, DOWN | MID | OLD, R_STRIPES, 0xFF5E6874, 0xFF7A2A4A, "BISTROT", I_RESTAURANT);
+        s("Salon de thé", FR, OLD | MID | PARK, R_STRIPES, 0xFF7A8490, 0xFF6B8A4A, "SALON DE THÉ", I_CAFE);
+        o("Château", FR, PARK | OLD, R_MANSARD, 0xFF4E5560, 0xFFD8B040, "CHÂTEAU", I_HOTEL, 3, 3);
+        o("Boulodrome", FR, PARK | SUB, R_FLAT, 0xFFD8C8A0, 0xFF2E4F8A, "PÉTANQUE", I_BAR, 1, 1);
+        wh("Marché couvert", FR, MID | OLD, R_BARREL, 0xFF7A8490, 0xFF2E6A4A, "MARCHÉ", I_SHELVES);
+        wh("Cave coopérative", FR, IND | PARK, R_TANKS, 0xFFB0623E, 0xFF7A2A4A, "CAVE", I_RACKS);
+        hs("Maison bourgeoise", FR, R_MANSARD, 0xFF4E5560, 0xFFE8DEC8, 3);
+        hs("Longère", FR, R_GABLE, 0xFF3A4048, 0xFFD8CCB4, 1);
+        ap("HLM block", FR, SUB | MID, R_FLAT, 0xFFB8BCC0, 0xFFE0D8C8, I_HOME, 10, 15);
+
+        // Mexico.
+        s("Farmacia", MX, TOWN, R_FLAT, 0xFFE4E8EC, 0xFF2E6AB0, "FARMACIA", I_SHELVES);
+        s("Carnicería", MX, TOWN, R_FLAT, 0xFFC9BFAE, 0xFFB03A2E, "CARNICERÍA", I_SHELVES);
+        s("Birriería", MX, TOWN | IND, R_STRIPES, 0xFFB4583A, 0xFFF0C04A, "BIRRIA", I_RESTAURANT);
+        s("Pulquería", MX, OLD | MID, R_TILES, 0xFF4FB8B0, 0xFFE8504A, "PULQUE", I_BAR);
+        s("Mezcalería", MX, DOWN | OLD, R_TILES, 0xFF6A3A5A, 0xFFF0C04A, "MEZCAL", I_BAR);
+        o("Arena de lucha libre", MX, DOWN | MID, R_BARREL, 0xFF3A3A50, 0xFFE040C0, "LUCHA LIBRE", I_SEATS, 2, 3);
+        o("Hacienda", MX, PARK | OLD, R_COURTYARD, 0xFFB4583A, 0xFFF0C04A, "HACIENDA", I_HOTEL, 1, 2);
+        wh("Mercado de artesanías", MX, OLD | MID | PARK, R_TILES, 0xFFC9BFAE, 0xFF4FB8B0, "ARTESANÍAS", I_SHELVES);
+        hs("Casa de adobe", MX, R_FLAT, 0xFFB89A78, 0xFFC8A47A, 1);
+        ap("Unidad habitacional", MX, SUB | MID, R_FLAT, 0xFFD2C6B2, 0xFFE8873A, I_HOME, 5, 5);
+
+        // And more for each kind of place (every country): downtown, old town, parkland, industry, suburbs, campus.
+        o("Stock exchange", ALL, DOWN, R_DOME, 0xFF9C9488, 0xFF2E4F3A, "EXCHANGE", I_OFFICE, 4, 6);
+        o("Concert hall", ALL, DOWN | OLD, R_BARREL, 0xFF8A8680, 0xFFD8B040, "CONCERTS", I_SEATS, 3, 4);
+        s("Antique shop", ALL, OLD, R_STRIPES, 0xFF6A5A4A, 0xFFD8B040, "ANTIQUES", I_SHELVES);
+        o("Clock tower", ALL, OLD, R_CLOCK, 0xFF7A6A5A, 0xFFD8B040, null, I_OFFICE, 4, 5);
+        o("Boathouse", ALL, PARK, R_GABLE, 0xFF5A4A3A, 0xFF2E6A8A, "BOATS", I_RACKS, 1, 1);
+        wh("Garden centre", ALL, PARK | SUB, R_GLASS, 0xFFA8D8B0, 0xFF3FA860, "GARDEN", I_SHELVES);
+        wh("Container depot", ALL, IND, R_STRIPES, 0xFF8A9096, 0xFFE0702E, "CONTAINERS", I_RACKS);
+        wh("Lumber yard", ALL, IND | PARK, R_GABLE, 0xFF8A6A4A, 0xFFC8963A, "LUMBER", I_RACKS);
+        wh("Cement works", ALL, IND, R_TANKS, 0xFFB8B4AC, 0xFF6F777D, null, I_FACTORY);
+        o("Community centre", ALL, SUB | MID, R_FLAT, 0xFF8A8E94, 0xFF3FA860, "COMMUNITY", I_GYM, 1, 2);
+        s("Vet clinic", ALL, SUB | MID, R_FLAT, 0xFFE4E8EC, 0xFF3FB8B0, "VET", I_WARD);
+        o("Research institute", ALL, UNI | IND, R_SOLAR, 0xFF8A8E94, 0xFF3FB8B0, "INSTITUTE", I_LAB, 3, 6);
+        s("Student bar", ALL, UNI, R_FLAT, 0xFF3A3A40, 0xFFE0C040, "BAR", I_BAR);
     }
 
     /**
@@ -273,7 +358,7 @@ final class Variants {
         if (rnd.nextFloat() > chance) return -1;
         int cbit = 1 << countryId, dbit = 1 << Math.max(0, Math.min(6, district));
         int area = lw * lh, n = 0, pickN = -1;
-        for (int i = 0; i < ALL_VARIANTS.size(); i++) {
+        for (int i = 0; i < LEGACY; i++) {
             V v = ALL_VARIANTS.get(i);
             if (v.base != kind || (v.countries & cbit) == 0 || (v.districts & dbit) == 0) continue;
             // Skyscrapers and halls need a big lot; corner shops a small one.
@@ -282,6 +367,26 @@ final class Variants {
             n++;
             if (rnd.nextInt(n) == 0) pickN = i;
         }
+        return pickN;
+    }
+
+    /**
+     * Now and then a lot gets one of the newer kinds of building instead (as often as there are newer kinds
+     * to choose from, alongside the older ones). Returns the variant to use.
+     */
+    static int swap(int picked, int kind, int countryId, int district, int lw, int lh) {
+        if (picked < 0 && extra.nextFloat() > 0.5f) return picked;
+        int cbit = 1 << countryId, dbit = 1 << Math.max(0, Math.min(6, district));
+        int area = lw * lh, older = 0, newer = 0, pickN = -1;
+        for (int i = 0; i < ALL_VARIANTS.size(); i++) {
+            V v = ALL_VARIANTS.get(i);
+            if (v.base != kind || (v.countries & cbit) == 0 || (v.districts & dbit) == 0) continue;
+            if (v.floorsMin >= 12 && area < 64) continue;
+            if ((v.roof == R_BARREL || v.roof == R_COURTYARD || v.roof == R_DOME || v.roof == R_PAGODA) && area < 36) continue;
+            if (i < LEGACY) older++;
+            else if (extra.nextInt(++newer) == 0) pickN = i;
+        }
+        if (pickN < 0 || extra.nextInt(older + newer) >= newer) return picked;
         return pickN;
     }
 

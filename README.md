@@ -133,6 +133,8 @@ on the phone, so the APK contains no audio files.
   and laid over the map picture.
 - **Loading**: cities are built (and saved games loaded) in the background behind a "Building the city"
   screen; each car keeps only its route's corridor, so even a Massive city fits comfortably in a phone's memory.
+- **Giving way**: traffic pulls over for lights and sirens and holds back at junctions; emergency vehicles go
+  round queues and pull in to the kerb at a scene. Highway patrol makes traffic stops before the outbreak.
 - **Safe driving**: cars keep a safe distance and brake in time, wait at green lights for traffic still
   crossing, and keep to their own lane (police included, lights on or not); emergency vehicles slow down
   through junctions. Massive maps are nearly all town, with a thin band of country and a frontage road
@@ -207,6 +209,8 @@ counts), and wherever the dead gather the ground glows red. Labels go most impor
   cards say who bit whom and how many each zombie has turned; Stats shows the infection's chain from
   patient zero; the replay marks the big moments on its timeline (tap near one to jump to it).
 - **Smooth on any phone**: detail drops automatically on a struggling phone and comes back when there's room.
+- **Follow a vehicle**: tap any car, police car, engine, truck, helicopter or train to follow it, with a card
+  saying what it's doing, how fast and who's aboard.
 - **Screen**: the tool bar folds away and the minimap closes, for more of the city on screen.
 - **Feel**: vibration when you shoot, get hurt, crash or a blast goes off nearby (Settings: Vibration);
   bodies are thrown by blasts, cars and charging brutes.

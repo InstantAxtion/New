@@ -401,6 +401,7 @@ final class City {
         this.detail = detail;
         w = h = cfg.tiles();
         rnd = new Random(cfg.seed);
+        Variants.extra = new Random(cfg.seed * 7919L + 101);
         Random nameRnd = new Random(cfg.seed * 31 + 7);
         country = Country.get(cfg.country());
         name = country.townName(nameRnd);
@@ -1758,10 +1759,19 @@ final class City {
      * a konbini...), which sets its roof, walls and height.
      */
     private void addVariantLot(int x, int y, int lw, int lh, int roof, int kind, int floors, int wall) {
-        int var = Variants.pick(kind, country.id, districtType(x + lw / 2, y + lh / 2), lw, lh, rnd);
+        int dist = districtType(x + lw / 2, y + lh / 2);
+        int var = Variants.pick(kind, country.id, dist, lw, lh, rnd);
         Variants.V v = Variants.get(var);
+        if (v != null && v.floorsMin > 0) floors = v.floorsMin + rnd.nextInt(Math.max(1, v.floorsMax - v.floorsMin + 1));
+        // (One of the newer kinds instead, now and then: chosen with numbers of its own, so the rest of the
+        // city is laid out exactly as before.)
+        int swapped = Variants.swap(var, kind, country.id, dist, lw, lh);
+        if (swapped != var) {
+            var = swapped;
+            v = Variants.get(var);
+            if (v != null && v.floorsMin > 0) floors = v.floorsMin + Variants.extra.nextInt(Math.max(1, v.floorsMax - v.floorsMin + 1));
+        }
         if (v != null) {
-            if (v.floorsMin > 0) floors = v.floorsMin + rnd.nextInt(Math.max(1, v.floorsMax - v.floorsMin + 1));
             // Small lots stay low whatever they are.
             int min = Math.min(lw, lh);
             if (min <= 5) floors = Math.min(floors, 6);

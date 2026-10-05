@@ -937,6 +937,110 @@ public final class GameTests {
                 check(World.DOOR_S * World.DOOR_S < w.city.w * w.city.h / 4, "door routes are local patches");
             }
         });
+        test("cars never go round in circles (round a median, a roundabout or a highway gap)", new Check() {
+            public void run() {
+                CityConfig c = new CityConfig();
+                c.v[CityConfig.OPT_SIZE] = 3;
+                c.v[CityConfig.OPT_ZOMBIES] = 2;
+                c.seed = 5;
+                World w = new World(c);
+                w.populate(c);
+                java.util.HashMap<Fleet.Vehicle, float[]> m = new java.util.HashMap<Fleet.Vehicle, float[]>();
+                int circling = 0;
+                for (int f = 0; f < 30 * 120; f++) {
+                    w.update(1 / 30f);
+                    w.evCount = 0;
+                    for (Fleet.Vehicle v : w.fleet.vehicles) {
+                        if (v.type == Fleet.HELI || v.type == Fleet.JET || v.type == Fleet.TRAIN || v.parked) continue;
+                        float[] t = m.get(v);
+                        // turned so far, x0, y0, x1, y1, time, last angle, flagged
+                        if (t == null || t[5] > 10) {
+                            t = new float[]{0, v.x, v.y, v.x, v.y, 0, v.angle, t != null ? t[7] : 0};
+                            m.put(v, t);
+                        }
+                        float da = v.angle - t[6];
+                        while (da > Math.PI) da -= 2 * Math.PI;
+                        while (da < -Math.PI) da += 2 * Math.PI;
+                        t[0] += da;
+                        t[6] = v.angle;
+                        t[5] += 1 / 30f;
+                        t[1] = Math.min(t[1], v.x);
+                        t[2] = Math.min(t[2], v.y);
+                        t[3] = Math.max(t[3], v.x);
+                        t[4] = Math.max(t[4], v.y);
+                        if (t[7] == 0 && Math.abs(t[0]) > 3 * Math.PI * 2 && t[3] - t[1] < 90 && t[4] - t[2] < 90) {
+                            t[7] = 1;
+                            circling++;
+                        }
+                    }
+                }
+                check(circling == 0, circling + " vehicles went round in circles");
+            }
+        });
+        test("the dead go round the highway barrier to get at people, not press against it", new Check() {
+            public void run() {
+                CityConfig c = new CityConfig();
+                c.v[CityConfig.OPT_SIZE] = 3;
+                c.v[CityConfig.OPT_ZOMBIES] = 0;
+                c.seed = 5;
+                World w = new World(c);
+                w.populate(c);
+                w.entities.clear();
+                w.fleet.vehicles.clear();
+                w.fleet.trafficTarget = 0;
+                for (City.Building b : w.city.buildings) {
+                    b.occupants.clear();
+                    b.visitors.clear();
+                }
+                City city = w.city;
+                int fx = -1, fy = -1;
+                for (int y = 0; y < city.h && fx < 0; y++)
+                    for (int x = city.w / 3; x < city.w * 2 / 3; x++)
+                        if (city.tiles[y * city.w + x] == City.FENCE && city.onHighway(x * 16 + 8, (y - 1) * 16 + 8) && city.onHighway(x * 16 + 8, (y + 1) * 16 + 8)) {
+                            fx = x;
+                            fy = y;
+                            break;
+                        }
+                check(fx >= 0, "a highway with a barrier down the middle");
+                for (int k = 0; k < 16; k++) w.spawn(Entity.ZOMBIE, fx * 16 + 8 + (k - 8) * 6, (fy - 2) * 16 + 8);
+                for (int k = 0; k < 6; k++) w.spawn(Entity.CIVILIAN, fx * 16 + 8 + (k - 3) * 8, (fy + 3) * 16 + 8).paused = true;
+                for (int f = 0; f < 30 * 45; f++) {
+                    w.update(1 / 30f);
+                    w.evCount = 0;
+                }
+                int pressed = 0;
+                for (Entity e : w.entities)
+                    if (!e.dead && e.isZombie() && Math.abs(e.y - (fy * 16 + 8)) < 20 && Math.abs(e.x - fx * 16) < 200) pressed++;
+                check(pressed <= 1, pressed + " of the dead still pressed against the barrier after 45 s");
+            }
+        });
+        test("new kinds of building for every country, and saved cities still rebuild the same", new Check() {
+            public void run() {
+                String[][] own = {{"Barber shop", "Brownstone", "Trailer home", "BBQ smokehouse"}, {"Pie shop", "Chemist", "Fibro shack", "Terrace house"},
+                        {"Okonomiyaki shop", "Cram school", "Gasshō farmhouse", "Yakitori stand"}, {"Pharmacie", "Bistrot", "Maison bourgeoise", "Longère"},
+                        {"Farmacia", "Birriería", "Casa de adobe", "Carnicería"}};
+                for (int country = 0; country < 5; country++) {
+                    CityConfig c = new CityConfig();
+                    c.seed = 42 + country;
+                    c.v[CityConfig.OPT_SIZE] = 3;
+                    c.v[CityConfig.OPT_COUNTRY] = country;
+                    City city = new City(c);
+                    java.util.HashSet<String> names = new java.util.HashSet<String>();
+                    for (City.Building b : city.buildings) if (b.typeName() != null) names.add(b.typeName());
+                    int found = 0;
+                    for (String n : own[country]) if (names.contains(n)) found++;
+                    check(found >= 2, "country " + country + ": " + found + " of its new kinds of building");
+                }
+                // (The same city as version 10.0 built from this seed, building for building.)
+                CityConfig c = new CityConfig();
+                c.seed = 42;
+                c.v[CityConfig.OPT_SIZE] = 1;
+                City city = new City(c);
+                long h = 17;
+                for (City.Building b : city.buildings) h = h * 31 + (long) (b.x0 * 7 + b.y0 * 13 + b.x1 * 17 + b.y1 * 19 + b.kind);
+                check(city.buildings.size() == 377 && h == 0xd953e0baab71cfb8L, "same layout as before (" + city.buildings.size() + ", " + Long.toHexString(h) + ")");
+            }
+        });
         test("most of the bitten come back as plain zombies, a few as the other kinds", new Check() {
             public void run() {
                 CityConfig c = new CityConfig();

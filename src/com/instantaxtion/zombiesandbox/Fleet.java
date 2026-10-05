@@ -46,6 +46,10 @@ final class Fleet {
         /** Pulled over for lights and sirens coming up behind (or holding at a junction for one): seconds left. */
         float yieldT;
         boolean yieldStop;
+        /** Pulled over by highway patrol (stopped on the shoulder); and the car a patrol car has pulled over. */
+        boolean pulled;
+        Vehicle stopping;
+        float stopT, stopCd = 20;
         /** Parked at the kerb at a scene, nose angled in. */
         boolean kerbed;
         /** Queued behind traffic; and somewhere up that queue, someone waiting at a light or a junction. */
@@ -130,7 +134,7 @@ final class Fleet {
         boolean lightsOn() {
             if (broken) return false;
             if (type == FIRE_ENGINE) return state != IDLE && state != MUSTER;
-            if (type == CRUISER) return state != WAIT && !(patrol && state != DRIVE && state != SCENE);
+            if (type == CRUISER) return state != WAIT && (stopping != null || !(patrol && state != DRIVE && state != SCENE));
             if (type == AMBULANCE) return state != WAIT;
             return false;
         }
@@ -159,6 +163,23 @@ final class Fleet {
         float length() {
             return type == TANK ? 11f : type == TRUCK || type == FIRE_ENGINE || type == AMBULANCE ? 9.5f
                     : type == CAR ? MODEL_HL[model] : 8f;
+        }
+    }
+
+    /** What a vehicle is, for its card: "Police car - Unit 14 (Highway Patrol)", "Taxi", "Engine 2"... */
+    String describe(Vehicle v) {
+        switch (v.type) {
+            case CRUISER:
+                return v.number > 0 ? "Police car  -  " + callsign(v) : "Police car";
+            case TRUCK: return v.guardUnit ? "National Guard truck" : v.supply > 0 ? "Army supply truck" : "Army truck";
+            case HELI: return "Air 1  -  helicopter";
+            case FIRE_ENGINE: return "Fire engine " + v.number;
+            case TANK: return "Tank";
+            case AMBULANCE: return "Ambulance";
+            case TRAIN: return "Train";
+            case JET: return "Jet";
+            default:
+                return MODEL_NAMES[v.model] + (v.through ? "  -  through traffic" : v.fleeing ? "  -  leaving town" : "");
         }
     }
 
@@ -204,6 +225,10 @@ final class Fleet {
                 if (v.broken) return who + ": Wrecked";
                 if (v.state == BLOCK) return "Police car: Roadblock" + (where != null ? " on " + where : "");
                 if (v.block != null && v.state == DRIVE) return "Police car: Setting up a roadblock" + (where != null ? " on " + where : "");
+                if (v.patrol && v.state == PATROL) return who + ": On patrol";
+                if (v.patrol && v.state == SCENE) return who + ": At the scene" + (where != null ? " on " + where : "");
+                if (v.patrol && v.state == RECALL) return who + ": Picking up its officers";
+                if (v.type == TRUCK && v.state == MUSTER) return "Army truck: Squad mounting up";
                 if (v.state == WAIT) return who + ": Loading up";
                 if (v.state == DRIVE) return who + ": " + (v.type == TRUCK ? "Carrying squad" : "Responding") + (where != null ? " to " + where : "");
                 return who + ": Returning";
@@ -1801,7 +1826,11 @@ final class Fleet {
             off = 0;
             max = Math.min(max, 22);
         }
-        if (v.yieldT > 0 && v.type == CAR && v.player == null) {
+        if (v.pulled) {
+            // Pulled over by highway patrol: onto the shoulder, and stop.
+            off += City.T * 0.5f * (city.country.leftHand ? -1 : 1);
+            max = Math.min(max, Math.max(0, Math.abs(v.speed) - 3));
+        } else if (v.yieldT > 0 && v.type == CAR && v.player == null) {
             // Giving way: over to the kerb and slow (or held back from the junction).
             if (v.yieldStop) max = Math.min(max, city.junctionIdAt(v.x, v.y) >= 0 ? max : 2);
             else {
@@ -1877,6 +1906,11 @@ final class Fleet {
      */
     private boolean updateTraffic(Vehicle v, float dt) {
         if (v.parked) return false;
+        if (v.pulled) {
+            // (Waiting for the officer: not stuck, not a jam.)
+            v.stuckTimer = 0;
+            if (w.alert > 0) v.pulled = false;
+        }
         giveWay(v, dt);
         boolean zombiesClose = w.countZombiesNear(v.x, v.y, 30) >= 2;
         v.waitTimer -= dt;
@@ -2287,7 +2321,7 @@ final class Fleet {
         v.patrol = true;
         v.agency = agency;
         v.state = PATROL;
-        v.number = agency * 10 + (++unitCount % 10);
+        v.number = agency * 10 + (++unitCount);
         if (!newDestination(v)) return null;
         Entity e = w.create(Entity.COP, v.x, v.y);
         e.agency = agency;
@@ -2297,6 +2331,49 @@ final class Fleet {
         v.crew.add(e);
         vehicles.add(v);
         return v;
+    }
+
+    /**
+     * Highway patrol, while all is quiet, pulls the odd driver over: the car pulls onto the shoulder, the
+     * patrol car stops behind it with its lights going, and after a while both drive on. Returns true while
+     * it's stopped behind one.
+     */
+    private boolean trafficStop(Vehicle v, float dt) {
+        Vehicle c = v.stopping;
+        if (c != null) {
+            v.stopT += dt;
+            boolean over = c.removedFromFleet || c.broken || c.parked || v.stopT > 26 || w.alert > 0
+                    || Math.hypot(c.x - v.x, c.y - v.y) > 220 || v.state != PATROL;
+            if (over) {
+                c.pulled = false;
+                v.stopping = null;
+                v.stopCd = 40 + w.rnd.nextFloat() * 50;
+                return false;
+            }
+            // Up behind it, then stop.
+            if (Math.hypot(c.x - v.x, c.y - v.y) < 34 && Math.abs(c.speed) < 3) {
+                v.speed = Math.max(0, v.speed - dt * 120);
+                return true;
+            }
+            return false;
+        }
+        v.stopCd -= dt;
+        if (v.stopCd > 0 || w.alert > 0 || v.state != PATROL || !city.onHighway(v.x, v.y)) return false;
+        v.stopCd = 8;
+        float fx = (float) Math.cos(v.angle), fy = (float) Math.sin(v.angle);
+        for (int i = 0, n = vehicles.size(); i < n; i++) {
+            Vehicle o = vehicles.get(i);
+            if (o.type != CAR || o.player != null || o.pulled || o.fleeing || o.parked || o.broken || !o.riders.isEmpty()) continue;
+            float dx = o.x - v.x, dy = o.y - v.y, ahead = dx * fx + dy * fy;
+            if (ahead < 30 || ahead > 170 || Math.abs(dx * fy - dy * fx) > 30) continue;
+            if (fx * (float) Math.cos(o.angle) + fy * (float) Math.sin(o.angle) < 0.8f || !city.onHighway(o.x, o.y)) continue;
+            o.pulled = true;
+            v.stopping = o;
+            v.stopT = 0;
+            w.emit(Sfx.SIREN, v.x, v.y);
+            return false;
+        }
+        return false;
     }
 
     /** Patrol cars on the streets (not wrecked or abandoned). */
@@ -2492,6 +2569,7 @@ final class Fleet {
             if (!newDestination(v)) v.stuckTimer = 99;
             return false;
         }
+        if (v.agency == 1 && trafficStop(v, dt)) return false;
         // Officers spot one of them from the car: pull up and get out.
         if (check && v.crew.size() > 0 && w.countZombiesNear(v.x, v.y, 90) > 0 && w.countZombiesNear(v.x, v.y, 30) < 4) {
             v.speed = 0;

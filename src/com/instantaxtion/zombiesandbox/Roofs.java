@@ -589,6 +589,30 @@ final class Roofs {
             case Variants.R_MANSARD:
                 mansard(c, p, x0, y0, x1, y1, roof, r);
                 break;
+            case Variants.R_PAGODA: {
+                // A temple or shrine roof: deep eaves in tiers, each a step in and a shade lighter, the corners
+                // swept up in the accent colour, and a finial on top.
+                p.setColor(City.darken(roof, 0.5f));
+                c.drawRect(x0, y0, x1, y1, p);
+                float in = Math.min(bw, bh);
+                int tiers = in > 50 ? 3 : 2;
+                for (int k = 0; k < tiers; k++) {
+                    float m = 0.5f + k * in * 0.16f;
+                    float ax0 = x0 + m, ay0 = y0 + m, ax1 = x1 - m, ay1 = y1 - m;
+                    if (ax1 - ax0 < 4 || ay1 - ay0 < 4) break;
+                    hip(c, p, ax0, ay0, ax1, ay1, City.lighten(roof, 0.06f * k));
+                    courses(c, p, ax0 + 1, ay0 + 1, ax1 - 1, ay1 - 1, City.darken(roof, 0.78f), 1.4f, !along);
+                    p.setColor(acc);
+                    float e = 2.2f;
+                    c.drawRect(ax0, ay0, ax0 + e, ay0 + e, p);
+                    c.drawRect(ax1 - e, ay0, ax1, ay0 + e, p);
+                    c.drawRect(ax0, ay1 - e, ax0 + e, ay1, p);
+                    c.drawRect(ax1 - e, ay1 - e, ax1, ay1, p);
+                }
+                p.setColor(0xFFD8B040);
+                c.drawCircle((x0 + x1) / 2, (y0 + y1) / 2, 1.8f, p);
+                break;
+            }
             case Variants.R_SAWTOOTH: {
                 p.setColor(City.darken(roof, 0.65f));
                 c.drawRect(x0, y0, x1, y1, p);

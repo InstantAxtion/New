@@ -141,6 +141,8 @@ final class GameView extends View implements Menu.Host {
     private final java.util.ArrayList<Entity> selection = new java.util.ArrayList<Entity>();
     private float orderX, orderY, orderMarker;
     private Entity follow;
+    /** A vehicle the camera is following (tap one), with its card. */
+    private Fleet.Vehicle followV;
     private boolean wasControlling;
     private float hintTime = 14f;
 
@@ -231,6 +233,7 @@ final class GameView extends View implements Menu.Host {
         world.gore = settings.gore();
         world.populate(cfg);
         follow = null;
+        followV = null;
         inspectB = null;
         if (getWidth() > 0) centerCamera();
     }
@@ -315,6 +318,7 @@ final class GameView extends View implements Menu.Host {
     @Override
     public void jumpTo(float x, float y) {
         follow = null;
+        followV = null;
         director = false;
         camX = x - getWidth() / scale / 2;
         camY = y - barTop / scale / 2;
@@ -453,6 +457,7 @@ final class GameView extends View implements Menu.Host {
         applySettings();
         hasGame = true;
         follow = null;
+        followV = null;
         selection.clear();
         inspectB = null;
         lastAction.clear();
@@ -477,6 +482,7 @@ final class GameView extends View implements Menu.Host {
         built = null;
         loading = false;
         follow = null;
+        followV = null;
         inspectB = null;
         if (getWidth() > 0) centerCamera();
         records.gameStarted();
@@ -677,11 +683,25 @@ final class GameView extends View implements Menu.Host {
         }
         wasControlling = world.controlled != null;
         if (menu.liveBackground()) driftCamera(dt);
-        else if (director && follow == null && inGame) directCamera(dt);
+        else if (director && follow == null && followV == null && inGame) directCamera(dt);
         else if (follow != null) {
-            if (follow.dead && follow != world.controlled) follow = null;
+            if (follow.dead && follow != world.controlled) {
+                // Got into a car, a patrol car or a truck: follow that instead.
+                Fleet.Vehicle in = follow.removed ? (follow.ride != null ? follow.ride : follow.rig) : null;
+                if (in != null && !in.removedFromFleet && world.fleet.vehicles.contains(in)) followV = in;
+                follow = null;
+            }
             else {
                 float tx = follow.x - getWidth() / scale / 2, ty = follow.y - (barTop / 2) / scale;
+                float k = Math.min(1, dt * 6);
+                camX += (tx - camX) * k;
+                camY += (ty - camY) * k;
+            }
+        }
+        else if (followV != null) {
+            if (followV.removedFromFleet || !world.fleet.vehicles.contains(followV)) followV = null;
+            else {
+                float tx = followV.x - getWidth() / scale / 2, ty = followV.y - (barTop / 2) / scale;
                 float k = Math.min(1, dt * 6);
                 camX += (tx - camX) * k;
                 camY += (ty - camY) * k;
@@ -1707,6 +1727,11 @@ final class GameView extends View implements Menu.Host {
             stroke.setColor(0xCCFFFFFF);
             stroke.setStrokeWidth(1f);
             c.drawCircle(follow.x, follow.y, follow.radius + 4 + (float) Math.sin(world.time * 6), stroke);
+        }
+        if (followV != null) {
+            stroke.setColor(0xCCFFFFFF);
+            stroke.setStrokeWidth(1.2f);
+            c.drawCircle(followV.x, followV.y, followV.length() + 5 + (float) Math.sin(world.time * 6), stroke);
         }
 
         for (int i = 0, n = world.explosions.size(); i < n; i++) {
@@ -4367,6 +4392,8 @@ final class GameView extends View implements Menu.Host {
             drawControls(c, world.controlled);
         } else if (follow != null && picker < 0) {
             drawInspect(c, follow);
+        } else if (followV != null && picker < 0) {
+            drawVehicleCard(c, followV);
         } else if (inspectB != null && tool == TOOL_PAN) {
             drawBuildingInspect(c, inspectB);
         } else if (hintTime > 0 && picker < 0) {
@@ -4530,6 +4557,38 @@ final class GameView extends View implements Menu.Host {
         text.setTextAlign(Paint.Align.CENTER);
         text.setColor(0xFFFFFFFF);
         c.drawText("Take control", takeRect.centerX(), takeRect.centerY() + 4.5f * dp, text);
+    }
+
+    /** The card for a vehicle being followed: what it is, what it's doing, how fast, who's aboard, damage. */
+    private void drawVehicleCard(Canvas c, Fleet.Vehicle v) {
+        java.util.ArrayList<String> lines = new java.util.ArrayList<String>();
+        String title = world.fleet.describe(v);
+        String st = world.fleet.status(v);
+        if (st != null && st.indexOf(": ") > 0) st = st.substring(st.indexOf(": ") + 2);
+        lines.add(st != null ? st : v.parked ? "Parked" : Math.abs(v.speed) < 3 ? "Waiting" : "Driving");
+        int kmh = Math.round(Math.abs(v.speed) * 0.95f);
+        int aboard = v.crew.size() + v.riders.size() + v.passengers;
+        String people = aboard == 0 ? (v.player != null ? "you're driving" : v.occupied() ? "driver only" : "nobody aboard")
+                : aboard + " aboard";
+        lines.add((Fleet.airborne(v) ? "flying" : kmh < 2 ? "stopped" : kmh + " km/h") + (v.lightsOn() ? ", lights and siren" : "")
+                + "  -  " + people + "  -  " + (v.maxHp > 0 ? Math.max(0, Math.round(100 * v.hp / v.maxHp)) + "% condition" : ""));
+        text.setTextAlign(Paint.Align.LEFT);
+        text.setTextSize(14 * dp);
+        float lh = 16 * dp, cw = Math.min(getWidth() - 20 * dp, 420 * dp);
+        float ch = 30 * dp + lines.size() * lh + 8 * dp;
+        float left = (getWidth() - cw) / 2, top = barTop - ch - 8 * dp - (lastAction.isEmpty() ? 0 : 44 * dp);
+        oval.set(left, top, left + cw, top + ch);
+        fill.setColor(0xE8101216);
+        c.drawRoundRect(oval, 12 * dp, 12 * dp, fill);
+        fill.setColor(v.lightsOn() ? 0xFF4F7BE0 : v.broken ? 0xFF8A9099 : 0xFFF0AD4E);
+        c.drawRect(left, top + 10 * dp, left + 4 * dp, top + ch - 10 * dp, fill);
+        text.setColor(0xFFFFFFFF);
+        c.drawText(title, left + 14 * dp, top + 22 * dp, text);
+        text.setTextSize(12.5f * dp);
+        for (int i = 0; i < lines.size(); i++) {
+            text.setColor(0xFFB8BDC4);
+            c.drawText(lines.get(i), left + 14 * dp, top + 22 * dp + (i + 1) * lh, text);
+        }
     }
 
     // ------------------------------------------------------------------ taking control
@@ -5194,6 +5253,7 @@ final class GameView extends View implements Menu.Host {
                 if (mode != MODE_UI && ev.getPointerCount() >= 2) {
                     mode = MODE_GESTURE;
                     follow = null;
+                    followV = null;
                     startPinch(ev);
                 }
                 return true;
@@ -5289,6 +5349,7 @@ final class GameView extends View implements Menu.Host {
             if (feedLines[i].contains(x, y)) {
                 Dispatch.Message m = feedMsgs[i];
                 follow = null;
+                followV = null;
                 camX = m.x - getWidth() / scale / 2;
                 camY = m.y - barTop / scale / 2;
                 clampCamera();
@@ -5302,7 +5363,7 @@ final class GameView extends View implements Menu.Host {
                     click();
                     clearMenu = false;
                     switch (i) {
-                        case 0: world.clearAll(); follow = null; break;
+                        case 0: world.clearAll(); follow = null; followV = null; break;
                         case 1: world.clearZombies(); break;
                         case 2: world.clearBodies(); break;
                         case 3: world.clearWrecks(); break;
@@ -5321,11 +5382,13 @@ final class GameView extends View implements Menu.Host {
             director = !director;
             directorTimer = 0;
             follow = null;
+            followV = null;
             return true;
         }
         if (!miniRect.isEmpty() && miniRect.contains(x, y)) {
             // Jump there.
             follow = null;
+            followV = null;
             director = false;
             float wx = (x - miniRect.left) / miniRect.width() * world.city.worldW();
             float wy = (y - miniRect.top) / miniRect.height() * world.city.worldH();
@@ -5398,6 +5461,7 @@ final class GameView extends View implements Menu.Host {
         director = false;
         if (tool == TOOL_PAN) return;
         follow = null;
+        followV = null;
         if (tool != TOOL_ORDER && tool != TOOL_BOMB && tool != TOOL_ERASE) lastAction.clear();
         if (tool == TOOL_PLACE) {
             place(wx, wy);
@@ -5439,6 +5503,7 @@ final class GameView extends View implements Menu.Host {
         if (tool == TOOL_PAN) {
             if (dragged) {
                 follow = null;
+                followV = null;
                 inspectB = null;
                 director = false;
                 camX -= (x - lastX) / scale;
@@ -5506,8 +5571,22 @@ final class GameView extends View implements Menu.Host {
             }
         }
         follow = pick;
+        followV = null;
+        if (pick == null) {
+            // A vehicle there: follow it.
+            float bv = Float.MAX_VALUE;
+            for (int i = 0, n = world.fleet.vehicles.size(); i < n; i++) {
+                Fleet.Vehicle v = world.fleet.vehicles.get(i);
+                float r = Math.max(v.length() + 3, 22 * dp / scale), ddx = v.x - wx, ddy = v.y - wy, d2 = ddx * ddx + ddy * ddy;
+                if (d2 < r * r && d2 < bv) {
+                    bv = d2;
+                    followV = v;
+                }
+            }
+            if (followV != null) director = false;
+        }
         // Nobody there: tap a building to see what it is and how it's doing.
-        inspectB = pick == null ? world.city.buildingAt(wx, wy) : null;
+        inspectB = pick == null && followV == null ? world.city.buildingAt(wx, wy) : null;
     }
 
     /** The building whose card is showing. */

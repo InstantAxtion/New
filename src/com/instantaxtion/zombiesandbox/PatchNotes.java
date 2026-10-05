@@ -2,11 +2,20 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.0";
-    static final int VERSION_CODE = 38;
+    static final String VERSION = "10.1";
+    static final int VERSION_CODE = 39;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.1  -  Follow the traffic",
+                    "No more cars going round in circles: on tree-lined boulevards each side of the median is one way, so nobody drives up the wrong side and has to cross back; dirt tracks no longer join the highway mid-way; cars beside the highway keep to their own lane; and a car that does lose its way slows down and finds it again.",
+                    "The dead no longer get stuck on highway barriers (or fences): seeing someone on the far side, they go round through a gap instead of pressing against it, and they don't chase cars they can't reach.",
+                    "Emergency vehicles feel real: traffic pulls over to the kerb and slows for lights and sirens and holds back at junctions, emergency vehicles go round queues at red lights, and police cars and ambulances pull in to the kerb at a scene, lights still flashing.",
+                    "Follow a vehicle: tap a car, police car, fire engine, truck, helicopter or train and the camera follows it, with a card saying what it is, what it's doing, how fast, who's aboard and its condition. Someone you're following who gets into a car is followed in it.",
+                    "More highway patrol: about one car to every fifty tiles of highway (twice as many on a Massive map), and before the outbreak they pull drivers over onto the shoulder for traffic stops.",
+                    "About 60 new kinds of building: ten or so more of each country's own (shrines and temples with tiered roofs, onsen and cram schools in Japan; pie shops, chemists, bowls clubs and fibro shacks in Australia; pharmacies, bistrots and châteaux in France; farmacias, birrierías and lucha libre arenas in Mexico; barber shops, brownstones, megachurches and BBQ smokehouses in the USA), and more for each kind of district everywhere: stock exchanges, concert halls, antique shops, boathouses, garden centres, container depots, lumber yards, community centres and research institutes. Saved cities keep their streets and buildings.",
+            },
             {
                     "10.0  -  Holding on",
                     "Smooth on more phones: the game watches how it's running and, if the phone is struggling, turns the detail down (people far off screen think less often, less background traffic, fewer sparks), and back up when there's room. The simulation itself is also about twice as fast on big maps.",

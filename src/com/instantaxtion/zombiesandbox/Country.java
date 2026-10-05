@@ -86,6 +86,25 @@ final class Country {
     /** Government buildings: city hall, courthouse, jail, 911 centre and public works depot. */
     static final int GOV_HALL = 0, GOV_COURT = 1, GOV_JAIL = 2, GOV_CALLS = 3, GOV_WORKS = 4;
 
+    /**
+     * The country's own National Guard: {its armory, the force, who calls it out, the armory's roof sign}.
+     */
+    static String[] guard(int id) {
+        switch (id) {
+            case AUSTRALIA: return new String[]{"Army Reserve Depot", "Army Reserve", "Premier", "ARMY RESERVE"};
+            case JAPAN: return new String[]{"SDF Reserve Camp", "Self-Defense Forces reserve", "Governor", "自衛隊"};
+            case FRANCE: return new String[]{"Caserne de la Garde Nationale", "Garde nationale", "Préfet", "GARDE NATIONALE"};
+            case MEXICO: return new String[]{"Cuartel de la Guardia Nacional", "Guardia Nacional", "Gobernador", "GUARDIA NACIONAL"};
+            case SWITZERLAND: return new String[]{"Zeughaus", "militia", "Regierungsrat", "ZEUGHAUS"};
+            case KOREA: return new String[]{"Reserve Forces Training Unit", "Reserve Forces", "Governor", "예비군"};
+            case MALAYSIA: return new String[]{"Kem Askar Wataniah", "Wataniah", "Menteri Besar", "WATANIAH"};
+            case PORTUGAL: return new String[]{"Quartel da GNR", "GNR", "Ministro", "GNR"};
+            case MOROCCO: return new String[]{"Caserne des Forces Auxiliaires", "Forces Auxiliaires", "Wali", "FORCES AUXILIAIRES"};
+            case RUSSIA: return new String[]{"Rosgvardiya Base", "Rosgvardiya", "Governor", "РОСГВАРДИЯ"};
+            default: return new String[]{"National Guard Armory", "National Guard", "Governor", "NATIONAL GUARD"};
+        }
+    }
+
     /** What the country calls its government buildings: {names}, then {roof signs}. */
     String[][] gov() {
         return gov(id);

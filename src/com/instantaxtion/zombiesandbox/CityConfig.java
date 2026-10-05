@@ -8,7 +8,7 @@ import java.util.Random;
  */
 final class CityConfig implements OptionSet {
     static final String[] PRESETS = {"Classic", "Downtown", "Suburbs", "Industrial", "Parkland", "Old Town",
-            "Small Town", "Campus", "Metropolis", "Village"};
+            "Small Town", "Campus", "Metropolis", "Village", "Seaside", "River City", "Lakeside", "Harbour"};
     /** One line about each map, shown on the New Game screen. */
     static final String[] PRESET_INFO = {
             "A bit of everything: downtown towers, suburbs, parks, a precinct and an army base.",
@@ -21,6 +21,10 @@ final class CityConfig implements OptionSet {
             "Schools, sports fields, courts and student apartments.",
             "A huge, dense skyline: towers, apartments, garages, three precincts and a base.",
             "A few lanes of cottages among fields and gardens. Help is far away.",
+            "A beach town on the sea: the promenade, sand, piers and boats, with hotels and cafés along the front.",
+            "A river runs through the middle of town. Hold the bridges: the dead can't swim.",
+            "Homes and parks round a lake in the middle of town, with a jetty, rowing boats and an island.",
+            "A working port: quays, docks, cranes, container stacks and ships, with warehouses along the water.",
     };
 
     static final int STYLE_MIXED = 0, STYLE_OFFICES = 1, STYLE_HOUSES = 2, STYLE_WAREHOUSES = 3;
@@ -58,6 +62,10 @@ final class CityConfig implements OptionSet {
             {STYLE_MIXED, 1, 1, 3, 1, 2, 1, 0},       // Campus
             {STYLE_OFFICES, 2, 3, 1, 2, 1, 3, 1},     // Metropolis
             {STYLE_HOUSES, 0, 0, 3, 1, 2, 1, 0},      // Village
+            {STYLE_MIXED, 1, 1, 2, 1, 1, 1, 0},       // Seaside
+            {STYLE_MIXED, 1, 2, 2, 2, 0, 2, 1},       // River City
+            {STYLE_HOUSES, 1, 0, 3, 1, 2, 1, 0},      // Lakeside
+            {STYLE_MIXED, 1, 1, 1, 2, 0, 1, 1},       // Harbour
     };
 
     // Landmarks per medium map:  churches, schools, fire stations, supermarkets, gas stations, cemeteries,
@@ -73,11 +81,15 @@ final class CityConfig implements OptionSet {
             {1, 3, 1, 1, 1, 0, 20},   // Campus
             {2, 2, 2, 2, 1, 0, 50},   // Metropolis
             {1, 1, 1, 1, 1, 1, 20},   // Village
+            {1, 1, 1, 1, 1, 0, 40},   // Seaside
+            {1, 1, 1, 1, 1, 1, 30},   // River City
+            {1, 1, 1, 1, 1, 1, 15},   // Lakeside
+            {1, 1, 1, 1, 2, 0, 20},   // Harbour
     };
     // Share of office lots that become apartment blocks, parking garages and pharmacies (percent).
     private static final int[][] BUILDING_MIX = {
             {15, 6, 5}, {15, 15, 5}, {20, 0, 6}, {5, 8, 2}, {15, 3, 6}, {10, 0, 8}, {10, 2, 8}, {20, 5, 6},
-            {25, 15, 4}, {0, 0, 10},
+            {25, 15, 4}, {0, 0, 10}, {25, 3, 6}, {20, 8, 5}, {15, 2, 6}, {10, 6, 3},
     };
     // Which kinds of park each map likes: park, playground, sports field, courts, garden, skatepark.
     private static final int[][] PARK_MIX = {
@@ -91,6 +103,10 @@ final class CityConfig implements OptionSet {
             {2, 1, 4, 4, 1, 1},
             {2, 1, 1, 3, 0, 2},
             {4, 2, 2, 0, 3, 0},
+            {3, 2, 1, 2, 2, 1},
+            {3, 1, 1, 2, 2, 1},
+            {4, 2, 1, 1, 3, 0},
+            {2, 1, 1, 1, 0, 2},
     };
 
     /** Current index into VALUES for each option. */
@@ -98,11 +114,27 @@ final class CityConfig implements OptionSet {
     long seed = new Random().nextInt(1000000);
     /** Start the next game on the city from {@link #code()} instead of a new random one. */
     boolean keepCity;
-    /** The city has its government quarter (since 10.4; games saved before that rebuild without it). */
-    boolean civic = true;
+    /**
+     * Which public buildings the city was laid out with: 0 as before 10.4, 1 the government quarter (10.4),
+     * 2 and the National Guard armory (10.5). Saved games rebuild with what they had.
+     */
+    int civic = 2;
 
     int preset() {
         return v[OPT_PRESET];
+    }
+
+    /** Water on the map: none, the sea along one side (a beach or a port), a river, or a lake. */
+    static final int W_NONE = 0, W_SEA = 1, W_RIVER = 2, W_LAKE = 3, W_HARBOUR = 4;
+
+    int water() {
+        switch (v[OPT_PRESET]) {
+            case 10: return W_SEA;
+            case 11: return W_RIVER;
+            case 12: return W_LAKE;
+            case 13: return W_HARBOUR;
+            default: return W_NONE;
+        }
     }
 
     /**
@@ -143,7 +175,7 @@ final class CityConfig implements OptionSet {
     }
 
     /** The character for each map in a city code. */
-    private static final String CODE_MAPS = "123456789A";
+    private static final String CODE_MAPS = "123456789ABCDE";
 
     /** Reads a city code. Returns false (changing nothing) if it isn't one. */
     boolean applyCode(String text) {
@@ -208,6 +240,8 @@ final class CityConfig implements OptionSet {
      */
     float coreFraction() {
         int p = v[OPT_PRESET];
+        // (Towns on the water fill the whole map.)
+        if (water() != W_NONE) return 1f;
         float f = p == 9 ? 0.55f : p == 6 ? 0.72f : 1f;
         // A massive map is nearly all town: a thin band of country round the edge for the highway and farms.
         if (massive()) f = p == 9 ? 0.6f : p == 6 ? 0.88f : 0.92f;
@@ -284,7 +318,7 @@ final class CityConfig implements OptionSet {
 
     // Which maps have a railway line (with a station and passing trains).
     // Which maps have a railway line: 0 never, 1 about half the time (it depends on the city), 2 always.
-    private static final int[] RAIL = {1, 0, 0, 2, 0, 0, 1, 0, 2, 0};
+    private static final int[] RAIL = {1, 0, 0, 2, 0, 0, 1, 0, 2, 0, 0, 0, 0, 0};
 
     boolean hasRail() {
         int r = RAIL[v[OPT_PRESET]];
@@ -304,6 +338,10 @@ final class CityConfig implements OptionSet {
             {0, 2, 1, 3, 0, 6, 2, 5},   // Campus
             {6, 5, 1, 1, 3, 0, 1, 0},   // Metropolis
             {0, 0, 3, 6, 0, 0, 3, 2},   // Village
+            {2, 4, 2, 4, 0, 0, 3, 1},   // Seaside
+            {4, 4, 2, 3, 2, 1, 1, 0},   // River City
+            {1, 2, 1, 6, 0, 1, 4, 6},   // Lakeside
+            {2, 3, 1, 2, 5, 0, 0, 1},   // Harbour
     };
 
     /** How likely each kind of district is on this map. */

@@ -673,6 +673,8 @@ final class Variants {
             ALL_VARIANTS.add(new V("Jail", City.JAIL, bit, ANY, R_FLAT, 0xFF7C7F82, 0xFF2A2A2A, g[1][2], I_DORM, 2, 2, 0));
             ALL_VARIANTS.add(new V("Emergency call centre", City.CALL_CENTRE, bit, ANY, R_ANTENNA, 0xFF59646B, 0xFFE03A3A, g[1][3], I_OFFICE, 2, 3, 0));
             ALL_VARIANTS.add(new V("Public works depot", City.WORKS, bit, ANY, R_SAWTOOTH, 0xFF8A7F70, 0xFFE0702E, g[1][4], I_SHOWROOM, 1, 1, 0));
+            ALL_VARIANTS.add(new V("National Guard armory", City.ARMORY, bit, ANY, R_BARREL, 0xFF5E6A48, 0xFF2E4F3A,
+                    Country.guard(id)[3], I_GYM, 2, 2, 0));
         }
     }
 

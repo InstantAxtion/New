@@ -1495,6 +1495,13 @@ final class GameView extends View implements Menu.Host {
             c.drawRect(b.doorX - 4, b.doorY + 1.2f, b.doorX + 4, b.doorY + 2.9f, fill);
         }
 
+        for (int i = 0, n = world.boats.size(); i < n; i++) {
+            float[] b = world.boats.get(i);
+            if (b[0] < vx0 - 30 || b[0] > vx1 + 30 || b[1] < vy0 - 30 || b[1] > vy1 + 30) continue;
+            // (Out of sight under a bridge.)
+            if (world.city.isBridge((int) (b[0] / City.T), (int) (b[1] / City.T))) continue;
+            drawBoat(c, b);
+        }
         for (int i = 0, n = world.corpses.size(); i < n; i++) {
             World.Corpse k = world.corpses.get(i);
             if (k.x < vx0 || k.x > vx1 || k.y < vy0 || k.y > vy1) continue;
@@ -4108,6 +4115,53 @@ final class GameView extends View implements Menu.Host {
         }
     }
 
+    /** A boat under way, with its wake. */
+    private void drawBoat(Canvas c, float[] b) {
+        int kind = (int) b[5];
+        float len = kind == 0 ? 10 : kind == 3 ? 13 : 16, wid = kind == 0 ? 3.5f : 5;
+        c.save();
+        c.translate(b[0], b[1]);
+        c.rotate((float) Math.toDegrees(Math.atan2(b[3], b[2])));
+        // The wake fanning out behind.
+        fill.setColor(0x40F2F6F8);
+        for (int k = 1; k <= 4; k++) {
+            float wx = -len - k * 5 * (kind == 0 ? 0.5f : 1), sp = wid * 0.6f + k * 1.6f;
+            c.drawRect(wx, -sp, wx + 3, -sp + 0.8f, fill);
+            c.drawRect(wx, sp - 0.8f, wx + 3, sp, fill);
+        }
+        fill.setColor(0x30000000);
+        c.drawOval(new RectF(-len + 1.5f, -wid + 2, len + 1.5f, wid + 2), fill);
+        android.graphics.Path hull = new android.graphics.Path();
+        hull.moveTo(-len, -wid);
+        hull.lineTo(len * 0.5f, -wid);
+        hull.lineTo(len, 0);
+        hull.lineTo(len * 0.5f, wid);
+        hull.lineTo(-len, wid);
+        hull.close();
+        fill.setColor(kind == 0 ? 0xFF9A6A3E : kind == 3 ? 0xFF2A3A4E : kind == 2 ? 0xFFE8E4DA : 0xFFF2F2F2);
+        c.drawPath(hull, fill);
+        if (kind == 0) {
+            fill.setColor(0xFF6E4A2A);
+            c.drawRect(-2, -wid, 0, wid, fill);
+        } else if (kind == 2) {
+            fill.setColor(0xFFF8F8F4);
+            android.graphics.Path sail = new android.graphics.Path();
+            sail.moveTo(0, 0);
+            sail.lineTo(-len * 0.7f, -wid - 7);
+            sail.lineTo(-len * 0.7f, 0);
+            sail.close();
+            c.drawPath(sail, fill);
+        } else {
+            fill.setColor(kind == 3 ? 0xFFE0A030 : 0xFF2A4A6A);
+            c.drawRect(-len * 0.4f, -wid + 1.5f, len * 0.15f, wid - 1.5f, fill);
+            if (kind == 1) {
+                fill.setColor(0xFFD83A3A);
+                c.drawRect(-len, -wid, len * 0.5f, -wid + 1, fill);
+            }
+        }
+        c.restore();
+    }
+
     private void drawCorpse(Canvas c, World.Corpse k) {
         float r = k.radius;
         c.save();
@@ -5595,7 +5649,7 @@ final class GameView extends View implements Menu.Host {
             "Watchtower", "Hospital", "Shop", "Church", "School", "Fire station", "Supermarket", "Gas station",
             "Steeple", "Crypt", "Apartment block", "Parking garage", "Pharmacy", "Train station", "Shopping mall",
             "Stadium", "Power station", "Barn", "Silo", "City hall", "Courthouse", "Jail", "Emergency call centre",
-            "Public works depot"};
+            "Public works depot", "National Guard armory"};
 
     /** The building card: what it is, where, who is inside, what's left in it, and what it does for the city. */
     private void drawBuildingInspect(Canvas c, City.Building b) {
@@ -5646,6 +5700,13 @@ final class GameView extends View implements Menu.Host {
                     : world.inmates + " inmates locked up. If it's overrun or the power fails, they break out"; break;
             case City.CALL_CENTRE: role = world.callsLost ? "FALLEN: 911 calls go unanswered and nobody is watching the cameras"
                     : "Answers 911 calls and watches the cameras: police are sent to trouble quicker"; break;
+            case City.ARMORY: {
+                String[] g = Country.guard(world.city.country.id);
+                role = world.armoryLost ? "FALLEN: the " + g[1] + " can't muster here; they'll have to come from out of town"
+                        : world.guardCalled ? "The " + g[1] + " has mustered here and gone into the city"
+                        : "The " + g[1] + ": reservists muster here and drive out when the " + g[2] + " calls them up";
+                break;
+            }
             case City.WORKS: role = world.worksLost ? "FALLEN: no crews out boarding up or clearing the streets"
                     : "Crews board up shelters during the outbreak and clear the streets after it"; break;
         }

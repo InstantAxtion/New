@@ -412,6 +412,7 @@ final class World {
         scatterWeapons();
         stockArmouries();
         baseStrengths();
+        launchBoats();
         if (courtArmoury != null) courtArmoury.ammo = 1200;
         inmates = city.jail != null ? 6 + rnd.nextInt(9) : 0;
         int people = Math.min(cfg.civilians(city.totalResidents), maxEntities * 4 / 5);
@@ -1204,6 +1205,7 @@ final class World {
     /** Recomputes counts and paths after a save has been loaded. */
     void afterLoad() {
         fieldTimer = 0;
+        launchBoats();
         spawnBirds();
         spawnWildlife();
         fleet.trafficTarget = Fleet.trafficFor(city);
@@ -1364,6 +1366,7 @@ final class World {
         updateAftermath(dt);
         updatePickups(dt);
         updateEffects(dt);
+        if (!boats.isEmpty()) moveBoats(dt);
         lifeTimer -= dt;
         if (lifeTimer <= 0) {
             lifeTimer = 1;
@@ -4233,10 +4236,60 @@ final class World {
         b.calmTimer = 0;
     }
 
+    // ------------------------------------------------------------------ boats
+
+    /** Boats out on the water, just for looks: {x, y, dx, dy, speed, kind (0 rowing, 1 motor, 2 yacht, 3 tug)}. */
+    final ArrayList<float[]> boats = new ArrayList<float[]>();
+
+    /** Puts boats out on the sea, the river or the lake. */
+    void launchBoats() {
+        boats.clear();
+        City c = city;
+        if (c.waterKind == CityConfig.W_NONE) return;
+        Random r = new Random(c.cfg.seed * 13L + 5);
+        int n = c.waterKind == CityConfig.W_LAKE ? 3 : Math.max(2, c.w / (c.waterKind == CityConfig.W_RIVER ? 70 : 50));
+        for (int k = 0, tries = 0; k < n && tries < 400; tries++) {
+            int tx = 2 + r.nextInt(c.w - 4), ty;
+            if (c.waterKind == CityConfig.W_RIVER) ty = c.riverY0 + c.riverRows / 2 - 2 + r.nextInt(5);
+            else if (c.seaY > 0) ty = c.seaY + 14 + r.nextInt(Math.max(1, c.h - c.seaY - 17));
+            else ty = r.nextInt(c.h);
+            if (ty < 0 || ty >= c.h || c.tiles[ty * c.w + tx] != City.WATER) continue;
+            int kind = c.waterKind == CityConfig.W_LAKE ? 0 : c.waterKind == CityConfig.W_HARBOUR ? (r.nextBoolean() ? 3 : 1)
+                    : c.waterKind == CityConfig.W_RIVER ? (r.nextInt(3) == 0 ? 0 : 1) : 1 + r.nextInt(2);
+            float dir = r.nextBoolean() ? 1 : -1;
+            float dy = c.waterKind == CityConfig.W_LAKE ? (r.nextFloat() - 0.5f) : 0;
+            float speed = kind == 0 ? 7 + r.nextFloat() * 4 : kind == 2 ? 10 + r.nextFloat() * 8 : 16 + r.nextFloat() * 14;
+            boats.add(new float[]{(tx + 0.5f) * City.T, (ty + 0.5f) * City.T, dir, dy, speed, kind});
+            k++;
+        }
+    }
+
+    /** Water a boat can be on (under a bridge too). */
+    private boolean navigable(float x, float y) {
+        int i = city.tileIndex(x, y);
+        return i >= 0 && (city.tiles[i] == City.WATER || (city.bridge != null && city.bridge[i]));
+    }
+
+    private void moveBoats(float dt) {
+        for (int i = 0; i < boats.size(); i++) {
+            float[] b = boats.get(i);
+            float len = b[5] == 0 ? 10 : 16;
+            float nx = b[0] + b[2] * b[4] * dt, ny = b[1] + b[3] * b[4] * dt;
+            if (!navigable(nx + b[2] * len, ny + b[3] * len) || !navigable(nx, ny)) {
+                // Turn about (and, on a lake, off on a new heading).
+                b[2] = -b[2];
+                b[3] = city.waterKind == CityConfig.W_LAKE ? -b[3] + (rnd.nextFloat() - 0.5f) * 0.6f : 0;
+                continue;
+            }
+            b[0] = nx;
+            b[1] = ny;
+        }
+    }
+
     // ------------------------------------------------------------------ the government
 
     /** Government buildings overrun (each comes back once it's cleared and people are there again). */
-    boolean hallLost, callsLost, worksLost;
+    boolean hallLost, callsLost, worksLost, armoryLost;
     /** Inmates still locked up in the jail, and whether they've broken out. */
     int inmates;
     boolean jailBroken;
@@ -4244,7 +4297,7 @@ final class World {
     int boardedUp;
     /** The courthouse's armoury, where police can restock (not one of the city's facilities). */
     City.Facility courtArmoury;
-    private float hallThreat, callsThreat, worksThreat, jailThreat, noGuards, crewTimer;
+    private float hallThreat, callsThreat, worksThreat, jailThreat, noGuards, crewTimer, armoryThreat;
 
     /** Broadcasts get out: the power's on and City Hall (if the city has one) is still running. */
     boolean broadcasting() {
@@ -4285,6 +4338,18 @@ final class World {
             else if (!worksLost && was)
                 dispatch.say(Dispatch.WHO_INFO, null, "Crews are back at " + wd.name + ".", wd.doorX, wd.doorY);
             if (!worksLost && !wd.collapsed && outbreak && alert >= 1 && aftermath == AFTER_NONE) boardUp();
+        }
+        City.Building ar = city.armory;
+        if (ar != null) {
+            boolean was = armoryLost;
+            armoryThreat = threat(ar, armoryThreat);
+            armoryLost = lost(ar, armoryThreat, armoryLost);
+            String force = Country.guard(city.country.id)[1];
+            if (armoryLost && !was)
+                dispatch.say(Dispatch.WHO_MILITARY, null, ar.name + " has been overrun. If the " + force
+                        + " is called out now, they'll have to come from out of town.", ar.doorX, ar.doorY);
+            else if (!armoryLost && was)
+                dispatch.say(Dispatch.WHO_MILITARY, null, ar.name + " is clear again.", ar.doorX, ar.doorY);
         }
         jail();
     }
@@ -5477,12 +5542,16 @@ final class World {
      * Guard (once): two trucks of guardsmen drive in from the edge of town to protect the civilians.
      */
     void callNationalGuard() {
-        // (A Guard armory in town: the governor doesn't wait so long.)
-        City.Facility armory = city.nearestFacility(City.FACILITY_BASE, 0, 0);
-        boolean local = armory != null && armory.baseType == City.BT_GUARD;
-        // (The Mayor asks the governor; with City Hall gone, the governor takes a lot longer to hear.)
+        // (A Guard headquarters at the base: the governor doesn't wait so long.)
+        City.Facility hq = city.nearestFacility(City.FACILITY_BASE, 0, 0);
+        boolean local = hq != null && hq.baseType == City.BT_GUARD;
+        // (The Mayor asks the governor; with City Hall gone, the governor takes a lot longer to hear. With the
+        // town's own armory overrun, the Guard has to come from out of town, which takes longer still.)
         boolean hall = city.cityHall != null;
+        City.Building arm = city.armory;
+        boolean muster = arm != null && !armoryLost && !arm.collapsed;
         float wait = local ? 50 : hall && !hallLost ? 70 : hall ? 200 : 90;
+        if (arm != null && !muster) wait += 60;
         if (guardCalled || !outbreak || outbreakTime < wait || warBalance > (local ? 0.55f : 0.45f)
                 || (dispatch.squadReserve > 0 && !local) || readiness == 1) return;
         guardCalled = true;
@@ -5491,15 +5560,27 @@ final class World {
             tx = dispatch.zones.get(0).x;
             ty = dispatch.zones.get(0).y;
         }
-        float[] edge = city.edgeRoad(rnd);
-        if (edge == null) edge = new float[]{20, city.worldH() / 2};
+        float[] from;
+        if (muster) from = new float[]{arm.doorX, arm.doorY};
+        else {
+            from = city.edgeRoad(rnd);
+            if (from == null) from = new float[]{20, city.worldH() / 2};
+        }
+        int trucks = muster ? 3 : 2;
         int before = fleet.vehicles.size();
-        for (int k = 0; k < 2; k++) fleet.send(Entity.SOLDIER, 6, edge[0], edge[1], tx, ty, null, null, city.placeName(tx, ty));
-        for (int i = before; i < fleet.vehicles.size(); i++) fleet.vehicles.get(i).guardUnit = true;
+        for (int k = 0; k < trucks; k++) fleet.send(Entity.SOLDIER, 6, from[0], from[1], tx, ty, null, null, city.placeName(tx, ty));
+        for (int i = before; i < fleet.vehicles.size(); i++) {
+            Fleet.Vehicle v = fleet.vehicles.get(i);
+            v.guardUnit = true;
+            // (Reservists take a little while to get to the armory and draw their kit.)
+            if (muster) v.timer = 20 + (i - before) * 4;
+        }
+        String[] g = Country.guard(city.country.id);
         if (fleet.vehicles.size() > before)
-            dispatch.say(Dispatch.WHO_MILITARY, null, "Governor: " + (hall && !hallLost ? "At the Mayor's request, I" : "I")
-                    + "'m calling out the National Guard. Two trucks of guardsmen are on their way to "
-                    + city.placeName(tx, ty) + ".", tx, ty);
+            dispatch.say(Dispatch.WHO_MILITARY, null, g[2] + ": " + (hall && !hallLost ? "At the Mayor's request, I" : "I")
+                    + "'m calling out the " + g[1] + ". " + (muster ? "Guardsmen are mustering at " + arm.name + "; " + trucks
+                    + " trucks will head for " : "With " + (arm != null ? arm.name + " overrun" : "no armory in town")
+                    + ", " + trucks + " trucks are coming from out of town to ") + city.placeName(tx, ty) + ".", from[0], from[1]);
         else guardCalled = false;
     }
 

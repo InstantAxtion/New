@@ -17,7 +17,7 @@ import java.util.ArrayList;
  * damaged or collapsed buildings.
  */
 final class SaveGame {
-    private static final int VERSION = 19;
+    private static final int VERSION = 20;
 
     private SaveGame() {
     }
@@ -271,6 +271,8 @@ final class SaveGame {
             out.writeInt(w.inmates);
             out.writeInt(w.boardedUp);
             out.writeInt(w.courtArmoury != null ? w.courtArmoury.ammo : 0);
+            // Version 20: the National Guard armory.
+            out.writeBoolean(w.armoryLost);
         } finally {
             out.close();
         }
@@ -349,7 +351,7 @@ final class SaveGame {
             cfg.seed = in.readLong();
             if (version >= 15) cfg.setEdits(in.readUTF());
             // (Cities saved before 10.4 were built without their government quarter.)
-            cfg.civic = version >= 19;
+            cfg.civic = version >= 20 ? 2 : version >= 19 ? 1 : 0;
             World w = new World(cfg);
 
             w.time = in.readFloat();
@@ -585,6 +587,7 @@ final class SaveGame {
                 int court = in.readInt();
                 if (w.courtArmoury != null) w.courtArmoury.ammo = court;
             }
+            if (version >= 20) w.armoryLost = in.readBoolean();
             d.copCount = copCount;
             d.soldierCount = soldierCount;
             w.afterLoad();

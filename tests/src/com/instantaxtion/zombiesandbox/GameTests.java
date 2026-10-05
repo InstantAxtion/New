@@ -257,7 +257,7 @@ public final class GameTests {
                 CityConfig c = new CityConfig();
                 c.seed = 42;
                 c.v[CityConfig.OPT_SIZE] = 1;
-                c.civic = false;
+                c.civic = 0;
                 City city = new City(c);
                 long h = 17;
                 for (City.Building b : city.buildings) h = h * 31 + (long) (b.x0 * 7 + b.y0 * 13 + b.x1 * 17 + b.y1 * 19 + b.kind);
@@ -314,6 +314,55 @@ public final class GameTests {
                 for (int f = 0; f < 30 * 2; f++) w.update(1 / 30f);
                 check(w.jailBroken && w.inmates == 0 && w.counts[Entity.RAIDER] > before, "jailbreak when the power fails ("
                         + (w.counts[Entity.RAIDER] - before) + " escaped)");
+            }
+        });
+        test("water maps: the sea, a river with bridges, a lake and a port; nobody ends up in the water", new Check() {
+            public void run() {
+                for (int preset = 10; preset < 14; preset++) {
+                    CityConfig c = new CityConfig();
+                    c.seed = 21 + preset;
+                    c.v[CityConfig.OPT_PRESET] = preset;
+                    c.v[CityConfig.OPT_SIZE] = 1;
+                    c.v[CityConfig.OPT_ZOMBIES] = 3;
+                    World w = new World(c);
+                    w.populate(c);
+                    City city = w.city;
+                    String name = CityConfig.PRESETS[preset];
+                    int water = 0, sand = 0, pier = 0, bridges = 0;
+                    for (byte t : city.tiles) {
+                        if (t == City.WATER) water++;
+                        else if (t == City.SAND) sand++;
+                        else if (t == City.PIER) pier++;
+                    }
+                    if (city.riverY0 > 0) {
+                        int y = city.riverY0 + city.riverRows / 2;
+                        for (int x = 1; x < city.w; x++) if (city.tiles[y * city.w + x] == City.ROAD && city.tiles[y * city.w + x - 1] != City.ROAD) bridges++;
+                    }
+                    check(water > city.w * 8, name + ": water (" + water + " tiles)");
+                    check(city.armory != null && city.cityHall != null, name + ": city hall and a National Guard armory");
+                    switch (city.waterKind) {
+                        case CityConfig.W_SEA: check(sand > 0 && pier > 0, name + ": a beach and a pier"); break;
+                        case CityConfig.W_RIVER: check(bridges >= 3, name + ": " + bridges + " bridges"); break;
+                        case CityConfig.W_LAKE: check(city.lakes.size() == 1, name + ": a lake"); break;
+                        default: check(city.seaY > 0, name + ": the sea"); break;
+                    }
+                    check(!w.boats.isEmpty(), name + ": boats on the water");
+                    for (int f = 0; f < 30 * 30; f++) w.update(1 / 30f);
+                    int wet = 0;
+                    for (Entity e : w.entities)
+                        if (!e.dead && !e.hidden && city.tiles[city.tileIndex(e.x, e.y)] == City.WATER) wet++;
+                    for (Fleet.Vehicle v : w.fleet.vehicles)
+                        if (v.type != Fleet.HELI && v.type != Fleet.JET && city.tiles[city.tileIndex(v.x, v.y)] == City.WATER) wet++;
+                    check(wet == 0, name + ": " + wet + " people or cars in the water");
+                }
+                // Every other kind of map has its armory too.
+                for (int preset = 0; preset < 10; preset++) {
+                    CityConfig c = new CityConfig();
+                    c.seed = 3 + preset;
+                    c.v[CityConfig.OPT_PRESET] = preset;
+                    c.v[CityConfig.OPT_SIZE] = 1;
+                    check(new City(c).armory != null, CityConfig.PRESETS[preset] + ": a National Guard armory");
+                }
             }
         });
         test("traffic keeps its distance: hardly any crashes, and patrol cars keep to their side", new Check() {

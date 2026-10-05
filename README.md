@@ -10,7 +10,8 @@ away from the middle of the screen as you pan, and the game plays in both portra
 ## Main menu
 
 - **New Game** opens the city setup, with a live preview of the city and these options: the map (Classic,
-  Downtown, Suburbs, Industrial, Parkland, Old Town, Small Town, Campus, Metropolis or Village), map size
+  Downtown, Suburbs, Industrial, Parkland, Old Town, Small Town, Campus, Metropolis, Village, or the four
+  water maps: Seaside, River City, Lakeside and Harbour), map size
   (Small, Medium, Large or Massive), the **country** (USA, Australia, Japan, France, Mexico, Switzerland, South Korea, Malaysia, Portugal, Morocco or Russia), how many of
   the residents are out and about (All by default), zombies at the start, and how many reinforcements can
   be called in (Off, Low, Medium or High, each spelled out: waves of police backup, army squads, tanks
@@ -240,7 +241,7 @@ counts), and wherever the dead gather the ground glows red. Labels go most impor
   Each comes back once it's cleared and people return.
 - **Zombies inside**: some buildings hide zombies that burst out when someone comes near or tries to
   shelter there. Idle zombies lurk in empty buildings, smash shop windows and set off car alarms.
-- **559 kinds of building**: each with its own roof, colours and sign, picked by country and by
+- **570 kinds of building**: each with its own roof, colours and sign, picked by country and by
   district. Diners, drive-thrus and motels in the USA; corner pubs, milk bars, RSL clubs and
   Queenslanders in Australia; konbini, izakayas, pachinko parlours, ryokan and danchi blocks in
   Japan; boulangeries, brasseries, mairies and Haussmann blocks in France; taquerías, tortillerías,
@@ -265,6 +266,19 @@ Courts and pitches are marked at their real proportions (basketball keys and thr
 tennis service boxes, football penalty areas).
 Traffic drives the streets, pigeons flock in the parks, and explosions leave burning wrecks.
 
+**Water:** four maps are built on the water, and the dead can't swim.
+- **Seaside**: the town runs down to a seafront road and promenade, then a sandy beach with umbrellas,
+  towels and lifeguard huts, wooden piers out to sea, and boats on the water. People go down to the
+  beach.
+- **River City**: a wide river runs right across town between paved embankments lined with trees,
+  with a bridge (and footpaths) wherever a street reaches it. Boats pass under the bridges. Hold the
+  bridges and you hold the river.
+- **Lakeside**: a big lake in the middle of town, with avenues along its shores, trees round the water,
+  an island, a jetty and rowing boats.
+- **Harbour**: a working port along the sea: a concrete quay, docks reaching out into the harbour with
+  gantry cranes and stacked containers, cargo ships moored alongside, tugs and launches, and the docks
+  district full of warehouses.
+
 **Countryside:** Villages, small towns and every Massive map are surrounded by open country:
 winding dirt lanes out to the edge of the map, farms and lonely cabins along them, woods, and
 hamlets (a short street of cottages with a lane back to town). A town out in the country is never a
@@ -285,7 +299,7 @@ military safe zone. Each map gets one of eight kinds of base: a Garrison,
 an Air Base (runway, hangars, more air strikes), an Armoured Base (tank parks, a spare tank), a
 Training Camp (obstacle course, a spare squad), a Special Forces Base (kill house, better-armed
 soldiers), a Supply Depot (fuel tanks, twice the ammunition), a Radar Station (more air strikes) or
-a Guard Armory (the National Guard comes sooner).
+a Guard Headquarters (the National Guard comes sooner).
 
 ## 911, radio and safe zones
 
@@ -310,9 +324,13 @@ a Guard Armory (the National Guard comes sooner).
 - **Roadblocks**: when a zone opens, police cars from the nearest precinct drive to the roads
   leading into it (up to three), park across the road with cones out and an officer on guard. They
   pack up and drive back when the zone closes.
-- **National Guard**: when the army's reserves are spent and the war is going badly, the Governor
-  calls out the National Guard once: two trucks of guardsmen drive in from the edge of the map and
-  reinforce the safe zones.
+- **National Guard**: every city has its own Guard armory, a fenced compound with a drill hall, a
+  parade ground and rows of trucks, named for the country's own force (National Guard Armory,
+  Army Reserve Depot, Caserne de la Garde Nationale, Cuartel de la Guardia Nacional, Zeughaus, Quartel
+  da GNR, Rosgvardiya Base...). When the army's reserves are spent and the war is going badly, the
+  Governor (or Premier, Préfet, Wali...) calls them out once: the reservists muster at the armory and
+  three trucks drive out to reinforce the safe zones. If the dead have taken the armory, the Guard has
+  to come from out of town instead, later and with two trucks.
 - **Firefighters** wait at the fire station and ride out on fire engines. They put out fires with
   hoses, give first aid to the injured nearby, fight zombies off with an axe and back away from crowds.
 - Recent radio messages appear on screen. Tap one to jump the camera to where it happened.

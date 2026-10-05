@@ -1107,7 +1107,7 @@ final class Menu {
     }
 
     private static final int[] MAP_COLORS = {0xFF8BD450, 0xFF6F8EC8, 0xFFE0A050, 0xFF9A9A90, 0xFF4CAF50, 0xFFB07050,
-            0xFFD8C050, 0xFF50A0C0, 0xFFC050C0, 0xFF90B060};
+            0xFFD8C050, 0xFF50A0C0, 0xFFC050C0, 0xFF90B060, 0xFF3A9AD8, 0xFF2F6EA8, 0xFF48B0B0, 0xFF6A8098};
 
     private void drawNotes(Canvas c, int w, int h) {
         float top = header(c, w, h, "Patch Notes");

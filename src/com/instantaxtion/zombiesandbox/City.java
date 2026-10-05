@@ -17,18 +17,20 @@ final class City {
     static final int FAR = 1 << 20;
 
     static final byte ROAD = 0, SIDEWALK = 1, BUILDING = 2, GRASS = 3, TREE = 4, PLAZA = 5, CAR = 6,
-            STATUE = 7, LOT = 8, BASE = 9, FENCE = 10, PUMP = 11, RUBBLE = 12, RAIL = 13, DIRT = 14;
+            STATUE = 7, LOT = 8, BASE = 9, FENCE = 10, PUMP = 11, RUBBLE = 12, RAIL = 13, DIRT = 14, WATER = 15, SAND = 16,
+            PIER = 17;
 
     static final int OFFICE = 0, HOUSE = 1, WAREHOUSE = 2, STATION = 3, BARRACKS = 4, TOWER = 5, HOSPITAL = 6,
             SHOP = 7, CHURCH = 8, SCHOOL = 9, FIRE_STATION = 10, MARKET = 11, KIOSK = 12, SPIRE = 13, CRYPT = 14,
             APARTMENT = 15, GARAGE = 16, PHARMACY = 17, TRAIN_STATION = 18, MALL = 19, STADIUM = 20, POWER = 21,
-            BARN = 22, SILO = 23, CITY_HALL = 24, COURTHOUSE = 25, JAIL = 26, CALL_CENTRE = 27, WORKS = 28;
-    static final int KIND_COUNT = 29;
+            BARN = 22, SILO = 23, CITY_HALL = 24, COURTHOUSE = 25, JAIL = 26, CALL_CENTRE = 27, WORKS = 28, ARMORY = 29;
+    static final int KIND_COUNT = 30;
     /** Ground decorations drawn into the map: {kind, x0, y0, x1, y1, variant} in world units. */
     static final int D_COURT = 0, D_FIELD = 1, D_PLAYGROUND = 2, D_GARDEN = 3, D_GRAVE = 4, D_SKATE = 5,
             D_CANOPY = 6, D_ALLEY = 7, D_SITE = 8, D_POWER = 9, D_HELIPAD = 10, D_BAY = 11, D_BANDSTAND = 12,
             D_FLOWERS = 13, D_CROPS = 14, D_ROUNDABOUT = 15, D_FLOODLIGHT = 16, D_FOUNTAIN = 17, D_FLAGS = 18,
-            D_YARD = 19, D_MAST = 20, D_SALT = 21, D_PILES = 22;
+            D_YARD = 19, D_MAST = 20, D_SALT = 21, D_PILES = 22, D_UMBRELLA = 23, D_LIFEGUARD = 24, D_BOAT = 25,
+            D_SHIP = 26, D_CRANE = 27, D_CONTAINERS = 28;
     static final int FACILITY_POLICE = 0, FACILITY_BASE = 1, FACILITY_HOSPITAL = 2, FACILITY_FIRE = 3;
 
     /** A police station or military base: where reinforcements come from and a preferred safe zone. */
@@ -206,6 +208,8 @@ final class City {
         float core = cfg.coreFraction();
         int m = core < 0.99f ? (int) (w * (1 - core) / 2) : 0;
         int n = 3 + (w - 2 * m) / 32;
+        // (Only the land is split into districts.)
+        int landH = seaY > 0 ? seaY : h;
         Random r = rnd;
         List<String> words = new ArrayList<String>(Arrays.asList(country.districtWords));
         java.util.Collections.shuffle(words, r);
@@ -214,11 +218,16 @@ final class City {
         for (int k = 0; k < n; k++) {
             District d = new District();
             // The first district sits in the middle of town; the rest spread out with some space between them.
-            float bestX = w / 2f, bestY = h / 2f;
-            if (k > 0) {
+            float bestX = w / 2f, bestY = landH / 2f;
+            // By the sea, the second district is the waterfront: the beach, or the docks.
+            boolean front = k == 1 && seaY > 0;
+            if (front) {
+                bestX = w * (0.35f + r.nextFloat() * 0.3f);
+                bestY = seaY - Math.max(14, w / 14f);
+            } else if (k > 0) {
                 float bestScore = -1;
                 for (int tries = 0; tries < 30; tries++) {
-                    float x = m + 6 + r.nextFloat() * (w - 2 * m - 12), y = m + 6 + r.nextFloat() * (h - 2 * m - 12);
+                    float x = m + 6 + r.nextFloat() * (w - 2 * m - 12), y = m + 6 + r.nextFloat() * (landH - 2 * m - 12);
                     float near = Float.MAX_VALUE;
                     for (District o : districts) near = Math.min(near, (float) Math.hypot(o.x - x, o.y - y));
                     if (near > bestScore) {
@@ -232,6 +241,7 @@ final class City {
             d.y = bestY;
             float dist = (float) Math.hypot(d.x - w / 2f, d.y - h / 2f) / (w * 0.5f);
             if (k == 0) d.type = cfg.coreDistrict();
+            else if (front) d.type = waterKind == CityConfig.W_HARBOUR ? DT_INDUSTRIAL : DT_MIDTOWN;
             else {
                 // Towers towards the middle, homes and parks towards the edge of town.
                 float[] wts = new float[DT_COUNT];
@@ -267,6 +277,7 @@ final class City {
                 default: d.name = wd + " Common"; break;
             }
             if (d.type == DT_DOWNTOWN) usedUnique[DT_COUNT - 1] = true;
+            if (front) d.name = wd + (waterKind == CityConfig.W_HARBOUR ? " Docks" : " Beach");
             d.name = this.country.districtName(d.name, wd, d.type);
             for (District o : districts) if (o.name.equals(d.name)) d.name = this.country.districtName(wd + " " + DISTRICT_KINDS[d.type], wd + " " + (k + 1), -1);
             districts.add(d);
@@ -305,6 +316,7 @@ final class City {
                     }
                 }
                 districtAt[y * w + x] = (byte) best;
+                if (y >= landH) continue;
                 sx[best] += x;
                 sy[best] += y;
                 districts.get(best).tiles++;
@@ -377,7 +389,7 @@ final class City {
      * assault course, and so on. (Chosen with numbers of their own, so the rest of the city doesn't move.)
      */
     static final String[] BASE_TYPES = {"Garrison", "Air Base", "Armoured Base", "Training Camp", "Special Forces Base",
-            "Supply Depot", "Radar Station", "Guard Armory"};
+            "Supply Depot", "Radar Station", "Guard Headquarters"};
     static final int BT_GARRISON = 0, BT_AIR = 1, BT_ARMOUR = 2, BT_TRAINING = 3, BT_SPECIAL = 4, BT_SUPPLY = 5,
             BT_RADAR = 6, BT_GUARD = 7;
     static final int BD_RUNWAY = 0, BD_HANGAR = 1, BD_TANK = 2, BD_RANGE = 3, BD_OBSTACLE = 4, BD_RADAR = 5,
@@ -437,7 +449,7 @@ final class City {
         for (int[] e : cfg.edits) applyEdit(e[0], e[1], e[2], false);
         for (int i = 0; i < tiles.length; i++) {
             byte t = tiles[i];
-            solid[i] = t == BUILDING || t == TREE || t == CAR || t == STATUE || t == FENCE || t == PUMP;
+            solid[i] = t == BUILDING || t == TREE || t == CAR || t == STATUE || t == FENCE || t == PUMP || t == WATER;
             opaque[i] = t == BUILDING;
         }
         for (int[] l : buildingLots) createBuilding(l);
@@ -492,6 +504,10 @@ final class City {
                 stationBuilding = b;
             }
             else if (k == MALL) b.name = name + " Mall";
+            else if (k == ARMORY) {
+                b.name = Country.guard(country.id)[0];
+                armory = b;
+            }
             else if (k >= CITY_HALL) {
                 b.name = country.gov()[0][k - CITY_HALL];
                 if (k == CITY_HALL) cityHall = b;
@@ -679,8 +695,18 @@ final class City {
     }
 
     private boolean stadiumNamed;
+    /**
+     * Water: what kind the map has (CityConfig.W_), the first row of the sea (or -1), the river's first row
+     * and width (or -1), and which road and pavement tiles are bridges over it.
+     */
+    int waterKind, seaY = -1, riverY0 = -1, riverRows;
+    boolean[] bridge;
+    private boolean lakeMade;
+    /** Lakes, as {x0, y0, x1, y1} tiles. */
+    final List<int[]> lakes = new ArrayList<int[]>();
+
     /** The government buildings (null where the city has none). */
-    Building cityHall, courthouse, jail, callCentre, worksDepot;
+    Building cityHall, courthouse, jail, callCentre, worksDepot, armory;
 
     /**
      * Emergency services spread across town: a block well away from every police station, base, hospital and
@@ -881,11 +907,13 @@ final class City {
         origin = 0;
         Arrays.fill(tiles, SIDEWALK);
         industryAngle = rnd.nextFloat() * (float) Math.PI * 2;
+        waterKind = cfg.water();
+        if (waterKind == CityConfig.W_SEA || waterKind == CityConfig.W_HARBOUR) seaY = h - Math.max(24, (int) (h * 0.18f));
         makeDistricts();
         // Where the town is: the whole map, or a core surrounded by countryside.
         float core = cfg.coreFraction();
         int m = core < 0.99f ? (int) (w * (1 - core) / 2) : 0;
-        int bx0 = m, by0 = m, bx1 = w - m, by1 = h - m;
+        int bx0 = m, by0 = m, bx1 = w - m, by1 = seaY > 0 ? seaY : h - m;
         townX0 = bx0;
         townY0 = by0;
         townX1 = bx1;
@@ -898,7 +926,8 @@ final class City {
         int in = organic ? 0 : 3;
         if (m == 0) {
             carve(new Street(bx0, by0, bx1, by0 + 3, false, false));
-            carve(new Street(bx0, by1 - 3, bx1, by1, false, false));
+            // (By the sea, the bottom of the ring is the seafront.)
+            carve(new Street(bx0, by1 - 3, bx1, by1, false, seaY > 0));
             carve(new Street(bx0, by0, bx0 + 3, by1, true, false));
             carve(new Street(bx1 - 3, by0, bx1, by1, true, false));
         }
@@ -923,13 +952,19 @@ final class City {
                         roadDir[i] = 0;
                     }
                 }
-            ensureCrossings(bx0, bx1);
+            ensureCrossings(bx0, bx1, railY0, railRows);
+        } else if (waterKind == CityConfig.W_RIVER) {
+            river(bx0, by0, bx1, by1, in);
+        } else if (waterKind == CityConfig.W_LAKE) {
+            lakeTown(bx0, by0, bx1, by1, in);
         } else if (village && m > 0) {
             villageCore(bx0, by0, bx1, by1);
         } else {
             split(bx0 + in, by0 + in, bx1 - in, by1 - in, 0, -1, -1);
         }
         if (organic) erodeTown(bx0, by0, bx1, by1);
+        if (seaY > 0) coast();
+
         // Out in the country, a highway runs past the town.
         if (m >= 16) highway(bx0, by0, bx1, by1);
         if (m > 0) {
@@ -1041,7 +1076,7 @@ final class City {
             serviceBuilding(b[0] + 1, b[1] + 1, b[2] - b[0] - 2, b[3] - b[1] - 2, HOSPITAL, 0);
         }
 
-        if (cfg.civic) government(used);
+        if (cfg.civic > 0) government(used);
 
         // Landmarks: churches, schools, fire stations, supermarkets, gas stations and cemeteries.
         int[][] minSize = {{5, 5}, {8, 8}, {6, 6}, {8, 7}, {5, 5}, {7, 7}};
@@ -1619,6 +1654,242 @@ final class City {
         }
     }
 
+    // ------------------------------------------------------------------ water
+
+    /**
+     * A river across the middle of town: a pavement embankment on each bank, the water between, and a
+     * bridge wherever a street reaches it from both sides (and on the ring road), with footpaths.
+     */
+    private void river(int bx0, int by0, int bx1, int by1, int in) {
+        int th = by1 - by0;
+        riverRows = w >= 400 ? 26 : w >= 300 ? 22 : 18;
+        riverY0 = by0 + th * 2 / 5 + rnd.nextInt(Math.max(1, th / 5)) - riverRows / 2;
+        split(bx0 + in, by0 + in, bx1 - in, riverY0, 0, -1, -1);
+        split(bx0 + in, riverY0 + riverRows, bx1 - in, by1 - in, 0, -1, -1);
+        for (int y = riverY0; y < riverY0 + riverRows; y++)
+            for (int x = 0; x < w; x++) {
+                int i = y * w + x;
+                boolean above = roadDir[(riverY0 - 1) * w + x] == 1, below = roadDir[(riverY0 + riverRows) * w + x] == 1;
+                boolean ring = (x >= bx0 && x < bx0 + 3) || (x >= bx1 - 3 && x < bx1);
+                if ((above && below) || ring) {
+                    tiles[i] = ROAD;
+                    roadDir[i] = 1;
+                } else {
+                    boolean bank = y - riverY0 < 2 || riverY0 + riverRows - 1 - y < 2;
+                    tiles[i] = bank ? SIDEWALK : WATER;
+                    roadDir[i] = 0;
+                }
+            }
+        ensureCrossings(bx0, bx1, riverY0, riverRows);
+        int wy0 = riverY0 + 2, wy1 = riverY0 + riverRows - 2;
+        bridge = new boolean[w * h];
+        for (int y = wy0; y < wy1; y++)
+            for (int x = 1; x < w - 1; x++) {
+                int i = y * w + x;
+                if (tiles[i] != ROAD) continue;
+                bridge[i] = true;
+                // A footpath along each side of the bridge.
+                for (int dx = -1; dx <= 1; dx += 2)
+                    if (tiles[i + dx] == WATER) {
+                        tiles[i + dx] = SIDEWALK;
+                        bridge[i + dx] = true;
+                    }
+            }
+        // Trees along the embankments, clear of the bridges.
+        for (int y : new int[]{riverY0 + 1, riverY0 + riverRows - 2})
+            for (int x = 2; x < w - 2; x += 4) {
+                boolean clear = true;
+                for (int dx = -2; dx <= 2; dx++) if (tiles[y * w + x + dx] != SIDEWALK) clear = false;
+                if (clear) tiles[y * w + x] = TREE;
+            }
+        // Boats on the river.
+        for (int x = 8; x < w - 8; x += 22 + rnd.nextInt(30)) {
+            float bx = x * T, by = (wy0 + 1 + rnd.nextInt(Math.max(1, wy1 - wy0 - 2))) * T;
+            if (tiles[(int) (by / T) * w + x] != WATER || tiles[(int) (by / T) * w + x + 2] != WATER) continue;
+            addDecor(D_BOAT, bx, by, bx + 30, by + 10, rnd.nextInt(3));
+        }
+    }
+
+    /**
+     * The sea along the bottom of the map: a promenade, then a sandy beach with piers, umbrellas and
+     * lifeguards (Seaside), or a concrete quay with docks, cranes, containers and ships (Harbour).
+     */
+    private void coast() {
+        boolean port = waterKind == CityConfig.W_HARBOUR;
+        bridge = new boolean[w * h];
+        fill(0, seaY, w, 2, SIDEWALK);
+        int shore = seaY + 2;
+        fill(0, shore, w, h - shore, WATER);
+        double ph = rnd.nextDouble() * 10;
+        if (!port) {
+            int beach = w >= 400 ? 9 : 7;
+            int[] edge = new int[w];
+            for (int x = 0; x < w; x++) {
+                int depth = beach + (int) Math.round(Math.sin(x * 0.06 + ph) * 1.6 + Math.sin(x * 0.021 + ph * 2) * 1.2);
+                edge[x] = shore + depth;
+                fill(x, shore, 1, depth, SAND);
+            }
+            // Piers out to sea, with a platform at the end.
+            int piers = Math.max(1, w / 130);
+            for (int k = 0; k < piers; k++) {
+                int px = (int) (w * (k + 0.5f) / piers) + rnd.nextInt(17) - 8;
+                int len = 10 + rnd.nextInt(8);
+                int end = Math.min(h - 6, edge[px] + len);
+                fill(px, shore, 2, end - shore, PIER);
+                fill(px - 2, end, 6, 4, PIER);
+            }
+            // Umbrellas and towels on the sand, lifeguard huts, and boats out on the water.
+            for (int x = 3; x < w - 3; x++) {
+                if (rnd.nextFloat() < 0.18f) {
+                    float ux = x * T + rnd.nextFloat() * T, uy = (shore + 1 + rnd.nextFloat() * (edge[x] - shore - 2)) * T;
+                    if (tiles[(int) (uy / T) * w + x] == SAND) addDecor(D_UMBRELLA, ux - 7, uy - 7, ux + 7, uy + 7, rnd.nextInt(5));
+                }
+                if (x % 45 == 20) addDecor(D_LIFEGUARD, x * T, (edge[x] - 3) * T, (x + 2) * T, (edge[x] - 1) * T, 0);
+            }
+            for (int k = 0; k < w / 25; k++) {
+                float bx = (4 + rnd.nextInt(w - 10)) * T, by = (edge[0] + 6 + rnd.nextInt(Math.max(1, h - edge[0] - 10))) * T;
+                if (tiles[(int) (by / T) * w + (int) (bx / T)] != WATER) continue;
+                addDecor(D_BOAT, bx, by, bx + 30, by + 10, rnd.nextInt(3));
+            }
+            // People go down to the beach.
+            for (int x = 20; x < w - 20; x += 40) openAreas.add(new float[]{(x + 0.5f) * T, (shore + 3) * T, 0});
+        } else {
+            // The quay, and docks reaching out into the harbour.
+            int quay = 4;
+            fill(0, shore, w, quay, LOT);
+            int qy = shore + quay;
+            for (int x = 14 + rnd.nextInt(10); x < w - 20; x += 34 + rnd.nextInt(12)) {
+                int len = Math.min(h - qy - 6, 12 + rnd.nextInt(6));
+                fill(x, qy, 7, len, LOT);
+                // Cranes on the dock, containers stacked, and a ship alongside.
+                addDecor(D_CRANE, (x + 1) * T, (qy + 2) * T, (x + 6) * T, (qy + 5) * T, 0);
+                addDecor(D_CONTAINERS, (x + 1) * T, (qy + 6) * T, (x + 6) * T, (qy + Math.min(len - 1, 12)) * T, rnd.nextInt(100));
+                boolean right = rnd.nextBoolean();
+                float sx0 = right ? (x + 7) * T + 3 : (x - 5) * T - 3;
+                addDecor(D_SHIP, sx0, (qy + 1) * T, sx0 + 5 * T, (qy + len) * T, rnd.nextInt(4));
+            }
+            // Containers along the quay between the docks.
+            for (int x = 4; x < w - 12; x += 26)
+                if (tiles[(qy - 1) * w + x] == LOT && tiles[(qy - 1) * w + x + 8] == LOT)
+                    addDecor(D_CONTAINERS, x * T, (shore + 1) * T, (x + 8) * T, (shore + 3) * T, rnd.nextInt(100));
+            for (int k = 0; k < w / 40; k++) {
+                float bx = (4 + rnd.nextInt(w - 10)) * T, by = (qy + 22 + rnd.nextInt(Math.max(1, h - qy - 26))) * T;
+                if (by / T >= h - 1 || tiles[(int) (by / T) * w + (int) (bx / T)] != WATER) continue;
+                addDecor(D_BOAT, bx, by, bx + 30, by + 10, 1);
+            }
+        }
+    }
+
+    /**
+     * A lake filling a piece of town between the streets: grass round the shore with trees, an irregular
+     * shoreline, a little wooded island on a big lake, a jetty and rowing boats.
+     */
+    private void lake(int x0, int y0, int x1, int y1) {
+        lakeMade = true;
+        lakes.add(new int[]{x0, y0, x1, y1});
+        fill(x0, y0, x1 - x0, y1 - y0, SIDEWALK);
+        fill(x0 + 1, y0 + 1, x1 - x0 - 2, y1 - y0 - 2, GRASS);
+        float cx = (x0 + x1) / 2f, cy = (y0 + y1) / 2f, rx = (x1 - x0) / 2f - 3, ry = (y1 - y0) / 2f - 3;
+        double ph = rnd.nextDouble() * 6;
+        for (int y = y0; y < y1; y++)
+            for (int x = x0; x < x1; x++) {
+                float dx = (x + 0.5f - cx) / rx, dy = (y + 0.5f - cy) / ry;
+                double a = Math.atan2(dy, dx);
+                double r = 1 - 0.08 * Math.sin(a * 3 + ph) - 0.05 * Math.sin(a * 5 + ph * 2);
+                if (dx * dx + dy * dy <= r * r) tiles[y * w + x] = WATER;
+            }
+        if (rx >= 10 && ry >= 10) {
+            float ix = cx + rx * 0.3f, iy = cy - ry * 0.25f;
+            for (int y = (int) iy - 3; y <= (int) iy + 3; y++)
+                for (int x = (int) ix - 3; x <= (int) ix + 3; x++)
+                    if ((x + 0.5f - ix) * (x + 0.5f - ix) + (y + 0.5f - iy) * (y + 0.5f - iy) <= 7) tiles[y * w + x] = GRASS;
+            tiles[(int) iy * w + (int) ix] = TREE;
+        }
+        // Trees round the shore, leaving a walk along the water's edge.
+        for (int y = y0 + 1; y < y1 - 1; y++)
+            for (int x = x0 + 1; x < x1 - 1; x++) {
+                if (tiles[y * w + x] != GRASS || rnd.nextFloat() > 0.14f) continue;
+                boolean nearWater = false;
+                for (int dy = -1; dy <= 1; dy++) for (int dx = -1; dx <= 1; dx++) if (tiles[(y + dy) * w + x + dx] == WATER) nearWater = true;
+                if (!nearWater) tiles[y * w + x] = TREE;
+            }
+        // A jetty out from the south shore.
+        int jx = (int) cx - 1, jy = y1 - 2;
+        while (jy > y0 && tiles[jy * w + jx] != WATER) jy--;
+        for (int k = 0; k < 5 && jy - k > y0; k++) {
+            tiles[(jy - k) * w + jx] = PIER;
+            tiles[(jy - k) * w + jx + 1] = PIER;
+        }
+        for (int k = 0; k < 2 + (int) (rx * ry / 60); k++) {
+            float bx = (cx + (rnd.nextFloat() - 0.5f) * rx) * T, by = (cy + (rnd.nextFloat() - 0.5f) * ry) * T;
+            if (tiles[(int) (by / T) * w + (int) (bx / T)] == WATER && tiles[(int) (by / T) * w + (int) (bx / T) + 1] == WATER)
+                addDecor(D_BOAT, bx, by, bx + 18, by + 8, 0);
+        }
+        openAreas.add(new float[]{cx * T, (y1 - 1.5f) * T, 0});
+    }
+
+    /**
+     * Lakeside: a big lake in the middle of town, with avenues running along its shores and right across
+     * town, and the rest of the town laid out around them.
+     */
+    private void lakeTown(int bx0, int by0, int bx1, int by1, int in) {
+        int lw = (int) ((bx1 - bx0) * 0.36f), lh = (int) ((by1 - by0) * 0.3f);
+        int lx0 = (bx0 + bx1) / 2 - lw / 2 + rnd.nextInt(9) - 4, ly0 = (by0 + by1) / 2 - lh / 2 + rnd.nextInt(9) - 4;
+        int lx1 = lx0 + lw, ly1 = ly0 + lh;
+        carve(new Street(bx0, ly0 - 3, bx1, ly0, false, true));
+        carve(new Street(bx0, ly1, bx1, ly1 + 3, false, true));
+        carve(new Street(lx0 - 3, by0, lx0, by1, true, true));
+        carve(new Street(lx1, by0, lx1 + 3, by1, true, true));
+        int[] xs = {bx0 + in, lx0 - 3, lx0, lx1, lx1 + 3, bx1 - in}, ys = {by0 + in, ly0 - 3, ly0, ly1, ly1 + 3, by1 - in};
+        for (int j = 0; j < 3; j++)
+            for (int i = 0; i < 3; i++) {
+                if (i == 1 && j == 1) continue;
+                if (xs[i * 2 + 1] - xs[i * 2] < 6 || ys[j * 2 + 1] - ys[j * 2] < 6) continue;
+                split(xs[i * 2], ys[j * 2], xs[i * 2 + 1], ys[j * 2 + 1], 1, -1, -1);
+            }
+        lake(lx0, ly0, lx1, ly1);
+    }
+
+    /** No piece of town came out the right size for the lake: it takes the biggest block near the middle. */
+    private void lakeFromBlock() {
+        int best = -1;
+        float bestScore = -Float.MAX_VALUE;
+        for (int k = 0; k < blocks.size(); k++) {
+            int[] b = blocks.get(k);
+            int bw = b[2] - b[0], bh = b[3] - b[1];
+            if (Math.min(bw, bh) < 16) continue;
+            float score = bw * bh - (float) Math.hypot((b[0] + b[2]) / 2f - w / 2f, (b[1] + b[3]) / 2f - h / 2f) * 20;
+            if (score > bestScore) {
+                bestScore = score;
+                best = k;
+            }
+        }
+        if (best < 0) return;
+        int[] b = blocks.remove(best);
+        lake(b[0], b[1], b[2], b[3]);
+    }
+
+    /** The colour of a tile of open water: darker the further it is from the shore. */
+    private int waterColor(int x, int y) {
+        int base = waterKind == CityConfig.W_LAKE ? 0xFF2F6E80 : waterKind == CityConfig.W_RIVER ? 0xFF2E6584 : 0xFF2A6390;
+        int land = 9;
+        for (int r = 1; r <= 8 && land == 9; r++)
+            for (int k = -r; k <= r && land == 9; k += r)
+                for (int[] d : new int[][]{{k, -r}, {k, r}, {-r, k}, {r, k}}) {
+                    int nx = x + d[0], ny = y + d[1];
+                    if (nx >= 0 && ny >= 0 && nx < w && ny < h && tiles[ny * w + nx] != WATER) {
+                        land = r;
+                        break;
+                    }
+                }
+        return darken(base, 1 - Math.min(0.22f, (land - 1) * 0.028f));
+    }
+
+    /** A bridge (road or pavement over water). */
+    boolean isBridge(int tx, int ty) {
+        return bridge != null && tx >= 0 && ty >= 0 && tx < w && ty < h && bridge[ty * w + tx];
+    }
+
     // ------------------------------------------------------------------ the government quarter
 
     /**
@@ -1630,10 +1901,17 @@ final class City {
         int preset = cfg.preset();
         int hall = govBlock(used, 6, 6, -1, 0);
         if (hall < 0) return;
-        int[] hb = blocks.get(hall);
         cityHallSquare(takeBlock(used, hall));
-        int hx = (hb[0] + hb[2]) / 2, hy = (hb[1] + hb[3]) / 2;
-        if (preset == 9) return;
+        if (preset != 9) moreGovernment(used, hall, preset);
+        // (Since 10.5, every town has its own National Guard armory, out towards the edge of town.)
+        if (cfg.civic >= 2) {
+            int arm = govBlock(used, 9, 7, hall, -2);
+            if (arm < 0) arm = govBlock(used, 7, 6, hall, -2);
+            if (arm >= 0) armoryCompound(takeBlock(used, arm));
+        }
+    }
+
+    private void moreGovernment(boolean[] used, int hall, int preset) {
         int court = govBlock(used, 11, 7, hall, 20);
         if (court >= 0) courtAndJail(takeBlock(used, court));
         if (preset != 6) {
@@ -1670,6 +1948,7 @@ final class City {
                 if (Math.hypot(f.x - cx * T, f.y - cy * T) < 14 * T) nearService = true;
             float score;
             if (near < 0) score = d;
+            else if (dist == -2) score = -d - (districtType((int) cx, (int) cy) == DT_SUBURB ? 30 : 0);
             else if (dist < 0) score = (districtType((int) cx, (int) cy) == DT_INDUSTRIAL ? 0 : 400) - d;
             else score = Math.abs(d - dist);
             if (nearService) score += 60;
@@ -1800,6 +2079,52 @@ final class City {
                     tiles[q[1] * w + q[0]] = CAR;
                     carKind[q[1] * w + q[0]] = (byte) (rnd.nextFloat() < 0.2f ? 1 : 0);
                 }
+            }
+    }
+
+    /**
+     * The National Guard armory: a fenced compound with the drill hall along the back, a parade ground with
+     * the flags, and the Guard's trucks lined up by the gate.
+     */
+    private void armoryCompound(int[] r) {
+        int L = Math.max(r[2], r[3]), S = Math.min(r[2], r[3]);
+        fill(r[0], r[1], r[2], r[3], BASE);
+        for (int u = 0; u < L; u++) {
+            fillR(uv(r, u, 0, 1, 1), FENCE);
+            fillR(uv(r, u, S - 1, 1, 1), FENCE);
+        }
+        for (int v = 0; v < S; v++) {
+            fillR(uv(r, 0, v, 1, 1), FENCE);
+            fillR(uv(r, L - 1, v, 1, 1), FENCE);
+        }
+        // The gate, in the middle of the front.
+        int gu = L / 2 - 1;
+        fillR(uv(r, gu, S - 1, 3, 1), BASE);
+        int depth = Math.max(3, Math.min(6, S / 2 - 1));
+        int[] hall = uv(r, 2, 1, L - 4, depth);
+        govLot(hall[0], hall[1], hall[2], hall[3], ARMORY);
+        // Flags on the parade ground in front of the hall.
+        int[] parade = uv(r, gu - 1, depth + 1, 5, 2);
+        boolean wide = r[2] >= r[3];
+        addDecor(D_FLAGS, parade[0] * T, parade[1] * T, (parade[0] + parade[2]) * T, (parade[1] + parade[3]) * T, wide ? 0 : 1);
+        // A helipad and the motor pool on a big compound.
+        int far = 0;
+        if (L >= 20 && S >= 14) {
+            int[] pad = uv(r, L - 5, depth + 2, 3, 3);
+            fillR(pad, LOT);
+            addDecor(D_HELIPAD, pad[0] * T + 2, pad[1] * T + 2, (pad[0] + 3) * T - 2, (pad[1] + 3) * T - 2, 0);
+            int[] pool = uv(r, 2, depth + 2, 4, Math.min(5, S - depth - 6));
+            addFacilityLot(pool[0], pool[1], pool[2], pool[3], BARRACKS, 1);
+            far = 6;
+        }
+        // The trucks in rows, leaving the way to the gate clear.
+        for (int tv = S - 3; tv > depth + 2; tv -= 3)
+            for (int u = 2 + far; u < L - 2 - far; u += 2) {
+                if (u >= gu - 1 && u <= gu + 3) continue;
+                int[] q = uv(r, u, tv, 1, 1);
+                if (tiles[q[1] * w + q[0]] != BASE) continue;
+                tiles[q[1] * w + q[0]] = CAR;
+                carKind[q[1] * w + q[0]] = 2;
             }
     }
 
@@ -4123,6 +4448,9 @@ final class City {
         // (Drawing just one region of the map, at a higher resolution: only the tiles in and around it.)
         int X0 = regionOnly ? rx0 : 0, Y0 = regionOnly ? ry0 : 0, X1 = regionOnly ? rx1 : w, Y1 = regionOnly ? ry1 : h;
 
+        // (The ground tiles are drawn with square edges, so no seams show between them when the map is drawn
+        // smaller than full size.)
+        p.setAntiAlias(false);
         for (int y = Y0; y < Y1; y++) {
             for (int x = X0; x < X1; x++) {
                 byte t = tiles[y * w + x];
@@ -4136,15 +4464,20 @@ final class City {
                     case BUILDING: col = country.pavement != 0 ? country.pavement : real ? 0xFF96938C : 0xFF8F8D87; break;
                     case BASE: case FENCE: col = 0xFF6A6E5E; break;
                     case DIRT: col = real ? 0xFF8A7252 : 0xFF8C7456; break;
+                    case WATER: col = waterColor(x, y); break;
+                    case SAND: col = 0xFFDCCB9E; break;
+                    case PIER: col = 0xFF8C6C4A; break;
                     default: col = real ? 0xFF38393C : 0xFF3A3D43; break;
                 }
                 if (t == TREE && isPlazaTree(x, y)) col = 0xFFB3A487;
                 if (t == CAR && isLotCar(x, y)) col = 0xFF48494D;
                 if (t == CAR && carKind[y * w + x] == 2) col = 0xFF6A6E5E;
                 p.setColor(col);
-                c.drawRect(x * T, y * T, x * T + T, y * T + T, p);
+                // (A hair over each edge, so no seams show between tiles when the map is drawn smaller.)
+                c.drawRect(x * T, y * T, x * T + T + 0.75f, y * T + T + 0.75f, p);
             }
         }
+        p.setAntiAlias(true);
 
         // Ground texture.
         p.setStrokeWidth(1f);
@@ -4243,6 +4576,7 @@ final class City {
         drawStreetFurniture(c, p);
         drawParkingLines(c, p);
         if (drawnRealistic) drawKerbs(c, p);
+        if (waterKind != CityConfig.W_NONE) drawWater(c, p, X0, Y0, X1, Y1);
         roundCorners(c, p);
         drawBaseDetails(c, p);
         p.setStyle(Paint.Style.STROKE);
@@ -4372,6 +4706,7 @@ final class City {
             for (int y = Math.max(1, Y0); y < Math.min(h - 1, Y1); y++)
                 for (int x = Math.max(1, X0); x < Math.min(w - 1, X1); x++) {
                     if (tiles[y * w + x] != SIDEWALK || ((x * 7 + y * 13) % (cfg.parks() >= 2 ? 5 : 8)) != 0) continue;
+                    if (isBridge(x, y)) continue;
                     boolean nextToRoad = tiles[y * w + x - 1] == ROAD || tiles[y * w + x + 1] == ROAD
                             || tiles[(y - 1) * w + x] == ROAD || tiles[(y + 1) * w + x] == ROAD;
                     if (!nextToRoad || hasNeighborDir(x, y) || hasNeighbor(x, y, CAR)) continue;
@@ -4453,6 +4788,93 @@ final class City {
                     }
                 }
             }
+    }
+
+    /**
+     * Water, sand and piers: deeper water further from the shore, ripples, surf on the beach, a stone edge
+     * on the quays and embankments, plank decks, and bridges with their parapets and shadows on the water.
+     */
+    private void drawWater(Canvas c, Paint p, int X0, int Y0, int X1, int Y1) {
+        p.setStyle(Paint.Style.FILL);
+        // (Square edges, so the tiles of open water don't show seams.)
+        p.setAntiAlias(false);
+        for (int y = Y0; y < Y1; y++)
+            for (int x = X0; x < X1; x++) {
+                byte t = tiles[y * w + x];
+                float fx = x * T, fy = y * T;
+                prnd.setSeed(tileSeed(x, y, 7));
+                if (t == WATER) {
+                    // Ripples.
+                    for (int k = 0; k < 2; k++) {
+                        if (prnd.nextFloat() < 0.5f) continue;
+                        p.setColor(0x30C8E4F0);
+                        float rx = fx + prnd.nextFloat() * (T - 6), ry = fy + 2 + prnd.nextFloat() * (T - 4);
+                        c.drawRect(rx, ry, rx + 3 + prnd.nextFloat() * 4, ry + 0.7f, p);
+                    }
+                    // The water's edge: surf on sand, a lighter shallow band elsewhere.
+                    for (int[] d : new int[][]{{0, -1}, {0, 1}, {-1, 0}, {1, 0}}) {
+                        int nx = x + d[0], ny = y + d[1];
+                        if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+                        byte o = tiles[ny * w + nx];
+                        if (o == WATER || (bridge != null && bridge[ny * w + nx])) continue;
+                        boolean surf = o == SAND;
+                        p.setColor(surf ? 0x90F2F6F8 : 0x4078B0C8);
+                        float bw = surf ? 3 : 2.5f;
+                        if (d[1] == -1) c.drawRect(fx, fy, fx + T, fy + bw, p);
+                        else if (d[1] == 1) c.drawRect(fx, fy + T - bw, fx + T, fy + T, p);
+                        else if (d[0] == -1) c.drawRect(fx, fy, fx + bw, fy + T, p);
+                        else c.drawRect(fx + T - bw, fy, fx + T, fy + T, p);
+                        if (surf) {
+                            p.setColor(0x50F2F6F8);
+                            if (d[1] == -1) c.drawRect(fx + prnd.nextFloat() * 6, fy + 5, fx + 6 + prnd.nextFloat() * 10, fy + 6, p);
+                        }
+                    }
+                } else if (t == SAND) {
+                    for (int k = 0; k < 6; k++) {
+                        p.setColor(prnd.nextBoolean() ? 0xFFC8B686 : 0xFFE8DAB2);
+                        c.drawCircle(fx + prnd.nextFloat() * T, fy + prnd.nextFloat() * T, 0.7f, p);
+                    }
+                    // Wet sand by the water.
+                    if (y + 1 < h && tiles[(y + 1) * w + x] == WATER) {
+                        p.setColor(0x40806A40);
+                        c.drawRect(fx, fy + T * 0.55f, fx + T, fy + T, p);
+                    }
+                } else if (t == PIER) {
+                    boolean along = (y > 0 && tiles[(y - 1) * w + x] == PIER) && (y < h - 1 && tiles[(y + 1) * w + x] == PIER);
+                    p.setColor(0xFF6E5236);
+                    for (int k = 1; k < 4; k++) {
+                        if (along) c.drawRect(fx, fy + k * T / 4f, fx + T, fy + k * T / 4f + 0.7f, p);
+                        else c.drawRect(fx + k * T / 4f, fy, fx + k * T / 4f + 0.7f, fy + T, p);
+                    }
+                    // Posts and a rail along the edge over the water.
+                    for (int[] d : new int[][]{{-1, 0}, {1, 0}, {0, 1}, {0, -1}}) {
+                        int nx = x + d[0], ny = y + d[1];
+                        if (nx < 0 || ny < 0 || nx >= w || ny >= h || tiles[ny * w + nx] != WATER) continue;
+                        p.setColor(0x40000000);
+                        if (d[0] != 0) c.drawRect(d[0] < 0 ? fx - 3 : fx + T, fy, d[0] < 0 ? fx : fx + T + 3, fy + T, p);
+                        else c.drawRect(fx, d[1] < 0 ? fy - 3 : fy + T, fx + T, d[1] < 0 ? fy : fy + T + 3, p);
+                        p.setColor(0xFF4E3A26);
+                        if (d[0] != 0) c.drawRect(d[0] < 0 ? fx : fx + T - 1.2f, fy, d[0] < 0 ? fx + 1.2f : fx + T, fy + T, p);
+                        else c.drawRect(fx, d[1] < 0 ? fy : fy + T - 1.2f, fx + T, d[1] < 0 ? fy + 1.2f : fy + T, p);
+                    }
+                } else if (t != WATER && t != BUILDING) {
+                    boolean br = bridge != null && bridge[y * w + x];
+                    // Stone edges on quays and embankments; parapets on bridges.
+                    for (int[] d : new int[][]{{-1, 0}, {1, 0}, {0, -1}, {0, 1}}) {
+                        int nx = x + d[0], ny = y + d[1];
+                        if (nx < 0 || ny < 0 || nx >= w || ny >= h || tiles[ny * w + nx] != WATER) continue;
+                        if (t == SAND) continue;
+                        float th = br ? 2.2f : 1.6f;
+                        p.setColor(0x50000000);
+                        if (d[0] != 0) c.drawRect(d[0] < 0 ? fx - 4 : fx + T, fy, d[0] < 0 ? fx : fx + T + 4, fy + T, p);
+                        else c.drawRect(fx, d[1] < 0 ? fy - 4 : fy + T, fx + T, d[1] < 0 ? fy : fy + T + 4, p);
+                        p.setColor(br ? 0xFFC8C4BA : 0xFFA8A49A);
+                        if (d[0] != 0) c.drawRect(d[0] < 0 ? fx : fx + T - th, fy, d[0] < 0 ? fx + th : fx + T, fy + T, p);
+                        else c.drawRect(fx, d[1] < 0 ? fy : fy + T - th, fx + T, d[1] < 0 ? fy + th : fy + T, p);
+                    }
+                }
+            }
+        p.setAntiAlias(true);
     }
 
     /** A raised kerb where pavement meets road: a shadow on the road side and a lit edge on top. */
@@ -5136,6 +5558,146 @@ final class City {
                 }
                 break;
             }
+            case D_UMBRELLA: {
+                // A beach umbrella over a towel.
+                int[][] cols = {{0xFFE84A4A, 0xFFF2F2F2}, {0xFF3A8AD8, 0xFFF2E86B}, {0xFF3FA860, 0xFFF2F2F2}, {0xFFF2A030, 0xFF3A6AB0},
+                        {0xFFE07AA0, 0xFFF2F2F2}};
+                int[] cc = cols[variant % cols.length];
+                p.setColor(cc[1]);
+                c.drawRect(cx + 1, cy + 1, cx + 5, cy + 9, p);
+                p.setColor(0x40000000);
+                c.drawCircle(cx + 2, cy + 3, dw * 0.42f, p);
+                float rr = dw * 0.42f;
+                for (int k = 0; k < 8; k++) {
+                    p.setColor(cc[k % 2]);
+                    c.drawArc(new RectF(cx - rr, cy - rr, cx + rr, cy + rr), k * 45, 45, true, p);
+                }
+                p.setColor(0xFF6A5A48);
+                c.drawCircle(cx, cy, 0.9f, p);
+                break;
+            }
+            case D_LIFEGUARD: {
+                // A lifeguard hut on stilts, with its flag.
+                p.setColor(0x50000000);
+                c.drawRect(x0 + 3, y0 + 3, x1 + 3, y1 + 3, p);
+                p.setColor(0xFFF2F2F2);
+                c.drawRect(x0, y0, x1, y1, p);
+                p.setColor(0xFFD83A3A);
+                c.drawRect(x0, y0, x1, y0 + dh * 0.35f, p);
+                p.setColor(0xFFF2D23A);
+                c.drawRect(x1 - 2, y0 - 7, x1 + 6, y0 - 3, p);
+                p.setColor(0xFFD83A3A);
+                c.drawRect(x1 + 2, y0 - 7, x1 + 6, y0 - 3, p);
+                break;
+            }
+            case D_BOAT: {
+                // 0 a rowing boat, 1 a motor boat, 2 a yacht with its sail.
+                float bl = variant == 0 ? Math.min(dw, 18) : dw, bh2 = variant == 0 ? 6 : 9;
+                float bx0 = x0, by0 = cy - bh2 / 2, bx1 = x0 + bl, by1 = cy + bh2 / 2;
+                p.setColor(0x30000000);
+                c.drawOval(new RectF(bx0 + 2, by0 + 3, bx1 + 2, by1 + 3), p);
+                p.setColor(0x40F2F6F8);
+                c.drawRect(bx0 - 6, cy - 0.6f, bx0, cy + 0.6f, p);
+                Path hull = new Path();
+                hull.moveTo(bx0, by0);
+                hull.lineTo(bx1 - bh2 * 0.6f, by0);
+                hull.lineTo(bx1, cy);
+                hull.lineTo(bx1 - bh2 * 0.6f, by1);
+                hull.lineTo(bx0, by1);
+                hull.close();
+                p.setColor(variant == 0 ? 0xFF9A6A3E : variant == 1 ? 0xFFF2F2F2 : 0xFFE8E4DA);
+                c.drawPath(hull, p);
+                if (variant == 0) {
+                    p.setColor(0xFF6E4A2A);
+                    c.drawRect(bx0 + bl * 0.35f, by0, bx0 + bl * 0.42f, by1, p);
+                } else if (variant == 1) {
+                    p.setColor(0xFF2A4A6A);
+                    c.drawRect(bx0 + bl * 0.35f, by0 + 2, bx0 + bl * 0.6f, by1 - 2, p);
+                    p.setColor(0xFFD83A3A);
+                    c.drawRect(bx0, by0, bx1 - bh2 * 0.6f, by0 + 1, p);
+                } else {
+                    p.setColor(0xFFF8F8F4);
+                    Path sail = new Path();
+                    sail.moveTo(bx0 + bl * 0.45f, cy);
+                    sail.lineTo(bx0 + bl * 0.45f, cy - 14);
+                    sail.lineTo(bx0 + bl * 0.15f, cy);
+                    sail.close();
+                    c.drawPath(sail, p);
+                    p.setColor(0xFF6A6A6A);
+                    c.drawRect(bx0 + bl * 0.44f, cy - 14, bx0 + bl * 0.47f, cy, p);
+                }
+                break;
+            }
+            case D_SHIP: {
+                // A cargo ship moored alongside: hull, stacked containers, the bridge at the stern.
+                int[] hulls = {0xFF8A2A24, 0xFF24405E, 0xFF2E4A36, 0xFF3A3A3E};
+                RectF hr = new RectF(x0, y0, x1, y1);
+                p.setColor(0x40000000);
+                c.drawRoundRect(new RectF(x0 + 3, y0 + 4, x1 + 3, y1 + 4), 6, 6, p);
+                Path hull = new Path();
+                hull.moveTo(x0, y0 + dw * 0.8f);
+                hull.lineTo(cx, y0);
+                hull.lineTo(x1, y0 + dw * 0.8f);
+                hull.lineTo(x1, y1 - 2);
+                hull.lineTo(x0, y1 - 2);
+                hull.close();
+                p.setColor(hulls[variant % hulls.length]);
+                c.drawPath(hull, p);
+                p.setColor(0xFF5A5E62);
+                c.drawRect(x0 + 2, y0 + dw * 0.8f, x1 - 2, y1 - 4, p);
+                int[] box = {0xFFB03A2E, 0xFF2E5FB0, 0xFF3C7A4E, 0xFFD4A21C, 0xFF6A6E74, 0xFFE07A2A};
+                Random r = new Random(variant * 31L + (long) x0);
+                float top = y0 + dw * 0.9f, bottom = y1 - dw * 0.45f - 4;
+                for (float yy = top; yy < bottom - 4; yy += 6)
+                    for (float xx = x0 + 3; xx < x1 - 4; xx += (dw - 6) / 3) {
+                        p.setColor(box[r.nextInt(box.length)]);
+                        c.drawRect(xx, yy, xx + (dw - 6) / 3 - 1, yy + 5, p);
+                    }
+                p.setColor(0xFFF2F2F2);
+                c.drawRect(x0 + 3, y1 - dw * 0.45f - 2, x1 - 3, y1 - 6, p);
+                p.setColor(0xFF2A3A4A);
+                c.drawRect(x0 + 4, y1 - dw * 0.45f, x1 - 4, y1 - dw * 0.45f + 2, p);
+                p.setColor(0xFF3A3A3A);
+                c.drawCircle(cx, y1 - 9, 2, p);
+                break;
+            }
+            case D_CRANE: {
+                // A dockside gantry crane: legs on rails, and its boom reaching out over the water.
+                p.setColor(0x40000000);
+                c.drawRect(x0 + 6, y0 + 6, x1 + 6, y1 + 6, p);
+                p.setColor(0xFF5A5E62);
+                c.drawRect(x0, y0 - 1, x1, y0 + 1, p);
+                c.drawRect(x0, y1 - 1, x1, y1 + 1, p);
+                p.setColor(0xFFE0A030);
+                c.drawRect(x0, y0, x0 + 3, y1, p);
+                c.drawRect(x1 - 3, y0, x1, y1, p);
+                c.drawRect(x0, cy - 2, x1, cy + 2, p);
+                c.drawRect(cx - 1.5f, y0 - 2 * T, cx + 1.5f, y1, p);
+                p.setColor(0xFFC88A20);
+                c.drawRect(cx - 4, cy - 4, cx + 4, cy + 4, p);
+                break;
+            }
+            case D_CONTAINERS: {
+                // Stacked shipping containers in rows.
+                int[] box = {0xFFB03A2E, 0xFF2E5FB0, 0xFF3C7A4E, 0xFFD4A21C, 0xFF6A6E74, 0xFFE07A2A, 0xFF8A3A6A};
+                Random r = new Random(variant * 977L + (long) (x0 * 3 + y0));
+                boolean along = dw >= dh;
+                float cl = 15, cw = 6;
+                for (float a = along ? y0 : x0; a + cw <= (along ? y1 : x1); a += cw + 1)
+                    for (float b = along ? x0 : y0; b + cl <= (along ? x1 : y1); b += cl + 1.5f) {
+                        if (r.nextFloat() < 0.12f) continue;
+                        int col = box[r.nextInt(box.length)];
+                        float rx0 = along ? b : a, ry0 = along ? a : b, rx1 = along ? b + cl : a + cw, ry1 = along ? a + cw : b + cl;
+                        p.setColor(0x40000000);
+                        c.drawRect(rx0 + 1.5f, ry0 + 2, rx1 + 1.5f, ry1 + 2, p);
+                        p.setColor(col);
+                        c.drawRect(rx0, ry0, rx1, ry1, p);
+                        p.setColor(0x30000000);
+                        if (along) for (float xx = rx0 + 1.5f; xx < rx1; xx += 2) c.drawRect(xx, ry0, xx + 0.5f, ry1, p);
+                        else for (float yy = ry0 + 1.5f; yy < ry1; yy += 2) c.drawRect(rx0, yy, rx1, yy + 0.5f, p);
+                    }
+                break;
+            }
             case D_FLOODLIGHT: {
                 float[][] corners = {{x0, y0}, {x1, y0}, {x0, y1}, {x1, y1}};
                 for (float[] k : corners) {
@@ -5200,7 +5762,7 @@ final class City {
      * Makes sure the town isn't cut in two by the railway: streets that run up to the line from one side are
      * carried across it (cutting through the block opposite) until there's a level crossing every so often.
      */
-    private void ensureCrossings(int bx0, int bx1) {
+    private void ensureCrossings(int bx0, int bx1, int railY0, int railRows) {
         List<Integer> xs = new ArrayList<Integer>();
         for (int x = 0; x < w; x++)
             if (tiles[railY0 * w + x] == ROAD && (x == 0 || tiles[railY0 * w + x - 1] != ROAD)) xs.add(x);
@@ -6210,7 +6772,7 @@ final class City {
         for (int k = 0; k < 500; k++) {
             int tx = townX0 + r.nextInt(Math.max(1, townX1 - townX0)), ty = townY0 + r.nextInt(Math.max(1, townY1 - townY0));
             byte t = tiles[ty * w + tx];
-            if (t == SIDEWALK || t == PLAZA || t == GRASS || ((t == ROAD || t == LOT) && r.nextFloat() < 0.2f))
+            if (t == SIDEWALK || t == PLAZA || t == GRASS || t == SAND || ((t == ROAD || t == LOT) && r.nextFloat() < 0.2f))
                 return new float[]{tx * T + 3 + r.nextFloat() * (T - 6), ty * T + 3 + r.nextFloat() * (T - 6)};
         }
         return randomWalkable(r);

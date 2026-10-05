@@ -171,7 +171,7 @@ final class Fleet {
         switch (v.type) {
             case CRUISER:
                 return v.number > 0 ? "Police car  -  " + callsign(v) : "Police car";
-            case TRUCK: return v.guardUnit ? "National Guard truck" : v.supply > 0 ? "Army supply truck" : "Army truck";
+            case TRUCK: return v.guardUnit ? Country.guard(city.country.id)[1] + " truck" : v.supply > 0 ? "Army supply truck" : "Army truck";
             case HELI: return "Air 1  -  helicopter";
             case FIRE_ENGINE: return "Fire engine " + v.number;
             case TANK: return "Tank";

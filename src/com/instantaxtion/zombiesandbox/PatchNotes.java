@@ -2,11 +2,20 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.4";
-    static final int VERSION_CODE = 42;
+    static final String VERSION = "10.5";
+    static final int VERSION_CODE = 43;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.5  -  Water",
+                    "Four new maps on the water (and the dead can't swim): Seaside, a beach town with its promenade, sand, umbrellas, lifeguard huts, piers and boats; River City, with a wide river across town, tree-lined embankments and a bridge for every street that reaches it; Lakeside, with a big lake in the middle of town, an island, a jetty and rowing boats; and Harbour, a working port with docks, gantry cranes, container stacks and cargo ships.",
+                    "Boats come and go on the sea, along the river (under the bridges) and round the lake.",
+                    "Every city has its own National Guard armory: a fenced compound with a drill hall, a parade ground and rows of trucks, named for the country's own force (Army Reserve Depot, Caserne de la Garde Nationale, Cuartel de la Guardia Nacional, Zeughaus, Quartel da GNR, Rosgvardiya Base...).",
+                    "When the Guard is called out, the reservists muster at the armory and three trucks drive out from there. If the dead have taken the armory, the Guard has to come from out of town, later and with two trucks. Tap the armory to see which.",
+                    "The \"Guard Armory\" kind of military base is now the Guard Headquarters (the Guard still comes sooner).",
+                    "No more faint seams between ground tiles on Large and Massive maps. Saved games load their own city exactly as it was.",
+            },
             {
                     "10.4  -  City Hall",
                     "Government buildings in every town: City Hall on its own square with a fountain, flags and flower beds; a courthouse with a walled jail and exercise yard behind it; an emergency call centre with a radio mast; and a public works depot full of orange trucks, salt and gravel. Each is named and signed in the country's own words (Hôtel de Ville, Palacio Municipal, Stadthaus, 市役所, 시청, Meriya...).",

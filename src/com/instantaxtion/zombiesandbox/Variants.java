@@ -25,7 +25,8 @@ final class Variants {
             I_DORM = 22, I_FIRE = 23;
 
     // Countries (bits) and districts (bits by City.DT_ type).
-    static final int US = 1, AU = 2, JP = 4, FR = 8, MX = 16, ALL = 31, EN = US | AU | JP;
+    static final int US = 1, AU = 2, JP = 4, FR = 8, MX = 16, CH = 32, KR = 64, MY = 128, PT = 256, MA = 512, RU = 1024,
+            ALL = 2047, EN = US | AU | JP | MY;
     static final int DOWN = 1, MID = 2, OLD = 4, SUB = 8, IND = 16, UNI = 32, PARK = 64, TOWN = DOWN | MID | OLD | SUB | PARK,
             ANY = 127;
 
@@ -324,6 +325,94 @@ final class Variants {
         wh("Mercado de artesanías", MX, OLD | MID | PARK, R_TILES, 0xFFC9BFAE, 0xFF4FB8B0, "ARTESANÍAS", I_SHELVES);
         hs("Casa de adobe", MX, R_FLAT, 0xFFB89A78, 0xFFC8A47A, 1);
         ap("Unidad habitacional", MX, SUB | MID, R_FLAT, 0xFFD2C6B2, 0xFFE8873A, I_HOME, 5, 5);
+
+        // Switzerland.
+        s("Chocolaterie", CH, DOWN | MID | OLD, R_STRIPES, 0xFF6A4A3A, 0xFF6E3A2A, "CHOCOLAT", I_SHELVES);
+        s("Uhrengeschäft", CH, DOWN | OLD, R_PARAPET, 0xFF4E5560, 0xFFD8B040, "UHREN", I_SHELVES);
+        s("Käserei", CH, OLD | PARK | SUB, R_GABLE, 0xFF6A4A3A, 0xFFE0C040, "KÄSE", I_SHELVES);
+        s("Bäckerei", CH, TOWN, R_STRIPES, 0xFF8A6A3E, 0xFFC8963A, "BÄCKEREI", I_KITCHEN);
+        s("Fondue-Stübli", CH, OLD | PARK, R_GABLE, 0xFF5A3D35, 0xFFD02A2A, "FONDUE", I_RESTAURANT);
+        o("Privatbank", CH, DOWN | OLD, R_MANSARD, 0xFF4E5560, 0xFF2E4F3A, "BANK", I_OFFICE, 4, 6);
+        o("Zunfthaus", CH, OLD, R_GABLE, 0xFF5A3D35, 0xFFD8B040, "ZUNFTHAUS", I_RESTAURANT, 3, 4);
+        o("Berghotel", CH, PARK, R_GABLE, 0xFF6A4A3A, 0xFFD02A2A, "HOTEL", I_HOTEL, 3, 4);
+        wh("Uhrenfabrik", CH, IND, R_SAWTOOTH, 0xFF8A9096, 0xFFD8B040, "MANUFACTURE", I_FACTORY);
+        hs("Chalet", CH, R_GABLE, 0xFF5A3D35, 0xFFB88A5A, 2);
+        hs("Bauernhaus", CH, R_HIP, 0xFF6A4A3A, 0xFFE8DEC8, 2);
+        ap("Mehrfamilienhaus", CH, MID | SUB, R_GABLE, 0xFF6A4A3A, 0xFFF2EEE4, I_HOME, 4, 5);
+
+        // South Korea.
+        s("Fried chicken", KR, TOWN | UNI, R_STRIPES, 0xFFE0702E, 0xFFE0C040, "치킨", I_RESTAURANT);
+        s("Korean BBQ", KR, DOWN | MID | SUB, R_FLAT, 0xFF3A3A40, 0xFFE03A3A, "고기", I_RESTAURANT);
+        s("PC bang", KR, DOWN | MID | UNI, R_FLAT, 0xFF2A2A40, 0xFF3FB8B0, "PC방", I_ARCADE);
+        s("Noraebang", KR, DOWN | MID | UNI, R_FLAT, 0xFF3A3A50, 0xFFE040C0, "노래방", I_HOTEL);
+        s("Pojangmacha", KR, TOWN, R_STRIPES, 0xFFE03A3A, 0xFFE0702E, "포차", I_BAR);
+        s("Cosmetics shop", KR, DOWN | MID, R_FLAT, 0xFFE8E4DC, 0xFFE07AA0, "COSMETICS", I_SHELVES);
+        o("Jjimjilbang", KR, MID | SUB, R_FLAT, 0xFF8A9096, 0xFF3A8AE0, "찜질방", I_BATH, 3, 5);
+        o("Hagwon", KR, MID | SUB | UNI, R_FLAT, 0xFFE8EAE4, 0xFF2E5FB0, "학원", I_CLASSROOM, 4, 6);
+        o("Hanok guesthouse", KR, OLD | PARK, R_TILES, 0xFF3A4656, 0xFF8A3A2E, "한옥", I_HOTEL, 1, 1);
+        o("Buddhist temple", KR, OLD | PARK, R_PAGODA, 0xFF2E6A8A, 0xFF8A3A2E, "사찰", I_PEWS, 1, 1);
+        hs("Hanok", KR, R_TILES, 0xFF3A4656, 0xFFE8E2D2, 1);
+        ap("Apateu tower", KR, MID | SUB | DOWN, R_FLAT, 0xFFD4D8DC, 0xFFF2F0EA, I_HOME, 15, 25);
+        ap("Villa block", KR, SUB | MID, R_FLAT, 0xFFC8C4BC, 0xFFB8A48A, I_HOME, 4, 4);
+
+        // Malaysia.
+        s("Mamak stall", MY, TOWN | UNI, R_STRIPES, 0xFF2E8A4A, 0xFFE0C040, "MAMAK", I_RESTAURANT);
+        s("Kopitiam", MY, TOWN, R_TILES, 0xFFB0583A, 0xFF2E8A4A, "KOPITIAM", I_CAFE);
+        s("Nasi kandar", MY, MID | DOWN, R_FLAT, 0xFFE0C090, 0xFFE03A3A, "NASI KANDAR", I_RESTAURANT);
+        s("Kedai runcit", MY, TOWN, R_FLAT, 0xFF8A9096, 0xFF2E5FB0, "KEDAI RUNCIT", I_SHELVES);
+        s("Durian stall", MY, SUB | PARK, R_STRIPES, 0xFF6A8A3A, 0xFFE0C040, "DURIAN", I_SHELVES);
+        o("Surau", MY, SUB | MID, R_DOME, 0xFF2E8A4A, 0xFFE0C040, "SURAU", I_PEWS, 1, 1);
+        o("Chinese clan house", MY, OLD, R_PAGODA, 0xFF9A3A2E, 0xFFE0C040, "KONGSI", I_PEWS, 1, 2);
+        o("Shophouse row", MY, OLD | MID, R_TILES, 0xFFB0583A, 0xFF9AC8B0, null, I_SHELVES, 2, 3);
+        wh("Rubber factory", MY, IND | PARK, R_SAWTOOTH, 0xFF8A9096, 0xFF2E8A4A, "GETAH", I_FACTORY);
+        hs("Kampung house", MY, R_GABLE, 0xFF8A9096, 0xFF8A6A4A, 1);
+        hs("Terrace link house", MY, R_TILES, 0xFFB0583A, 0xFFF2EEE4, 2);
+        ap("Flat PPR", MY, SUB | MID, R_FLAT, 0xFFC8C4BC, 0xFFE0C090, I_HOME, 12, 17);
+
+        // Portugal.
+        s("Pastelaria", PT, TOWN, R_STRIPES, 0xFFB4583A, 0xFFC8963A, "PASTELARIA", I_CAFE);
+        s("Tasca", PT, OLD | MID, R_TILES, 0xFFB4583A, 0xFF2E5AA8, "TASCA", I_RESTAURANT);
+        s("Casa de fado", PT, OLD, R_TILES, 0xFFA04A30, 0xFF2A2A2A, "FADO", I_BAR);
+        s("Marisqueira", PT, TOWN | PARK, R_STRIPES, 0xFF2E5AA8, 0xFFE0702E, "MARISQUEIRA", I_RESTAURANT);
+        s("Conserveira", PT, OLD | MID, R_STRIPES, 0xFFE0C040, 0xFF2E5AA8, "CONSERVAS", I_SHELVES);
+        s("Ginjinha bar", PT, OLD | DOWN, R_FLAT, 0xFF7A2A4A, 0xFFE0C040, "GINJINHA", I_BAR);
+        o("Palácio", PT, OLD | PARK, R_TILES, 0xFFB4583A, 0xFFE0C040, "PALÁCIO", I_HOTEL, 3, 3);
+        o("Mosteiro", PT, OLD | PARK, R_COURTYARD, 0xFFA04A30, 0xFFD8B040, "MOSTEIRO", I_PEWS, 2, 2);
+        wh("Adega", PT, IND | PARK, R_TANKS, 0xFFB4583A, 0xFF7A2A4A, "ADEGA", I_RACKS);
+        hs("Casa azulejada", PT, R_TILES, 0xFFB4583A, 0xFF6A9AC8, 2);
+        hs("Monte alentejano", PT, R_FLAT, 0xFFE8E4DC, 0xFFF2EEE4, 1);
+        ap("Prédio pombalino", PT, DOWN | OLD | MID, R_TILES, 0xFFA04A30, 0xFFF2E6C0, I_HOME, 4, 5);
+
+        // Morocco.
+        s("Hammam", MA, OLD | MID, R_DOME, 0xFFE0D4BC, 0xFF2E7A5A, "HAMMAM", I_BATH);
+        s("Café maure", MA, TOWN, R_FLAT, 0xFFD8CCB4, 0xFF2E7A5A, "CAFÉ", I_CAFE);
+        s("Herboriste", MA, OLD | MID, R_FLAT, 0xFFC8B494, 0xFF3FA860, "HERBORISTE", I_SHELVES);
+        s("Tannerie", MA, OLD | IND, R_FLAT, 0xFFB89C78, 0xFFD88A5A, "TANNERIE", I_FACTORY);
+        s("Babouche shop", MA, OLD, R_STRIPES, 0xFFE0D4BC, 0xFFE0C040, "BABOUCHES", I_SHELVES);
+        s("Tagine restaurant", MA, TOWN, R_COURTYARD, 0xFFD88A5A, 0xFF2E7A5A, "TAJINE", I_RESTAURANT);
+        o("Riad", MA, OLD | MID, R_COURTYARD, 0xFFE0D4BC, 0xFF2E7A5A, "RIAD", I_HOTEL, 2, 3);
+        o("Médersa", MA, OLD, R_COURTYARD, 0xFF2E7A5A, 0xFFD8B040, "MÉDERSA", I_CLASSROOM, 2, 2);
+        o("Mosquée", MA, TOWN, R_DOME, 0xFF2E7A5A, 0xFFF2EEE4, null, I_PEWS, 1, 2);
+        wh("Souk couvert", MA, OLD | MID, R_BARREL, 0xFFD8CCB4, 0xFFC86A4A, "SOUK", I_SHELVES);
+        hs("Dar", MA, R_COURTYARD, 0xFFD8CCB4, 0xFFE0A070, 2);
+        hs("Kasbah house", MA, R_FLAT, 0xFFC8A070, 0xFFC86A4A, 2);
+        ap("Immeuble", MA, MID | SUB | DOWN, R_FLAT, 0xFFD8D0C0, 0xFFF2EEE4, I_HOME, 4, 6);
+
+        // Russia.
+        s("Produkty", RU, TOWN, R_FLAT, 0xFF6A7078, 0xFFC8504A, "ПРОДУКТЫ", I_SHELVES);
+        s("Stolovaya", RU, MID | IND | UNI, R_FLAT, 0xFF8A9096, 0xFF2E5FB0, "СТОЛОВАЯ", I_RESTAURANT);
+        s("Pelmennaya", RU, TOWN, R_FLAT, 0xFF5A6670, 0xFFE8D8A0, "ПЕЛЬМЕНИ", I_RESTAURANT);
+        s("Kiosk", RU, TOWN | PARK, R_FLAT, 0xFF3F6A4A, 0xFFE0C040, "ПРЕССА", I_SHELVES);
+        s("Apteka", RU, TOWN, R_FLAT, 0xFFE4E8EC, 0xFF2FA84F, "АПТЕКА", I_SHELVES);
+        o("Banya", RU, SUB | PARK, R_GABLE, 0xFF7A5A48, 0xFF8A6A4A, "БАНЯ", I_BATH, 1, 1);
+        o("Dom Kultury", RU, MID | OLD, R_PARAPET, 0xFF8A9096, 0xFFC8504A, "ДОМ КУЛЬТУРЫ", I_SEATS, 2, 3);
+        o("Stalinka", RU, DOWN | MID, R_ANTENNA, 0xFF8A8680, 0xFFD8B040, null, I_OFFICE, 7, 12);
+        o("Orthodox church", RU, OLD | PARK | SUB, R_DOME, 0xFF3F6A4A, 0xFFD8B040, "ХРАМ", I_PEWS, 2, 3);
+        wh("Kombinat", RU, IND, R_STACKS, 0xFF6A7078, 0xFFC8504A, "КОМБИНАТ", I_FACTORY);
+        hs("Dacha", RU, R_GABLE, 0xFF3F6A4A, 0xFF8A6A4A, 1);
+        hs("Izba", RU, R_GABLE, 0xFF6A7078, 0xFF7A5A3A, 1);
+        ap("Khrushchyovka", RU, MID | SUB, R_FLAT, 0xFF8A8E94, 0xFFD8D4CC, I_HOME, 5, 5);
+        ap("Panel block", RU, SUB | MID, R_FLAT, 0xFF9AA0A6, 0xFFE8E4DC, I_HOME, 9, 16);
 
         // And more for each kind of place (every country): downtown, old town, parkland, industry, suburbs, campus.
         o("Stock exchange", ALL, DOWN, R_DOME, 0xFF9C9488, 0xFF2E4F3A, "EXCHANGE", I_OFFICE, 4, 6);

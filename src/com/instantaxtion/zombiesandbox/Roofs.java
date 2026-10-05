@@ -21,25 +21,26 @@ final class Roofs {
 
     /** Draws the roof of a building lot {x, y, w, h, roof, seed, kind, floors, wall}; false if it isn't styled here. */
     static boolean draw(City city, Canvas c, Paint p, int[] b, String name) {
-        int id = city.country.id;
-        if (id == Country.USA) return false;
+        int id = city.country.look, church = city.country.churchLook;
+        if (id == Country.USA && church < 0) return false;
         float T = City.T;
         float x0 = b[0] * T, y0 = b[1] * T, x1 = (b[0] + b[2]) * T, y1 = (b[1] + b[3]) * T;
         int roof = b[4], kind = b[6], wall = b.length > 8 ? b[8] : 0xFFCCCCCC;
         Random r = new Random(b[5] * 31L + 11);
         switch (kind) {
             case City.HOUSE:
+                if (id == Country.USA) return false;
                 if (id == Country.AUSTRALIA) aussieHouse(c, p, x0, y0, x1, y1, roof, r);
                 else if (id == Country.JAPAN) japaneseHouse(c, p, x0, y0, x1, y1, roof, r);
                 else if (id == Country.FRANCE) frenchHouse(c, p, x0, y0, x1, y1, roof, r);
                 else mexicanHouse(c, p, x0, y0, x1, y1, roof, wall, r);
                 return true;
             case City.CHURCH:
-                if (id == Country.JAPAN) {
+                if (church == Country.JAPAN) {
                     if (name != null && name.contains("Shrine")) shrine(c, p, x0, y0, x1, y1);
                     else temple(c, p, x0, y0, x1, y1);
-                } else if (id == Country.FRANCE) cathedral(c, p, x0, y0, x1, y1);
-                else if (id == Country.MEXICO) domedChurch(c, p, x0, y0, x1, y1, r);
+                } else if (church == Country.FRANCE) cathedral(c, p, x0, y0, x1, y1);
+                else if (church == Country.MEXICO) domedChurch(c, p, x0, y0, x1, y1, r);
                 else return false;
                 return true;
             case City.APARTMENT:
@@ -52,6 +53,7 @@ final class Roofs {
                 else return false;
                 return true;
             case City.SHOP:
+                if (id == Country.USA) return false;
                 shop(c, p, x0, y0, x1, y1, roof, wall, id, r);
                 return true;
             case City.SPIRE:

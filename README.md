@@ -11,7 +11,7 @@ away from the middle of the screen as you pan, and the game plays in both portra
 
 - **New Game** opens the city setup, with a live preview of the city and these options: the map (Classic,
   Downtown, Suburbs, Industrial, Parkland, Old Town, Small Town, Campus, Metropolis or Village), map size
-  (Small, Medium, Large or Massive), the **country** (USA, Australia, Japan, France or Mexico), how many of
+  (Small, Medium, Large or Massive), the **country** (USA, Australia, Japan, France, Mexico, Switzerland, South Korea, Malaysia, Portugal, Morocco or Russia), how many of
   the residents are out and about (All by default), zombies at the start, and how many reinforcements can
   be called in (Off, Low, Medium or High, each spelled out: waves of police backup, army squads, tanks
   and helicopter sorties). Police and soldiers on duty are set by the size of the city (about one officer
@@ -22,7 +22,7 @@ away from the middle of the screen as you pan, and the game plays in both portra
   them with a friend.
 - **Countries**: each has its own building colours, pavements, grass, street names (Oak St, Acacia
   Crescent, Sakura-dori, Rue de la Paix, Calle Hidalgo), town and people's names, churches or temples,
-  shops, road lines and police car livery. In Australia and Japan traffic drives on the left.
+  shops, road lines and police car livery. In Australia, Japan and Malaysia traffic drives on the left.
   Buildings are built the local way (Australian hip roofs, verandahs and rainwater tanks; Japanese tiled
   roofs, temples, shrines, pagodas and balconied blocks; French mansards with dormers, chimney pots and
   wrought-iron balconies; Mexican flat roofs with black water tanks, roof terraces and tiled church
@@ -225,7 +225,7 @@ counts), and wherever the dead gather the ground glows red. Labels go most impor
   blackout (no sirens, no safe-zone broadcasts); if the hospital falls, nobody can be treated.
 - **Zombies inside**: some buildings hide zombies that burst out when someone comes near or tries to
   shelter there. Idle zombies lurk in empty buildings, smash shop windows and set off car alarms.
-- **159 kinds of building**: each with its own roof, colours and sign, picked by country and by
+- **299 kinds of building**: each with its own roof, colours and sign, picked by country and by
   district. Diners, drive-thrus and motels in the USA; corner pubs, milk bars, RSL clubs and
   Queenslanders in Australia; konbini, izakayas, pachinko parlours, ryokan and danchi blocks in
   Japan; boulangeries, brasseries, mairies and Haussmann blocks in France; taquerías, tortillerías,

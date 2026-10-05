@@ -931,10 +931,13 @@ final class Menu {
         }
         y += 5 * dp;
         String[] values = config.values(option);
-        float gap = 4 * dp, bh = 36 * dp, bw = (width - gap * (values.length - 1)) / values.length;
+        // A long list (the countries) goes over two rows rather than squeezing into one.
+        int perRow = values.length > 6 ? (values.length + 1) / 2 : values.length;
+        int rows = (values.length + perRow - 1) / perRow;
+        float gap = 4 * dp, bh = 36 * dp, bw = (width - gap * (perRow - 1)) / perRow;
         for (int i = 0; i < values.length; i++) {
-            float l = x + i * (bw + gap);
-            Seg sg = seg(option, i, l, y, l + bw, y + bh);
+            float l = x + (i % perRow) * (bw + gap), t = y + (i / perRow) * (bh + gap);
+            Seg sg = seg(option, i, l, t, l + bw, t + bh);
             boolean on = config.get(option) == i;
             fill.setColor(on ? 0xFF3F8A3A : 0xFF23262C);
             c.drawRoundRect(sg.r, 8 * dp, 8 * dp, fill);
@@ -948,7 +951,7 @@ final class Menu {
             text.setColor(on ? 0xFFFFFFFF : 0xFFC8CCD2);
             c.drawText(values[i], sg.r.centerX(), sg.r.centerY() + text.getTextSize() * 0.36f, text);
         }
-        return y + bh + 14 * dp;
+        return y + rows * bh + (rows - 1) * gap + 14 * dp;
     }
 
     private void drawSetup(Canvas c, int w, int h) {

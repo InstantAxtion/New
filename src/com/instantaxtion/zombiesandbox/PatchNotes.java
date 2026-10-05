@@ -2,11 +2,22 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.1";
-    static final int VERSION_CODE = 39;
+    static final String VERSION = "10.2";
+    static final int VERSION_CODE = 40;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.2  -  Six more countries",
+                    "Switzerland: chalets and steep roofs, Bahnhofstrasse and Kirchgasse, chocolateries, watchmakers, Käsereien and fondue Stübli, white and orange police cars, Autobahnpolizei on the A1.",
+                    "South Korea: hanok and apartment towers, Sejong-daero and Insadong-gil, fried chicken, PC bangs, noraebang, jjimjilbang and hagwon, signs in Hangul, blue and white patrol cars.",
+                    "Malaysia: kampung houses, shophouses, mosques and clan houses, Jalan Tun Razak and Lorong Melati, mamak stalls, kopitiam and durian stalls, Balai Polis and Balai Bomba. Traffic drives on the left.",
+                    "Portugal: white walls, terracotta roofs and tiled facades, Rua Augusta and Travessa do Carmo, pastelarias, tascas, casas de fado and marisqueiras, dark blue and white PSP cars.",
+                    "Morocco: flat-roofed riads and kasbah houses, medinas and mosques, Derb Dabachi and Avenue Mohammed V, hammams, cafés maures, souks and tanneries.",
+                    "Russia: dachas, izbas, khrushchyovkas and panel blocks, onion-domed churches, Ulitsa Lenina and Leninsky Prospekt, stolovayas, pelmennayas, banyas and the Dom Kultury, signs in Cyrillic.",
+                    "Each has its own street, town and people's names, landmarks, highway and highway police, car colours, taxis and buses. The country choice on the New Game screen now runs over two rows.",
+                    "Patrol cars parked at police stations are now painted in the country's own colours (they were always black and white).",
+            },
             {
                     "10.1  -  Follow the traffic",
                     "No more cars going round in circles: on tree-lined boulevards each side of the median is one way, so nobody drives up the wrong side and has to cross back; dirt tracks no longer join the highway mid-way; cars beside the highway keep to their own lane; and a car that does lose its way slows down and finds it again.",

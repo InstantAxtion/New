@@ -2389,7 +2389,7 @@ final class GameView extends View implements Menu.Host {
             float cw = len / cols;
             float glass = 0.55f + shade * 0.45f;
             int litMask = 7;
-            int land = world.city.country.id;
+            int land = world.city.country.look;
             boolean block = b.kind == City.OFFICE || b.kind == City.APARTMENT;
             for (int k = 0; k < floors; k++) {
                 float v0 = k * City.FLOOR;

@@ -153,8 +153,14 @@ final class CityConfig implements OptionSet {
         int country = 0;
         int at = t.indexOf('@');
         if (at > 0) {
-            if (at + 2 != t.length()) return false;
-            country = t.charAt(at + 1) - '0';
+            String num = t.substring(at + 1);
+            if (num.isEmpty() || num.length() > 2) return false;
+            country = 0;
+            for (int k = 0; k < num.length(); k++) {
+                char ch = num.charAt(k);
+                if (ch < '0' || ch > '9') return false;
+                country = country * 10 + (ch - '0');
+            }
             if (country < 0 || country >= Country.NAMES.length) return false;
             t = t.substring(0, at);
         }

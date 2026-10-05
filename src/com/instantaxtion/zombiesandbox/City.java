@@ -4704,7 +4704,7 @@ final class City {
                 p.setStrokeWidth(1.8f);
                 c.drawLine(sx + ox * 0.8f, sy + oy * 0.8f, sx + ox * (mid - 1), sy + oy * (mid - 1), p);
                 if (type == J_STOP && st.width == 3) {
-                    String word = country.id == Country.MEXICO ? "ALTO" : "STOP";
+                    String word = country.id == Country.MEXICO ? "ALTO" : country.id == Country.RUSSIA ? "СТОП" : "STOP";
                     float lx = sx + ox * mid * 0.5f - hx * 9, ly = sy + oy * mid * 0.5f - hy * 9;
                     c.save();
                     c.translate(lx, ly);
@@ -4770,7 +4770,7 @@ final class City {
                 hwyRect(c, p, k, k + 1, 0.12f, 0.24f);
                 hwyRect(c, p, k, k + 1, 6.76f, 6.88f);
                 // The inside edge: yellow next to the barrier in the Americas, white elsewhere.
-                p.setColor(country.id == Country.USA || country.id == Country.MEXICO ? 0xF0E8C440 : 0xF0ECECEC);
+                p.setColor(country.id == Country.USA || country.id == Country.MEXICO || country.id == Country.KOREA ? 0xF0E8C440 : 0xF0ECECEC);
                 hwyRect(c, p, k, k + 1, 2.76f, 2.88f);
                 hwyRect(c, p, k, k + 1, 4.12f, 4.24f);
                 if (k % 3 == 0) {
@@ -4825,7 +4825,7 @@ final class City {
         for (int end = 0; end < 2; end++) {
             float k = end == 0 ? 3 : len - 5, a = end == 0 ? 7.6f : -1.8f;
             float sx = hwyAxis == 0 ? k * T : (hwyAt + a) * T, sy = hwyAxis == 0 ? (hwyAt + a) * T : k * T;
-            p.setColor(country.id == Country.USA ? 0xFF1E3A8A : country.id == Country.FRANCE ? 0xFFB02020 : 0xFF1E6A3A);
+            p.setColor(country.shieldColor);
             c.drawRect(sx, sy, sx + 26, sy + 14, p);
             if (country.id == Country.USA) {
                 p.setColor(0xFFB02020);
@@ -5363,7 +5363,7 @@ final class City {
         float hl = kind == 2 ? 7.8f : 7.5f, hw = kind == 2 ? 4.8f : 4.2f;
         RectF rect = vertical ? new RectF(cx - hw, cy - hl, cx + hw, cy + hl) : new RectF(cx - hl, cy - hw, cx + hl, cy + hw);
         if (kind == 4) vertical = true;
-        int color = kind == 4 ? 0xFFC8302A : kind == 1 ? 0xFF1C1D22 : kind == 2 ? 0xFF4F5A33 : kind == 3 ? 0xFFF2F2F2
+        int color = kind == 4 ? 0xFFC8302A : kind == 1 ? country.cruiserBody : kind == 2 ? 0xFF4F5A33 : kind == 3 ? 0xFFF2F2F2
                 : CAR_COLORS[prnd.nextInt(CAR_COLORS.length)];
         p.setColor(0x55000000);
         rect.offset(1.5f, 1.5f);
@@ -5383,8 +5383,9 @@ final class City {
         if (vertical) c.drawRect(cx - hw + 1.5f, cy - 1f, cx + hw - 1.5f, cy + 2.5f, p);
         else c.drawRect(cx - 2.5f, cy - hw + 1.5f, cx + 1f, cy + hw - 1.5f, p);
         if (kind == 1) {
-            // Police cruiser: white doors and a red/blue light bar.
-            p.setColor(0xFFEDEDED);
+            // Police cruiser in the country's colours: its doors (or a stripe) and a red/blue light bar.
+            p.setColor(country.cruiserDoor != country.cruiserBody ? country.cruiserDoor
+                    : country.cruiserChecks ? country.checkA : country.cruiserRoof != 0 ? country.cruiserRoof : 0xFFEDEDED);
             if (vertical) {
                 c.drawRect(cx - hw, cy - 1.5f, cx - hw + 1.3f, cy + 3f, p);
                 c.drawRect(cx + hw - 1.3f, cy - 1.5f, cx + hw, cy + 3f, p);

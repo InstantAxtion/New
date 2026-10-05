@@ -934,6 +934,15 @@ final class City {
                 if (!clear) continue;
                 int x = st.vertical ? st.x0 + 2 : st.x0 + k, y = st.vertical ? st.y0 + k : st.y0 + 2;
                 tiles[y * w + x] = k % 2 == 0 ? TREE : GRASS;
+                // Each side of the median is one way, like a highway's carriageways: nobody drives up the
+                // wrong side of a boulevard (and then has to cross the median to get back).
+                if (divided == null) divided = new byte[w * h];
+                for (int a = 0; a < 5; a++) {
+                    if (a == 2) continue;
+                    int lx = st.vertical ? st.x0 + a : st.x0 + k, ly = st.vertical ? st.y0 + k : st.y0 + a;
+                    boolean firstSide = a < 2, neg = firstSide != country.leftHand;
+                    divided[ly * w + lx] = (byte) (st.vertical ? (neg ? 3 : 4) : (neg ? 2 : 1));
+                }
             }
         }
 
@@ -2208,6 +2217,19 @@ final class City {
     }
 
     /** Whether a car may go (dx, dy) on tile i. */
+    /** One-way lanes down each side of a tree-lined median (null if there are none). */
+    byte[] divided;
+
+    private static boolean wayOk(byte[] ways, int i, int dx, int dy) {
+        switch (ways[i]) {
+            case 1: return dx != -1;
+            case 2: return dx != 1;
+            case 3: return dy != -1;
+            case 4: return dy != 1;
+            default: return true;
+        }
+    }
+
     private boolean oneWayOk(int i, int dx, int dy) {
         switch (oneWay[i]) {
             case 1: return dx != -1;
@@ -5437,6 +5459,21 @@ final class City {
         return false;
     }
 
+    /** Can someone walk straight from one point to the other (nothing solid in the way but the odd tree)? */
+    boolean passLine(float x0, float y0, float x1, float y1) {
+        float dx = x1 - x0, dy = y1 - y0;
+        float len = (float) Math.sqrt(dx * dx + dy * dy);
+        int steps = (int) (len / 6f) + 1;
+        for (int i = 1; i < steps; i++) {
+            float f = i / (float) steps;
+            int tx = (int) Math.floor((x0 + dx * f) / T), ty = (int) Math.floor((y0 + dy * f) / T);
+            if (tx < 0 || ty < 0 || tx >= w || ty >= h) return false;
+            int k = ty * w + tx;
+            if (solid[k] && tiles[k] != TREE) return false;
+        }
+        return true;
+    }
+
     boolean los(float x0, float y0, float x1, float y1) {
         float dx = x1 - x0, dy = y1 - y0;
         float len = (float) Math.sqrt(dx * dx + dy * dy);
@@ -5694,6 +5731,8 @@ final class City {
                 if (strict && c > 4) continue;
                 // One way only on the highway (a car here would drive from n to t).
                 if (oneWay != null && c >= 0 && (!oneWayOk(n, tx - nx, ty - ny) || !oneWayOk(t, tx - nx, ty - ny))) continue;
+                // (And down each side of a boulevard.)
+                if (divided != null && c >= 0 && (!wayOk(divided, n, tx - nx, ty - ny) || !wayOk(divided, t, tx - nx, ty - ny))) continue;
                 // A step across the road (from lane to lane) outside a junction is a last resort: routes keep
                 // to their row of the road and only change rows at the junctions, so cars don't swerve over.
                 // (Emergencies too: lights and sirens still keep to their own side.)
@@ -5731,7 +5770,33 @@ final class City {
     /** Where roads meet: paved both ways for further than any one road is wide. */
     private boolean[] junction;
 
+    private boolean sealed;
+
+    /**
+     * The highway is only joined at its proper exits: a dirt track or a bit of lot running right up to the
+     * edge of a carriageway (where cars would cut on and off the highway, and end up going round in
+     * circles trying to) is grassed over.
+     */
+    private void sealHighway() {
+        sealed = true;
+        if (hwyAxis < 0 || oneWay == null) return;
+        boolean ew = hwyAxis == 0;
+        int len = ew ? w : h;
+        for (int k = 0; k < len; k++)
+            for (int a : new int[]{-1, 7}) {
+                int x = ew ? k : hwyAt + a, y = ew ? hwyAt + a : k;
+                if (x < 0 || y < 0 || x >= w || y >= h) continue;
+                int i = y * w + x;
+                if (tiles[i] != DIRT && tiles[i] != LOT) continue;
+                int hx = ew ? x : hwyAt + (a < 0 ? 0 : 6), hy = ew ? hwyAt + (a < 0 ? 0 : 6) : y;
+                if (oneWay[hy * w + hx] == 0) continue;
+                tiles[i] = GRASS;
+                solid[i] = false;
+            }
+    }
+
     private void computeJunctions() {
+        if (!sealed) sealHighway();
         junction = new boolean[w * h];
         int[] run = new int[w * h];
         for (int y = 0; y < h; y++) {
@@ -5945,26 +6010,37 @@ final class City {
         if (oneWay != null && oneWay[ty * w + tx] != 0) {
             float c = hwyCentre(tx, ty), here = hwyAxis == 0 ? (ty + 0.5f) * T : (tx + 0.5f) * T;
             float side = hwyAxis == 0 ? dx : -dy;
-            return (c - here) * side + T * 0.7f * (country.leftHand ? -1 : 1);
+            // (Across the highway, at the crossovers at the ends: straight over. And never more than a lane
+            // and a bit off the tile, whatever tile it's on.)
+            if ((hwyAxis == 0 ? dx : dy) == 0) return 0;
+            float off = (c - here) * side + T * 0.7f * (country.leftHand ? -1 : 1);
+            return Math.max(-T * 1.3f, Math.min(T * 1.3f, off));
         }
         if (junctionAt(tx, ty)) return 4.5f * (country.leftHand ? -1 : 1);
         int rx = -dy, ry = dx;
         int right = 0, left = 0;
+        // (The highway is a road of its own: a frontage road beside it doesn't count its lanes as its own.)
         for (int s = 1; s <= 6; s++) {
             int x = tx + rx * s, y = ty + ry * s;
+            if (hwyTile(x, y)) break;
             if (paved(x, y)) right = s;
-            else if (isMedian(x, y) && paved(x + rx, y + ry)) continue;
+            else if (isMedian(x, y) && paved(x + rx, y + ry) && !hwyTile(x + rx, y + ry)) continue;
             else break;
         }
         for (int s = 1; s <= 6; s++) {
             int x = tx - rx * s, y = ty - ry * s;
+            if (hwyTile(x, y)) break;
             if (paved(x, y)) left = s;
-            else if (isMedian(x, y) && paved(x - rx, y - ry)) continue;
+            else if (isMedian(x, y) && paved(x - rx, y - ry) && !hwyTile(x - rx, y - ry)) continue;
             else break;
         }
         float centre = (right - left) / 2f, half = (right + left + 1) / 2f;
         float lane = half * 0.42f * (country.leftHand ? -1 : 1);
         return (centre + lane) * T;
+    }
+
+    private boolean hwyTile(int x, int y) {
+        return oneWay != null && x >= 0 && y >= 0 && x < w && y < h && oneWay[y * w + x] != 0;
     }
 
     private boolean isMedian(int x, int y) {

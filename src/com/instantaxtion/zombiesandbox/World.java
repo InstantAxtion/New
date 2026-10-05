@@ -1772,6 +1772,8 @@ final class World {
                     z.flank = -z.flank * 0.5f;
                 }
             }
+            // Seen through a fence or across the highway barrier: the way round (by smell), not into it.
+            if (d > 16 && !city.passLine(z.x, z.y, t.x, t.y) && followField(z, city.humanDist, d < 45 ? z.runSpeed : z.speed)) return;
             steer(z, ax, ay, d < 45 ? z.runSpeed : z.speed);
             if (d < z.radius + t.radius + 2.5f && z.biteCd <= 0) bite(z, t, ddx / d, ddy / d);
             return;
@@ -1785,7 +1787,7 @@ final class World {
                 z.searchTimer = 5 + rnd.nextFloat() * 4;
                 z.blocked = false;
             } else {
-                if (city.los(z.x, z.y, z.lastX, z.lastY) || !followField(z, city.humanDist, z.speed * 1.2f))
+                if (city.passLine(z.x, z.y, z.lastX, z.lastY) || !followField(z, city.humanDist, z.speed * 1.2f))
                     steer(z, ddx / d, ddy / d, z.speed * 1.25f);
                 return;
             }
@@ -2282,6 +2284,8 @@ final class World {
                 best = v;
             }
         }
+        // (Not one on the far side of the barrier, or a fence: it would only press against it.)
+        if (best != null && !city.passLine(z.x, z.y, best.x, best.y)) return null;
         return best;
     }
 

@@ -488,7 +488,9 @@ public final class GameTests {
                     w.evCount = 0;
                 }
                 Entity soldier = null;
-                for (Entity e : w.entities) if (!e.dead && e.type == Entity.SOLDIER) soldier = e;
+                // (One with room to walk east, not up against a wall.)
+                for (Entity e : w.entities)
+                    if (!e.dead && e.type == Entity.SOLDIER && (soldier == null || !w.city.circleBlocked(e.x + 12, e.y, e.radius))) soldier = e;
                 check(soldier != null, "a soldier to play");
                 w.controlled = soldier;
                 w.joyX = 1;

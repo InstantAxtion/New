@@ -40,6 +40,14 @@ final class Fleet {
         boolean removedFromFleet;
         /** Seconds stopped; pulling out round something stopped in the lane (seconds left); queued behind traffic. */
         float stillT, passing;
+        /** How far it has turned without getting any nearer (a car going round in circles), and how long it
+         *  then drives carefully, slowly and straight at the middle of each tile of its route. */
+        float spin, careful;
+        /** Pulled over for lights and sirens coming up behind (or holding at a junction for one): seconds left. */
+        float yieldT;
+        boolean yieldStop;
+        /** Parked at the kerb at a scene, nose angled in. */
+        boolean kerbed;
         /** Queued behind traffic; and somewhere up that queue, someone waiting at a light or a junction. */
         boolean queued, queuedHeld;
         /** How many cars up the queue that someone waiting is (0 none): in a ring of cars it only grows. */
@@ -122,7 +130,7 @@ final class Fleet {
         boolean lightsOn() {
             if (broken) return false;
             if (type == FIRE_ENGINE) return state != IDLE && state != MUSTER;
-            if (type == CRUISER) return state != WAIT && !(patrol && state != DRIVE);
+            if (type == CRUISER) return state != WAIT && !(patrol && state != DRIVE && state != SCENE);
             if (type == AMBULANCE) return state != WAIT;
             return false;
         }
@@ -518,6 +526,7 @@ final class Fleet {
         v.tx = x;
         v.ty = y;
         v.lastDist = Float.MAX_VALUE;
+        v.spin = 0;
         v.stuckTimer = 0;
         return true;
     }
@@ -581,6 +590,7 @@ final class Fleet {
             v.zone = zone;
             v.place = place;
             v.lastDist = Float.MAX_VALUE;
+            v.spin = 0;
             vehicles.add(v);
         }
         return true;
@@ -1023,6 +1033,12 @@ final class Fleet {
         }
         buildGrid();
         routeBudget = 6;
+        // Who's out with lights and sirens: everyone else gives way to them.
+        sirens.clear();
+        for (int i = 0; i < vehicles.size(); i++) {
+            Vehicle o = vehicles.get(i);
+            if (o.player == null && !airborne(o) && o.lightsOn() && Math.abs(o.speed) > 18) sirens.add(o);
+        }
         for (int i = vehicles.size() - 1; i >= 0; i--) {
             Vehicle v = vehicles.get(i);
             if (v.alarm > 0) {
@@ -1060,12 +1076,81 @@ final class Fleet {
                 vehicles.remove(i);
                 continue;
             }
+            // At a scene: in to the kerb, out of the traffic's way.
+            if (((v.type == CRUISER && v.state == SCENE) || (v.type == AMBULANCE && v.state == LOAD)) && Math.abs(v.speed) < 1 && !v.broken)
+                kerbAtScene(v, dt);
+            else if (Math.abs(v.speed) > 10) v.kerbed = false;
             if (!airborne(v) && v.type != TRAIN && v.hp < v.maxHp * 0.5f) smoke(v, dt);
         }
         routeBudget = Integer.MAX_VALUE;
         buildGrid();
         collide();
         city.updateLights(dt);
+    }
+
+    private final ArrayList<Vehicle> sirens = new ArrayList<Vehicle>();
+
+    /**
+     * Everyday traffic gives way to lights and sirens: one coming up behind and the car pulls over to the
+     * kerb and slows to let it by; one crossing ahead (or racing up to the junction it's at) and it holds back.
+     */
+    private void giveWay(Vehicle v, float dt) {
+        if (v.yieldT > 0) v.yieldT -= dt;
+        if (sirens.isEmpty() || v.yieldT > 0.3f) return;
+        float fx = (float) Math.cos(v.angle), fy = (float) Math.sin(v.angle);
+        for (int i = 0; i < sirens.size(); i++) {
+            Vehicle o = sirens.get(i);
+            if (o == v) continue;
+            float dx = o.x - v.x, dy = o.y - v.y, d2 = dx * dx + dy * dy;
+            if (d2 > 140 * 140) continue;
+            float ahead = dx * fx + dy * fy;
+            float same = fx * (float) Math.cos(o.angle) + fy * (float) Math.sin(o.angle);
+            if (ahead < -8 && same > 0.6f) {
+                // Coming up behind in the same direction: over to the kerb, nearly stopped.
+                v.yieldT = 2.5f;
+                v.yieldStop = false;
+                return;
+            }
+            float ox = (float) Math.cos(o.angle), oy = (float) Math.sin(o.angle);
+            boolean closing = -dx * ox - dy * oy > 0;
+            if (d2 < 70 * 70 && closing && Math.abs(same) < 0.6f) {
+                // Coming across the junction ahead: hold back until it's through.
+                v.yieldT = 1.2f;
+                v.yieldStop = true;
+                return;
+            }
+        }
+    }
+
+    /** Arrived at a scene: pull in to the kerb, nose angled in, rather than stopping in the middle of the lane. */
+    private void kerbAtScene(Vehicle v, float dt) {
+        if (!v.kerbed) {
+            v.kerbed = true;
+            float nx = (float) -Math.sin(v.angle), ny = (float) Math.cos(v.angle);
+            int hand = city.country.leftHand ? -1 : 1;
+            for (float s = 4; s <= 22; s += 3) {
+                float x = v.x + nx * s * hand, y = v.y + ny * s * hand;
+                int tx = (int) (x / City.T), ty = (int) (y / City.T);
+                if (tx < 0 || ty < 0 || tx >= city.w || ty >= city.h) break;
+                byte t = city.tiles[ty * city.w + tx];
+                if (t == City.ROAD || t == City.CAR) continue;
+                v.pullX = x - nx * hand * (v.type == FIRE_ENGINE ? 8f : 6.5f);
+                v.pullY = y - ny * hand * (v.type == FIRE_ENGINE ? 8f : 6.5f);
+                v.pulling = true;
+                break;
+            }
+        }
+        if (v.pulling) {
+            float dx = v.pullX - v.x, dy = v.pullY - v.y, d = (float) Math.sqrt(dx * dx + dy * dy);
+            if (d < 0.5f || !city.drivable(v.pullX, v.pullY)) v.pulling = false;
+            else {
+                float step = Math.min(d, 18 * dt);
+                v.x += dx / d * step;
+                v.y += dy / d * step;
+                // Nose in towards the kerb a little.
+                v.angle += (city.country.leftHand ? -1 : 1) * dt * 0.5f * Math.min(1, d / 4);
+            }
+        }
     }
 
     // ------------------------------------------------------------------ who's near whom
@@ -1200,10 +1285,15 @@ final class Fleet {
                 float vb = b.speed * ((float) Math.cos(b.angle) * nx + (float) Math.sin(b.angle) * ny);
                 float closing = va - vb;
                 float push = (reach - d) * 0.5f;
-                a.x -= nx * push;
-                a.y -= ny * push;
-                b.x += nx * push;
-                b.y += ny * push;
+                // Nobody is shoved off the road (onto grass, a kerb, a median): the other car takes the push.
+                boolean aOk = city.drivable(a.x - nx * push, a.y - ny * push), bOk = city.drivable(b.x + nx * push, b.y + ny * push);
+                float pa = aOk ? (bOk ? push : push * 2) : 0, pb = bOk ? (aOk ? push : push * 2) : 0;
+                if (pa > 0 && !city.drivable(a.x - nx * pa, a.y - ny * pa)) pa = push;
+                if (pb > 0 && !city.drivable(b.x + nx * pb, b.y + ny * pb)) pb = push;
+                a.x -= nx * pa;
+                a.y -= ny * pa;
+                b.x += nx * pb;
+                b.y += ny * pb;
                 // (A nudge in a queue is just a nudge: it takes a real impact to make a crash.)
                 if (closing > 45 && a.crashCd <= 0 && b.crashCd <= 0) {
                     a.crashCd = b.crashCd = 0.6f;
@@ -1429,6 +1519,9 @@ final class Fleet {
             // Something stopped for good in the lane (parked, wrecked, or stood there a while and not just
             // queueing): pull out and go round it, slowly, rather than wait behind it for ever.
             boolean stuckThere = o.parked || o.broken || (o.stillT > 5 && !o.held && !o.queued)
+                    || (o.yieldT > 0 && !o.yieldStop && v.lightsOn())
+                    // (Lights and sirens go round a queue sitting at a red light, too.)
+                    || (v.lightsOn() && o.type == CAR && o.player == null && o.stillT > 1f && v.type != FIRE_ENGINE)
                     // (Gridlock, everyone waiting on everyone and nobody on a light: edge round and break it.)
                     || (o.stillT > 6 && v.stillT > 6 && !o.held && !o.queuedHeld);
             if (stuckThere && v.player == null && v.type != TANK) {
@@ -1688,6 +1781,7 @@ final class Fleet {
         int ddx = bx - tx, ddy = by - ty;
         // Keep to your own side of the road (left in Australia and Japan), in the middle of the lane.
         float off = city.laneOffset(bx, by, ddx, ddy);
+        if (v.careful > 0) v.careful -= dt;
         // (Going round something stopped in the lane: out towards the middle of the road for a moment.)
         if (v.passing > 0) {
             v.passing -= dt;
@@ -1706,6 +1800,19 @@ final class Fleet {
         if ((rd == 1 && ddx != 0) || (rd == 2 && ddy != 0)) {
             off = 0;
             max = Math.min(max, 22);
+        }
+        if (v.yieldT > 0 && v.type == CAR && v.player == null) {
+            // Giving way: over to the kerb and slow (or held back from the junction).
+            if (v.yieldStop) max = Math.min(max, city.junctionIdAt(v.x, v.y) >= 0 ? max : 2);
+            else {
+                off += City.T * 0.45f * (city.country.leftHand ? -1 : 1);
+                max = Math.min(max, 7);
+            }
+        }
+        if (v.careful > 0) {
+            // Going round in circles: slowly, straight for the middle of each tile until it's back on track.
+            off = 0;
+            max = Math.min(max, 16);
         }
         float gx = bx * City.T + City.T / 2f - ddy * off, gy = by * City.T + City.T / 2f + ddx * off;
         if (Math.hypot(gx - v.x, gy - v.y) < 11 || ((v.x - (bx + 0.5f) * City.T) * ddx + (v.y - (by + 0.5f) * City.T) * ddy) > -2) {
@@ -1739,7 +1846,16 @@ final class Fleet {
         while (diff < -Math.PI) diff += Math.PI * 2;
         // Wheels only turn the car while it's moving.
         float steer = dt * 5 * Math.min(1, 0.05f + Math.abs(v.speed) / 18f);
-        v.angle += Math.max(-steer, Math.min(steer, diff));
+        float turned = Math.max(-steer, Math.min(steer, diff));
+        v.angle += turned;
+        // A full circle and more without getting any nearer: it's missed its turn and is orbiting.
+        v.spin += turned;
+        if (Math.abs(v.spin) > 7.5f && v.player == null) {
+            v.spin = 0;
+            v.careful = 4;
+            int own = city.tileIndex(v.x, v.y);
+            if (v.field.get(own) < City.FAR) v.pathT = own;
+        }
         float target = max * throttle * (0.35f + 0.65f * Math.max(0, (float) Math.cos(diff)));
         // A badly damaged car limps along.
         if (v.hp < v.maxHp * 0.3f) target *= 0.6f;
@@ -1750,6 +1866,7 @@ final class Fleet {
         if (cur < v.lastDist - 1) {
             v.lastDist = cur;
             v.stuckTimer = 0;
+            v.spin = 0;
         }
         return true;
     }
@@ -1760,6 +1877,7 @@ final class Fleet {
      */
     private boolean updateTraffic(Vehicle v, float dt) {
         if (v.parked) return false;
+        giveWay(v, dt);
         boolean zombiesClose = w.countZombiesNear(v.x, v.y, 30) >= 2;
         v.waitTimer -= dt;
         v.hailCd -= dt;

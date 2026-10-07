@@ -409,6 +409,56 @@ public final class GameTests {
                 check(f != null && base.takeParkedTruck(f.x, f.y, 600) != null, "a parked truck drives off the base");
             }
         });
+        test("police and soldiers carry a real load and make it count; people keep out of bloater gas", new Check() {
+            public void run() {
+                CityConfig c = new CityConfig();
+                c.seed = 3;
+                c.v[CityConfig.OPT_SIZE] = 1;
+                c.v[CityConfig.OPT_ZOMBIES] = 4;
+                World w = new World(c);
+                w.populate(c);
+                for (Entity e : w.entities) {
+                    if (e.type == Entity.COP && e.role == 0) check(e.ammo + e.reserve == 60, "an officer carries 60 rounds (" + (e.ammo + e.reserve) + ")");
+                    if (e.type == Entity.SOLDIER && e.role == Entity.ROLE_RIFLE) check(e.ammo + e.reserve == 210, "a soldier carries 210 rounds (" + (e.ammo + e.reserve) + ")");
+                }
+                // Two minutes into a busy outbreak, hardly anyone has run dry.
+                for (int f = 0; f < 30 * 120; f++) w.update(1 / 30f);
+                int armed = 0, dry = 0;
+                for (Entity e : w.entities) {
+                    if (e.dead || (e.type != Entity.COP && e.type != Entity.SOLDIER)) continue;
+                    armed++;
+                    if (e.ammo + e.reserve == 0) dry++;
+                }
+                check(dry * 8 <= armed, dry + " of " + armed + " police and soldiers out of ammo after two minutes");
+                // A cloud of gas on someone's way: they go round it.
+                CityConfig q = new CityConfig();
+                q.seed = 7;
+                q.v[CityConfig.OPT_SIZE] = 1;
+                q.v[CityConfig.OPT_ZOMBIES] = 0;
+                World g = new World(q);
+                g.populate(q);
+                int walkedIn = 0, tried = 0;
+                for (int round = 0; round < 12; round++) {
+                    for (int f = 0; f < 30 * 3; f++) g.update(1 / 30f);
+                    Entity walker = null;
+                    for (Entity e : g.entities)
+                        if (!e.dead && !e.hidden && e.type == Entity.CIVILIAN && e.want > 5 && e.fleeTimer <= 0 && (walker == null || e.want > walker.want)) walker = e;
+                    if (walker == null) continue;
+                    float l = (float) Math.hypot(walker.mx, walker.my) + 0.001f;
+                    float[] cloud = {walker.x + walker.mx / l * 80, walker.y + walker.my / l * 80, 36, 9};
+                    g.gases.add(cloud);
+                    tried++;
+                    boolean in = false;
+                    for (int f = 0; f < 30 * 4; f++) {
+                        g.update(1 / 30f);
+                        if (!walker.dead && Math.hypot(walker.x - cloud[0], walker.y - cloud[1]) < cloud[2]) in = true;
+                    }
+                    if (in) walkedIn++;
+                    g.gases.clear();
+                }
+                check(tried >= 6 && walkedIn * 6 <= tried, walkedIn + " of " + tried + " people walked into a gas cloud in their way");
+            }
+        });
         test("traffic keeps its distance: hardly any crashes, and patrol cars keep to their side", new Check() {
             public void run() {
                 CityConfig c = new CityConfig();

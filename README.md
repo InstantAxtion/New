@@ -155,6 +155,13 @@ on the phone, so the APK contains no audio files.
 - **Checkpoints and roadblocks**: soldiers screen people entering a military safe zone for bites;
   police park cruisers across the roads around their safe zones.
 - **Riot police** block bites with their shields; **K9 units** bring a police dog.
+- **Ammunition**: officers carry 60 rounds and soldiers a standard load of 210 (seven magazines). They
+  aim for the head, and up close they usually get it, so a walker takes a handful of rounds, not a
+  magazine; they hold fire at long range unless the zombie is going for someone, and riflemen fire
+  aimed single shots at range and bursts only up close. Frightened civilians with a gun are far worse
+  shots.
+- **Gas and acid**: people steer round a bloater's gas cloud and spitters' acid instead of walking into
+  it, and anyone caught in it runs straight out.
 - **SWAT**: every city with a police station has a SWAT team (two on Large and Massive maps), called
   by its local name (SWAT, Tactical Response Group, SAT, RAID, GOPES, SOBR...). When a call turns
   into a horde (six or more of the dead) or officers go down, six officers in body armour with
@@ -353,7 +360,7 @@ a Guard Headquarters (the National Guard comes sooner).
     the city. Tap the button again (or anywhere else) to close it.
   - **People**: civilians (wander and run from zombies), medics (heal the hurt),
     firefighters, dogs and raiders.
-  - **Police**: cops (12-round pistol), riot cops, K9 units and SWAT.
+  - **Police**: cops (15-round pistol and three spare magazines), riot cops, K9 units and SWAT.
   - **Military**: soldiers (3-round bursts, grenades), commanders, snipers, gunners and the National
     Guard.
   - **Zombies**: zombie (slow shambler), runner (fast, fragile), brute (huge, knocks people back),

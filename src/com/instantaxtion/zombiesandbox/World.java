@@ -962,8 +962,9 @@ final class World {
                 e.radius = 3.8f;
                 e.speed = 22;
                 e.runSpeed = 40;
-                e.magSize = 12;
-                e.reserve = 48;
+                // A 15-round pistol and three spare magazines.
+                e.magSize = 15;
+                e.reserve = 45;
                 e.body = 0xFF23408E;
                 e.head = 0xFF141C38;
                 break;
@@ -972,8 +973,9 @@ final class World {
                 e.radius = 4.0f;
                 e.speed = 24;
                 e.runSpeed = 40;
+                // A standard load: seven 30-round magazines.
                 e.magSize = 30;
-                e.reserve = 150;
+                e.reserve = 180;
                 e.grenades = 3;
                 e.body = 0xFF55623A;
                 e.head = 0xFF3C4628;
@@ -1196,12 +1198,13 @@ final class World {
 
     /** Full spare ammo for a unit's weapon. */
     static int fullReserve(Entity e) {
-        if (e.type != Entity.SOLDIER) return e.role == Entity.ROLE_SWAT ? 150 : 48;
+        if (e.type != Entity.SOLDIER) return e.role == Entity.ROLE_SWAT ? 150 : e.type == Entity.COP ? 45 : 48;
         switch (e.role) {
             case Entity.ROLE_COMMANDER: return 60;
             case Entity.ROLE_SNIPER: return 45;
             case Entity.ROLE_GUNNER: return 200;
-            default: return 150;
+            case Entity.ROLE_GUARD: return 120;
+            default: return 180;
         }
     }
 
@@ -6858,6 +6861,10 @@ final class World {
                 e.cooldown = 0.15f;
                 return false;
             }
+            if (holdFire(e, t, d, range)) {
+                e.cooldown = 0.25f;
+                return true;
+            }
             fire(e, t, d, range);
         }
         return true;
@@ -6902,6 +6909,35 @@ final class World {
                 }
             }
         return res;
+    }
+
+    /**
+     * How likely a hit is to be a stopping shot to the head. Police and soldiers are trained to aim for it,
+     * and at close range they usually manage; a frightened civilian rarely does. Harder at range and on a
+     * zombie that's running.
+     */
+    private float headshotChance(Entity e, Entity t, float d, float range) {
+        float base;
+        if (e.role == Entity.ROLE_SNIPER) return 0.45f;
+        if (e.weapon == Entity.W_SHOTGUN && d < 45) return 0.3f;
+        if (e.type == Entity.COP) base = e.role == Entity.ROLE_SWAT ? 0.42f : 0.3f;
+        else if (e.type == Entity.SOLDIER)
+            base = e.role == Entity.ROLE_GUNNER ? 0.1f : e.role == Entity.ROLE_GUARD ? 0.3f : e.role == Entity.ROLE_COMMANDER ? 0.3f : 0.36f;
+        else return HEADSHOT;
+        float f = Math.max(0.35f, 1.25f - d / range);
+        if (t.type == Entity.RUNNER) f *= 0.6f;
+        return base * f;
+    }
+
+    /**
+     * Police and soldiers don't waste rounds on a zombie that's a long way off and not after anyone: they
+     * wait for a better shot (or for it to come to them).
+     */
+    private boolean holdFire(Entity e, Entity t, float d, float range) {
+        if (e.type != Entity.COP && e.type != Entity.SOLDIER) return false;
+        if (e.role == Entity.ROLE_SNIPER || e == controlled || !t.isZombie()) return false;
+        float effective = e.type == Entity.COP ? (e.role == Entity.ROLE_SWAT ? 150 : 110) : 165;
+        return d > effective && t.biteCd <= 0 && !peopleNear(t.x, t.y, 45);
     }
 
     /** Is a person (not the target) standing between the shooter and the target? */
@@ -7001,8 +7037,14 @@ final class World {
             e.cooldown = 0.5f;
             dmg = 12;
         } else if (soldier) {
-            e.burst++;
-            e.cooldown = e.burst % 3 == 0 ? 0.45f : 0.1f;
+            // Aimed single shots at range; short bursts only when they're close.
+            if (d > 70) {
+                e.burst = 0;
+                e.cooldown = 0.38f;
+            } else {
+                e.burst++;
+                e.cooldown = e.burst % 3 == 0 ? 0.45f : 0.1f;
+            }
             dmg = 16;
         } else {
             e.cooldown = e.hasGun ? 0.8f : 0.55f;
@@ -7040,9 +7082,7 @@ final class World {
         if (t.type == Entity.CRAWLER) hit *= 0.6f;
         if (rnd.nextFloat() < hit) {
             // Only a hit to the head really stops a zombie; body shots just wear it down.
-            boolean headshot = t.isZombie() && t.type != Entity.BRUTE
-                    && rnd.nextFloat() < (e.role == Entity.ROLE_SNIPER ? 0.45f
-                    : e.weapon == Entity.W_SHOTGUN && d < 45 ? 0.3f : HEADSHOT);
+            boolean headshot = t.isZombie() && t.type != Entity.BRUTE && rnd.nextFloat() < headshotChance(e, t, d, range);
             if (headshot) {
                 t.hp = 0;
                 t.gibbed = rnd.nextFloat() < 0.3f;
@@ -7704,6 +7744,8 @@ final class World {
             }
             if (e.stamina < 0) e.stamina = 0;
         }
+        // The living keep out of a bloater's gas and spitters' acid (whoever you're controlling goes where you say).
+        if (!e.isZombie() && e != controlled && (!gases.isEmpty() || !acids.isEmpty())) avoidHazards(e);
         if (e.want > 1 && (e.mx != 0 || e.my != 0)) lookAhead(e);
         float k = Math.min(1, dt * 10);
         e.vx += (e.mx * e.want - e.vx) * k;
@@ -7724,6 +7766,50 @@ final class World {
      * Looks a step ahead: if a wall or corner is right in the way, turns to walk along it (keeping to the side
      * it last went round on) instead of pressing into it.
      */
+    /**
+     * Gas and acid on the ground: anyone heading into it goes round it instead, and anyone caught in it gets out
+     * the quickest way, at a run.
+     */
+    private void avoidHazards(Entity e) {
+        float l = (float) Math.sqrt(e.mx * e.mx + e.my * e.my);
+        boolean moving = e.want > 1 && l > 0.01f;
+        float dx = moving ? e.mx / l : 0, dy = moving ? e.my / l : 0;
+        for (int pass = 0; pass < 2; pass++) {
+            ArrayList<float[]> list = pass == 0 ? gases : acids;
+            for (int i = 0, n = list.size(); i < n; i++) {
+                float[] g = list.get(i);
+                float r = (pass == 0 ? g[2] : 8) + e.radius + 4;
+                float ox = e.x - g[0], oy = e.y - g[1], od = (float) Math.sqrt(ox * ox + oy * oy) + 0.001f;
+                if (od < r) {
+                    // Caught in it: straight out.
+                    e.mx = ox / od;
+                    e.my = oy / od;
+                    e.want = Math.max(e.want, e.runSpeed);
+                    e.paused = false;
+                    return;
+                }
+                if (!moving) continue;
+                // Will the way ahead (the next few seconds' walk) pass through it?
+                float look = Math.max(40, e.want * 1.5f);
+                float t = -(ox * dx + oy * dy);
+                if (t <= 0 || t > look + r) continue;
+                float cx = ox + dx * t, cy = oy + dy * t;
+                if (cx * cx + cy * cy >= r * r) continue;
+                // Go round it, on the side they're already passing, edging outwards.
+                float tx = -oy / od, ty = ox / od;
+                if (tx * dx + ty * dy < 0) {
+                    tx = -tx;
+                    ty = -ty;
+                }
+                float nx = tx * 0.85f + ox / od * 0.4f, ny = ty * 0.85f + oy / od * 0.4f;
+                float nl = (float) Math.sqrt(nx * nx + ny * ny) + 0.001f;
+                e.mx = nx / nl;
+                e.my = ny / nl;
+                return;
+            }
+        }
+    }
+
     private void lookAhead(Entity e) {
         float l = (float) Math.sqrt(e.mx * e.mx + e.my * e.my);
         if (l < 0.01f) return;

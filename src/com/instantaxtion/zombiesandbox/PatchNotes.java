@@ -2,11 +2,17 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.6";
-    static final int VERSION_CODE = 44;
+    static final String VERSION = "10.7";
+    static final int VERSION_CODE = 45;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.7  -  Make every round count",
+                    "Police and soldiers no longer run dry after a couple of zombies. They carry real loads (an officer's 15-round pistol and three spare magazines; a soldier's seven 30-round magazines), and as trained shooters they aim for the head and usually get it up close: about 8 rounds a kill instead of 25 to 30 for police, and 15 to 19 for soldiers.",
+                    "Fire discipline: police and soldiers hold fire at a zombie that's a long way off and not going for anyone, and riflemen fire aimed single shots at range, bursts only up close. SWAT are the best shots in the police; frightened civilians with a gun are still poor shots.",
+                    "People no longer walk into a bloater's gas (or a spitter's acid): they go round it, and anyone caught in it runs straight out.",
+            },
             {
                     "10.6  -  SWAT",
                     "SWAT teams: every city with a police station has one (two on Large and Massive maps), under its local name (SWAT, Tactical Response Group, SAT, RAID, GOPES, SOBR...). When a call turns into a horde or officers go down, six officers in body armour with carbines roll out of the precinct in a black armoured van, before the army is called. Their armour stops a lot of bites. You can place them yourself from the Police picker too.",

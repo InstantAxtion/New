@@ -28,7 +28,7 @@ final class Dispatch {
         float x, y, age, clearTimer, sceneTime;
         String place;
         int reported, lastLogged, cops, soldiers, zombiesNear, officersDown;
-        boolean militaryRequested, onScene, resolved, airRequested;
+        boolean militaryRequested, onScene, resolved, airRequested, swatRequested;
         int[] field;
     }
 
@@ -135,6 +135,8 @@ final class Dispatch {
 
     /** Reserves left to call in: police backup waves and military squads (4 each). Never refilled. */
     int policeReserve, squadReserve, airSorties, tankReserve;
+    /** SWAT teams still at the precinct, ready to go. */
+    int swatTeams;
     private float ambulanceTimer;
     int calls, sheltered, messageCount;
     int copCount, soldierCount;
@@ -614,6 +616,11 @@ final class Dispatch {
                 int got = assign(inc, Entity.COP, need - have);
                 if (got == 0 && have == 0) policeBackup(inc);
             }
+            // A big one, or officers down: the SWAT team goes in (before the army is asked).
+            if (!inc.swatRequested && swatTeams > 0 && (inc.zombiesNear >= 6 || (inc.officersDown > 0 && inc.zombiesNear >= 3))) {
+                inc.swatRequested = true;
+                sendSwat(inc);
+            }
             if (!inc.airRequested && inc.zombiesNear >= 12) {
                 inc.airRequested = true;
                 requestAir(inc.x, inc.y, inc.place);
@@ -780,6 +787,27 @@ final class Dispatch {
                 : "the precinct") + " to " + inc.place + "." + (policeReserve == 0 ? " That's the last of our officers."
                 : ""), inc.x, inc.y);
         return true;
+    }
+
+    /** The SWAT team rolls out from the nearest precinct in its armoured van (or on foot, if it can't drive). */
+    private void sendSwat(Incident inc) {
+        City.Facility station = city.nearestFacility(City.FACILITY_POLICE, inc.x, inc.y);
+        if (station == null) return;
+        swatTeams--;
+        String unit = Country.swat(city.country.id)[0];
+        if (w.fleet.sendSwat(station.gateX, station.gateY, inc)) {
+            say(WHO_POLICE, null, "Dispatch: " + unit + " is rolling out of " + station.name + " to " + inc.place
+                    + ". Six officers, heavy weapons." + (swatTeams == 0 ? " That's our last team." : ""), station.gateX, station.gateY);
+            return;
+        }
+        for (int i = 0; i < 6; i++) {
+            Entity e = w.spawnCop(Entity.ROLE_SWAT, station.gateX + rnd.nextFloat() * 20 - 10, station.gateY + rnd.nextFloat() * 20 - 10);
+            if (e == null) continue;
+            e.task = T_RESPOND;
+            e.incident = inc;
+        }
+        say(WHO_POLICE, null, "Dispatch: " + unit + " is heading out on foot from " + station.name + " to " + inc.place + ".",
+                station.gateX, station.gateY);
     }
 
     /** Where reinforcements come from: the base or nearest precinct, or else the edge of the map. */

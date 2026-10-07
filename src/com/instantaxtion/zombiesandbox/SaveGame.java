@@ -17,7 +17,7 @@ import java.util.ArrayList;
  * damaged or collapsed buildings.
  */
 final class SaveGame {
-    private static final int VERSION = 20;
+    private static final int VERSION = 21;
 
     private SaveGame() {
     }
@@ -101,6 +101,7 @@ final class SaveGame {
                 for (int i = 0; i < v.passengers; i++) {
                     Entity p = w.create(v.passengerType, v.x, v.y);
                     if (v.guardUnit) w.applyRole(p, Entity.ROLE_GUARD);
+                    if (v.swat) w.applyRole(p, Entity.ROLE_SWAT);
                     all.add(p);
                 }
             }
@@ -273,6 +274,8 @@ final class SaveGame {
             out.writeInt(w.courtArmoury != null ? w.courtArmoury.ammo : 0);
             // Version 20: the National Guard armory.
             out.writeBoolean(w.armoryLost);
+            // Version 21: SWAT teams still at the precinct.
+            out.writeInt(d.swatTeams);
         } finally {
             out.close();
         }
@@ -352,6 +355,7 @@ final class SaveGame {
             if (version >= 15) cfg.setEdits(in.readUTF());
             // (Cities saved before 10.4 were built without their government quarter.)
             cfg.civic = version >= 20 ? 2 : version >= 19 ? 1 : 0;
+            // (Version 20 and later all build the same city.)
             World w = new World(cfg);
 
             w.time = in.readFloat();
@@ -588,6 +592,8 @@ final class SaveGame {
                 if (w.courtArmoury != null) w.courtArmoury.ammo = court;
             }
             if (version >= 20) w.armoryLost = in.readBoolean();
+            if (version >= 21) d.swatTeams = in.readInt();
+            else d.swatTeams = w.city.nearestFacility(City.FACILITY_POLICE, 0, 0) == null ? 0 : 1;
             d.copCount = copCount;
             d.soldierCount = soldierCount;
             w.afterLoad();

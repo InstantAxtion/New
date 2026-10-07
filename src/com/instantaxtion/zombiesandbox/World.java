@@ -412,6 +412,8 @@ final class World {
         scatterWeapons();
         stockArmouries();
         baseStrengths();
+        // Every city with a police station has a SWAT team (two on the big maps).
+        dispatch.swatTeams = city.nearestFacility(City.FACILITY_POLICE, 0, 0) == null ? 0 : city.w >= 300 ? 2 : 1;
         launchBoats();
         if (courtArmoury != null) courtArmoury.ammo = 1200;
         inmates = city.jail != null ? 6 + rnd.nextInt(9) : 0;
@@ -511,6 +513,18 @@ final class World {
                 best.task = Dispatch.T_POST;
                 best.postX = post[0];
                 best.postY = post[1];
+            }
+        }
+        // Guardsmen on duty at the armory: two on the gate, two at the drill hall door.
+        if (city.armory != null && city.armoryGate != null) {
+            float[][] spots = {{city.armoryGate[0] - 14, city.armoryGate[1]}, {city.armoryGate[0] + 14, city.armoryGate[1]},
+                    {city.armory.doorX - 12, city.armory.doorY + 6}, {city.armory.doorX + 12, city.armory.doorY + 6}};
+            for (float[] s : spots) {
+                Entity g = spawnSoldier(Entity.ROLE_GUARD, s[0], s[1]);
+                if (g == null) continue;
+                g.task = Dispatch.T_POST;
+                g.postX = g.x;
+                g.postY = g.y;
             }
         }
         applyReadiness();
@@ -1098,6 +1112,8 @@ final class World {
             e.speed = 18;
             e.runSpeed = 32;
             e.mass = 1.4f;
+        } else if (role == Entity.ROLE_SWAT) {
+            applyRole(e, Entity.ROLE_SWAT);
         } else if (role == Entity.ROLE_K9) {
             e.role = Entity.ROLE_K9;
             Entity dog = spawn(Entity.DOG, x + 6, y + 4);
@@ -1129,6 +1145,16 @@ final class World {
     void applyRole(Entity e, int role) {
         e.role = role;
         switch (role) {
+            case Entity.ROLE_SWAT:
+                // Body armour, a helmet and a carbine.
+                e.hp = e.maxHp = 130;
+                e.magSize = 30;
+                e.reserve = 150;
+                e.grenades = 0;
+                e.mass = 1.3f;
+                e.body = 0xFF1E2228;
+                e.head = 0xFF2C3038;
+                break;
             case Entity.ROLE_GUARD:
                 // Guardsmen: rifles and a little less training, in tan uniforms.
                 e.hp = e.maxHp = 75;
@@ -1170,7 +1196,7 @@ final class World {
 
     /** Full spare ammo for a unit's weapon. */
     static int fullReserve(Entity e) {
-        if (e.type != Entity.SOLDIER) return 48;
+        if (e.type != Entity.SOLDIER) return e.role == Entity.ROLE_SWAT ? 150 : 48;
         switch (e.role) {
             case Entity.ROLE_COMMANDER: return 60;
             case Entity.ROLE_SNIPER: return 45;
@@ -2308,6 +2334,12 @@ final class World {
     }
 
     private void bite(Entity z, Entity t, float nx, float ny) {
+        // Body armour stops a lot of bites, from any side.
+        if (t.type == Entity.COP && t.role == Entity.ROLE_SWAT && rnd.nextFloat() < 0.45f) {
+            z.biteCd = 0.8f;
+            emit(Sfx.THUD, t.x, t.y);
+            return;
+        }
         // A riot shield turns away most bites from the front.
         if (t.type == Entity.COP && t.role == Entity.ROLE_RIOT) {
             float face = (float) Math.cos(t.angle) * -nx + (float) Math.sin(t.angle) * -ny;
@@ -5645,7 +5677,8 @@ final class World {
 
     private void thinkArmed(Entity e, float dt) {
         boolean soldier = e.type == Entity.SOLDIER;
-        float range = soldier ? (e.role == Entity.ROLE_SNIPER ? 380 : e.role == Entity.ROLE_COMMANDER ? 180 : 230) : 160;
+        float range = soldier ? (e.role == Entity.ROLE_SNIPER ? 380 : e.role == Entity.ROLE_COMMANDER ? 180 : 230)
+                : e.role == Entity.ROLE_SWAT ? 210 : 160;
         if (e.role == Entity.ROLE_COMMANDER && soldier) command(e, dt);
         if (e.meleeCd <= 0) {
             Entity z = nearestInReach(e);
@@ -7517,6 +7550,15 @@ final class World {
                 float tx = e.threatX - e.x, ty = e.threatY - e.y;
                 if (tx * (float) Math.cos(e.wanderAngle) + ty * (float) Math.sin(e.wanderAngle) > 0) e.wanderAngle += (float) Math.PI;
                 e.paused = false;
+            } else if (e.type == Entity.CIVILIAN && e.home != null) {
+                // A stroll or a run doesn't go on for ever into the middle of nowhere: out in the country, or
+                // a long way from home in town, it turns back towards home.
+                float hx = e.home.doorX - e.x, hy = e.home.doorY - e.y;
+                float leash = city.outOfTown(e.x, e.y) ? 150 : 520;
+                if (hx * hx + hy * hy > leash * leash) {
+                    e.wanderAngle = (float) Math.atan2(hy, hx) + (rnd.nextFloat() - 0.5f) * 0.9f;
+                    e.paused = false;
+                }
             }
         }
         if (!e.paused && keepsRules(e)) {

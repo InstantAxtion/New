@@ -453,6 +453,7 @@ final class City {
             opaque[i] = t == BUILDING;
         }
         for (int[] l : buildingLots) createBuilding(l);
+        clearDoorways();
         Arrays.fill(humanDist, FAR);
         Arrays.fill(zombieDist, FAR);
         for (Facility f : facilities) {
@@ -707,6 +708,8 @@ final class City {
 
     /** The government buildings (null where the city has none). */
     Building cityHall, courthouse, jail, callCentre, worksDepot, armory;
+    /** The armory compound's gate, as {x, y} (world units), or null. */
+    float[] armoryGate;
 
     /**
      * Emergency services spread across town: a block well away from every police station, base, hospital and
@@ -728,6 +731,28 @@ final class City {
             }
         }
         return far.isEmpty() ? best : far.get(rnd.nextInt(far.size()));
+    }
+
+    /** Tiles in front of a door (no street tree is planted on them). */
+    private boolean[] doorway;
+
+    /** Nothing grows in a doorway: trees right outside a door are cleared, so the way in is always open. */
+    private void clearDoorways() {
+        doorway = new boolean[w * h];
+        for (Building b : buildings) {
+            if (b.doorX <= 0) continue;
+            int tx = (int) (b.doorX / T), ty = (int) (b.doorY / T);
+            for (int dy = -1; dy <= 1; dy++)
+                for (int dx = -1; dx <= 1; dx++) {
+                    int x = tx + dx, y = ty + dy;
+                    if (x < 0 || y < 0 || x >= w || y >= h) continue;
+                    int i = y * w + x;
+                    doorway[i] = true;
+                    if (tiles[i] != TREE) continue;
+                    tiles[i] = isPlazaTree(x, y) ? PLAZA : GRASS;
+                    solid[i] = false;
+                }
+        }
     }
 
     /** Puts the door in the middle of the first side that opens onto walkable ground. */
@@ -1885,6 +1910,66 @@ final class City {
         return darken(base, 1 - Math.min(0.22f, (land - 1) * 0.028f));
     }
 
+    /**
+     * An army truck parked on a base (or at the armory) near (x, y) drives off: its spot is cleared, and its
+     * place returned as {x, y} so the departing truck starts from there. Null if none is parked nearby.
+     */
+    float[] takeParkedTruck(float x, float y, float radius) {
+        int tx0 = Math.max(0, (int) ((x - radius) / T)), tx1 = Math.min(w - 1, (int) ((x + radius) / T));
+        int ty0 = Math.max(0, (int) ((y - radius) / T)), ty1 = Math.min(h - 1, (int) ((y + radius) / T));
+        int best = -1;
+        float bd = radius * radius;
+        for (int ty = ty0; ty <= ty1; ty++)
+            for (int tx = tx0; tx <= tx1; tx++) {
+                int i = ty * w + tx;
+                if (tiles[i] != CAR || carKind[i] != 2) continue;
+                float dx = (tx + 0.5f) * T - x, dy = (ty + 0.5f) * T - y, d = dx * dx + dy * dy;
+                if (d < bd) {
+                    bd = d;
+                    best = i;
+                }
+            }
+        if (best < 0) return null;
+        tiles[best] = BASE;
+        carKind[best] = 0;
+        solid[best] = false;
+        int bx = best % w, by = best / w;
+        // Paint the empty bay over the parked truck (and its shadow) on the map picture.
+        synchronized (this) {
+            Canvas c = new Canvas(bitmap);
+            if (detail != 1f) c.scale(detail, detail);
+            Paint p = new Paint();
+            p.setColor(0xFF6A6E5E);
+            c.drawRect(bx * T, by * T, bx * T + T + 2, by * T + T + 2, p);
+            renderVersion++;
+        }
+        return new float[]{(bx + 0.5f) * T, (by + 0.5f) * T};
+    }
+
+    /** An army truck parks in an empty bay on a base (the spot one drove off from). */
+    void parkTruck(float x, float y) {
+        int tx = (int) (x / T), ty = (int) (y / T);
+        if (tx < 0 || ty < 0 || tx >= w || ty >= h) return;
+        int i = ty * w + tx;
+        if (tiles[i] != BASE) return;
+        tiles[i] = CAR;
+        carKind[i] = 2;
+        solid[i] = true;
+        synchronized (this) {
+            Canvas c = new Canvas(bitmap);
+            if (detail != 1f) c.scale(detail, detail);
+            drawCar(c, new Paint(), tx, ty);
+            renderVersion++;
+        }
+    }
+
+    /** Out in the countryside round a town (or past the edge of town). */
+    boolean outOfTown(float x, float y) {
+        if (townX0 <= 0) return false;
+        int tx = (int) (x / T), ty = (int) (y / T);
+        return tx < townX0 || ty < townY0 || tx >= townX1 || ty >= townY1;
+    }
+
     /** A bridge (road or pavement over water). */
     boolean isBridge(int tx, int ty) {
         return bridge != null && tx >= 0 && ty >= 0 && tx < w && ty < h && bridge[ty * w + tx];
@@ -2100,6 +2185,8 @@ final class City {
         // The gate, in the middle of the front.
         int gu = L / 2 - 1;
         fillR(uv(r, gu, S - 1, 3, 1), BASE);
+        int[] gate = uv(r, gu + 1, S - 2, 1, 1);
+        armoryGate = new float[]{(gate[0] + 0.5f) * T, (gate[1] + 0.5f) * T};
         int depth = Math.max(3, Math.min(6, S / 2 - 1));
         int[] hall = uv(r, 2, 1, L - 4, depth);
         govLot(hall[0], hall[1], hall[2], hall[3], ARMORY);
@@ -4706,7 +4793,7 @@ final class City {
             for (int y = Math.max(1, Y0); y < Math.min(h - 1, Y1); y++)
                 for (int x = Math.max(1, X0); x < Math.min(w - 1, X1); x++) {
                     if (tiles[y * w + x] != SIDEWALK || ((x * 7 + y * 13) % (cfg.parks() >= 2 ? 5 : 8)) != 0) continue;
-                    if (isBridge(x, y)) continue;
+                    if (isBridge(x, y) || (doorway != null && doorway[y * w + x])) continue;
                     boolean nextToRoad = tiles[y * w + x - 1] == ROAD || tiles[y * w + x + 1] == ROAD
                             || tiles[(y - 1) * w + x] == ROAD || tiles[(y + 1) * w + x] == ROAD;
                     if (!nextToRoad || hasNeighborDir(x, y) || hasNeighbor(x, y, CAR)) continue;

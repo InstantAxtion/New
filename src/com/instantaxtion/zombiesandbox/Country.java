@@ -86,6 +86,23 @@ final class Country {
     /** Government buildings: city hall, courthouse, jail, 911 centre and public works depot. */
     static final int GOV_HALL = 0, GOV_COURT = 1, GOV_JAIL = 2, GOV_CALLS = 3, GOV_WORKS = 4;
 
+    /** The country's own SWAT team: {its name, what its officers are called}. */
+    static String[] swat(int id) {
+        switch (id) {
+            case AUSTRALIA: return new String[]{"Tactical Response Group", "TRG officer"};
+            case JAPAN: return new String[]{"SAT", "SAT officer"};
+            case FRANCE: return new String[]{"RAID", "RAID officer"};
+            case MEXICO: return new String[]{"GOPES", "GOPES officer"};
+            case SWITZERLAND: return new String[]{"Interventionseinheit", "Intervention officer"};
+            case KOREA: return new String[]{"Police SOU", "SOU officer"};
+            case MALAYSIA: return new String[]{"UTK", "UTK officer"};
+            case PORTUGAL: return new String[]{"GOE", "GOE officer"};
+            case MOROCCO: return new String[]{"GIPN", "GIPN officer"};
+            case RUSSIA: return new String[]{"SOBR", "SOBR officer"};
+            default: return new String[]{"SWAT", "SWAT officer"};
+        }
+    }
+
     /**
      * The country's own National Guard: {its armory, the force, who calls it out, the armory's roof sign}.
      */

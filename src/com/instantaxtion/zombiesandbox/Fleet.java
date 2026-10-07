@@ -68,6 +68,10 @@ final class Fleet {
         /** The way along the road it was last heading (one step of its route). */
         int pdx, pdy;
         float x, y, angle, speed, timer, stuckTimer, lastDist, gunCd, soundCd, circle;
+        /** A SWAT team's armoured van (a truck carrying police). */
+        boolean swat;
+        /** How long a car on its way home has been holding back from the dead on the road ahead. */
+        float hold;
         /** Rounds fired by the door gunner (it fires in short bursts). */
         int burst;
         float tx, ty, homeX, homeY;
@@ -171,7 +175,7 @@ final class Fleet {
         switch (v.type) {
             case CRUISER:
                 return v.number > 0 ? "Police car  -  " + callsign(v) : "Police car";
-            case TRUCK: return v.guardUnit ? Country.guard(city.country.id)[1] + " truck" : v.supply > 0 ? "Army supply truck" : "Army truck";
+            case TRUCK: return v.swat ? Country.swat(city.country.id)[0] + " van" : v.guardUnit ? Country.guard(city.country.id)[1] + " truck" : v.supply > 0 ? "Army supply truck" : "Army truck";
             case HELI: return "Air 1  -  helicopter";
             case FIRE_ENGINE: return "Fire engine " + v.number;
             case TANK: return "Tank";
@@ -590,7 +594,10 @@ final class Fleet {
      */
     boolean send(int unitType, int count, float fromX, float fromY, float toX, float toY, Dispatch.Incident inc,
                  Dispatch.SafeZone zone, String place) {
-        float[] start = city.nearestDrivable(fromX, fromY);
+        float[] start = null;
+        // An army truck from a base or the armory: one of the trucks parked there drives out.
+        if (unitType == Entity.SOLDIER && fromParked) start = city.takeParkedTruck(fromX, fromY, 260);
+        if (start == null) start = city.nearestDrivable(fromX, fromY);
         if (start == null) return false;
         int[] full = scratchField();
         if (!city.driveField(full, toX, toY, false, city.tileIndex(start[0], start[1]))
@@ -618,6 +625,22 @@ final class Fleet {
             v.spin = 0;
             vehicles.add(v);
         }
+        return true;
+    }
+
+    /** Trucks sent out take one of the army trucks parked nearby (not the SWAT van, which has its own). */
+    private boolean fromParked = true;
+
+    /** The SWAT van: one armoured truck carrying six officers to an incident. */
+    boolean sendSwat(float fromX, float fromY, Dispatch.Incident inc) {
+        int before = vehicles.size();
+        fromParked = false;
+        boolean sent = send(Entity.SOLDIER, 6, fromX, fromY, inc.x, inc.y, inc, null, inc.place);
+        fromParked = true;
+        if (!sent || vehicles.size() == before) return false;
+        Vehicle v = vehicles.get(vehicles.size() - 1);
+        v.swat = true;
+        v.passengerType = Entity.COP;
         return true;
     }
 
@@ -1667,6 +1690,20 @@ final class Fleet {
             }
             return false;
         }
+        // On the way home empty: hold back rather than drive through a crowd of the dead, and if they don't
+        // move off, leave the car parked where it is.
+        if (v.state == RETURN && (v.type == CRUISER || v.type == TRUCK) && hordeAhead(v)) {
+            v.speed = Math.max(0, v.speed - dt * 220);
+            v.hold += dt;
+            v.stuckTimer = 0;
+            if (v.hold > 25) {
+                v.speed = 0;
+                v.parked = true;
+                v.state = ABANDONED;
+            }
+            return false;
+        }
+        v.hold = 0;
         v.stuckTimer += dt;
         if (trainComing(v)) {
             v.speed = Math.max(0, v.speed - dt * 150);
@@ -1674,12 +1711,9 @@ final class Fleet {
         }
         boolean arrived = !driveStep(v, dt, v.type == CRUISER ? 105 : 80, carAhead(v) ? 0.5f : 1f);
         // Don't drive into a horde: stop short and let the troops out.
-        if (v.state == DRIVE && (v.passengers > 0 || !v.crew.isEmpty())) {
-            float ax = v.x + (float) Math.cos(v.angle) * 60, ay = v.y + (float) Math.sin(v.angle) * 60;
-            if (w.countZombiesNear(ax, ay, 60) >= 4 || w.countZombiesNear(v.x, v.y, 40) >= 3) {
-                arrived = true;
-                v.speed *= 0.3f;
-            }
+        if (v.state == DRIVE && (v.passengers > 0 || !v.crew.isEmpty()) && hordeAhead(v)) {
+            arrived = true;
+            v.speed *= 0.3f;
         }
         // Give up and stop where we are if the car hasn't made progress for a while.
         if (v.stuckTimer > 4) arrived = true;
@@ -1730,6 +1764,10 @@ final class Fleet {
                 v.speed = 0;
                 return !route(v, v.homeX, v.homeY);
             }
+            // An army truck back at base parks in its bay again.
+            if (v.state == RETURN && v.type == TRUCK && !v.swat && !v.broken && !w.peopleNear(v.homeX, v.homeY, 14)
+                    && w.countZombiesNear(v.homeX, v.homeY, 14) == 0)
+                city.parkTruck(v.homeX, v.homeY);
             return true;
         }
         hit(v, w.runOver(v.x, v.y, 8, v.speed, v.angle));
@@ -2151,6 +2189,18 @@ final class Fleet {
         }
     }
 
+    /**
+     * A crowd of the dead on the road ahead (up to about 160 units out) or already round the car: police
+     * and troops stop short there and go in on foot, rather than driving into the middle of them.
+     */
+    private boolean hordeAhead(Vehicle v) {
+        if (!w.zombieWithin(v.x, v.y, 200)) return false;
+        float ca = (float) Math.cos(v.angle), sa = (float) Math.sin(v.angle);
+        for (float d = 45; d <= 125; d += 40)
+            if (w.countZombiesNear(v.x + ca * d, v.y + sa * d, 50) >= 4) return true;
+        return w.countZombiesNear(v.x, v.y, 45) >= 3;
+    }
+
     /** At the end of a trip the riders get out (at the safe zone, if that's where they were going). */
     private void arrive(Vehicle v) {
         if (v.riders.isEmpty()) return;
@@ -2202,6 +2252,7 @@ final class Fleet {
             if (e == null) continue;
             if (first == null) first = e;
             if (v.guardUnit) w.applyRole(e, Entity.ROLE_GUARD);
+            if (v.swat) w.applyRole(e, Entity.ROLE_SWAT);
             if (v.incident != null && !v.incident.resolved) {
                 e.task = Dispatch.T_RESPOND;
                 e.incident = v.incident;
@@ -2458,7 +2509,9 @@ final class Fleet {
      * them to the fighting (the same soldiers, names, kills and all). False if there's no road for it.
      */
     boolean troopTruck(java.util.List<Entity> squad, City.Facility base, Dispatch.Incident inc) {
-        float[] p = city.nearestDrivable(base.gateX > 0 ? base.gateX : base.x, base.gateY > 0 ? base.gateY : base.y);
+        // (One of the trucks parked on the base, if there's one left; otherwise one comes round to the gate.)
+        float[] p = city.takeParkedTruck(base.x, base.y, Math.max(260, base.r * 2.5f));
+        if (p == null) p = city.nearestDrivable(base.gateX > 0 ? base.gateX : base.x, base.gateY > 0 ? base.gateY : base.y);
         if (p == null || squad.isEmpty()) return false;
         Vehicle v = make(TRUCK);
         v.x = p[0];
@@ -2570,8 +2623,11 @@ final class Fleet {
             return false;
         }
         if (v.agency == 1 && trafficStop(v, dt)) return false;
-        // Officers spot one of them from the car: pull up and get out.
-        if (check && v.crew.size() > 0 && w.countZombiesNear(v.x, v.y, 90) > 0 && w.countZombiesNear(v.x, v.y, 30) < 4) {
+        // Officers spot one of them from the car: pull up and get out (well short of a crowd of them). A
+        // moving car looks every moment, so it doesn't drive on into them between looks.
+        boolean look = check || (Math.abs(v.speed) > 15 && w.zombieWithin(v.x, v.y, 190));
+        if (look && v.crew.size() > 0 && (hordeAhead(v)
+                || (w.countZombiesNear(v.x, v.y, 90) > 0 && w.countZombiesNear(v.x, v.y, 30) < 4))) {
             v.speed = 0;
             v.state = SCENE;
             v.quiet = 0;

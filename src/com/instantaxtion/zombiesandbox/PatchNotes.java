@@ -2,11 +2,20 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.5";
-    static final int VERSION_CODE = 43;
+    static final String VERSION = "10.6";
+    static final int VERSION_CODE = 44;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.6  -  SWAT",
+                    "SWAT teams: every city with a police station has one (two on Large and Massive maps), under its local name (SWAT, Tactical Response Group, SAT, RAID, GOPES, SOBR...). When a call turns into a horde or officers go down, six officers in body armour with carbines roll out of the precinct in a black armoured van, before the army is called. Their armour stops a lot of bites. You can place them yourself from the Police picker too.",
+                    "Police keep their distance: patrol cars look ahead all the time and stop short of a crowd of the dead (the officers go in on foot), and a backup car driving home empty no longer goes straight through a horde: it waits for the road to clear, or is left parked.",
+                    "Army trucks leaving the base or the National Guard armory are the ones parked there (the lot empties as the army goes out) and they park in their bays again when they get back.",
+                    "The armory always has four guardsmen on duty (two on the gate), and it's labelled on the map like the base. A base with a safe zone set up at it keeps its name label too (just above the zone's).",
+                    "No more trees in doorways: anything growing right outside a door is cleared, and no street trees are planted there.",
+                    "People out for a stroll or a run no longer wander off into the middle of nowhere: out in the country (or a long way from home in town) they turn back towards home.",
+            },
             {
                     "10.5  -  Water",
                     "Four new maps on the water (and the dead can't swim): Seaside, a beach town with its promenade, sand, umbrellas, lifeguard huts, piers and boats; River City, with a wide river across town, tree-lined embankments and a bridge for every street that reaches it; Lakeside, with a big lake in the middle of town, an island, a jetty and rowing boats; and Harbour, a working port with docks, gantry cranes, container stacks and cargo ships.",

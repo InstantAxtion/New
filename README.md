@@ -155,6 +155,14 @@ on the phone, so the APK contains no audio files.
 - **Checkpoints and roadblocks**: soldiers screen people entering a military safe zone for bites;
   police park cruisers across the roads around their safe zones.
 - **Riot police** block bites with their shields; **K9 units** bring a police dog.
+- **SWAT**: every city with a police station has a SWAT team (two on Large and Massive maps), called
+  by its local name (SWAT, Tactical Response Group, SAT, RAID, GOPES, SOBR...). When a call turns
+  into a horde (six or more of the dead) or officers go down, six officers in body armour with
+  carbines roll out of the precinct in a black armoured van, before the army is asked. Their armour
+  stops a lot of bites and they shoot further than ordinary officers.
+- **Police keep their distance**: patrol cars and backup stop short of a crowd of the dead and the
+  officers go in on foot; a car driving back empty holds back rather than go through a horde (and is
+  left parked if the road stays blocked).
 - **Save/load**, a **Stats** screen (people vs zombies over time) and a **How to Play** tutorial.
 
 ## Who wins?
@@ -330,7 +338,10 @@ a Guard Headquarters (the National Guard comes sooner).
   da GNR, Rosgvardiya Base...). When the army's reserves are spent and the war is going badly, the
   Governor (or Premier, Préfet, Wali...) calls them out once: the reservists muster at the armory and
   three trucks drive out to reinforce the safe zones. If the dead have taken the armory, the Guard has
-  to come from out of town instead, later and with two trucks.
+  to come from out of town instead, later and with two trucks. Four guardsmen are always on duty at
+  the armory (two on the gate), and it's labelled on the map like the base.
+- **Army trucks**: trucks leaving the base or the armory are the ones parked there (the lot empties
+  as the army goes out), and they park in their bays again when they get back.
 - **Firefighters** wait at the fire station and ride out on fire engines. They put out fires with
   hoses, give first aid to the injured nearby, fight zombies off with an axe and back away from crowds.
 - Recent radio messages appear on screen. Tap one to jump the camera to where it happened.
@@ -342,7 +353,7 @@ a Guard Headquarters (the National Guard comes sooner).
     the city. Tap the button again (or anywhere else) to close it.
   - **People**: civilians (wander and run from zombies), medics (heal the hurt),
     firefighters, dogs and raiders.
-  - **Police**: cops (12-round pistol), riot cops and K9 units.
+  - **Police**: cops (12-round pistol), riot cops, K9 units and SWAT.
   - **Military**: soldiers (3-round bursts, grenades), commanders, snipers, gunners and the National
     Guard.
   - **Zombies**: zombie (slow shambler), runner (fast, fragile), brute (huge, knocks people back),

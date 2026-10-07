@@ -34,8 +34,8 @@ final class GameView extends View implements Menu.Host {
     private static final String[] EVENT_NAMES = {"Horde", "Panic", "Outbreak", "Supply drop", "Raiders", "Airstrike",
             "City alarm", "Infect"};
     private static final int TOOL_COP = 3;
-    private static final int[] COP_ROLES = {0, Entity.ROLE_RIOT, Entity.ROLE_K9};
-    private static final String[] COP_NAMES = {"Cop", "Riot cop", "K9 unit"};
+    private static final int[] COP_ROLES = {0, Entity.ROLE_RIOT, Entity.ROLE_K9, Entity.ROLE_SWAT};
+    private static final String[] COP_NAMES = {"Cop", "Riot cop", "K9 unit", "SWAT"};
     private static final String[] CLEAR_NAMES = {"Everyone", "Zombies only", "Bodies & blood", "Wrecks & fires",
             "Barricades"};
     private static final int[] ZOMBIE_VARIANTS = {Entity.ZOMBIE, Entity.RUNNER, Entity.BRUTE, Entity.CRAWLER,
@@ -49,7 +49,7 @@ final class GameView extends View implements Menu.Host {
             "Heals the hurt (bites can't be treated)", "Puts out fires, gives first aid, fights with an axe",
             "Follows its owner and fights zombies", "Armed gang member: robs, loots and shoots"};
     private static final String[] COP_INFO = {"Pistol, answers 911 calls", "Shield blocks bites from the front",
-            "Officer with a police dog"};
+            "Officer with a police dog", "Body armour and a carbine; sent to the worst trouble"};
     private static final String[] MIL_INFO = {"Rifle in bursts, grenades for crowds", "Boosts soldiers nearby, calls in support",
             "Long-range scoped rifle", "Belt-fed machine gun", "Guardsmen who protect civilians and safe zones"};
     private static final String[] ZOMBIE_INFO = {"Slow, relentless shambler", "Fast and fragile", "Huge, knocks people flying",
@@ -2631,7 +2631,7 @@ final class GameView extends View implements Menu.Host {
         }
         boolean civ = v.type == Fleet.CAR;
         Country land0 = world.city.country;
-        int body = civ ? v.color : truck ? (v.guardUnit ? 0xFF8C8260 : 0xFF4F5A33) : engine ? 0xFFC8302A : amb ? 0xFFF2F2F2
+        int body = civ ? v.color : truck ? (v.swat ? 0xFF1C2026 : v.guardUnit ? 0xFF8C8260 : 0xFF4F5A33) : engine ? 0xFFC8302A : amb ? 0xFFF2F2F2
                 : v.agency == 1 ? land0.hpBody : v.agency == 2 ? land0.ruralBody : land0.cruiserBody;
         if (v.burnt) body = 0xFF2B2623;
         else if (v.broken) body = City.darken(body, 0.65f);
@@ -2661,6 +2661,22 @@ final class GameView extends View implements Menu.Host {
                 fill.setColor(0xFF4A2E1A);
                 for (int k = 0; k < Math.min(3, v.riders.size()); k++)
                     c.drawCircle(-1.8f + (k == 2 ? -2.5f : 0), k % 2 == 0 ? -1.6f : 1.6f, 1.1f, fill);
+            }
+        } else if (truck && v.swat) {
+            // The SWAT van: armoured black box body, a white band and a light bar.
+            fill.setColor(v.broken ? 0xFF2A2A2A : 0xFF2C3036);
+            c.drawRect(-hl + 0.8f, -hw + 0.8f, hl * 0.3f, hw - 0.8f, fill);
+            fill.setColor(0xFFE8E8E8);
+            c.drawRect(-hl + 1, -hw, hl * 0.3f, -hw + 0.9f, fill);
+            c.drawRect(-hl + 1, hw - 0.9f, hl * 0.3f, hw, fill);
+            fill.setColor(0xFF1E2A33);
+            c.drawRect(hl * 0.45f, -hw + 1, hl * 0.7f, hw - 1, fill);
+            if (!v.parked && !v.broken) {
+                boolean blink = ((int) (v.anim * 8)) % 2 == 0;
+                fill.setColor(blink ? 0xFFFF3A30 : 0xFF3A7BFF);
+                c.drawRect(hl * 0.33f, -hw + 1, hl * 0.42f, 0, fill);
+                fill.setColor(blink ? 0xFF3A7BFF : 0xFFFF3A30);
+                c.drawRect(hl * 0.33f, 0, hl * 0.42f, hw - 1, fill);
             }
         } else if (truck) {
             fill.setColor(v.broken ? 0xFF3C4428 : 0xFF5F6B40);
@@ -3458,16 +3474,32 @@ final class GameView extends View implements Menu.Host {
         }
         text.setTextSize(11.5f * dp);
         text.setTextSize(10.5f * dp);
+        // The National Guard armory is labelled like the base.
+        City.Building arm = world.city.armory;
+        if (arm != null) {
+            float sx = screenX((arm.x0 + arm.x1) / 2), sy = screenY(arm.y1) + 22 * dp;
+            if (sx > -100 * dp && sx < getWidth() + 100 * dp && sy > 0 && sy < barTop) {
+                String label = arm.name.toUpperCase();
+                float tw = text.measureText(label);
+                oval.set(sx - tw / 2 - 7 * dp, sy - 13 * dp, sx + tw / 2 + 7 * dp, sy + 5 * dp);
+                if (claim(oval)) {
+                    fill.setColor(0xB0303A1E);
+                    c.drawRoundRect(oval, 7 * dp, 7 * dp, fill);
+                    text.setColor(0xFFE6E6E6);
+                    c.drawText(label, sx, sy, text);
+                }
+            }
+        }
         for (int i = 0, n = world.city.facilities.size(); i < n; i++) {
             City.Facility f = world.city.facilities.get(i);
-            float sx = screenX(f.x), sy = screenY(f.y) + 26 * dp;
-            if (sx < -100 * dp || sx > getWidth() + 100 * dp || sy < 0 || sy > barTop) continue;
             boolean zoned = false;
             for (int k = 0; k < world.dispatch.zones.size(); k++) {
                 Dispatch.SafeZone z = world.dispatch.zones.get(k);
                 if (Math.hypot(z.x - f.x, z.y - f.y) < 150) zoned = true;
             }
-            if (zoned) continue;
+            // (With a safe zone there, its name goes just above the zone's own label.)
+            float sx = screenX(f.x), sy = screenY(f.y) + (zoned ? -6 : 26) * dp;
+            if (sx < -100 * dp || sx > getWidth() + 100 * dp || sy < 0 || sy > barTop) continue;
             String label = f.name.toUpperCase();
             float tw = text.measureText(label);
             oval.set(sx - tw / 2 - 7 * dp, sy - 13 * dp, sx + tw / 2 + 7 * dp, sy + 5 * dp);
@@ -3960,6 +3992,16 @@ final class GameView extends View implements Menu.Host {
         } else if (e.type == Entity.COP) {
             fill.setColor(0xFFE8C547);
             c.drawCircle(r * 0.3f, -r * 0.55f, r * 0.14f, fill);
+            if (e.role == Entity.ROLE_SWAT) {
+                // Body armour plates and a helmet.
+                fill.setColor(0xFF3A3F48);
+                oval.set(-r * 0.55f, -r * 0.7f, r * 0.45f, r * 0.7f);
+                c.drawRoundRect(oval, r * 0.2f, r * 0.2f, fill);
+                fill.setColor(0xFF15181C);
+                c.drawCircle(0, 0, r * 0.42f, fill);
+                fill.setColor(0xFFE8E8E8);
+                c.drawRect(-r * 0.5f, -r * 0.08f, -r * 0.2f, r * 0.08f, fill);
+            }
             if (e.role == Entity.ROLE_RIOT) {
                 // Riot shield in front.
                 fill.setColor(0xB0202A3A);
@@ -4551,6 +4593,8 @@ final class GameView extends View implements Menu.Host {
         if (e.type == Entity.DOG) title = Names.dog(e.nameSeed) + "  -  Dog";
         else if (e.type == Entity.ZOMBIE_DOG) title = Names.dog(e.nameSeed) + "  -  Zombie dog";
         else if (e.isZombie()) title = Entity.NAMES[e.type] + (e.origin >= 0 ? "  -  was " + Names.person(e.nameSeed) : "");
+        else if (e.type == Entity.COP && e.role == Entity.ROLE_SWAT)
+            title = Country.swat(world.city.country.id)[1] + " " + Names.person(e.nameSeed) + "  -  " + Dispatch.name(e);
         else if (e.type == Entity.COP) title = (e.agency == 1 ? world.city.country.hpName + " " : e.agency == 2 ? world.city.country.ruralName + "'s deputy " : "Officer ")
                 + Names.person(e.nameSeed) + "  -  " + Dispatch.name(e);
         else if (e.type == Entity.SOLDIER) title = Names.person(e.nameSeed) + "  -  " + Entity.ROLE_NAMES[e.role] + ", " + Dispatch.name(e);

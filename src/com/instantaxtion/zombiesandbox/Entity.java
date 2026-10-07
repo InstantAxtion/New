@@ -14,8 +14,10 @@ final class Entity {
     static final int ROLE_RIOT = 4, ROLE_K9 = 5;
     /** The National Guard: soldiers called up by the governor to protect civilians. */
     static final int ROLE_GUARD = 6;
+    /** SWAT: police in body armour with carbines, called out to the worst trouble. */
+    static final int ROLE_SWAT = 7;
     static final String[] ROLE_NAMES = {"Soldier", "Commander", "Sniper", "Gunner", "Riot officer", "K9 handler",
-            "National Guard"};
+            "National Guard", "SWAT officer"};
 
     int type, role;
     float x, y, vx, vy, angle;

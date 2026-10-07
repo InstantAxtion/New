@@ -365,6 +365,50 @@ public final class GameTests {
                 }
             }
         });
+        test("doors clear of trees, the armory manned, SWAT called to a horde, parked army trucks used", new Check() {
+            public void run() {
+                CityConfig c = new CityConfig();
+                c.seed = 6;
+                c.v[CityConfig.OPT_SIZE] = 1;
+                c.v[CityConfig.OPT_ZOMBIES] = 0;
+                World w = new World(c);
+                w.populate(c);
+                City city = w.city;
+                int blocked = 0;
+                for (City.Building b : city.buildings) {
+                    if (b.doorX <= 0) continue;
+                    int tx = (int) (b.doorX / City.T), ty = (int) (b.doorY / City.T);
+                    for (int dy = -1; dy <= 1; dy++)
+                        for (int dx = -1; dx <= 1; dx++) if (city.tiles[(ty + dy) * city.w + tx + dx] == City.TREE) blocked++;
+                }
+                check(blocked == 0, blocked + " trees in doorways");
+                int guards = 0;
+                for (Entity e : w.entities)
+                    if (e.type == Entity.SOLDIER && e.role == Entity.ROLE_GUARD && Math.hypot(e.x - city.armory.doorX, e.y - city.armory.doorY) < 400) guards++;
+                check(guards >= 2, guards + " guardsmen on duty at the armory");
+                check(w.dispatch.swatTeams >= 1, "a SWAT team at the precinct");
+                // A horde turns up near people: the SWAT team is sent.
+                Entity near = null;
+                for (Entity e : w.entities) if (e.type == Entity.CIVILIAN && !e.hidden && !e.dead && city.cityHall != null
+                        && Math.hypot(e.x - city.cityHall.doorX, e.y - city.cityHall.doorY) < 600) near = e;
+                if (near == null) for (Entity e : w.entities) if (e.type == Entity.CIVILIAN && !e.hidden && !e.dead) near = e;
+                int teams = w.dispatch.swatTeams;
+                for (int k = 0; k < 10; k++) w.spawn(Entity.ZOMBIE, near.x + 40 + k * 3, near.y);
+                boolean sent = false;
+                for (int f = 0; f < 30 * 60 && !sent; f++) {
+                    w.update(1 / 30f);
+                    if (w.dispatch.swatTeams < teams) sent = true;
+                }
+                check(sent, "SWAT sent to the horde");
+                // Army trucks leaving a base take the ones parked there.
+                CityConfig b = new CityConfig();
+                b.seed = 5;
+                b.v[CityConfig.OPT_SIZE] = 1;
+                City base = new City(b);
+                City.Facility f = base.nearestFacility(City.FACILITY_BASE, 0, 0);
+                check(f != null && base.takeParkedTruck(f.x, f.y, 600) != null, "a parked truck drives off the base");
+            }
+        });
         test("traffic keeps its distance: hardly any crashes, and patrol cars keep to their side", new Check() {
             public void run() {
                 CityConfig c = new CityConfig();

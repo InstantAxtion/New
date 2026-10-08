@@ -467,6 +467,7 @@ final class World {
         dispatch.riotVans = cfg.nature() ? Math.min(3, stations) : 0;
         dispatch.policeAir = cfg.nature() && stations > 0 ? 2 : 0;
         fleet.stationEngines();
+        populateWilds(cops > 0);
         // Out of town: highway patrol on the highway, and (in the USA) sheriff's deputies on the country roads.
         // (About one patrol car to every fifty tiles of highway, four at the least.)
         if (city.hwyAxis >= 0) for (int i = 0, n = Math.max(4, (city.hwyAxis == 0 ? city.w : city.h) / 50); i < n; i++) fleet.startAgencyPatrol(1);
@@ -1283,6 +1284,7 @@ final class World {
     /** Recomputes counts and paths after a save has been loaded. */
     void afterLoad() {
         fieldTimer = 0;
+        findWilds();
         launchBoats();
         spawnBirds();
         spawnWildlife();
@@ -1436,6 +1438,7 @@ final class World {
             if (r[3] > 1.4f) noiseRings.remove(i);
         }
         updateWildlife(dt);
+        updateTowers(dt);
         updateGrenades(dt);
         cleanup();
         updateCorpses(dt);
@@ -1634,7 +1637,7 @@ final class World {
                 int c = cy * gw + cx;
                 for (int k = wantZombie ? cellStart[c] : cellStart[c] + zCount[c], end = wantZombie ? cellStart[c] + zCount[c] : cellStart[c] + cellCount[c]; k < end; k++) {
                     Entity o = sorted[k];
-                    if (o.dead || o.isZombie() != wantZombie || o == from) continue;
+                    if (o.dead || o.isZombie() != wantZombie || o == from || o.aloft) continue;
                     float ddx = o.x - from.x, ddy = o.y - from.y, d2 = ddx * ddx + ddy * ddy;
                     if (o.hidden && d2 > 22 * 22) continue;
                     if (d2 < best && (!needLos || city.los(from.x, from.y, o.x, o.y))) {
@@ -2239,8 +2242,8 @@ final class World {
                     else bloodBurst(a.x, a.y, 4, 0, 0);
                     continue;
                 }
-                if (a.flee <= 0 && a.kind == 0 && wildlifeSaidCd <= 0) {
-                    // Deer bolting: an early warning.
+                if (a.flee <= 0 && a.kind == 0 && wildlifeSaidCd <= 0 && peopleNear(a.x, a.y, 260)) {
+                    // Deer bolting: an early warning (if anyone is about to see them go).
                     wildlifeSaidCd = 60;
                     City.District dd = city.districtOf(a.x, a.y);
                     dispatch.say(Dispatch.WHO_INFO, null, "Deer are bolting out of the woods near " + (dd != null ? dd.name : city.placeName(a.x, a.y))
@@ -2936,6 +2939,7 @@ final class World {
     }
 
     private void thinkCivilian(Entity e, float dt) {
+        if (e.job == Entity.J_LOOKOUT && lookout(e, dt)) return;
         if (e.scavenge != null || e.homeward) {
             thinkScavenger(e, dt);
             if (e.scavenge != null || e.homeward) return;
@@ -3213,12 +3217,14 @@ final class World {
         }
         if (!outbreak || zombies == 0) return;
         int was = alert;
-        if (alert < 1 && (dispatch.calls >= 2 || bites >= 3 || outbreakTime > 15)) alert = 1;
+        // (Nobody reports what nobody has seen: one of them alone out in the woods, chasing deer, is news to no one.)
+        boolean seen = dispatch.calls > 0 || bites > 0;
+        if (alert < 1 && (dispatch.calls >= 2 || bites >= 3 || (outbreakTime > 15 && seen))) alert = 1;
         // (City Hall puts out the emergency broadcast sooner; with City Hall lost it's left to the news.)
         boolean hall = city.cityHall != null, hallUp = hall && !hallLost;
         float t2 = hallUp ? 35 : hall ? 80 : 50;
         int z2 = hallUp ? 6 : hall ? 14 : 8, c2 = hallUp ? 6 : hall ? 12 : 8;
-        if (alert < 2 && (outbreakTime > t2 || zombies >= z2 || dispatch.calls >= c2)) alert = 2;
+        if (alert < 2 && seen && (outbreakTime > t2 || zombies >= z2 || dispatch.calls >= c2)) alert = 2;
         if (alert == was) return;
         String where = outbreakPlace != null ? outbreakPlace : "the city";
         if (alert == 1) {
@@ -3478,6 +3484,29 @@ final class World {
         if (dog) {
             e.job = Entity.J_PARK;
             return;
+        }
+        // Out in the wilds: campers round the fire, hikers, anglers (and the odd townie out for a hike).
+        if (city.cfg.wilds() && home != null) {
+            float q = rnd.nextFloat();
+            boolean camp = home.name != null && (home.name.startsWith("Camp Store") || home.name.startsWith("Cabin "));
+            boolean hikes = !city.hikes.isEmpty();
+            if (camp) {
+                e.job = q < 0.4f ? Entity.J_CAMPER : q < 0.75f && hikes ? Entity.J_HIKER : Entity.J_FISHER;
+                return;
+            }
+            if (!city.inTown(home.doorX, home.doorY)) {
+                if (hikes && q < 0.16f) {
+                    e.job = Entity.J_HIKER;
+                    return;
+                }
+                if (q > 0.9f) {
+                    e.job = Entity.J_FISHER;
+                    return;
+                }
+            } else if (hikes && q < 0.025f) {
+                e.job = Entity.J_HIKER;
+                return;
+            }
         }
         int posties = 0, vendors = 0, civs = 0;
         for (int i = 0, n = entities.size(); i < n; i++) {
@@ -3745,6 +3774,79 @@ final class World {
                 }
                 return true;
             }
+            case Entity.J_HIKER: {
+                if (e.hike == null) {
+                    if (!pickHike(e)) {
+                        e.job = Entity.J_ERRANDS;
+                        return false;
+                    }
+                }
+                if (followHike(e, e.speed * 0.85f, dt)) return true;
+                e.hike = null;
+                break;
+            }
+            case Entity.J_FISHER: case Entity.J_CAMPER: {
+                if (e.spot == null) {
+                    e.spot = e.job == Entity.J_FISHER ? fishingSpot(e) : campfireSpot(e, home);
+                    e.jobTimer = 0;
+                    e.jobStep = 0;
+                    if (e.spot == null) {
+                        e.job = city.hikes.isEmpty() ? Entity.J_ERRANDS : Entity.J_HIKER;
+                        return false;
+                    }
+                }
+                float[] sp = e.spot;
+                float sx = sp[0] - e.x, sy = sp[1] - e.y, sd = (float) Math.sqrt(sx * sx + sy * sy) + 0.001f;
+                if (e.jobStep == 0 && sd > 6) {
+                    walkToSpot(e, sp[0], sp[1], e.speed * 0.9f);
+                    e.jobTimer += dt * 0.25f;
+                } else {
+                    // There: a line in the water, or a seat by the fire (facing the water, or the fire).
+                    e.jobStep = 1;
+                    e.jobTimer += dt;
+                    if (sd > 8) steer(e, sx / sd, sy / sd, e.speed * 0.5f);
+                    else steer(e, 0, 0, 0);
+                    e.angle = turn(e.angle, sp[2], dt * 3);
+                }
+                if (e.jobTimer > (e.job == Entity.J_FISHER ? 90 : 70) + (e.nameSeed & 63)) {
+                    e.spot = null;
+                    e.jobStep = 0;
+                    break;
+                }
+                return true;
+            }
+            case Entity.J_RELIEF: {
+                // On the way up to the tower to take over.
+                int k = e.jobStep;
+                if (k < 0 || k >= city.fireTowers.size()) {
+                    e.job = Entity.J_OFFDUTY;
+                    return false;
+                }
+                float[] t = city.fireTowers.get(k);
+                float dx = t[0] - e.x, dy = t[1] - e.y;
+                if (dx * dx + dy * dy > 14 * 14) {
+                    walkToSpot(e, t[0], t[1], e.speed);
+                    return true;
+                }
+                takeOverTower(e, k);
+                return true;
+            }
+            case Entity.J_OFFDUTY: {
+                // Shift's over: back to the ranger station, and off home.
+                City.Building b = rangerStation != null ? rangerStation : home;
+                if (b == null) {
+                    e.job = Entity.J_HOMEBODY;
+                    return false;
+                }
+                float dx = b.doorX - e.x, dy = b.doorY - e.y, d = (float) Math.sqrt(dx * dx + dy * dy) + 0.001f;
+                if (d > 14) {
+                    walkTo(e, b, dx, dy, d, e.speed);
+                    return true;
+                }
+                e.dead = true;
+                e.removed = true;
+                return true;
+            }
             default:
                 return false;
         }
@@ -3814,6 +3916,12 @@ final class World {
             case Entity.J_PARK: return "Loves the park";
             case Entity.J_POSTIE: return "Postal worker";
             case Entity.J_VENDOR: return "Street food vendor";
+            case Entity.J_HIKER: return "Out hiking the trails";
+            case Entity.J_FISHER: return "Keen angler";
+            case Entity.J_CAMPER: return e.home != null && e.home.name != null ? "Camping at " + e.home.name.replace("Camp Store, ", "") : "Camping";
+            case Entity.J_LOOKOUT: return "Fire lookout" + (e.jobStep >= 0 && e.jobStep < city.fireTowerNames.size() ? " on " + city.fireTowerNames.get(e.jobStep) : "");
+            case Entity.J_RELIEF: return "Fire lookout, on the way to start a shift";
+            case Entity.J_OFFDUTY: return "Fire lookout, off shift";
         }
         return null;
     }
@@ -4398,7 +4506,7 @@ final class World {
     /** Water a boat can be on (under a bridge too). */
     private boolean navigable(float x, float y) {
         int i = city.tileIndex(x, y);
-        return i >= 0 && (city.tiles[i] == City.WATER || (city.bridge != null && city.bridge[i]));
+        return i >= 0 && ((city.tiles[i] == City.WATER && !city.isFord(i)) || (city.bridge != null && city.bridge[i]));
     }
 
     private void moveBoats(float dt) {
@@ -5860,6 +5968,8 @@ final class World {
         if (e.role == Entity.ROLE_COMMANDER && soldier) command(e, dt);
         // The combat medic sees to the wounded nearby whenever the dead give them a moment.
         if (soldier && e.role == Entity.ROLE_CORPSMAN && e.task != Dispatch.T_BOARD && fieldMedic(e, dt)) return;
+        // The rescue team brings people in to the helicopter.
+        if (e.role == Entity.ROLE_SAR && rescuer(e, dt)) return;
         if (e.meleeCd <= 0) {
             Entity z = nearestInReach(e);
             if (z != null) shove(e, z, true);
@@ -6118,6 +6228,7 @@ final class World {
         int dist = city.fieldAt(city.zombieDist, e.x, e.y);
         int hunt = soldier ? 200 : 40;
         if ((e.ammo > 0 || e.reserve > 0) && dist < hunt && followField(e, city.zombieDist, e.speed * 1.3f)) return;
+        if (e.agency == 3 && e.task == Dispatch.T_NONE && e.rig == null && rangerOnFoot(e, dt)) return;
         if (!soldier && alert >= 1 && e.task == Dispatch.T_NONE && e.rig == null) {
             // The city is under attack: officers with no call guard their precinct, spread round it facing out,
             // instead of milling about.
@@ -7948,6 +8059,11 @@ final class World {
             float f = g > 0 ? 1 / (1 + g * 0.3f) : Math.min(1.1f, 1 - g * 0.04f);
             sx *= f;
             sy *= f;
+            // Wading through a stream.
+            if (city.ford != null && city.isFord(city.tileIndex(e.x, e.y))) {
+                sx *= 0.55f;
+                sy *= 0.55f;
+            }
         }
         float bx = e.x, by = e.y;
         boolean moved = tryMove(e, sx, sy);
@@ -8772,5 +8888,501 @@ final class World {
             e.life -= dt;
             if (e.life <= 0) explosions.remove(i);
         }
+    }
+
+    // ------------------------------------------------------------------ the wilds (10.14)
+
+    /** Park rangers' shirts. */
+    static final int RANGER_SHIRT = 0xFF8C7C54;
+    /** The ranger station (null if there's no park), each fire tower's lookout on duty and the one on the way. */
+    City.Building rangerStation;
+    Entity[] towerKeeper, towerRelief;
+    float[] towerShift;
+    private float rescueCd = 20, wildsTick;
+
+    /** The rangers, their truck and the lookouts up the fire towers, at the start of a game. */
+    private void populateWilds(boolean rangers) {
+        findWilds();
+        if (!city.cfg.wilds()) return;
+        if (rangerStation != null && rangers) {
+            for (int i = 0; i < 2; i++) {
+                Entity r = spawn(Entity.COP, rangerStation.doorX + rnd.nextFloat() * 20 - 10, rangerStation.doorY + rnd.nextFloat() * 20 - 10);
+                if (r != null) makeRanger(r);
+            }
+            fleet.startRangerPatrol(rangerStation);
+        }
+        for (int k = 0; k < city.fireTowers.size(); k++) {
+            float[] t = city.fireTowers.get(k);
+            Entity e = spawn(Entity.CIVILIAN, t[0], t[1]);
+            if (e != null) makeLookout(e, k);
+        }
+    }
+
+    /** The ranger station and the lookouts on duty (after a save is loaded too). */
+    private void findWilds() {
+        rangerStation = null;
+        if (city.rangerStationName != null)
+            for (City.Building b : city.buildings) if (city.rangerStationName.equals(b.name)) rangerStation = b;
+        int n = city.fireTowers.size();
+        towerKeeper = new Entity[n];
+        towerRelief = new Entity[n];
+        towerShift = new float[n];
+        for (int k = 0; k < n; k++) towerShift[k] = 200 + rnd.nextFloat() * 220;
+        for (Entity e : entities) {
+            if (e.dead || e.type != Entity.CIVILIAN || e.jobStep < 0 || e.jobStep >= n) continue;
+            if (e.job == Entity.J_LOOKOUT) {
+                towerKeeper[e.jobStep] = e;
+                e.spot = city.fireTowers.get(e.jobStep);
+            } else if (e.job == Entity.J_RELIEF) towerRelief[e.jobStep] = e;
+        }
+    }
+
+    void makeRanger(Entity e) {
+        e.agency = 3;
+        e.body = RANGER_SHIRT;
+    }
+
+    private void makeLookout(Entity e, int k) {
+        float[] t = city.fireTowers.get(k);
+        e.job = Entity.J_LOOKOUT;
+        e.jobStep = k;
+        e.spot = t;
+        e.x = t[0];
+        e.y = t[1];
+        e.aloft = true;
+        if (rangerStation != null) e.home = rangerStation;
+        e.homeChecked = true;
+        towerKeeper[k] = e;
+    }
+
+    /**
+     * A fire lookout on duty: up in the cab, pacing round the windows. From up there they see the dead coming
+     * a long way off and phone it in, and nothing can get at them. True while they're up there.
+     */
+    private boolean lookout(Entity e, float dt) {
+        float[] t = e.spot;
+        if (t == null || e.jobStep < 0 || e.jobStep >= city.fireTowers.size()) {
+            e.aloft = false;
+            e.job = Entity.J_HOMEBODY;
+            return false;
+        }
+        float dx = t[0] - e.x, dy = t[1] - e.y, d = (float) Math.sqrt(dx * dx + dy * dy) + 0.001f;
+        if (d > 16 && !e.aloft) {
+            // (Knocked off somehow: back up the stairs.)
+            walkToSpot(e, t[0], t[1], e.speed);
+            return true;
+        }
+        e.aloft = true;
+        e.jobTimer += dt;
+        float a = e.jobTimer * 0.18f + (e.nameSeed & 7);
+        float px = t[0] + (float) Math.cos(a) * 3.5f, py = t[1] + (float) Math.sin(a) * 3.5f;
+        float qx = px - e.x, qy = py - e.y, qd = (float) Math.sqrt(qx * qx + qy * qy) + 0.001f;
+        if (qd > 0.8f) steer(e, qx / qd, qy / qd, Math.min(e.speed * 0.3f, qd * 3));
+        else steer(e, 0, 0, 0);
+        // Binoculars out: anything moving on the hillsides.
+        if (zombies > 0 && e.callCd <= 0 && rnd.nextFloat() < dt * 0.6f) {
+            Entity z = nearestZombie(e.x, e.y, 520);
+            if (z != null) {
+                e.callCd = 50;
+                e.aware = true;
+                e.angle = (float) Math.atan2(z.y - e.y, z.x - e.x);
+                dispatch.call(e, z);
+                if (rnd.nextFloat() < 0.5f)
+                    dispatch.say(Dispatch.WHO_911, null, "\"This is " + city.fireTowerNames.get(e.jobStep) + ". I can see "
+                            + Math.max(1, countZombiesNear(z.x, z.y, 120)) + " of them down by " + city.placeName(z.x, z.y) + ".\"", z.x, z.y);
+            }
+        }
+        return true;
+    }
+
+    /** Lookout shifts, and the rescue helicopter called out to anyone cut off out in the wilds. */
+    private void updateTowers(float dt) {
+        wildsTick -= dt;
+        if (wildsTick > 0 || towerKeeper == null) return;
+        float step = 1 - wildsTick;
+        wildsTick = 1;
+        for (int k = 0; k < towerKeeper.length; k++) {
+            Entity keep = towerKeeper[k];
+            if (keep != null && (keep.dead || keep.type != Entity.CIVILIAN || keep.job != Entity.J_LOOKOUT)) {
+                keep.aloft = false;
+                towerKeeper[k] = keep = null;
+            }
+            Entity rel = towerRelief[k];
+            if (rel != null && (rel.dead || rel.type != Entity.CIVILIAN || rel.job != Entity.J_RELIEF)) towerRelief[k] = rel = null;
+            towerShift[k] -= step;
+            // The next shift sets off from the ranger station (nobody comes up once the dead are about).
+            if ((towerShift[k] <= 0 || keep == null) && rel == null && alert < 1) {
+                towerShift[k] = 60;
+                float[] from = rangerStation != null ? new float[]{rangerStation.doorX, rangerStation.doorY}
+                        : city.trailheadX > 0 ? new float[]{city.trailheadX, city.trailheadY} : null;
+                if (from == null) continue;
+                Entity r = spawn(Entity.CIVILIAN, from[0] + rnd.nextFloat() * 10 - 5, from[1] + rnd.nextFloat() * 10 - 5);
+                if (r == null) continue;
+                r.job = Entity.J_RELIEF;
+                r.jobStep = k;
+                if (rangerStation != null) r.home = rangerStation;
+                r.homeChecked = true;
+                towerRelief[k] = r;
+            }
+        }
+        rescueCd -= step;
+        if (rescueCd <= 0) {
+            rescueCd = 6;
+            callRescue();
+        }
+    }
+
+    /** The relief is at the top of the stairs: they take over, and the one coming off shift heads home. */
+    private void takeOverTower(Entity e, int k) {
+        Entity old = towerKeeper[k];
+        if (old != null && old != e) {
+            old.aloft = false;
+            old.job = Entity.J_OFFDUTY;
+            old.spot = null;
+            old.errand = null;
+            old.errandTimer = 0;
+        }
+        towerRelief[k] = null;
+        makeLookout(e, k);
+        towerShift[k] = 240 + rnd.nextFloat() * 180;
+    }
+
+    /** Picks a trail walk starting near this person (or any, for those who drive out to it). */
+    private boolean pickHike(Entity e) {
+        if (city.hikes.isEmpty()) return false;
+        int best = -1;
+        float bd = Float.MAX_VALUE;
+        for (int i = 0; i < city.hikes.size(); i++) {
+            float[] h = city.hikes.get(i);
+            float d = (float) Math.hypot(h[0] - e.x, h[1] - e.y) + rnd.nextFloat() * 400;
+            if (d < bd) {
+                bd = d;
+                best = i;
+            }
+        }
+        if (best < 0) return false;
+        e.hike = city.hikes.get(best);
+        e.hikeIdx = 0;
+        e.hikeDir = 1;
+        e.jobStep = 0;
+        e.jobTimer = 0;
+        return true;
+    }
+
+    /**
+     * Along a trail: to where it starts, out along it to the end (a rest there to take in the view), and back.
+     * False once they're back where they started.
+     */
+    private boolean followHike(Entity e, float speed, float dt) {
+        float[] h = e.hike;
+        if (h == null) return false;
+        int n = h.length / 2;
+        if (e.jobStep == 0) {
+            float sx = h[0] - e.x, sy = h[1] - e.y;
+            if (sx * sx + sy * sy > 14 * 14) {
+                walkToSpot(e, h[0], h[1], speed);
+                return true;
+            }
+            e.jobStep = 1;
+            e.hikeIdx = 0;
+            e.hikeDir = 1;
+        }
+        if (e.jobStep == 2) {
+            e.jobTimer -= dt;
+            steer(e, 0, 0, 0);
+            if (e.jobTimer <= 0) {
+                e.jobStep = 1;
+                e.hikeDir = -1;
+            }
+            return true;
+        }
+        int k = Math.max(0, Math.min(n - 1, e.hikeIdx));
+        // (Past the point aimed at counts too: on a bend the one before it may be left a little way off.)
+        for (int j = 2; j >= 1; j--) {
+            int a = k + e.hikeDir * j;
+            if (a < 0 || a >= n) continue;
+            float ax = h[a * 2] - e.x, ay = h[a * 2 + 1] - e.y;
+            if (ax * ax + ay * ay < 12 * 12) {
+                k = a;
+                e.hikeIdx = k;
+                break;
+            }
+        }
+        float px = h[k * 2] - e.x, py = h[k * 2 + 1] - e.y;
+        if (px * px + py * py < 9 * 9 || e.stuckTime > 2.5f) {
+            e.stuckTime = 0;
+            k += e.hikeDir;
+            if (k >= n) {
+                // The end: the view from the top, the falls, the lake shore.
+                e.hikeIdx = n - 1;
+                e.jobStep = 2;
+                e.jobTimer = 12 + rnd.nextFloat() * 20;
+                return true;
+            }
+            if (k < 0) return false;
+            e.hikeIdx = k;
+        }
+        // Aim a couple of points on, so the walk follows the bends smoothly.
+        int a = Math.max(0, Math.min(n - 1, k + e.hikeDir * 2));
+        float tx = h[a * 2] - e.x, ty = h[a * 2 + 1] - e.y, td = (float) Math.sqrt(tx * tx + ty * ty) + 0.001f;
+        steer(e, tx / td, ty / td, speed);
+        return true;
+    }
+
+    /** Walks to a spot by a planned route (round buildings and water), or straight there when it's close. */
+    private void walkToSpot(Entity e, float x, float y, float speed) {
+        float dx = x - e.x, dy = y - e.y, d = (float) Math.sqrt(dx * dx + dy * dy) + 0.001f;
+        if (d < 26 && !e.blocked) {
+            steer(e, dx / d, dy / d, speed);
+            return;
+        }
+        if (e.path == null || e.pathDest != null || Math.abs(e.planX - x) > 1 || Math.abs(e.planY - y) > 1) {
+            if (pathBudget < 0.25f) {
+                steer(e, dx / d, dy / d, speed * 0.7f);
+                return;
+            }
+            pathBudget -= 0.25f;
+            e.path = city.findPath(e.x, e.y, x, y, 9000);
+            if (e.path == null) e.path = new int[0];
+            e.pathIdx = 0;
+            e.pathDest = null;
+            e.planX = x;
+            e.planY = y;
+        }
+        e.blocked = false;
+        if (!followPath(e, speed)) steer(e, dx / d, dy / d, speed);
+    }
+
+    /** A spot on a lake shore near home to fish from: {x, y, facing}. */
+    private float[] fishingSpot(Entity e) {
+        float[] best = null;
+        float bd = 1400;
+        for (int i = 0; i < city.natureSpots.size(); i++) {
+            float[] q = city.natureSpots.get(i);
+            if (q[2] != City.NL_LAKE) continue;
+            float d = (float) Math.hypot(q[0] - e.x, q[1] - e.y);
+            if (d > bd) continue;
+            // Round the shore from the lake's middle, until it's dry land beside open water.
+            float a = (e.nameSeed & 0xFFFF) / 65536f * TAU;
+            for (int tries = 0; tries < 8; tries++, a += 0.8f)
+                for (int r = 2; r < 18; r++) {
+                    int tx = (int) (q[0] / City.T + Math.cos(a) * r), ty = (int) (q[1] / City.T + Math.sin(a) * r);
+                    if (tx < 1 || ty < 1 || tx >= city.w - 1 || ty >= city.h - 1) break;
+                    int t = ty * city.w + tx;
+                    if (city.tiles[t] == City.WATER) continue;
+                    if (city.solid[t]) break;
+                    float fx = (tx + 0.5f) * City.T, fy = (ty + 0.5f) * City.T;
+                    best = new float[]{fx, fy, (float) Math.atan2(q[1] - fy, q[0] - fx)};
+                    bd = d;
+                    break;
+                }
+        }
+        return best;
+    }
+
+    /** A seat round a campfire (or at a picnic table) near home: {x, y, facing}. */
+    private float[] campfireSpot(Entity e, City.Building home) {
+        float hx = home != null ? home.doorX : e.x, hy = home != null ? home.doorY : e.y;
+        float[] best = null;
+        float bd = 260;
+        boolean picnic = (e.nameSeed & 3) == 0;
+        for (float[] d : city.decor) {
+            if ((int) d[0] != (picnic ? City.D_PICNIC : City.D_CAMPFIRE)) continue;
+            float cx = (d[1] + d[3]) / 2, cy = (d[2] + d[4]) / 2, dist = (float) Math.hypot(cx - hx, cy - hy);
+            if (dist > bd) continue;
+            bd = dist;
+            float a = (e.nameSeed & 0xFFF) / 4096f * TAU;
+            best = new float[]{cx + (float) Math.cos(a) * 10, cy + (float) Math.sin(a) * 10, a + (float) Math.PI};
+        }
+        return best;
+    }
+
+    /** A park ranger on foot: walking the trails, or with the dead about, holding the station. */
+    private boolean rangerOnFoot(Entity e, float dt) {
+        if (alert >= 1 && rangerStation != null) {
+            float a = (e.callsign * 2.39996f) % TAU;
+            float px = rangerStation.doorX + (float) Math.cos(a) * 26, py = rangerStation.doorY + (float) Math.sin(a) * 26;
+            if (Math.hypot(px - e.x, py - e.y) > 300) walkToSpot(e, px, py, e.speed);
+            else standAt(e, px, py, 0.8f);
+            return true;
+        }
+        if (city.hikes.isEmpty()) return false;
+        if (e.hike == null && !pickHike(e)) return false;
+        if (followHike(e, e.speed * 0.8f, dt)) return true;
+        e.hike = null;
+        return true;
+    }
+
+    /** Someone cut off by the dead out in the wilds (or up a tower), with no help nearby, for the rescue helicopter. */
+    private void callRescue() {
+        if (!city.cfg.wilds() || alert < 1 || fleet.rescueHeliBusy()) return;
+        City.Facility from = city.nearestFacility(City.FACILITY_POLICE, city.worldW() / 2, city.worldH() / 2);
+        if (from == null) return;
+        Entity best = null;
+        for (int i = 0, n = entities.size(); i < n; i++) {
+            Entity e = entities.get(i);
+            if (e.dead || e.type != Entity.CIVILIAN || e.leader != null || city.inTown(e.x, e.y)) continue;
+            int near = countZombiesNear(e.x, e.y, 170);
+            if (near == 0 || (!e.aloft && near > 12)) continue;
+            if (nearestArmed(e.x, e.y, 260) != null) continue;
+            best = e;
+            if (e.aloft) break;
+        }
+        if (best == null) return;
+        String place = best.aloft && best.jobStep >= 0 && best.jobStep < city.fireTowerNames.size() ? city.fireTowerNames.get(best.jobStep)
+                : city.placeName(best.x, best.y);
+        // (Hovering beside the tower, not on top of it.)
+        float tx = best.x + (best.aloft ? 30 : 0), ty = best.y + (best.aloft ? 20 : 0);
+        fleet.sendRescueHeli(from.x, from.y, tx, ty, place);
+        dispatch.say(Dispatch.WHO_POLICE, null, "Dispatch: Rescue 1, people cut off at " + place + ". Lift them out.", tx, ty);
+        rescueCd = 90;
+    }
+
+    private Entity nearestArmed(float x, float y, float r) {
+        for (int i = 0, n = entities.size(); i < n; i++) {
+            Entity o = entities.get(i);
+            if (o.dead || !o.isArmed()) continue;
+            if ((o.x - x) * (o.x - x) + (o.y - y) * (o.y - y) < r * r) return o;
+        }
+        return null;
+    }
+
+    /**
+     * The rescue helicopter in the hover: lowers its team, winches up whoever they bring in under it (and a
+     * lookout straight off the tower), then the team. True once it's ready to go.
+     */
+    boolean rescueStep(Fleet.Vehicle v, float dt) {
+        v.timer += dt;
+        if (v.team == null) {
+            if (Math.hypot(v.x - v.tx, v.y - v.ty) > 16) return false;
+            v.team = new ArrayList<Entity>();
+            for (int i = 0; i < 2; i++) {
+                Entity s = spawn(Entity.COP, v.tx + (i == 0 ? -5 : 5), v.ty);
+                if (s == null) continue;
+                applyRole(s, Entity.ROLE_SWAT);
+                s.role = Entity.ROLE_SAR;
+                s.body = 0xFFE06A20;
+                s.rig = v;
+                s.task = Dispatch.T_RESCUE;
+                s.roping = 2.5f + i;
+                s.member = i;
+                s.callsign = 1;
+                v.team.add(s);
+            }
+            return false;
+        }
+        // Anyone the team has brought in under it goes up on the winch (a lookout too, straight off the tower).
+        for (int i = 0, n = entities.size(); i < n; i++) {
+            Entity e = entities.get(i);
+            if (e.dead || e.type != Entity.CIVILIAN) continue;
+            boolean brought = e.leader != null && e.leader.role == Entity.ROLE_SAR && Math.hypot(e.x - v.tx, e.y - v.ty) < 26;
+            boolean tower = e.aloft && Math.hypot(e.x - v.x, e.y - v.y) < 60 && v.timer > 6;
+            if (!brought && !tower) continue;
+            if (e.aloft) {
+                e.aloft = false;
+                if (e.jobStep >= 0 && towerKeeper != null && e.jobStep < towerKeeper.length && towerKeeper[e.jobStep] == e) towerKeeper[e.jobStep] = null;
+            }
+            e.dead = true;
+            e.removed = true;
+            v.passengers++;
+        }
+        boolean left = false;
+        for (int i = 0, n = entities.size(); i < n && !left; i++) {
+            Entity e = entities.get(i);
+            if (!e.dead && e.type == Entity.CIVILIAN && Math.hypot(e.x - v.tx, e.y - v.ty) < 200) left = true;
+        }
+        if ((!left && v.timer > 14) || v.timer > 75) v.recall = true;
+        if (!v.recall) return false;
+        // The team back up.
+        boolean anyLeft = false;
+        for (int i = 0; i < v.team.size(); i++) {
+            Entity s = v.team.get(i);
+            if (s.dead) continue;
+            if (Math.hypot(s.x - v.tx, s.y - v.ty) < 18 || v.timer > 110) {
+                s.dead = true;
+                s.removed = true;
+            } else anyLeft = true;
+        }
+        return !anyLeft;
+    }
+
+    /** A search and rescue specialist on the ground. False to fight like any officer. */
+    private boolean rescuer(Entity e, float dt) {
+        Fleet.Vehicle v = e.rig;
+        if (v == null || v.removedFromFleet || v.team == null) {
+            // (Left behind: just another officer now.)
+            e.rig = null;
+            e.task = Dispatch.T_NONE;
+            return false;
+        }
+        if (e.roping > 0) {
+            // Coming down the line.
+            e.roping -= dt;
+            e.x = v.tx + (e.member % 2 == 0 ? -5 : 5);
+            e.y = v.ty;
+            steer(e, 0, 0, 0);
+            return true;
+        }
+        float hx = v.tx, hy = v.ty;
+        if (v.recall) {
+            float dx = hx - e.x, dy = hy - e.y, d = (float) Math.sqrt(dx * dx + dy * dy) + 0.001f;
+            if (d > 6) steer(e, dx / d, dy / d, e.runSpeed);
+            else steer(e, 0, 0, 0);
+            return true;
+        }
+        // Anything close: deal with it first.
+        Entity z = nearest(e, 70, true, true);
+        if (z != null) return false;
+        Entity c = e.escort;
+        if (c == null || c.dead || (c.leader != null && c.leader != e)) {
+            c = null;
+            float bd = 200 * 200;
+            for (int i = 0, n = entities.size(); i < n; i++) {
+                Entity o = entities.get(i);
+                if (o.dead || o.type != Entity.CIVILIAN || o.aloft || (o.leader != null && o.leader.role == Entity.ROLE_SAR)) continue;
+                float d = (o.x - hx) * (o.x - hx) + (o.y - hy) * (o.y - hy);
+                if (d < bd) {
+                    bd = d;
+                    c = o;
+                }
+            }
+            e.escort = c;
+        }
+        if (c == null) {
+            standAt(e, hx + (e.member % 2 == 0 ? -12 : 12), hy + 6, 1);
+            return true;
+        }
+        if (c.leader != e) {
+            float dx = c.x - e.x, dy = c.y - e.y, d = (float) Math.sqrt(dx * dx + dy * dy) + 0.001f;
+            if (d > 14) walkToSpot(e, c.x, c.y, e.runSpeed);
+            else {
+                // "Come with me."
+                c.leader = e;
+                c.aware = true;
+                e.talkTimer = 1.5f;
+            }
+            return true;
+        }
+        float dx = hx - e.x, dy = hy - e.y, d = (float) Math.sqrt(dx * dx + dy * dy) + 0.001f;
+        if (d > 10) walkToSpot(e, hx, hy, e.speed * 1.1f);
+        else steer(e, 0, 0, 0);
+        return true;
+    }
+
+    /** The rescue helicopter sets its survivors down at the hospital. */
+    void dropRescued(Fleet.Vehicle v) {
+        City.Facility h = city.nearestFacility(City.FACILITY_HOSPITAL, v.x, v.y);
+        float x = h != null ? h.x : v.x, y = h != null ? h.y : v.y;
+        int n = v.passengers;
+        v.passengers = 0;
+        for (int i = 0; i < n; i++) {
+            Entity e = spawn(Entity.CIVILIAN, x + rnd.nextFloat() * 30 - 15, y + rnd.nextFloat() * 30 - 15);
+            if (e == null) continue;
+            e.aware = true;
+            e.homeChecked = true;
+        }
+        dispatch.say(Dispatch.WHO_POLICE, null, "Rescue " + v.number + ": " + n + " survivor" + (n == 1 ? "" : "s") + " safe at "
+                + (h != null ? h.name : "the hospital") + ".", x, y);
+        highlight("Rescued: " + n, x, y);
     }
 }

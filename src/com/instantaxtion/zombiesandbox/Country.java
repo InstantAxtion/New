@@ -230,6 +230,37 @@ final class Country {
         }
     }
 
+    /** The park rangers' station. */
+    String rangerStationName(String park) {
+        String at = park != null ? ", " + park : "";
+        switch (id) {
+            case FRANCE: case MOROCCO: return "Maison des Gardes" + at;
+            case MEXICO: return "Estación de Guardaparques" + at;
+            case PORTUGAL: return "Posto de Guardas" + at;
+            case SWITZERLAND: return "Rangerstation" + at;
+            case SWEDEN: return "Tillsynsstuga" + at;
+            case NORWAY: return "Oppsynsstasjon" + at;
+            case DENMARK: return "Naturvejlederstation" + at;
+            case RUSSIA: return "Kordon" + at;
+            default: return "Ranger Station" + at;
+        }
+    }
+
+    /** A fire lookout tower. */
+    String lookoutName(String word) {
+        switch (id) {
+            case FRANCE: case MOROCCO: return "Vigie de " + word;
+            case MEXICO: return "Torre de Vigilancia " + word;
+            case PORTUGAL: return "Posto de Vigia de " + word;
+            case SWITZERLAND: return word + " Feuerwachturm";
+            case SWEDEN: return word + " brandtorn";
+            case NORWAY: return word + " branntårn";
+            case DENMARK: return word + " Brandtårn";
+            case RUSSIA: return "Pozharnaya vyshka " + word;
+            default: return word + " Fire Lookout";
+        }
+    }
+
     String campName(String word) {
         switch (id) {
             case FRANCE: case MOROCCO: case SWITZERLAND: return "Camping " + word;

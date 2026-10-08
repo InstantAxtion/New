@@ -111,7 +111,12 @@ final class Terrain {
             if (!land.desert || land.lakes >= 0.3f) streams();
             park();
             campsites();
-            if (parkR > 0) trails();
+            if (c.cfg.wilds()) {
+                // (Since 10.14: trails that wind and cross the lanes, a ranger station and fire lookouts.)
+                if (parkR > 0 && trailhead >= 0) rangerStation();
+                fireTowers();
+                wildTrails();
+            } else if (parkR > 0) trails();
         }
         countryTrees();
         return e;
@@ -283,6 +288,11 @@ final class Terrain {
                 int i = y * w + x;
                 float d = (float) Math.hypot(x - cx, y - cy) / r + (noise(x / 4f, y / 4f, 40) - 0.5f) * 0.55f;
                 if (d >= 1) continue;
+                // (A stream running into a pond is deep water from there on.)
+                if (t[i] == City.WATER && c.isFord(i)) {
+                    c.setFord(i, false);
+                    continue;
+                }
                 if ((t[i] != City.GRASS && t[i] != City.TREE) || wild[i] < minWild) continue;
                 cells.add(i);
                 level = Math.min(level, e[i]);
@@ -447,12 +457,15 @@ final class Terrain {
             }
             t[i] = City.WATER;
             c.unpine(i);
+            // Shallow enough to wade across (since 10.14).
+            if (c.cfg.wilds()) c.setFord(i, true);
             if (k > path.size() / 2 && k + 1 < path.size()) {
                 int j = path.get(k + 1), dx = j % w - i % w, dy = j / w - i / w;
                 int side = (i % w - dy) + (i / w + dx) * w;
                 if (side >= 0 && side < w * h && (t[side] == City.GRASS || t[side] == City.TREE) && wild[side] >= 1) {
                     t[side] = City.WATER;
                     c.unpine(side);
+                    if (c.cfg.wilds()) c.setFord(side, true);
                     e[side] = level;
                 }
             }
@@ -487,9 +500,23 @@ final class Terrain {
                 int q = path.get(fall + 2);
                 blob(q % w, q / w, 1.8f, 0);
             }
-            float fx = (p % w + 0.5f + dx * 0.5f) * City.T, fy = (p / w + 0.5f + dy * 0.5f) * City.T;
-            c.falls.add(new float[]{fx, fy, dx, dy});
-            c.addNatureDecor(City.D_FALLS, fx - City.T, fy - City.T, fx + City.T, fy + City.T, (dx != 0 ? 1 : 0));
+            // As wide as the stream is at the lip (it may have widened there), centred on the water.
+            int lo = 0, hi = 0;
+            for (int s = 1; s <= 2; s++) {
+                int ax = p % w - dy * s, ay = p / w + dx * s;
+                if (ax < 0 || ay < 0 || ax >= w || ay >= h || t[ay * w + ax] != City.WATER) break;
+                hi = s;
+            }
+            for (int s = 1; s <= 2; s++) {
+                int ax = p % w + dy * s, ay = p / w - dx * s;
+                if (ax < 0 || ay < 0 || ax >= w || ay >= h || t[ay * w + ax] != City.WATER) break;
+                lo = s;
+            }
+            float mid = (hi - lo) * 0.5f, half = (1 + lo + hi) * City.T / 2f;
+            float fx = (p % w + 0.5f + dx * 0.5f - dy * mid) * City.T, fy = (p / w + 0.5f + dy * 0.5f + dx * mid) * City.T;
+            c.falls.add(new float[]{fx, fy, dx, dy, half});
+            float ax = dx != 0 ? City.T : half, ay = dx != 0 ? half : City.T;
+            c.addNatureDecor(City.D_FALLS, fx - ax, fy - ay, fx + ax, fy + ay, (dx != 0 ? 1 : 0));
             if (c.falls.size() == 1) c.natureLabel(c.country.fallsName(word()), fx, fy + 22, City.NL_FALLS);
         }
         if (pond) {
@@ -865,6 +892,351 @@ final class Terrain {
                 int i = y * w + x;
                 if (cost[i] == Integer.MAX_VALUE || t[i] == City.WATER) continue;
                 float d = (float) Math.hypot(x - cx, y - cy);
+                if (d < bd) {
+                    bd = d;
+                    best = i;
+                }
+            }
+        return best;
+    }
+
+    // ------------------------------------------------------------------ the wilds (10.14)
+
+    /** The ranger station, beside the visitor centre at the park gate. */
+    private void rangerStation() {
+        int[] s0 = siteBeside(parkX, parkY, 8, 9, parkR * 2.4f);
+        if (s0 == null) return;
+        c.clearDecorIn(s0[0], s0[1], s0[2], s0[3]);
+        for (int u = 0; u < 8; u++)
+            for (int v = 0; v < 9; v++) setTile(cell(s0, u, v), City.GRASS);
+        // The trucks park out front.
+        for (int u = 0; u < 3; u++)
+            for (int v = 1; v < 8; v++) setTile(cell(s0, u, v), City.LOT);
+        int[] a = cell(s0, 4, 2), b = cell(s0, 7, 6);
+        String name = c.country.rangerStationName(c.parkName);
+        c.natureLot(Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.abs(a[0] - b[0]) + 1, Math.abs(a[1] - b[1]) + 1,
+                City.OFFICE, 1, 0xFF4E5A3A, 0xFFA88C62, name, 0);
+        c.rangerStationName = name;
+        int[] lot = cell(s0, 1, 4);
+        c.rangerLot = new float[]{(lot[0] + 0.5f) * City.T, (lot[1] + 0.5f) * City.T};
+    }
+
+    /** Fire lookout towers up on the wooded high ground, each with a path out to it. */
+    private void fireTowers() {
+        int want = size() >= CityConfig.HUGE ? 3 : size() >= CityConfig.LARGE ? 2 : size() >= CityConfig.MEDIUM ? 1 : 0;
+        if (land.desert && land.forest < 0.3f) want = Math.min(want, 1);
+        for (int k = 0; k < want; k++) {
+            int best = -1;
+            float bs = 0;
+            for (int s = 0; s < 1500; s++) {
+                int i = rnd.nextInt(w * h), x = i % w, y = i / w;
+                if (x < 4 || y < 4 || x >= w - 4 || y >= h - 4 || wild[i] < 8) continue;
+                if (t[i] != City.GRASS && t[i] != City.TREE) continue;
+                boolean far = true;
+                for (float[] f : c.fireTowers) if (Math.hypot(f[0] / City.T - x, f[1] / City.T - y) < 70) far = false;
+                if (!far) continue;
+                // High up, among the trees (that's what it's watching).
+                int trees = 0;
+                for (int dy = -6; dy <= 6; dy += 2)
+                    for (int dx = -6; dx <= 6; dx += 2) {
+                        int j = (y + dy) * w + x + dx;
+                        if (j >= 0 && j < w * h && t[j] == City.TREE) trees++;
+                    }
+                if (trees < 10 && mount[i] < 0.2f) continue;
+                float score = e[i] + trees * 0.4f;
+                if (score > bs) {
+                    bs = score;
+                    best = i;
+                }
+            }
+            if (best < 0) break;
+            int x = best % w, y = best / w;
+            // A clearing round its legs.
+            for (int dy = -2; dy <= 2; dy++)
+                for (int dx = -2; dx <= 2; dx++) {
+                    int j = (y + dy) * w + x + dx;
+                    if (t[j] == City.TREE || t[j] == City.ROCK) {
+                        t[j] = City.GRASS;
+                        c.unpine(j);
+                    }
+                }
+            float fx = (x + 0.5f) * City.T, fy = (y + 0.5f) * City.T;
+            c.fireTowers.add(new float[]{fx, fy});
+            c.fireTowerNames.add(c.country.lookoutName(word()));
+            c.addNatureDecor(City.D_FIRETOWER, fx - 14, fy - 14, fx + 14, fy + 14, 0);
+        }
+    }
+
+    /** What it costs to walk a trail onto this tile, or -1 if a trail can't go there. */
+    private int trailStep(int j) {
+        byte k = t[j];
+        int x = j % w, y = j / w;
+        if (k == City.GRASS || k == City.TRAIL || k == City.LOT) return 10;
+        if (k == City.TREE) return 22;
+        if (k == City.SAND) return 14;
+        // A footbridge over a stream, not across a lake.
+        if (k == City.WATER) return c.isFord(j) || narrow(x, y) ? 90 : -1;
+        // Across a lane, a road out of town or the railway, at a crossing.
+        if (k == City.DIRT) return 40;
+        if (k == City.ROAD) return (c.bridge != null && c.bridge[j]) || (x >= c.townX0 && x < c.townX1 && y >= c.townY0 && y < c.townY1) ? -1 : 140;
+        if (k == City.RAIL) return 170;
+        return -1;
+    }
+
+    /**
+     * Cheapest walking routes out from start (any of the tiles given), over grass and through the woods,
+     * winding a little, round the steepest ground: cost[] gets the costs, the result where each step came from.
+     * Only within limit tiles of (cx, cy).
+     */
+    private int[] trailSearch(int[] starts, float cx, float cy, float limit, int[] cost) {
+        int[] from = new int[w * h];
+        Arrays.fill(cost, Integer.MAX_VALUE);
+        PriorityQueue<long[]> pq = new PriorityQueue<long[]>(64, new java.util.Comparator<long[]>() {
+            @Override
+            public int compare(long[] a, long[] b) {
+                return Long.compare(a[0], b[0]);
+            }
+        });
+        for (int st : starts) {
+            cost[st] = 0;
+            from[st] = -1;
+            pq.add(new long[]{0, st});
+        }
+        int[][] nb = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}, {1, 1}, {1, -1}, {-1, 1}, {-1, -1}};
+        while (!pq.isEmpty()) {
+            long[] top = pq.poll();
+            int i = (int) top[1];
+            if (top[0] > cost[i]) continue;
+            int x = i % w, y = i / w;
+            for (int[] d : nb) {
+                int nx = x + d[0], ny = y + d[1];
+                if (nx < 1 || ny < 1 || nx >= w - 1 || ny >= h - 1) continue;
+                if (Math.hypot(nx - cx, ny - cy) > limit) continue;
+                int j = ny * w + nx;
+                int step = trailStep(j);
+                if (step < 0) continue;
+                if (d[0] != 0 && d[1] != 0) {
+                    // Cutting a corner only where both sides are open going (never between two crossings).
+                    int sa = trailStep(y * w + nx), sb = trailStep(ny * w + x);
+                    if (sa < 0 || sb < 0 || sa > 30 || sb > 30 || step > 30) continue;
+                    step = step * 14 / 10;
+                }
+                // Round the steep bits, and a gentle meander so it isn't ruler-straight across a meadow.
+                step += (int) (Math.abs(e[j] - e[i]) * 30) + (int) (noise(nx / 5f, ny / 5f, 70) * 9);
+                int nc = cost[i] + step;
+                if (nc < cost[j]) {
+                    cost[j] = nc;
+                    from[j] = i;
+                    pq.add(new long[]{nc, j});
+                }
+            }
+        }
+        return from;
+    }
+
+    /** Tiles already on a trail (so a new one joins the path instead of running alongside it). */
+    private boolean[] onTrail;
+
+    /**
+     * Lays a trail back from goal along the search's came-from map: the tiles become trail (footbridges over
+     * the water), the line drawn through them goes on the map, and the whole way from the start is a hike.
+     */
+    private void layTrail(int goal, int[] from, int[] cost, int hikeKind) {
+        if (cost[goal] == Integer.MAX_VALUE) return;
+        if (onTrail == null) onTrail = new boolean[w * h];
+        List<Integer> path = new ArrayList<Integer>();
+        for (int i = goal, guard = 0; i >= 0 && guard < w * 6; guard++) {
+            path.add(i);
+            i = from[i];
+        }
+        java.util.Collections.reverse(path);
+        if (path.size() < 4) return;
+        // The hike: the whole way, start to goal.
+        float[] hike = new float[path.size() * 2];
+        for (int k = 0; k < path.size(); k++) {
+            hike[k * 2] = (path.get(k) % w + 0.5f) * City.T;
+            hike[k * 2 + 1] = (path.get(k) / w + 0.5f) * City.T;
+        }
+        c.hikes.add(hike);
+        c.hikeKinds.add(hikeKind);
+        // The new stretch: from the goal back until it meets a trail already there.
+        int stop = 0;
+        for (int k = path.size() - 1; k > 0; k--)
+            if (onTrail[path.get(k)]) {
+                stop = k;
+                break;
+            }
+        List<Float> line = new ArrayList<Float>();
+        for (int k = stop; k < path.size(); k++) {
+            int i = path.get(k);
+            byte kind = t[i];
+            boolean crossing = kind == City.DIRT || kind == City.ROAD || kind == City.RAIL || kind == City.LOT;
+            if (crossing) {
+                // The trail stops at the verge and carries on the far side.
+                if (kind == City.ROAD || kind == City.RAIL) c.trailCrossings.add(new float[]{(i % w + 0.5f) * City.T, (i / w + 0.5f) * City.T, kind});
+                if (!line.isEmpty()) {
+                    line.add((i % w + 0.5f) * City.T);
+                    line.add((i / w + 0.5f) * City.T);
+                    flushLine(line);
+                }
+                continue;
+            }
+            if (line.isEmpty() && k > stop) {
+                // (Starting again from the crossing just passed.)
+                int p = path.get(k - 1);
+                line.add((p % w + 0.5f) * City.T);
+                line.add((p / w + 0.5f) * City.T);
+            }
+            line.add((i % w + 0.5f) * City.T);
+            line.add((i / w + 0.5f) * City.T);
+            if (kind == City.WATER) {
+                c.setBridge(i);
+                c.setFord(i, false);
+            }
+            if (kind != City.TRAIL) {
+                t[i] = City.TRAIL;
+                c.unpine(i);
+            }
+            onTrail[i] = true;
+            // A diagonal step: the corner it cuts is open ground too, so nobody snags on a tree there.
+            if (k > 0) {
+                int p = path.get(k - 1), px = p % w, py = p / w, x = i % w, y = i / w;
+                if (px != x && py != y) {
+                    int ca = py * w + x, cb = y * w + px;
+                    int corner = t[ca] == City.GRASS || t[ca] == City.TREE ? ca : t[cb] == City.GRASS || t[cb] == City.TREE ? cb : -1;
+                    if (corner >= 0) {
+                        t[corner] = City.TRAIL;
+                        c.unpine(corner);
+                    }
+                }
+            }
+        }
+        flushLine(line);
+    }
+
+    private void flushLine(List<Float> line) {
+        if (line.size() >= 4) {
+            float[] a = new float[line.size()];
+            for (int k = 0; k < a.length; k++) a[k] = line.get(k);
+            c.trailLines.add(a);
+        }
+        line.clear();
+    }
+
+    /** The trails: the park's network from the trailhead, nature walks from the campsites, paths to the towers. */
+    private void wildTrails() {
+        int[] cost = new int[w * h];
+        if (parkR > 0 && trailhead >= 0) {
+            float limit = Math.max(parkR * 1.7f, (float) Math.hypot(trailhead % w - parkX, trailhead / w - parkY) + parkR * 0.5f);
+            int[] from = trailSearch(new int[]{trailhead}, parkX, parkY, limit, cost);
+            c.trailheadX = (trailhead % w + 0.5f) * City.T;
+            c.trailheadY = (trailhead / w + 0.5f) * City.T;
+            // Up to the lookout on the mountain.
+            if (parkPeak >= 0) {
+                float[] p = peaks.get(parkPeak);
+                int best = -1;
+                for (int y = Math.max(0, (int) (p[1] - p[2])); y < Math.min(h, (int) (p[1] + p[2])); y++)
+                    for (int x = Math.max(0, (int) (p[0] - p[2])); x < Math.min(w, (int) (p[0] + p[2])); x++) {
+                        int i = y * w + x;
+                        if (cost[i] == Integer.MAX_VALUE || t[i] == City.WATER || t[i] == City.ROAD || t[i] == City.RAIL || t[i] == City.DIRT) continue;
+                        if (best < 0 || e[i] > e[best]) best = i;
+                    }
+                if (best >= 0) {
+                    float lx = (best % w + 0.5f) * City.T, ly = (best / w + 0.5f) * City.T;
+                    c.addNatureDecor(City.D_LOOKOUT, lx - 10, ly - 10, lx + 10, ly + 10, 0);
+                    layTrail(best, from, cost, City.HIKE_LOOKOUT);
+                }
+            }
+            for (float[] f : c.falls) {
+                int best = nearestReached(cost, (int) (f[0] / City.T), (int) (f[1] / City.T), 4);
+                if (best >= 0) layTrail(best, from, cost, City.HIKE_FALLS);
+            }
+            for (float[] l : lakes) {
+                if (Math.hypot(l[0] - parkX, l[1] - parkY) > limit) continue;
+                int best = nearestReached(cost, (int) l[0], (int) l[1], (int) l[2] + 4);
+                if (best >= 0) layTrail(best, from, cost, City.HIKE_LAKE);
+            }
+            for (int[] g : trailTargets) layTrail(g[1] * w + g[0], from, cost, City.HIKE_CAMP);
+            for (float[] tw : c.fireTowers) {
+                if (Math.hypot(tw[0] / City.T - parkX, tw[1] / City.T - parkY) > limit) continue;
+                int best = nearestReached(cost, (int) (tw[0] / City.T), (int) (tw[1] / City.T), 3);
+                if (best >= 0) layTrail(best, from, cost, City.HIKE_TOWER);
+            }
+            // A loop out through the far woods and back.
+            for (int k = 0; k < 2; k++) {
+                double a = Math.atan2(parkY - trailhead / w, parkX - trailhead % w) + (k == 0 ? 0.8 : -0.8);
+                int best = nearestReached(cost, (int) (parkX + Math.cos(a) * parkR * 0.8f), (int) (parkY + Math.sin(a) * parkR * 0.8f), 6);
+                if (best >= 0) layTrail(best, from, cost, City.HIKE_WOODS);
+            }
+        }
+        // Each campsite outside the park: a walk down to the nearest water or into the woods.
+        for (float[] camp : c.settlements) {
+            int cx = (int) (camp[0] / City.T), cy = (int) (camp[1] / City.T);
+            if (parkR > 0 && Math.hypot(cx - parkX, cy - parkY) < parkR * 1.2f) continue;
+            if (!c.isCampAt(camp[0], camp[1])) continue;
+            int st = nearestOpen(cx, cy, 4);
+            if (st < 0) continue;
+            int[] from = trailSearch(new int[]{st}, cx, cy, 55, cost);
+            int goal = -1;
+            for (float[] l : lakes)
+                if (Math.hypot(l[0] - cx, l[1] - cy) < 50) goal = nearestReached(cost, (int) l[0], (int) l[1], (int) l[2] + 4);
+            if (goal < 0) {
+                // Out into the thickest woods near by.
+                int bestTrees = 0;
+                for (int s = 0; s < 300; s++) {
+                    int x = cx + rnd.nextInt(80) - 40, y = cy + rnd.nextInt(80) - 40;
+                    if (x < 3 || y < 3 || x >= w - 3 || y >= h - 3 || Math.hypot(x - cx, y - cy) < 20) continue;
+                    int i = y * w + x;
+                    if (cost[i] == Integer.MAX_VALUE || trailStep(i) > 30) continue;
+                    int trees = 0;
+                    for (int dy = -3; dy <= 3; dy++) for (int dx = -3; dx <= 3; dx++) if (t[(y + dy) * w + x + dx] == City.TREE) trees++;
+                    if (trees > bestTrees) {
+                        bestTrees = trees;
+                        goal = i;
+                    }
+                }
+            }
+            if (goal >= 0) layTrail(goal, from, cost, City.HIKE_WOODS);
+        }
+        // The towers outside the park: a path out from the nearest lane or trail.
+        for (float[] tw : c.fireTowers) {
+            int tx = (int) (tw[0] / City.T), ty = (int) (tw[1] / City.T);
+            if (parkR > 0 && Math.hypot(tx - parkX, ty - parkY) < parkR * 1.7f && onTrail != null && nearOnTrail(tx, ty, 4)) continue;
+            List<Integer> ends = new ArrayList<Integer>();
+            for (int y = Math.max(1, ty - 60); y < Math.min(h - 1, ty + 60); y++)
+                for (int x = Math.max(1, tx - 60); x < Math.min(w - 1, tx + 60); x++) {
+                    int i = y * w + x;
+                    if (t[i] == City.DIRT || (onTrail != null && onTrail[i])) ends.add(i);
+                }
+            if (ends.isEmpty()) continue;
+            int[] st = new int[ends.size()];
+            for (int k = 0; k < st.length; k++) st[k] = ends.get(k);
+            int[] from = trailSearch(st, tx, ty, 90, cost);
+            int best = nearestReached(cost, tx, ty, 3);
+            if (best >= 0) layTrail(best, from, cost, City.HIKE_TOWER);
+        }
+    }
+
+    private boolean nearOnTrail(int x, int y, int r) {
+        for (int dy = -r; dy <= r; dy++)
+            for (int dx = -r; dx <= r; dx++) {
+                int j = (y + dy) * w + x + dx;
+                if (j >= 0 && j < w * h && onTrail[j]) return true;
+            }
+        return false;
+    }
+
+    /** The nearest open grass (or trail) tile to (x, y), within r, or -1. */
+    private int nearestOpen(int x, int y, int r) {
+        int best = -1;
+        float bd = Float.MAX_VALUE;
+        for (int dy = -r; dy <= r; dy++)
+            for (int dx = -r; dx <= r; dx++) {
+                int nx = x + dx, ny = y + dy;
+                if (nx < 1 || ny < 1 || nx >= w - 1 || ny >= h - 1) continue;
+                int i = ny * w + nx;
+                if (t[i] != City.GRASS && t[i] != City.TRAIL) continue;
+                float d = dx * dx + dy * dy;
                 if (d < bd) {
                     bd = d;
                     best = i;

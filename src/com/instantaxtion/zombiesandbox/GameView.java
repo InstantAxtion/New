@@ -1538,9 +1538,11 @@ final class GameView extends View implements Menu.Host {
         for (int i = 0, n = world.city.falls.size(); i < n; i++) {
             float[] f = world.city.falls.get(i);
             if (f[0] < vx0 - 30 || f[0] > vx1 + 30 || f[1] < vy0 - 30 || f[1] > vy1 + 30) continue;
+            // (Spread across the width of the stream at the lip, falling away downstream of it.)
+            float half = f.length > 4 ? f[4] - 3 : 5;
             for (int k = 0; k < 6; k++) {
-                float ph = (world.time * 1.6f + k / 6f) % 1f, side = (k - 2.5f) * 1.1f;
-                float along = -6 + ph * 14;
+                float ph = (world.time * 1.6f + k / 6f) % 1f, side = (k - 2.5f) / 2.5f * half * 0.8f;
+                float along = -1 + ph * 12;
                 float px = f[0] + f[2] * along - f[3] * side, py = f[1] + f[3] * along + f[2] * side;
                 fill.setColor(alpha(0xFFF4FAFC, 0.85f * (1 - ph)));
                 c.drawCircle(px, py, 1.1f + ph * 1.6f, fill);
@@ -1576,6 +1578,21 @@ final class GameView extends View implements Menu.Host {
         for (int i = 0, n = world.entities.size(); i < n; i++) {
             Entity e = world.entities.get(i);
             if (e.x < vx0 || e.x > vx1 || e.y < vy0 || e.y > vy1) continue;
+            if (detailed && e.job == Entity.J_FISHER && e.jobStep == 1 && e.type == Entity.CIVILIAN && !e.aware) {
+                // A line out over the water, the float bobbing.
+                float ca = (float) Math.cos(e.angle), sa = (float) Math.sin(e.angle);
+                float tipX = e.x + ca * 13, tipY = e.y + sa * 13;
+                stroke.setColor(0xFF4A3A2A);
+                stroke.setStrokeWidth(0.8f);
+                c.drawLine(e.x + ca * 3, e.y + sa * 3, tipX, tipY, stroke);
+                float bob = (float) Math.sin(world.time * 2.2f + e.nameSeed) * 0.6f;
+                float fx = e.x + ca * 22, fy = e.y + sa * 22 + bob;
+                stroke.setColor(0x90E8E8E8);
+                stroke.setStrokeWidth(0.4f);
+                c.drawLine(tipX, tipY, fx, fy, stroke);
+                fill.setColor(0xFFE83A2A);
+                c.drawCircle(fx, fy, 1.1f, fill);
+            }
             if (detailed) drawEntity(c, e, settings.healthBars());
             else {
                 // Zoomed out: a dot in the colour of their side (the same colours as the counts), outlined so it
@@ -2785,7 +2802,7 @@ final class GameView extends View implements Menu.Host {
         Country land0 = world.city.country;
         int body = civ ? v.color : v.kind == Fleet.K_RIOT_VAN ? land0.cruiserBody
                 : truck ? (v.swat ? 0xFF1C2026 : v.guardUnit ? 0xFF8C8260 : v.kind == Fleet.K_APC ? 0xFF46512E : 0xFF4F5A33) : engine ? 0xFFC8302A : amb ? 0xFFF2F2F2
-                : v.agency == 1 ? land0.hpBody : v.agency == 2 ? land0.ruralBody : land0.cruiserBody;
+                : v.agency == 1 ? land0.hpBody : v.agency == 2 ? land0.ruralBody : v.agency == 3 ? 0xFF3E5634 : land0.cruiserBody;
         if (v.burnt) body = 0xFF2B2623;
         else if (v.broken) body = City.darken(body, 0.65f);
         fill.setColor(body);
@@ -2912,7 +2929,7 @@ final class GameView extends View implements Menu.Host {
             boolean city = v.agency == 0;
             if (!city) {
                 // Highway patrol and sheriff's cars: their own colours, a stripe down each side.
-                fill.setColor(v.broken ? 0xFF9A9A9A : v.agency == 1 ? land.hpDoor : land.ruralDoor);
+                fill.setColor(v.broken ? 0xFF9A9A9A : v.agency == 1 ? land.hpDoor : v.agency == 3 ? 0xFFD8C898 : land.ruralDoor);
                 c.drawRect(-hl + 1, -hw, hl - 1, -hw + 1f, fill);
                 c.drawRect(-hl + 1, hw - 1f, hl - 1, hw, fill);
             }
@@ -2931,7 +2948,7 @@ final class GameView extends View implements Menu.Host {
                     c.drawRect(x0, hw - 1.3f, x1, hw, fill);
                 }
             }
-            fill.setColor(v.broken ? 0xFFA0A0A0 : v.agency == 1 ? land.hpDoor : v.agency == 2 ? land.ruralDoor : land.cruiserDoor);
+            fill.setColor(v.broken ? 0xFFA0A0A0 : v.agency == 1 ? land.hpDoor : v.agency == 2 ? land.ruralDoor : v.agency == 3 ? 0xFFD8C898 : land.cruiserDoor);
             c.drawRect(-3f, -hw, 2f, -hw + 1.3f, fill);
             c.drawRect(-3f, hw - 1.3f, 2f, hw, fill);
             fill.setColor(0xFF1E2A33);
@@ -3390,7 +3407,18 @@ final class GameView extends View implements Menu.Host {
     }
 
     private void drawHeli(Canvas c, Fleet.Vehicle v) {
-        boolean police = v.kind == Fleet.K_POLICE_HELI;
+        boolean rescue = v.kind == Fleet.K_RESCUE_HELI;
+        boolean police = v.kind == Fleet.K_POLICE_HELI || rescue;
+        if (rescue && v.team != null) {
+            // The winch line down to anyone on it.
+            for (int i = 0; i < v.team.size(); i++) {
+                Entity s = v.team.get(i);
+                if (s.dead || s.roping <= 0) continue;
+                stroke.setColor(0xE0E8E8E0);
+                stroke.setStrokeWidth(0.7f);
+                c.drawLine(v.x, v.y, s.x, s.y, stroke);
+            }
+        }
         float alt = v.alt;
         fill.setColor(alpha(0x40000000, 0.5f + 0.5f * (1 - alt)));
         c.drawCircle(v.x + 4 + 16 * alt, v.y + 5 + 21 * alt, 11 - 2 * alt, fill);
@@ -3412,7 +3440,16 @@ final class GameView extends View implements Menu.Host {
         fill.setColor(police ? 0xFFF2F2F2 : 0xFF4F5E36);
         oval.set(-8, -5, 9, 5);
         c.drawOval(oval, fill);
-        if (police) {
+        if (rescue) {
+            // Rescue colours: red and white, the winch arm out of the door.
+            fill.setColor(0xFFD8302A);
+            c.drawRect(-7, -1.6f, 6, 1.6f, fill);
+            fill.setColor(0xFFF2F2F2);
+            c.drawRect(-1, -1.6f, 1, 1.6f, fill);
+            stroke.setColor(0xFF3A3A3A);
+            stroke.setStrokeWidth(1);
+            c.drawLine(1, 4.5f, 1, 7.5f, stroke);
+        } else if (police) {
             // Police colours down the side.
             fill.setColor(0xFF1F3F8A);
             c.drawRect(-7, -1.2f, 6, 1.2f, fill);
@@ -4355,11 +4392,17 @@ final class GameView extends View implements Menu.Host {
                 || e.type == Entity.RUNNER || e.type == Entity.SCREAMER)) drawHair(c, e, r);
         if (e.type == Entity.COP) {
             if (e.agency > 0) {
-                // Troopers and deputies: a wide-brimmed hat.
-                fill.setColor(e.agency == 2 ? 0xFF5A4630 : 0xFF8A7650);
+                // Troopers, deputies and park rangers: a wide-brimmed hat.
+                fill.setColor(e.agency == 2 ? 0xFF5A4630 : e.agency == 3 ? 0xFF6E5A36 : 0xFF8A7650);
                 c.drawCircle(r * 0.08f, 0, r * 0.62f, fill);
-                fill.setColor(e.agency == 2 ? 0xFF6E5A3E : 0xFFA08C62);
+                fill.setColor(e.agency == 2 ? 0xFF6E5A3E : e.agency == 3 ? 0xFF8C7448 : 0xFFA08C62);
                 c.drawCircle(r * 0.08f, 0, r * 0.36f, fill);
+            } else if (e.role == Entity.ROLE_SAR) {
+                // Rescue: a white helmet.
+                fill.setColor(0xFFF2F2F2);
+                c.drawCircle(r * 0.08f, 0, r * 0.5f, fill);
+                fill.setColor(0xFFD8302A);
+                c.drawRect(-r * 0.05f, -r * 0.12f, r * 0.21f, r * 0.12f, fill);
             } else {
                 fill.setColor(0xFF0B1022);
                 oval.set(r * 0.35f, -r * 0.45f, r * 0.85f, r * 0.45f);
@@ -4915,7 +4958,9 @@ final class GameView extends View implements Menu.Host {
         else if (e.isZombie()) title = Entity.NAMES[e.type] + (e.origin >= 0 ? "  -  was " + Names.person(e.nameSeed) : "");
         else if (e.type == Entity.COP && e.role == Entity.ROLE_SWAT)
             title = Country.swat(world.city.country.id)[1] + " " + Names.person(e.nameSeed) + "  -  " + Dispatch.name(e);
-        else if (e.type == Entity.COP) title = (e.agency == 1 ? world.city.country.hpName + " " : e.agency == 2 ? world.city.country.ruralName + "'s deputy " : "Officer ")
+        else if (e.type == Entity.COP && e.role == Entity.ROLE_SAR) title = "Rescue specialist " + Names.person(e.nameSeed) + "  -  " + Dispatch.name(e);
+        else if (e.type == Entity.COP) title = (e.agency == 1 ? world.city.country.hpName + " " : e.agency == 2 ? world.city.country.ruralName + "'s deputy "
+                : e.agency == 3 ? "Park ranger " : "Officer ")
                 + Names.person(e.nameSeed) + "  -  " + Dispatch.name(e);
         else if (e.type == Entity.SOLDIER) title = Names.person(e.nameSeed) + "  -  " + Entity.ROLE_NAMES[e.role] + ", " + Dispatch.name(e);
         else if (homeless(e)) title = Names.person(e.nameSeed) + "  -  Homeless";

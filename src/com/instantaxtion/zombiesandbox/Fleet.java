@@ -18,7 +18,7 @@ final class Fleet {
     static final float TRAIN_LENGTH = 136;
     private static final int WAIT = 0, DRIVE = 1, RETURN = 2, FLY_IN = 3, CIRCLE = 4, FLY_OUT = 5, CRUISE = 6,
             ABANDONED = 7, SPRAY = 8, SPOOL = 9, LAND = 10, ENGAGE = 11, LOAD = 12, BLOCK = 13,
-            PATROL = 14, SCENE = 15, RECALL = 16, IDLE = 17, MUSTER = 18;
+            PATROL = 14, SCENE = 15, RECALL = 16, IDLE = 17, MUSTER = 18, HOVER = 19;
     private static final int[] CAR_COLORS = {0xFFB03A2E, 0xFF2E5FB0, 0xFFE0E0E0, 0xFF222428, 0xFFD4A21C, 0xFF3C8A4E,
             0xFF8A8F96, 0xFF6B2E8A, 0xFFE07A2E};
     private static final float[] MAX_HP = {160, 260, 1, 100, 240, 700, 160, 1, 1};
@@ -28,7 +28,7 @@ final class Fleet {
      * What a truck, police car or helicopter is beyond its basic type (since 10.10): an armoured personnel
      * carrier, a Humvee, a riot police van, a police motorcycle, the police helicopter.
      */
-    static final int K_APC = 1, K_HUMVEE = 2, K_RIOT_VAN = 3, K_BIKE = 4, K_POLICE_HELI = 5;
+    static final int K_APC = 1, K_HUMVEE = 2, K_RIOT_VAN = 3, K_BIKE = 4, K_POLICE_HELI = 5, K_RESCUE_HELI = 6;
 
     /** Kinds of everyday car (which ones are about depends on the country). */
     static final int M_SEDAN = 0, M_PICKUP = 1, M_SUV = 2, M_KEI = 3, M_HATCH = 4, M_VAN = 5, M_TAXI = 6, M_BUS = 7,
@@ -125,8 +125,12 @@ final class Fleet {
         final ArrayList<Entity> crew = new ArrayList<Entity>();
         /** A patrol car (not a backup cruiser): drives a beat and answers calls. */
         boolean patrol;
-        /** Whose car it is: 0 the city police, 1 highway patrol, 2 the sheriff. */
+        /** Whose car it is: 0 the city police, 1 highway patrol, 2 the sheriff, 3 the park rangers. */
         int agency;
+        /** The rescue helicopter: its team on the ground, calling them back up, and where it flies home to. */
+        ArrayList<Entity> team;
+        boolean recall;
+        float baseX, baseY;
         /** The station it belongs to (fire engines and patrol cars), and how many it waits to take aboard. */
         City.Facility station;
         int crewWanted;
@@ -189,13 +193,14 @@ final class Fleet {
         switch (v.type) {
             case CRUISER:
                 if (v.kind == K_BIKE) return "Police motorcycle  -  " + callsign(v);
+                if (v.agency == 3) return "Park rangers' truck  -  " + callsign(v);
                 return v.number > 0 ? "Police car  -  " + callsign(v) : "Police car";
             case TRUCK:
                 if (v.kind == K_APC) return "Armoured personnel carrier" + (v.guardUnit ? "  -  " + Country.guard(city.country.id)[1] : "");
                 if (v.kind == K_HUMVEE) return (v.guardUnit ? Country.guard(city.country.id)[1] + " " : "") + "Humvee" + (v.loop ? "  -  base patrol" : "");
                 if (v.kind == K_RIOT_VAN) return "Riot police van";
                 return v.swat ? Country.swat(city.country.id)[0] + " van" : v.guardUnit ? Country.guard(city.country.id)[1] + " truck" : v.supply > 0 ? "Army supply truck" : "Army truck";
-            case HELI: return v.kind == K_POLICE_HELI ? "Police helicopter" : "Air 1  -  helicopter";
+            case HELI: return v.kind == K_RESCUE_HELI ? "Rescue helicopter" : v.kind == K_POLICE_HELI ? "Police helicopter" : "Air 1  -  helicopter";
             case FIRE_ENGINE: return "Fire engine " + v.number;
             case TANK: return "Tank";
             case AMBULANCE: return "Ambulance";
@@ -211,6 +216,14 @@ final class Fleet {
         String where = v.place != null ? v.place : null;
         switch (v.type) {
             case HELI:
+                if (v.kind == K_RESCUE_HELI) {
+                    switch (v.state) {
+                        case FLY_IN: return "Rescue helicopter: En route" + (where != null ? " to " + where : "");
+                        case HOVER: return v.team == null ? "Rescue helicopter: Coming into a hover" : v.recall ? "Rescue helicopter: Winching the team back up"
+                                : "Rescue helicopter: Team on the ground (" + v.passengers + " aboard)";
+                        default: return v.passengers > 0 ? "Rescue helicopter: " + v.passengers + " aboard, to the hospital" : "Rescue helicopter: Returning";
+                    }
+                }
                 if (v.kind == K_POLICE_HELI) {
                     switch (v.state) {
                         case FLY_IN: return "Police helicopter: En route" + (where != null ? " to " + where : "");
@@ -520,8 +533,11 @@ final class Fleet {
                     float[] run = Math.hypot(mine[2] - v.x, mine[3] - v.y) < 300 ? other : mine;
                     d = new float[]{run[2], run[3]};
                 }
-                // (Sheriffs keep to their own patch of country rather than crossing town.)
+                // (Sheriffs keep to their own patch of country rather than crossing town; rangers to the lanes
+                // round their park.)
                 if (d != null && v.agency == 2 && tries < 10 && Math.hypot(d[0] - v.x, d[1] - v.y) > 1400) continue;
+                if (d != null && v.agency == 3 && city.rangerLot != null && tries < 10
+                        && Math.hypot(d[0] - city.rangerLot[0], d[1] - city.rangerLot[1]) > 1100) continue;
                 if (d != null && Math.hypot(d[0] - v.x, d[1] - v.y) > 300) {
                     if (route(v, d[0], d[1])) return true;
                     if (++routes >= 3) break;
@@ -725,6 +741,59 @@ final class Fleet {
             v.state = FLY_IN;
             v.alt = 1;
         }
+    }
+
+    /**
+     * The rescue helicopter: flies out to people cut off by the dead, hovers, lowers a search and rescue team
+     * on the winch to bring them in, lifts everyone out and drops them at the hospital.
+     */
+    void sendRescueHeli(float fromX, float fromY, float toX, float toY, String place) {
+        int before = vehicles.size();
+        sendHeli(fromX, fromY, toX, toY, place);
+        if (vehicles.size() == before) return;
+        Vehicle v = vehicles.get(vehicles.size() - 1);
+        setKind(v, K_RESCUE_HELI);
+        v.number = 1;
+        if (v.pad) {
+            v.pad = false;
+            v.state = FLY_IN;
+            v.alt = 1;
+        }
+        v.baseX = v.homeX;
+        v.baseY = v.homeY;
+        // Where it takes them: the hospital (or back where it came from).
+        City.Facility h = city.nearestFacility(City.FACILITY_HOSPITAL, toX, toY);
+        if (h != null) {
+            v.homeX = h.x;
+            v.homeY = h.y;
+        }
+    }
+
+    /** The rescue helicopter is out. */
+    boolean rescueHeliBusy() {
+        for (int i = 0; i < vehicles.size(); i++) if (vehicles.get(i).kind == K_RESCUE_HELI) return true;
+        return false;
+    }
+
+    /** The park rangers' truck: out of the ranger station along the dirt lanes, one ranger at the wheel. */
+    Vehicle startRangerPatrol(City.Building station) {
+        float[] start = city.rangerLot != null ? city.nearestDrivable(city.rangerLot[0], city.rangerLot[1])
+                : city.nearestDrivable(station.doorX, station.doorY);
+        if (start == null) return null;
+        Vehicle v = make(CRUISER);
+        v.x = start[0];
+        v.y = start[1];
+        v.patrol = true;
+        v.agency = 3;
+        v.state = PATROL;
+        v.number = 30 + (++unitCount);
+        if (!newDestination(v)) return null;
+        Entity e = w.create(Entity.COP, v.x, v.y);
+        w.makeRanger(e);
+        e.rig = v;
+        v.crew.add(e);
+        vehicles.add(v);
+        return v;
     }
 
     /** The police helicopter is up. */
@@ -2537,7 +2606,7 @@ final class Fleet {
     /** What a patrol car is called on the radio. */
     String callsign(Vehicle v) {
         Country c = city.country;
-        return v.agency == 1 ? c.hpName + " " + v.number : v.agency == 2 ? c.ruralName + " " + v.number
+        return v.agency == 1 ? c.hpName + " " + v.number : v.agency == 2 ? c.ruralName + " " + v.number : v.agency == 3 ? "Ranger " + v.number
                 : (v.kind == K_BIKE ? "Motor " : "Car ") + v.number;
     }
 
@@ -3140,7 +3209,12 @@ final class Fleet {
             gy = v.ty;
             float d = (float) Math.hypot(gx - v.x, gy - v.y);
             speed = Math.min(8 + 107 * v.alt * v.alt, 35 + d * 0.35f);
-            if (d < 140) {
+            if (v.kind == K_RESCUE_HELI && d < 140) {
+                v.state = HOVER;
+                v.timer = 0;
+                w.dispatch.say(Dispatch.WHO_POLICE, null, "Rescue " + v.number + ": Over " + (v.place != null ? v.place : "the scene")
+                        + ". Coming into the hover, team going down on the winch.", v.x, v.y);
+            } else if (d < 140) {
                 v.state = CIRCLE;
                 v.circle = (float) Math.atan2(v.y - v.ty, v.x - v.tx);
                 if (v.kind == K_POLICE_HELI) {
@@ -3152,6 +3226,24 @@ final class Fleet {
                     w.dispatch.say(Dispatch.WHO_MILITARY, null, "Air 1: On station over " + (v.place != null ? v.place : "the target")
                             + ". Door gunner is clear to engage.", v.x, v.y);
                 }
+            }
+        } else if (v.state == HOVER) {
+            // Right over them, low, holding steady while the team works.
+            gx = v.tx;
+            gy = v.ty;
+            float d = (float) Math.hypot(gx - v.x, gy - v.y);
+            speed = Math.min(40, d * 0.8f);
+            v.alt += (0.5f - v.alt) * Math.min(1, dt * 0.8f);
+            if (d < 3) {
+                speed = 0;
+                gx = v.x + (float) Math.cos(v.angle);
+                gy = v.y + (float) Math.sin(v.angle);
+            }
+            if (w.rescueStep(v, dt)) {
+                v.state = FLY_OUT;
+                w.dispatch.say(Dispatch.WHO_POLICE, null, "Rescue " + v.number + ": Everyone's aboard. "
+                        + (v.passengers > 0 ? v.passengers + " survivor" + (v.passengers == 1 ? "" : "s") + ", heading for the hospital." : "Nobody left to bring out. Returning."),
+                        v.x, v.y);
             }
         } else if (v.state == CIRCLE) {
             v.timer -= dt;
@@ -3194,6 +3286,13 @@ final class Fleet {
             float d = (float) Math.hypot(gx - v.x, gy - v.y);
             speed = Math.min(115, 20 + d * 0.5f);
             if (d < 30) {
+                if (v.kind == K_RESCUE_HELI && v.passengers > 0) {
+                    // Set them down at the hospital, then home.
+                    w.dropRescued(v);
+                    v.homeX = v.baseX;
+                    v.homeY = v.baseY;
+                    return false;
+                }
                 if (!v.pad) return true;
                 v.state = LAND;
             }

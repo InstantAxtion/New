@@ -20,8 +20,10 @@ final class Entity {
     static final int ROLE_CORPSMAN = 8, ROLE_GRENADIER = 9;
     /** Police: a marksman with a scoped rifle. */
     static final int ROLE_MARKSMAN = 10;
+    /** Police special operations: search and rescue, lowered from the rescue helicopter on the winch. */
+    static final int ROLE_SAR = 11;
     static final String[] ROLE_NAMES = {"Soldier", "Commander", "Sniper", "Gunner", "Riot officer", "K9 handler",
-            "National Guard", "SWAT officer", "Combat medic", "Grenadier", "Police marksman"};
+            "National Guard", "SWAT officer", "Combat medic", "Grenadier", "Police marksman", "Rescue specialist"};
 
     int type, role;
     float x, y, vx, vy, angle;
@@ -119,7 +121,20 @@ final class Entity {
     float[] spot;
     java.util.ArrayList<City.Building> round;
     static final int J_NONE = 0, J_WORKER = 1, J_HOMEBODY = 2, J_ERRANDS = 3, J_SHOPKEEPER = 4, J_STUDENT = 5,
-            J_JOGGER = 6, J_PARK = 7, J_POSTIE = 8, J_VENDOR = 9;
+            J_JOGGER = 6, J_PARK = 7, J_POSTIE = 8, J_VENDOR = 9,
+            // Out in the wilds (10.14): hiking the trails, fishing at a lake, round the campfire, and the fire
+            // lookouts: on duty up a tower, on the way to start a shift, and heading home after one.
+            J_HIKER = 10, J_FISHER = 11, J_CAMPER = 12, J_LOOKOUT = 13, J_RELIEF = 14, J_OFFDUTY = 15;
+    /** Up a fire lookout tower: out of reach of the dead. */
+    boolean aloft;
+    /** A walk along a trail (see City.hikes): how far along, and which way (1 out, -1 back). */
+    float[] hike;
+    int hikeIdx, hikeDir = 1;
+    /** Where a planned walking route (path) goes, when it's to a spot rather than a building. */
+    float planX = -1, planY = -1;
+    /** Rescue team: seconds left coming down the winch line, and the person they're bringing back. */
+    float roping;
+    Entity escort;
     float errandTimer;
     boolean homeChecked;
     /** The last hard knock (blast, car, charge), so the body flies the right way if it kills them. Fades fast. */

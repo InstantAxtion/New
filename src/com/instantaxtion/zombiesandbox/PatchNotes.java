@@ -2,11 +2,22 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.13";
-    static final int VERSION_CODE = 51;
+    static final String VERSION = "10.14";
+    static final int VERSION_CODE = 52;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.14  -  The wilds",
+                    "Streams can be waded: police, people and the dead cross them (slowly) instead of getting stuck. Lakes and ponds are still deep.",
+                    "Trails wind naturally through the woods and join up instead of running in stair-steps side by side, and they cross lanes, roads and the railway at proper crossings rather than stopping dead.",
+                    "Waterfalls are as wide as their stream, with the spray falling into the pool below.",
+                    "Park rangers: a ranger station by the park gate, rangers walking the trails, and a ranger truck on the dirt lanes. When the dead come they hold the station.",
+                    "Fire lookout towers on the wooded high ground, each with a lookout who changes shift with a relief walking up from the ranger station. From up there they spot the dead a long way off and phone it in, out of reach.",
+                    "The rescue helicopter: when people are cut off out in the wilds (or stuck up a tower), it flies out, hovers and lowers a search and rescue team on the winch to bring them in, then flies them to the hospital.",
+                    "More to do out there: hikers walk the trails to the lookout, the falls and the lakes; anglers fish from the lake shore; campers sit round the campfire and at the picnic tables.",
+                    "Nobody reports what nobody has seen: one of them alone in the woods chasing deer no longer makes the news or brings the police.",
+            },
             {
                     "10.13  -  Zooming out on big cities",
                     "Zooming out on a big, busy map no longer lags: the treetops are part of the map picture from up there instead of tens of thousands drawn every frame (about a tenth of the drawing it took before).",

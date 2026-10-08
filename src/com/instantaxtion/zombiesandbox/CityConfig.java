@@ -125,12 +125,16 @@ final class CityConfig implements OptionSet {
     /**
      * Which public buildings the city was laid out with: 0 as before 10.4, 1 the government quarter (10.4),
      * 2 and the National Guard armory (10.5), 3 the bigger maps of 10.10 with hills, mountains, lakes, streams
-     * and nature parks out in the country. Saved games rebuild with what they had.
+     * and nature parks out in the country, 4 the wilds of 10.14 (streams you can wade, trails that cross the
+     * lanes, a ranger station and fire lookout towers). Saved games rebuild with what they had.
      */
-    int civic = 3;
+    int civic = 4;
 
     /** Hills, mountains, streams, lakes, parks and campsites (cities built since 10.10). */
     boolean nature() { return civic >= 3; }
+
+    /** Fords, trails that cross the lanes and the railway, the ranger station and fire towers (since 10.14). */
+    boolean wilds() { return civic >= 4; }
 
     int preset() {
         return v[OPT_PRESET];

@@ -32,7 +32,7 @@ final class City {
             D_FLOWERS = 13, D_CROPS = 14, D_ROUNDABOUT = 15, D_FLOODLIGHT = 16, D_FOUNTAIN = 17, D_FLAGS = 18,
             D_YARD = 19, D_MAST = 20, D_SALT = 21, D_PILES = 22, D_UMBRELLA = 23, D_LIFEGUARD = 24, D_BOAT = 25,
             D_SHIP = 26, D_CRANE = 27, D_CONTAINERS = 28, D_TENT = 29, D_CAMPFIRE = 30, D_PICNIC = 31, D_FALLS = 32,
-            D_SIGN = 33, D_LOOKOUT = 34;
+            D_SIGN = 33, D_LOOKOUT = 34, D_FIRETOWER = 35;
     static final int FACILITY_POLICE = 0, FACILITY_BASE = 1, FACILITY_HOSPITAL = 2, FACILITY_FIRE = 3;
 
     /** A police station or military base: where reinforcements come from and a preferred safe zone. */
@@ -469,7 +469,7 @@ final class City {
         for (int[] e : cfg.edits) applyEdit(e[0], e[1], e[2], false);
         for (int i = 0; i < tiles.length; i++) {
             byte t = tiles[i];
-            solid[i] = t == BUILDING || t == TREE || t == CAR || t == STATUE || t == FENCE || t == PUMP || t == WATER || t == ROCK;
+            solid[i] = t == BUILDING || t == TREE || t == CAR || t == STATUE || t == FENCE || t == PUMP || (t == WATER && !isFord(i)) || t == ROCK;
             opaque[i] = t == BUILDING;
         }
         for (int[] l : buildingLots) createBuilding(l);
@@ -790,6 +790,41 @@ final class City {
     /** The nature park (null if there is none), its middle and radius in world units. */
     String parkName;
     float parkX, parkY, parkR;
+
+    // The wilds (10.14): trails drawn as winding lines, the hikes along them, where they cross roads and the
+    // railway, the ranger station and the fire lookouts.
+    final List<float[]> trailLines = new ArrayList<float[]>();
+    /** Walks along the trails from where they start (the trailhead, a campsite, a lane) to something worth seeing. */
+    final List<float[]> hikes = new ArrayList<float[]>();
+    final List<Integer> hikeKinds = new ArrayList<Integer>();
+    static final int HIKE_LOOKOUT = 0, HIKE_FALLS = 1, HIKE_LAKE = 2, HIKE_CAMP = 3, HIKE_TOWER = 4, HIKE_WOODS = 5;
+    /** {x, y, tile kind} where a trail crosses a road or the railway. */
+    final List<float[]> trailCrossings = new ArrayList<float[]>();
+    float trailheadX, trailheadY;
+    String rangerStationName;
+    /** Where the rangers' truck parks. */
+    float[] rangerLot;
+    /** Fire lookout towers: {x, y}, and their names. */
+    final List<float[]> fireTowers = new ArrayList<float[]>();
+    final List<String> fireTowerNames = new ArrayList<String>();
+
+    /** Takes away any decoration (a crop field, a garden) under this patch of tiles, for something built there. */
+    void clearDecorIn(int tx, int ty, int tw, int th) {
+        float x0 = tx * T, y0 = ty * T, x1 = (tx + tw) * T, y1 = (ty + th) * T;
+        for (int i = decor.size() - 1; i >= 0; i--) {
+            float[] d = decor.get(i);
+            if (d[3] > x0 && d[1] < x1 && d[4] > y0 && d[2] < y1) decor.remove(i);
+        }
+    }
+
+    /** A campsite's middle is here. */
+    boolean isCampAt(float x, float y) {
+        for (int i = 0; i < natureSpots.size(); i++) {
+            float[] q = natureSpots.get(i);
+            if (q[2] == NL_CAMP && Math.abs(q[0] - x) < T && Math.abs(q[1] + 30 - y) < T) return true;
+        }
+        return false;
+    }
     private final java.util.IdentityHashMap<int[], String> lotNames = new java.util.IdentityHashMap<int[], String>();
     private final java.util.IdentityHashMap<int[], Integer> lotResidents = new java.util.IdentityHashMap<int[], Integer>();
 
@@ -804,6 +839,21 @@ final class City {
 
     void unpine(int i) {
         if (treeKind != null) treeKind[i] = 0;
+    }
+
+    /** Shallow stream water anyone can wade across (since 10.14): it's water, but not in the way. */
+    boolean[] ford;
+
+    void setFord(int i, boolean on) {
+        if (ford == null) {
+            if (!on) return;
+            ford = new boolean[w * h];
+        }
+        ford[i] = on;
+    }
+
+    boolean isFord(int i) {
+        return ford != null && i >= 0 && i < ford.length && ford[i] && tiles[i] == WATER;
     }
 
     void setBridge(int i) {
@@ -2431,6 +2481,8 @@ final class City {
                         break;
                     }
                 }
+        // A stream you can wade is shallow: the bed shows through.
+        if (isFord(y * w + x)) return lighten(base, 0.14f);
         return darken(base, 1 - Math.min(0.22f, (land - 1) * 0.028f));
     }
 
@@ -6470,6 +6522,61 @@ final class City {
                 c.drawRect(cx - 4.5f, cy, cx + 2, cy + 0.6f, p);
                 break;
             }
+            case D_FIRETOWER: {
+                // A fire lookout: four steel legs splayed out under a little glass-walled cab, a stair zigzagging up.
+                p.setColor(0x40000000);
+                Path sh = new Path();
+                sh.moveTo(cx - 12, cy - 12);
+                sh.lineTo(cx + 12, cy - 12);
+                sh.lineTo(cx + 40, cy + 30);
+                sh.lineTo(cx + 22, cy + 46);
+                sh.close();
+                c.drawPath(sh, p);
+                p.setStyle(Paint.Style.STROKE);
+                p.setStrokeWidth(1.6f);
+                p.setColor(0xFF5A5E62);
+                for (int sx = -1; sx <= 1; sx += 2)
+                    for (int sy = -1; sy <= 1; sy += 2) c.drawLine(cx + sx * 13, cy + sy * 13, cx + sx * 5, cy + sy * 5, p);
+                p.setStrokeWidth(0.7f);
+                p.setColor(0xFF7A7E82);
+                c.drawLine(cx - 9, cy - 9, cx + 9, cy + 9, p);
+                c.drawLine(cx + 9, cy - 9, cx - 9, cy + 9, p);
+                // The stair.
+                p.setColor(0xFF6E5236);
+                for (int k = 0; k < 4; k++) c.drawLine(cx + 6, cy - 8 + k * 4, cx + 11, cy - 6 + k * 4, p);
+                p.setStyle(Paint.Style.FILL);
+                // The cab: windows all round and a pyramid roof.
+                p.setColor(0xFF8FB8C8);
+                c.drawRect(cx - 7, cy - 7, cx + 7, cy + 7, p);
+                p.setColor(0xFF6E4A32);
+                Path roof = new Path();
+                roof.moveTo(cx - 6, cy - 6);
+                roof.lineTo(cx + 6, cy - 6);
+                roof.lineTo(cx, cy);
+                roof.close();
+                c.drawPath(roof, p);
+                p.setColor(0xFF5A3C28);
+                roof.reset();
+                roof.moveTo(cx + 6, cy - 6);
+                roof.lineTo(cx + 6, cy + 6);
+                roof.lineTo(cx, cy);
+                roof.close();
+                c.drawPath(roof, p);
+                roof.reset();
+                roof.moveTo(cx - 6, cy + 6);
+                roof.lineTo(cx + 6, cy + 6);
+                roof.lineTo(cx, cy);
+                roof.close();
+                c.drawPath(roof, p);
+                p.setColor(0xFF7E5840);
+                roof.reset();
+                roof.moveTo(cx - 6, cy - 6);
+                roof.lineTo(cx - 6, cy + 6);
+                roof.lineTo(cx, cy);
+                roof.close();
+                c.drawPath(roof, p);
+                break;
+            }
             case D_LOOKOUT: {
                 // A timber platform with a rail and a bench, looking out.
                 p.setColor(0x50000000);
@@ -6572,14 +6679,73 @@ final class City {
             }
     }
 
+    /** The trails as smooth curves through their tiles, and posts where they cross a road or the railway. */
+    private void drawTrailLines(Canvas c, Paint p, int X0, int Y0, int X1, int Y1) {
+        float rx0 = (X0 - 2) * T, ry0 = (Y0 - 2) * T, rx1 = (X1 + 2) * T, ry1 = (Y1 + 2) * T;
+        Path path = new Path();
+        for (int pass = 0; pass < 2; pass++) {
+            p.setStrokeWidth(pass == 0 ? 5.5f : 2.6f);
+            p.setColor(pass == 0 ? 0xFF8C7454 : 0xFFAE9670);
+            for (float[] l : trailLines) {
+                float lx0 = Float.MAX_VALUE, ly0 = Float.MAX_VALUE, lx1 = -Float.MAX_VALUE, ly1 = -Float.MAX_VALUE;
+                for (int k = 0; k < l.length; k += 2) {
+                    lx0 = Math.min(lx0, l[k]);
+                    lx1 = Math.max(lx1, l[k]);
+                    ly0 = Math.min(ly0, l[k + 1]);
+                    ly1 = Math.max(ly1, l[k + 1]);
+                }
+                if (lx1 < rx0 || lx0 > rx1 || ly1 < ry0 || ly0 > ry1) continue;
+                // Through the midpoints, curving at each tile: no stair-steps.
+                path.reset();
+                path.moveTo(l[0], l[1]);
+                int n = l.length / 2;
+                for (int k = 1; k < n - 1; k++)
+                    path.quadTo(l[k * 2], l[k * 2 + 1], (l[k * 2] + l[k * 2 + 2]) / 2, (l[k * 2 + 1] + l[k * 2 + 3]) / 2);
+                path.lineTo(l[(n - 1) * 2], l[(n - 1) * 2 + 1]);
+                c.drawPath(path, p);
+            }
+        }
+        p.setStyle(Paint.Style.FILL);
+        for (float[] x : trailCrossings) {
+            if (x[0] < rx0 || x[0] > rx1 || x[1] < ry0 || x[1] > ry1) continue;
+            if (x[2] == RAIL) {
+                // Boards laid between the rails.
+                p.setColor(0xFF7A5A3A);
+                c.drawRect(x[0] - 6, x[1] - 6, x[0] + 6, x[1] + 6, p);
+                p.setColor(0xFF5A4028);
+                for (int k = -1; k <= 1; k++) c.drawRect(x[0] - 6, x[1] + k * 4 - 0.4f, x[0] + 6, x[1] + k * 4 + 0.4f, p);
+            } else {
+                // A crossing: white bars across the road.
+                p.setColor(0xD8E8E8E0);
+                for (int k = -1; k <= 1; k++) c.drawRect(x[0] + k * 4 - 1.2f, x[1] - 6, x[0] + k * 4 + 1.2f, x[1] + 6, p);
+            }
+        }
+        p.setStyle(Paint.Style.STROKE);
+    }
+
     /** Hill shading, contour lines out in the country, trails and their footbridges. */
     private void drawTerrain(Canvas c, Paint p, int X0, int Y0, int X1, int Y1) {
         if (elev == null) return;
         if (waterKind == CityConfig.W_NONE) roundBanks(c, p, X0, Y0, X1, Y1);
-        // Trails: a worn earth path joining up from tile to tile.
+        // Stones in the fords, where people wade across.
+        if (ford != null)
+            for (int y = Math.max(0, Y0); y < Math.min(h, Y1); y++)
+                for (int x = Math.max(0, X0); x < Math.min(w, X1); x++) {
+                    if (!isFord(y * w + x) || (bridge != null && bridge[y * w + x])) continue;
+                    prnd.setSeed(tileSeed(x, y, 7));
+                    for (int k = 0; k < 3; k++) {
+                        float sx = x * T + 2 + prnd.nextFloat() * (T - 4), sy = y * T + 2 + prnd.nextFloat() * (T - 4);
+                        p.setColor(0x60202830);
+                        c.drawCircle(sx + 0.6f, sy + 0.8f, 1.4f, p);
+                        p.setColor(0xFF8A9088);
+                        c.drawCircle(sx, sy, 1.3f, p);
+                    }
+                }
+        // Trails: a worn earth path winding along (or, on older maps, joining up from tile to tile).
         p.setStyle(Paint.Style.STROKE);
         p.setStrokeCap(Paint.Cap.ROUND);
-        for (int pass = 0; pass < 2; pass++) {
+        if (!trailLines.isEmpty()) drawTrailLines(c, p, X0, Y0, X1, Y1);
+        for (int pass = 0; pass < 2 && trailLines.isEmpty(); pass++) {
             p.setStrokeWidth(pass == 0 ? 5.5f : 2.6f);
             p.setColor(pass == 0 ? 0xFF8C7454 : 0xFFAE9670);
             for (int y = Math.max(0, Y0 - 1); y < Math.min(h, Y1 + 1); y++)
@@ -7127,6 +7293,20 @@ final class City {
             String sign = country.gunSign();
             float ts = Math.min(9f, bw / (sign.length() * 0.75f));
             label(sign, (x0 + x1) / 2, (y0 + y1) / 2 + 2.5f, ts, 0xFFF2E2B8);
+            return;
+        }
+        if (own != null && own.name != null && own.name.equals(rangerStationName)) {
+            // The ranger station: a green metal roof, a brown trim and the sign on top.
+            p.setColor(0xFF3A4A30);
+            c.drawRect(x0, y0, x1, y1, p);
+            p.setColor(0xFF4E6240);
+            c.drawRect(x0 + 1.5f, y0 + 1.5f, x1 - 1.5f, (y0 + y1) / 2, p);
+            p.setColor(0xFF465A3A);
+            c.drawRect(x0 + 1.5f, (y0 + y1) / 2, x1 - 1.5f, y1 - 1.5f, p);
+            p.setColor(0xFF6E4A2A);
+            c.drawRect(x0, y1 - 3, x1, y1, p);
+            String sign = country.sign("RANGERS");
+            label(sign, (x0 + x1) / 2, (y0 + y1) / 2 + 3, Math.min(9f, bw / (sign.length() * 0.72f)), 0xFFE8D8A8);
             return;
         }
         if (b.length > 9 && b[9] >= 0 && Roofs.drawVariant(this, c, p, b, Variants.get(b[9]))) return;
@@ -8299,7 +8479,8 @@ final class City {
             for (int x = 0; x < w; x++) {
                 int i = y * w + x;
                 byte t = tiles[i];
-                walkCost[i] = (byte) (t != ROAD ? 1 : junction[i] ? 3 : crosswalk(x, y) ? 1 : 8);
+                // (Wading across a stream is slow going: a bridge nearby is better.)
+                walkCost[i] = (byte) (isFord(i) ? 6 : t != ROAD ? 1 : junction[i] ? 3 : crosswalk(x, y) ? 1 : 8);
             }
     }
 

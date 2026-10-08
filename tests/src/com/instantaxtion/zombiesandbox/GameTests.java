@@ -342,7 +342,7 @@ public final class GameTests {
                     for (int f = 0; f < 30 * 30; f++) w.update(1 / 30f);
                     int wet = 0;
                     for (Entity e : w.entities)
-                        if (!e.dead && !e.hidden && city.tiles[city.tileIndex(e.x, e.y)] == City.WATER) wet++;
+                        if (!e.dead && !e.hidden && city.tiles[city.tileIndex(e.x, e.y)] == City.WATER && !city.isFord(city.tileIndex(e.x, e.y))) wet++;
                     for (Fleet.Vehicle v : w.fleet.vehicles)
                         if (v.type != Fleet.HELI && v.type != Fleet.JET && city.tiles[city.tileIndex(v.x, v.y)] == City.WATER) wet++;
                     check(wet == 0, name + ": " + wet + " people or cars in the water");
@@ -807,6 +807,101 @@ public final class GameTests {
                     check(w.city.renderVersion == version && !w.city.changes.isEmpty(), "a truck leaving marks just its bay to redraw");
                     w.city.parkTruck(bay[0], bay[1]);
                 }
+            }
+        });
+        test("10.14: fords, winding trails, rangers, fire lookouts, the rescue helicopter, nobody reports what nobody saw", new Check() {
+            public void run() {
+                CityConfig c = new CityConfig();
+                c.seed = 9;
+                c.v[CityConfig.OPT_COUNTRY] = Country.SWEDEN;
+                c.v[CityConfig.OPT_PRESET] = 6;
+                c.v[CityConfig.OPT_SIZE] = CityConfig.LARGE;
+                c.v[CityConfig.OPT_ZOMBIES] = 0;
+                World w = new World(c);
+                w.populate(c);
+                City city = w.city;
+                w.viewX0 = 0;
+                w.viewY0 = 0;
+                w.viewX1 = city.worldW();
+                w.viewY1 = city.worldH();
+                // Streams can be waded: water, but not in the way, and a route goes straight across.
+                int fords = 0, across = 0, tried = 0;
+                for (int i = 0; i < city.w * city.h; i++) {
+                    if (!city.isFord(i)) continue;
+                    fords++;
+                    check(!city.solid[i], "a ford is not a wall");
+                    int x = i % city.w, y = i / city.w;
+                    if (tried >= 10 || i % 5 != 0 || x < 4 || y < 4 || x >= city.w - 4 || y >= city.h - 4) continue;
+                    int ia = y * city.w + x - 3, ib = y * city.w + x + 3;
+                    if (city.solid[ia] || city.solid[ib] || city.tiles[ia] == City.WATER || city.tiles[ib] == City.WATER) continue;
+                    tried++;
+                    int[] p = city.findPath((x - 2.5f) * City.T, (y + 0.5f) * City.T, (x + 3.5f) * City.T, (y + 0.5f) * City.T, 9000);
+                    if (p != null && p.length <= 12) across++;
+                }
+                check(fords > 20, "streams you can wade (" + fords + " tiles)");
+                check(tried == 0 || across * 2 >= tried, "a short way straight across a stream (" + across + " of " + tried + ")");
+                // Waterfalls sit across the stream, as wide as it is.
+                for (float[] f : city.falls) check(f.length > 4 && f[4] >= City.T / 2f && f[4] <= City.T * 2.5f, "a waterfall as wide as its stream (" + (f.length > 4 ? f[4] : 0) + ")");
+                // Trails: drawn as winding lines, walks along them, a ranger station and fire towers.
+                check(!city.trailLines.isEmpty() && city.hikes.size() >= 3, "trails to walk (" + city.hikes.size() + ")");
+                check(city.rangerStationName != null && w.rangerStation != null, "a ranger station");
+                check(!city.fireTowers.isEmpty(), "fire lookout towers");
+                int rangers = 0, trucks = 0, aloft = 0;
+                for (Entity e : w.entities) {
+                    if (!e.dead && e.agency == 3) rangers++;
+                    if (!e.dead && e.aloft && e.job == Entity.J_LOOKOUT) aloft++;
+                }
+                for (Fleet.Vehicle v : w.fleet.vehicles) if (v.agency == 3) trucks++;
+                check(rangers >= 2 && trucks == 1, "rangers on foot and in their truck (" + rangers + ", " + trucks + ")");
+                check(aloft == city.fireTowers.size(), "a lookout up every tower (" + aloft + ")");
+                // A shift change: the relief walks up from the ranger station and takes over.
+                Entity first = w.towerKeeper[0];
+                w.towerShift[0] = 0;
+                boolean changed = false;
+                int hiking = 0;
+                for (int f = 0; f < 30 * 240 && !changed; f++) {
+                    w.update(1 / 30f);
+                    w.evCount = 0;
+                    changed = w.towerKeeper[0] != null && w.towerKeeper[0] != first;
+                }
+                check(changed && first.job == Entity.J_OFFDUTY && !first.aloft, "the next lookout takes over and the last one heads home");
+                for (Entity e : w.entities) if (!e.dead && e.hike != null && e.hikeIdx > 5) hiking++;
+                check(hiking > 0, "people out along the trails (" + hiking + ")");
+                // One of the dead out in the woods with nobody to see it: no news, no alert.
+                CityConfig q = new CityConfig();
+                q.seed = 9;
+                q.v[CityConfig.OPT_COUNTRY] = Country.SWEDEN;
+                q.v[CityConfig.OPT_PRESET] = 6;
+                q.v[CityConfig.OPT_SIZE] = CityConfig.LARGE;
+                q.v[CityConfig.OPT_ZOMBIES] = 0;
+                World lone = new World(q);
+                lone.populate(q);
+                lone.update(1 / 30f);
+                float[] far = null;
+                for (int k = 0; k < 4000 && far == null; k++) {
+                    float[] p = lone.city.randomWalkable(lone.rnd);
+                    if (!lone.city.inTown(p[0], p[1]) && !lone.peopleNear(p[0], p[1], 700)) far = p;
+                }
+                if (far != null) {
+                    lone.spawn(Entity.ZOMBIE, far[0], far[1]);
+                    for (int f = 0; f < 30 * 40; f++) lone.update(1 / 30f);
+                    check(lone.alert == 0 || lone.dispatch.calls > 0 || lone.bites > 0, "nobody reports one of them that nobody has seen");
+                }
+                // The dead round a fire tower: the rescue helicopter lowers its team and lifts people out.
+                float[] t = city.fireTowers.get(0);
+                for (int i = 0; i < 4; i++) w.spawn(Entity.ZOMBIE, t[0] - 70 + i * 8, t[1] - 70);
+                w.alert = Math.max(1, w.alert);
+                boolean sent = false, lowered = false;
+                for (int f = 0; f < 30 * 120 && !lowered; f++) {
+                    w.update(1 / 30f);
+                    w.evCount = 0;
+                    for (Fleet.Vehicle v : w.fleet.vehicles)
+                        if (v.kind == Fleet.K_RESCUE_HELI) {
+                            sent = true;
+                            if (v.team != null && !v.team.isEmpty()) lowered = true;
+                        }
+                }
+                check(sent && lowered, "the rescue helicopter comes and lowers its team");
             }
         });
         test("every screen draws", new Check() {

@@ -330,6 +330,15 @@ windows always fades once the shooting stops.
 them to it when zoomed out; crowds become one dot per side in each patch of the screen, and vehicles and
 wildlife simple specks. A busy Huge map zoomed right out takes about a tenth of the drawing it did.
 
+**The wilds (10.14):** streams are shallow enough to wade (slowly); lakes and ponds stay deep. Trails wind
+through the woods, join each other and cross lanes, roads and the railway at crossings. Each park has a
+ranger station: rangers walk the trails and patrol the dirt lanes in their truck, and hold the station once
+the dead come. Fire lookout towers stand on the wooded high ground, each with a lookout who changes shift
+with a relief from the ranger station, spots the dead from far off and phones it in. People hike the trails,
+fish from the lake shores and sit round the campfires. When people are cut off out there, the rescue
+helicopter hovers and lowers a search and rescue team on the winch, lifts everyone out and flies them to the
+hospital. Nobody reports zombies that nobody has seen. Saved games from before keep their old maps.
+
 **Countryside:** Villages, small towns and every Massive map are surrounded by open country:
 winding dirt lanes out to the edge of the map, farms and lonely cabins along them, woods, and
 hamlets (a short street of cottages with a lane back to town). A town out in the country is never a
@@ -459,7 +468,8 @@ install as updates over older ones. GitHub Actions also builds the APK on every 
 Code layout (`src/com/instantaxtion/zombiesandbox/`):
 
 - `CityConfig.java`: map presets and custom city options.
-- `Terrain.java`: heights, mountains, streams, lakes, the nature park, trails and campsites (since 10.10).
+- `Terrain.java`: heights, mountains, streams, lakes, the nature park, trails and campsites (since 10.10);
+  fords, winding trails, the ranger station and fire lookout towers (since 10.14).
 - `Roofs.java`: each country's roofs (houses, blocks, shops, churches, temples and shrines).
 - `Variants.java`: the 159 building kinds (name, sign, roof style, colours, which countries and districts).
 - `Interiors.java`: floor plans (rooms, walls, doorways), furniture and the spots people stand or sit at.

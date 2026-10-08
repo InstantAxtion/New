@@ -295,7 +295,10 @@ Traffic drives the streets, pigeons flock in the parks, and explosions leave bur
   district full of warehouses.
 
 **Islands:** three island towns in the sea, each with its own name (shown over it when you zoom
-right out), its own streets, police station and fire station, ringed by a sandy shore. Bridges join
+right out), its own streets, police station and fire station. The islands have natural outlines -
+lobes, bays and headlands - with grassland and woods running down to the shore, sandy beaches along
+some stretches and wooded, rocky coast along others, channels of open water between them and a few
+islets offshore. Bridges join
 them, and a long causeway runs from the southern island to the mainland at the edge of the map: that's
 the way convoys, the Guard from out of town, raiders and traffic come and go. It's always one size,
 512 tiles across (bigger than Massive); the size option is locked for it.

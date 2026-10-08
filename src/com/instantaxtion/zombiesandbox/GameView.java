@@ -3385,6 +3385,27 @@ final class GameView extends View implements Menu.Host {
     private void drawMapLabels(Canvas c) {
         text.setTextAlign(Paint.Align.CENTER);
         placedCount = 0;
+        // Further out still, on the Islands: each island's town, in big letters.
+        City city0 = world.city;
+        float islandAlpha = Math.max(0, Math.min(1, (1.9f - scale / dp) / 0.8f));
+        if (city0.islandRects != null && islandAlpha > 0) {
+            text.setTextAlign(Paint.Align.CENTER);
+            text.setTextSize(24 * dp);
+            for (int i = 0; i < city0.islandRects.length; i++) {
+                int[] q = city0.islandRects[i];
+                float sx = screenX((q[0] + q[2]) / 2f * City.T), sy = screenY((q[1] + q[3]) / 2f * City.T);
+                if (sx < -200 * dp || sx > getWidth() + 200 * dp || sy < 20 * dp || sy > barTop) continue;
+                String label = city0.islandNames[i].toUpperCase();
+                float tw = text.measureText(label);
+                oval.set(sx - tw / 2, sy - 22 * dp, sx + tw / 2, sy + 4 * dp);
+                if (!claim(oval)) continue;
+                text.setColor(alpha(0xFF000000, islandAlpha * 0.6f));
+                c.drawText(label, sx + 2 * dp, sy + 2 * dp, text);
+                text.setColor(alpha(0xFFFFF4C8, islandAlpha * 0.95f));
+                c.drawText(label, sx, sy, text);
+            }
+        }
+
         // Most important first: what can't be missed gets its place, the rest fits round it.
         text.setTextSize(11.5f * dp);
         for (int i = 0, n = world.dispatch.zones.size(); i < n; i++) {
@@ -3573,25 +3594,6 @@ final class GameView extends View implements Menu.Host {
             c.drawText(label, sx, sy, text);
         }
             text.setTextAlign(Paint.Align.CENTER);
-        // Further out still, on the Islands: each island's town, in big letters.
-        City city0 = world.city;
-        float islandAlpha = Math.max(0, Math.min(1, (1.9f - scale / dp) / 0.8f));
-        if (city0.islandRects != null && islandAlpha > 0) {
-            text.setTextSize(24 * dp);
-            for (int i = 0; i < city0.islandRects.length; i++) {
-                int[] q = city0.islandRects[i];
-                float sx = screenX((q[0] + q[2]) / 2f * City.T), sy = screenY(q[1] * City.T) - 8 * dp;
-                if (sx < -200 * dp || sx > getWidth() + 200 * dp || sy < 20 * dp || sy > barTop) continue;
-                String label = city0.islandNames[i].toUpperCase();
-                float tw = text.measureText(label);
-                oval.set(sx - tw / 2, sy - 22 * dp, sx + tw / 2, sy + 4 * dp);
-                if (!claim(oval)) continue;
-                text.setColor(alpha(0xFF000000, islandAlpha * 0.6f));
-                c.drawText(label, sx + 2 * dp, sy + 2 * dp, text);
-                text.setColor(alpha(0xFFFFF4C8, islandAlpha * 0.95f));
-                c.drawText(label, sx, sy, text);
-            }
-        }
         // Zoomed out: the names of the districts across the map.
         float districtAlpha = Math.max(0, Math.min(1, (3.2f - scale) / 1.2f));
         if (districtAlpha > 0) {

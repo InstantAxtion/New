@@ -417,9 +417,13 @@ public final class GameTests {
                 c.v[CityConfig.OPT_ZOMBIES] = 4;
                 World w = new World(c);
                 w.populate(c);
+                // (An unprepared city has only half the spare rounds.)
+                boolean half = w.readiness == 1;
                 for (Entity e : w.entities) {
-                    if (e.type == Entity.COP && e.role == 0) check(e.ammo + e.reserve == 60, "an officer carries 60 rounds (" + (e.ammo + e.reserve) + ")");
-                    if (e.type == Entity.SOLDIER && e.role == Entity.ROLE_RIFLE) check(e.ammo + e.reserve == 210, "a soldier carries 210 rounds (" + (e.ammo + e.reserve) + ")");
+                    if (e.type == Entity.COP && e.role == 0 && e.agency == 0)
+                        check(e.ammo + e.reserve == (half ? 15 + 22 : 60), "an officer carries 60 rounds (" + (e.ammo + e.reserve) + ")");
+                    if (e.type == Entity.SOLDIER && e.role == Entity.ROLE_RIFLE)
+                        check(e.ammo + e.reserve == (half ? 30 + 90 : 210), "a soldier carries 210 rounds (" + (e.ammo + e.reserve) + ")");
                 }
                 // Two minutes into a busy outbreak, hardly anyone has run dry.
                 for (int f = 0; f < 30 * 120; f++) w.update(1 / 30f);
@@ -487,7 +491,15 @@ public final class GameTests {
                     int[] q = city.islandRects[i];
                     check(buildings[i] > 150 && precincts[i] > 0 && fire[i] > 0, city.islandNames[i] + ": a town (" + buildings[i]
                             + " buildings) with its own police and fire station");
-                    boolean road = city.driveField(dist, (q[0] + 1.5f) * City.T, (q[1] + q[3]) / 2 * City.T)
+                    // (A street near the middle of the island.)
+                    float[] spot = null;
+                    for (int r = 0; r < 60 && spot == null; r++)
+                        for (int dy = -r; dy <= r && spot == null; dy++)
+                            for (int dx = -r; dx <= r && spot == null; dx++) {
+                                int tx = (q[0] + q[2]) / 2 + dx, ty = (q[1] + q[3]) / 2 + dy;
+                                if (city.tiles[ty * city.w + tx] == City.ROAD) spot = new float[]{(tx + 0.5f) * City.T, (ty + 0.5f) * City.T};
+                            }
+                    boolean road = spot != null && city.driveField(dist, spot[0], spot[1])
                             && dist[city.tileIndex(city.causewayEnd[0], city.causewayEnd[1])] < City.FAR;
                     check(road, city.islandNames[i] + " can be reached by road from the mainland causeway");
                 }

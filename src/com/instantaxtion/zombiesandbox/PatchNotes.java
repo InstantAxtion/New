@@ -2,11 +2,16 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.8";
-    static final int VERSION_CODE = 46;
+    static final String VERSION = "10.9";
+    static final int VERSION_CODE = 47;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.9  -  Real islands",
+                    "The Islands aren't squares any more: each has a natural outline with lobes, bays and headlands, grassland and woods running down to the water, sandy beaches along some stretches and wooded, rocky shore along others. There's always a channel of open water between the islands, the bridges run street to street, and a few small islets lie offshore.",
+                    "Zoomed right out, each island's name now shows over the middle of it (ahead of the other labels).",
+            },
             {
                     "10.8  -  Islands",
                     "A new map, Islands: three island towns in the sea, each with its own name, streets, police station and fire station, ringed by sandy beaches. Bridges join the islands, and a long causeway runs from the southern island to the mainland: convoys, the Guard from out of town, raiders and traffic all come and go that way.",

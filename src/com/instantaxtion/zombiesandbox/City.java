@@ -1733,44 +1733,185 @@ final class City {
     }
 
     /**
-     * Three island towns in the sea: each with a ring road, its streets inside, a sandy shore round it; bridges
-     * between them, and a long causeway from the southern island to the mainland at the edge of the map.
+     * Three island towns in the sea. Each town is laid out on its own street grid, then given a natural
+     * outline (lobes, bays and headlands: the blocks outside it go back to the sea, with the roads that only
+     * served them); round what's left grows a coast of grass and woods with sandy beaches here and rocky,
+     * wooded shore there. Bridges then join the islands street to street, a causeway runs from the southern
+     * island to the mainland, and a few islets lie offshore.
      */
     private void islands() {
         fill(0, 0, w, h, WATER);
         bridge = new boolean[w * h];
-        double ph = rnd.nextDouble() * 10;
+        Random sr = new Random(cfg.seed * 59L + 11);
         for (int[] q : islandRects) {
             int x0 = q[0], y0 = q[1], x1 = q[2], y1 = q[3];
-            // The shore: sand a few tiles deep, the beach wider and narrower along it.
-            for (int y = Math.max(0, y0 - 10); y < Math.min(h, y1 + 10); y++)
-                for (int x = Math.max(0, x0 - 10); x < Math.min(w, x1 + 10); x++) {
-                    float dx = Math.max(Math.max(x0 - 1 - x, 0), x - x1), dy = Math.max(Math.max(y0 - 1 - y, 0), y - y1);
-                    double d = Math.sqrt(dx * dx + dy * dy);
-                    double beach = 4.5 + 2.2 * Math.sin(x * 0.09 + y * 0.07 + ph) + 1.3 * Math.sin(x * 0.031 - y * 0.043 + ph * 2);
-                    if (d <= beach) tiles[y * w + x] = SAND;
-                }
             fill(x0 - 1, y0 - 1, x1 - x0 + 2, y1 - y0 + 2, SIDEWALK);
             carve(new Street(x0, y0, x1, y0 + 3, false, false));
             carve(new Street(x0, y1 - 3, x1, y1, false, false));
             carve(new Street(x0, y0, x0 + 3, y1, true, false));
             carve(new Street(x1 - 3, y0, x1, y1, true, false));
             split(x0 + 3, y0 + 3, x1 - 3, y1 - 3, 0, -1, -1);
-            // People go down to the beach.
-            openAreas.add(new float[]{(x0 + x1) / 2f * T, (y1 + 3) * T, 0});
-            openAreas.add(new float[]{(x0 - 3) * T, (y0 + y1) / 2f * T, 0});
         }
+        // Each island's outline: a rounded shape with lobes, bays and headlands.
+        int n = islandRects.length;
+        float[][] amp = new float[n][4], ph = new float[n][4];
+        for (int i = 0; i < n; i++)
+            for (int k = 0; k < 4; k++) {
+                amp[i][k] = 0.05f + sr.nextFloat() * (k == 0 ? 0.14f : 0.09f);
+                ph[i][k] = sr.nextFloat() * (float) Math.PI * 2;
+            }
+        List<int[]> kept = new ArrayList<int[]>();
+        for (int[] b : blocks) {
+            float bx = (b[0] + b[2]) / 2f, by = (b[1] + b[3]) / 2f;
+            int i = island((int) bx, (int) by);
+            if (i < 0) continue;
+            int[] q = islandRects[i];
+            float hx = (q[2] - q[0]) / 2f, hy = (q[3] - q[1]) / 2f;
+            float nx = (bx - (q[0] + q[2]) / 2f) / hx, ny = (by - (q[1] + q[3]) / 2f) / hy;
+            float a = (float) Math.atan2(ny, nx);
+            float d = (float) Math.pow(Math.pow(Math.abs(nx), 2.6) + Math.pow(Math.abs(ny), 2.6), 1 / 2.6);
+            float r = 0.95f;
+            for (int k = 0; k < 4; k++) r += amp[i][k] * (float) Math.sin((k + 2) * a + ph[i][k]);
+            if (d < r) kept.add(b);
+        }
+        // The town: the blocks kept and the roads beside them. Everything else of the grid goes back to the sea.
+        boolean[] town = new boolean[w * h];
+        for (int[] b : kept)
+            for (int y = Math.max(0, b[1] - 3); y < Math.min(h, b[3] + 3); y++)
+                for (int x = Math.max(0, b[0] - 3); x < Math.min(w, b[2] + 3); x++) {
+                    int t = y * w + x;
+                    boolean inside = x >= b[0] && x < b[2] && y >= b[1] && y < b[3];
+                    if (inside || tiles[t] == ROAD) town[t] = true;
+                }
+        for (int t = 0; t < w * h; t++)
+            if (!town[t] && tiles[t] != WATER) {
+                tiles[t] = WATER;
+                roadDir[t] = 0;
+                mainRoad[t] = false;
+            }
+        // Stray bits of road (and blocks only they reach) go too.
+        int[] comp = new int[w * h];
+        Arrays.fill(comp, -1);
+        List<Integer> sizes = new ArrayList<Integer>();
+        int[] qu = new int[w * h];
+        for (int s0 = 0; s0 < w * h; s0++) {
+            if (tiles[s0] != ROAD || comp[s0] >= 0) continue;
+            int id = sizes.size(), head = 0, tail = 0;
+            qu[tail++] = s0;
+            comp[s0] = id;
+            while (head < tail) {
+                int c = qu[head++], x = c % w, y = c / w;
+                int[] nb = {x > 0 ? c - 1 : -1, x < w - 1 ? c + 1 : -1, y > 0 ? c - w : -1, y < h - 1 ? c + w : -1};
+                for (int jn : nb)
+                    if (jn >= 0 && comp[jn] < 0 && tiles[jn] == ROAD) {
+                        comp[jn] = id;
+                        qu[tail++] = jn;
+                    }
+            }
+            sizes.add(tail);
+        }
+        int biggest = 0;
+        for (int sz : sizes) biggest = Math.max(biggest, sz);
+        for (int t = 0; t < w * h; t++)
+            if (comp[t] >= 0 && sizes.get(comp[t]) < biggest / 6) {
+                tiles[t] = WATER;
+                roadDir[t] = 0;
+                mainRoad[t] = false;
+            }
+        blocks.clear();
+        for (int[] b : kept) {
+            boolean touches = false;
+            for (int y = Math.max(0, b[1] - 1); y <= Math.min(h - 1, b[3]) && !touches; y++)
+                for (int x = Math.max(0, b[0] - 1); x <= Math.min(w - 1, b[2]) && !touches; x++)
+                    if (tiles[y * w + x] == ROAD) touches = true;
+            if (touches) blocks.add(b);
+            else fill(b[0], b[1], b[2] - b[0], b[3] - b[1], WATER);
+        }
+        // The coast: grassland and woods round the town, then the shore - sand where there's a beach,
+        // grass and trees right down to the water where it's rocky.
+        // (Distance from each island's town, in tenths of a tile, measured straight rather than in steps: a smooth
+        // shore. Each island's land keeps well clear of the others', so there's always a channel between them.)
+        int[][] dists = new int[n][];
+        for (int il = 0; il < n; il++) dists[il] = chamfer(il);
+        int[] dist = new int[w * h];
+        for (int t = 0; t < w * h; t++) {
+            int own = Integer.MAX_VALUE, other = Integer.MAX_VALUE;
+            int mine = -1;
+            for (int il = 0; il < n; il++)
+                if (dists[il][t] < own) {
+                    other = own;
+                    own = dists[il][t];
+                    mine = il;
+                } else other = Math.min(other, dists[il][t]);
+            dist[t] = own + 100 > other ? (own == 0 ? 0 : 1 << 20) : own;
+        }
+        double p0 = sr.nextDouble() * 10;
+        for (int t = 0; t < w * h; t++) {
+            if (dist[t] <= 0 || dist[t] > 230) continue;
+            int x = t % w, y = t / w;
+            // How far the land runs out from the town: slowly wandering (headlands and bays), with a little
+            // ruffle along the shore.
+            double coast = 7.5 + 6 * Math.sin(x * 0.043 + y * 0.021 + p0) + 4 * Math.sin(x * 0.019 - y * 0.051 + p0 * 2)
+                    + 2.6 * Math.sin(x * 0.17 + y * 0.09 + p0 * 4) + 1.8 * Math.sin((x - y) * 0.11 + p0 * 3)
+                    + 0.7 * Math.sin((x + y) * 0.37 + p0 * 5);
+            coast = Math.max(2.2, Math.min(22, coast));
+            double beach = Math.max(0, 1.6 + 2.0 * Math.sin(x * 0.04 + y * 0.065 + p0 * 1.7));
+            double d = dist[t] / 10.0;
+            if (d > coast) continue;
+            tiles[t] = d > coast - beach ? SAND : sr.nextFloat() < (d > 3 ? 0.22f : 0.08f) && d > 1.2 ? TREE : GRASS;
+        }
+        // Streets that ran on into the water stop at the last corner instead.
+        boolean[] dug = new boolean[w * h];
+        for (int[] e : deadEnds()) trimStub(e, dug);
+        fixJunctions(dug);
+        for (int t = 0; t < w * h; t++) if (dug[t]) tiles[t] = GRASS;
+        for (int si = streets.size() - 1; si >= 0; si--) {
+            Street st = streets.get(si);
+            boolean any = false;
+            for (int y = st.y0; y < st.y1 && !any; y++)
+                for (int x = st.x0; x < st.x1 && !any; x++)
+                    if (x >= 0 && y >= 0 && x < w && y < h && tiles[y * w + x] == ROAD) any = true;
+            if (!any) streets.remove(si);
+        }
+        // Bridges, street to street: A to B across the top, each down to C, and C out to the mainland.
         int[] a = islandRects[0], b = islandRects[1], c = islandRects[2];
-        // A to B across the top; each of them down to C; and C out to the mainland.
-        int ab = (Math.max(a[1], b[1]) + Math.min(a[3], b[3])) / 2 - 1;
-        bridgeRoad(false, ab, a[2] - 3, b[0] + 3);
-        int ac = (Math.max(a[0], c[0]) + Math.min(a[2], c[2])) / 2 - 1;
-        bridgeRoad(true, ac, a[3] - 3, c[1] + 3);
-        int bc = (Math.max(b[0], c[0]) + Math.min(b[2], c[2])) / 2 - 1;
-        bridgeRoad(true, bc, b[3] - 3, c[1] + 3);
+        linkRoad(false, (Math.max(a[1], b[1]) + Math.min(a[3], b[3])) / 2 - 1, (a[2] + b[0]) / 2, true);
+        linkRoad(true, (Math.max(a[0], c[0]) + Math.min(a[2], c[2])) / 2 - 1, (a[3] + c[1]) / 2, true);
+        linkRoad(true, (Math.max(b[0], c[0]) + Math.min(b[2], c[2])) / 2 - 1, (b[3] + c[1]) / 2, true);
         int cx = (c[0] + c[2]) / 2 - 1;
-        bridgeRoad(true, cx, c[3] - 3, h);
+        linkRoad(true, cx, h - 1, false);
         causewayEnd = new float[]{(cx + 1.5f) * T, (h - 1.5f) * T};
+        // Islets offshore: rocks with a tree or two, clear of the bridges.
+        for (int k = 0, made = 0; k < 200 && made < 7; k++) {
+            int ix = 8 + sr.nextInt(w - 16), iy = 8 + sr.nextInt(h - 16), ir = 2 + sr.nextInt(4);
+            boolean clear = true;
+            for (int y = iy - ir - 6; y <= iy + ir + 6 && clear; y++)
+                for (int x = ix - ir - 6; x <= ix + ir + 6 && clear; x++)
+                    if (x < 0 || y < 0 || x >= w || y >= h || tiles[y * w + x] != WATER) clear = false;
+            if (!clear) continue;
+            made++;
+            for (int y = iy - ir - 1; y <= iy + ir + 1; y++)
+                for (int x = ix - ir - 1; x <= ix + ir + 1; x++) {
+                    double dd = Math.hypot(x - ix, y - iy) + Math.sin(x * 1.3 + y * 0.7) * 0.6;
+                    if (dd <= ir - 0.5) tiles[y * w + x] = sr.nextFloat() < 0.35f ? TREE : GRASS;
+                    else if (dd <= ir + 0.6) tiles[y * w + x] = SAND;
+                }
+        }
+        // People go down to the beaches.
+        for (int i = 0; i < n; i++) {
+            int[] q = islandRects[i];
+            int mx = (q[0] + q[2]) / 2, my = (q[1] + q[3]) / 2;
+            for (int[] d : new int[][]{{0, 1}, {-1, 0}, {1, 0}, {0, -1}}) {
+                for (int s1 = 0; s1 < w; s1++) {
+                    int x = mx + d[0] * s1, y = my + d[1] * s1;
+                    if (x < 0 || y < 0 || x >= w || y >= h || tiles[y * w + x] == WATER) break;
+                    if (tiles[y * w + x] == SAND) {
+                        openAreas.add(new float[]{(x + 0.5f) * T, (y + 0.5f) * T, 0});
+                        break;
+                    }
+                }
+            }
+        }
         // Boats out at sea.
         for (int k = 0; k < w / 20; k++) {
             int bx = 4 + rnd.nextInt(w - 40), by = 4 + rnd.nextInt(h - 8);
@@ -1779,27 +1920,84 @@ final class City {
         }
     }
 
-    /** A road bridge (three lanes wide, with a footpath each side) across the water between two points on a line. */
-    private void bridgeRoad(boolean vertical, int at, int from, int to) {
-        int lo = Math.min(from, to), hi = Math.min(vertical ? h : w, Math.max(from, to));
-        boolean[] wet = new boolean[(hi - lo) * 5];
-        for (int k = lo; k < hi; k++)
+    /** Straight-line distance (tenths of a tile) from island il's town to every tile. */
+    private int[] chamfer(int il) {
+        int[] dist = new int[w * h];
+        final int FAR_D = 1 << 20;
+        for (int t = 0; t < w * h; t++) dist[t] = tiles[t] != WATER && island(t % w, t / w) == il ? 0 : FAR_D;
+        for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++) {
+                int t = y * w + x, d = dist[t];
+                if (x > 0) d = Math.min(d, dist[t - 1] + 10);
+                if (y > 0) d = Math.min(d, dist[t - w] + 10);
+                if (x > 0 && y > 0) d = Math.min(d, dist[t - w - 1] + 14);
+                if (x < w - 1 && y > 0) d = Math.min(d, dist[t - w + 1] + 14);
+                dist[t] = d;
+            }
+        for (int y = h - 1; y >= 0; y--)
+            for (int x = w - 1; x >= 0; x--) {
+                int t = y * w + x, d = dist[t];
+                if (x < w - 1) d = Math.min(d, dist[t + 1] + 10);
+                if (y < h - 1) d = Math.min(d, dist[t + w] + 10);
+                if (x < w - 1 && y < h - 1) d = Math.min(d, dist[t + w + 1] + 14);
+                if (x > 0 && y < h - 1) d = Math.min(d, dist[t + w - 1] + 14);
+                dist[t] = d;
+            }
+        return dist;
+    }
+
+    /**
+     * A road on a line (across the water between islands, or out to the edge of the map): from a point in the
+     * gap it runs both ways (or one way, from the map edge) until it meets a street, cutting through any
+     * block in its way, with footpaths each side; over the water it's a bridge.
+     */
+    private void linkRoad(boolean vertical, int at, int mid, boolean both) {
+        int len = vertical ? h : w;
+        int lo = reachRoad(vertical, at, mid, -1), hi = both ? reachRoad(vertical, at, mid, 1) : len;
+        if (lo < 0 || hi < 0) return;
+        int from = lo, to = both ? hi + 1 : len;
+        // Blocks in the way are cut in two.
+        int cx0 = vertical ? at : from, cx1 = vertical ? at + 3 : to, cy0 = vertical ? from : at, cy1 = vertical ? to : at + 3;
+        for (int k = blocks.size() - 1; k >= 0; k--) {
+            int[] bk = blocks.get(k);
+            if (bk[2] <= cx0 - 1 || bk[0] >= cx1 + 1 || bk[3] <= cy0 - 1 || bk[1] >= cy1 + 1) continue;
+            blocks.remove(k);
+            if (vertical) {
+                if (cx0 - 1 - bk[0] >= 4) blocks.add(new int[]{bk[0], bk[1], cx0 - 1, bk[3]});
+                if (bk[2] - cx1 - 1 >= 4) blocks.add(new int[]{cx1 + 1, bk[1], bk[2], bk[3]});
+            } else {
+                if (cy0 - 1 - bk[1] >= 4) blocks.add(new int[]{bk[0], bk[1], bk[2], cy0 - 1});
+                if (bk[3] - cy1 - 1 >= 4) blocks.add(new int[]{bk[0], cy1 + 1, bk[2], bk[3]});
+            }
+        }
+        boolean[] wet = new boolean[(to - from) * 5];
+        for (int k = from; k < to; k++)
             for (int s = -1; s <= 3; s++) {
                 int x = vertical ? at + s : k, y = vertical ? k : at + s;
                 if (x < 0 || y < 0 || x >= w || y >= h) continue;
                 byte t = tiles[y * w + x];
-                wet[(k - lo) * 5 + s + 1] = t == WATER;
-                // Footpaths along each side where it crosses the shore and the sea.
-                if ((s == -1 || s == 3) && (t == WATER || t == SAND)) tiles[y * w + x] = SIDEWALK;
+                wet[(k - from) * 5 + s + 1] = t == WATER;
+                if ((s == -1 || s == 3) && t != ROAD) tiles[y * w + x] = SIDEWALK;
             }
-        carve(vertical ? new Street(at, lo, at + 3, hi, true, true) : new Street(lo, at, hi, at + 3, false, true));
-        for (int k = lo; k < hi; k++)
+        carve(vertical ? new Street(at, from, at + 3, to, true, true) : new Street(from, at, to, at + 3, false, true));
+        for (int k = from; k < to; k++)
             for (int s = -1; s <= 3; s++) {
                 int x = vertical ? at + s : k, y = vertical ? k : at + s;
                 if (x < 0 || y < 0 || x >= w || y >= h) continue;
-                if (wet[(k - lo) * 5 + s + 1]) bridge[y * w + x] = true;
+                if (wet[(k - from) * 5 + s + 1]) bridge[y * w + x] = true;
             }
     }
+
+    /** From a point on a line, the first place (going one way) where the three-tile band meets a street. */
+    private int reachRoad(boolean vertical, int at, int start, int step) {
+        for (int k = start; k >= 0 && k < (vertical ? h : w); k += step)
+            for (int s = 0; s < 3; s++) {
+                int x = vertical ? at + s : k, y = vertical ? k : at + s;
+                if (x >= 0 && y >= 0 && x < w && y < h && tiles[y * w + x] == ROAD) return k;
+            }
+        return -1;
+    }
+
 
     // ------------------------------------------------------------------ water
 
@@ -4073,7 +4271,7 @@ final class City {
     private boolean open(int x, int y) {
         if (x < 0 || y < 0 || x >= w || y >= h) return false;
         byte t = tiles[y * w + x];
-        return t == GRASS || t == TREE;
+        return t == GRASS || t == TREE || t == SAND || t == WATER;
     }
 
     /** A junction that lost a street to trimStub is a plain bend or a straight run if that's all it now is. */

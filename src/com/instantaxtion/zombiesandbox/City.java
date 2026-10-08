@@ -5341,7 +5341,10 @@ final class City {
                     c.drawCircle(cx + TREE_HEIGHT * 0.28f, cy + TREE_HEIGHT * 0.38f, r, p);
                     p.setColor(0xFF4A3524);
                     c.drawCircle(cx, cy, 2f, p);
-                    if (!regionOnly) trees.add(new float[]{cx, cy, r, kind});
+                    if (!regionOnly) {
+                        trees.add(new float[]{cx, cy, r, kind});
+                        if (canopies()) canopy(c, p, cx, cy, r, kind);
+                    }
                 }
 
         // Street trees along the pavement, their canopies over people's heads.
@@ -5363,8 +5366,40 @@ final class City {
                     c.drawRect(cx - 3.5f, cy - 3.5f, cx + 3.5f, cy + 3.5f, p);
                     p.setColor(0xFF4A3524);
                     c.drawCircle(cx, cy, 1.6f, p);
-                    if (!regionOnly) trees.add(new float[]{cx, cy, r});
+                    if (!regionOnly) {
+                        trees.add(new float[]{cx, cy, r});
+                        if (canopies()) canopy(c, p, cx, cy, r, Country.TK_BROAD);
+                    }
                 }
+    }
+
+    /**
+     * On the big maps the treetops are painted into the map picture too, for when you're zoomed out: then the
+     * view leaves them to the picture instead of drawing tens of thousands of them every frame.
+     */
+    boolean canopies() {
+        return detail < 0.999f;
+    }
+
+    /** Below this zoom (where the view shows the map picture, not sharp close-ups) the treetops are in the picture. */
+    float canopyZoom() {
+        return canopies() ? detail * 1.6f : 0;
+    }
+
+    private void canopy(Canvas c, Paint p, float x, float y, float r, int kind) {
+        int dark, light;
+        switch (kind) {
+            case Country.TK_PINE: dark = 0xFF1C3E26; light = 0xFF2C5C36; break;
+            case Country.TK_PALM: dark = 0xFF3E7A32; light = 0xFF4E8E3A; break;
+            case Country.TK_BIRCH: dark = 0xFF4E7E34; light = 0xFF94BA5A; break;
+            case Country.TK_GUM: dark = 0xFF566E58; light = 0xFF8AA286; break;
+            case Country.TK_ACACIA: dark = 0xFF5E6E2E; light = 0xFF7A8A3E; break;
+            default: dark = 0xFF2C5A22; light = 0xFF3B742D; break;
+        }
+        p.setColor(dark);
+        c.drawCircle(x, y, r, p);
+        p.setColor(light);
+        c.drawCircle(x - 1.5f, y - 1.5f, r * 0.62f, p);
     }
 
     // ------------------------------------------------------------------ realistic graphics

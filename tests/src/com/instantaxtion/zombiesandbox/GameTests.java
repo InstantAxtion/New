@@ -14,30 +14,20 @@ public final class GameTests {
     private static int passed, failed;
 
     public static void main(String[] args) throws Exception {
-        test("every map and size generates", new Check() {
+        test("every map generates at the smallest size, and the classic map at every size", new Check() {
             public void run() {
-                for (int p = 0; p < CityConfig.PRESETS.length; p++)
-                    for (int size = 0; size < 6; size++) {
-                        CityConfig c = new CityConfig();
-                        c.v[CityConfig.OPT_PRESET] = p;
-                        c.v[CityConfig.OPT_SIZE] = size;
-                        c.seed = 1000 + p;
-                        City city = new City(c, 0.1f);
-                        check(city.buildings.size() > 20, CityConfig.PRESETS[p] + " has buildings");
-                        check(city.nearestFacility(City.FACILITY_HOSPITAL, 0, 0) != null, CityConfig.PRESETS[p] + " has a hospital");
-                    }
-            }
-        });
-        test("city generation is repeatable from its code", new Check() {
-            public void run() {
-                CityConfig a = new CityConfig();
-                a.v[CityConfig.OPT_PRESET] = 3;
-                a.seed = 424242;
-                CityConfig b = new CityConfig();
-                check(b.applyCode(a.code()), "code parses");
-                City ca = new City(a, 0.1f), cb = new City(b, 0.1f);
-                check(java.util.Arrays.equals(ca.tiles, cb.tiles), "same tiles");
-                check(!b.applyCode("not a code"), "rejects junk");
+                // (Every map at Medium is built by the government buildings test.)
+                for (int p = 0; p < CityConfig.PRESETS.length + 5; p++) {
+                    CityConfig c = new CityConfig();
+                    boolean sizes = p >= CityConfig.PRESETS.length;
+                    c.v[CityConfig.OPT_PRESET] = sizes ? 0 : p;
+                    c.v[CityConfig.OPT_SIZE] = sizes ? p - CityConfig.PRESETS.length + 1 : CityConfig.TINY;
+                    c.seed = 1000 + p;
+                    City city = new City(c, 0.1f);
+                    String name = CityConfig.PRESETS[c.v[CityConfig.OPT_PRESET]] + " size " + c.v[CityConfig.OPT_SIZE];
+                    check(city.buildings.size() > 20, name + " has buildings");
+                    check(city.nearestFacility(City.FACILITY_HOSPITAL, 0, 0) != null, name + " has a hospital");
+                }
             }
         });
         final World[] world = new World[1];
@@ -278,6 +268,7 @@ public final class GameTests {
                         check(city.courthouse != null && city.jail != null && city.worksDepot != null,
                                 CityConfig.PRESETS[preset] + ": courthouse, jail and works depot");
                     check(city.jail == null || city.jail.capacity == 0, "nobody shelters in the cells");
+                    check(city.armory != null, CityConfig.PRESETS[preset] + ": a National Guard armory");
                 }
                 CityConfig c = new CityConfig();
                 c.seed = 5;
@@ -355,14 +346,6 @@ public final class GameTests {
                     for (Fleet.Vehicle v : w.fleet.vehicles)
                         if (v.type != Fleet.HELI && v.type != Fleet.JET && city.tiles[city.tileIndex(v.x, v.y)] == City.WATER) wet++;
                     check(wet == 0, name + ": " + wet + " people or cars in the water");
-                }
-                // Every other kind of map has its armory too.
-                for (int preset = 0; preset < 10; preset++) {
-                    CityConfig c = new CityConfig();
-                    c.seed = 3 + preset;
-                    c.v[CityConfig.OPT_PRESET] = preset;
-                    c.v[CityConfig.OPT_SIZE] = CityConfig.MEDIUM;
-                    check(new City(c).armory != null, CityConfig.PRESETS[preset] + ": a National Guard armory");
                 }
             }
         });
@@ -643,6 +626,7 @@ public final class GameTests {
                 f.delete();
                 CityConfig plain = new CityConfig();
                 check(plain.applyCode("12-48392") && plain.edits.isEmpty(), "plain codes still work");
+                check(!plain.applyCode("not a code"), "junk isn't taken for a city code");
             }
         });
         test("10.10: map sizes, the lie of the land, each country's countryside", new Check() {

@@ -326,6 +326,10 @@ crash the game soon after an outbreak on the Islands map.
 car, rubble) redraw only the close-ups over them, without holding up the game; gunfire glow in a building's
 windows always fades once the shooting stops.
 
+**Zoomed out (10.13):** on the big maps the treetops are painted into the map picture, and the view leaves
+them to it when zoomed out; crowds become one dot per side in each patch of the screen, and vehicles and
+wildlife simple specks. A busy Huge map zoomed right out takes about a tenth of the drawing it did.
+
 **Countryside:** Villages, small towns and every Massive map are surrounded by open country:
 winding dirt lanes out to the edge of the map, farms and lonely cabins along them, woods, and
 hamlets (a short street of cottages with a lane back to town). A town out in the country is never a
@@ -435,7 +439,7 @@ infected person glows green and turns within about 12–26 seconds, even if they
 ## Testing
 
 `./test.sh` runs the game on a desktop JVM (with small stand-ins for Android's classes in `tests/stubs`):
-it generates every map, checks the new map features appear, runs a two-minute outbreak and the new
+it generates every map (and the classic map at every size), checks the new map features appear, runs a two-minute outbreak and the new
 zombies, units and events, tests army checkpoints, round-trips a save and draws every screen at phone
 and tablet sizes. The GitHub workflow runs it before building.
 

@@ -1336,6 +1336,10 @@ final class GameView extends View implements Menu.Host {
         }
     }
 
+    /** Which sides already have a dot in each patch of the screen this frame (frame number << 8 | sides). */
+    private int[] dotSeen;
+    private int dotFrame;
+
     private void drawWorld(Canvas c) {
         c.drawColor(0xFF1B1C1F);
         c.save();
@@ -1473,6 +1477,12 @@ final class GameView extends View implements Menu.Host {
         for (int i = 0, n = world.animals.size(); i < n; i++) {
             World.Animal a = world.animals.get(i);
             if (a.x < vx0 - 10 || a.x > vx1 + 10 || a.y < vy0 - 10 || a.y > vy1 + 10) continue;
+            if (scale < 0.3f) {
+                // (A speck from up here.)
+                fill.setColor(a.kind == 0 ? 0xFF8A6238 : 0xFFC8682A);
+                c.drawCircle(a.x, a.y, 3, fill);
+                continue;
+            }
             c.save();
             c.translate(a.x, a.y);
             c.rotate((float) Math.toDegrees(a.angle));
@@ -1553,6 +1563,16 @@ final class GameView extends View implements Menu.Host {
         }
 
         if (scale < 1.8f) drawDanger(c, vx0, vy0, vx1, vy1);
+        // Zoomed out, a crowd is a heap of dots on top of each other: one dot per side in each little patch
+        // of the screen looks the same and saves drawing thousands.
+        float patch = 2.6f * dp / scale;
+        int pw = 0, ph = 0;
+        if (!detailed) {
+            pw = (int) ((vx1 - vx0) / patch) + 2;
+            ph = (int) ((vy1 - vy0) / patch) + 2;
+            if (dotSeen == null || dotSeen.length < pw * ph) dotSeen = new int[pw * ph];
+            dotFrame++;
+        }
         for (int i = 0, n = world.entities.size(); i < n; i++) {
             Entity e = world.entities.get(i);
             if (e.x < vx0 || e.x > vx1 || e.y < vy0 || e.y > vy1) continue;
@@ -1562,6 +1582,15 @@ final class GameView extends View implements Menu.Host {
                 // stands out on any ground, and never smaller than a few pixels.
                 int side = e.isZombie() ? 5 : e.type == Entity.COP ? 1 : e.type == Entity.SOLDIER ? 2 : e.type == Entity.MEDIC ? 3
                         : e.type == Entity.FIREFIGHTER ? 4 : 0;
+                if (e.type == Entity.RAIDER) side = 6;
+                else if (e.type == Entity.DOG) side = 7;
+                if (e != world.controlled && e != follow) {
+                    int cell = (int) ((e.y - vy0) / patch) * pw + (int) ((e.x - vx0) / patch);
+                    int mark = (dotFrame << 8) | (1 << side);
+                    int seen = dotSeen[cell];
+                    if ((seen >>> 8) == (dotFrame & 0xFFFFFF) && (seen & (1 << side)) != 0) continue;
+                    dotSeen[cell] = (seen >>> 8) == (dotFrame & 0xFFFFFF) ? seen | (1 << side) : mark;
+                }
                 float r = Math.max(e.radius * 1.35f, 2.6f * dp / scale);
                 fill.setColor(0xD0101010);
                 c.drawCircle(e.x, e.y, r + 1.1f * dp / scale, fill);
@@ -1851,7 +1880,9 @@ final class GameView extends View implements Menu.Host {
         float ts = in3d ? camH / (camH - City.TREE_HEIGHT) : 1f;
         // (The trees are sorted top to bottom: just the rows that can be on screen.)
         float rowTop = Math.min(vy0, cy + (vy0 - cy) / ts) - 14, rowBottom = Math.max(vy1, cy + (vy1 - cy) / ts) + 14;
-        for (int i = world.city.firstTreeAt(rowTop), n = world.city.trees.size(); i < n; i++) {
+        // Zoomed well out on a big map, the treetops are already in the map picture.
+        int firstTree = scale < world.city.canopyZoom() ? world.city.trees.size() : world.city.firstTreeAt(rowTop);
+        for (int i = firstTree, n = world.city.trees.size(); i < n; i++) {
             float[] t = world.city.trees.get(i);
             if (t[1] > rowBottom) break;
             float x = cx + (t[0] - cx) * ts, y = cy + (t[1] - cy) * ts, r = t[2] * ts;
@@ -2739,7 +2770,9 @@ final class GameView extends View implements Menu.Host {
         c.save();
         c.translate(v.x, v.y);
         c.rotate((float) Math.toDegrees(v.angle));
-        if (!v.burnt) {
+        // Zoomed well out a vehicle is a couple of pixels: just its shape in its colour.
+        boolean speck = scale < 0.3f;
+        if (!v.burnt && !speck) {
             // Tyres poking out at the corners.
             fill.setColor(0xFF111214);
             float wx = hl * 0.62f, ww = truck || engine ? 1.8f : 1.5f;
@@ -2760,6 +2793,10 @@ final class GameView extends View implements Menu.Host {
         if (model == Fleet.M_BEETLE) c.drawRoundRect(oval, hw, hw * 0.9f, fill);
         else c.drawRoundRect(oval, model == Fleet.M_KEI || model == Fleet.M_BUS || model == Fleet.M_VAN ? 1.2f : 2.5f,
                 model == Fleet.M_KEI || model == Fleet.M_BUS || model == Fleet.M_VAN ? 1.2f : 2.5f, fill);
+        if (speck) {
+            c.restore();
+            return;
+        }
         if (v.burnt) {
             // A burnt-out shell.
             fill.setColor(0xFF4A2F22);

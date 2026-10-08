@@ -2,11 +2,16 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.12";
-    static final int VERSION_CODE = 50;
+    static final String VERSION = "10.13";
+    static final int VERSION_CODE = 51;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.13  -  Zooming out on big cities",
+                    "Zooming out on a big, busy map no longer lags: the treetops are part of the map picture from up there instead of tens of thousands drawn every frame (about a tenth of the drawing it took before).",
+                    "Zoomed well out, crowds draw one dot per side in each little patch of the screen, and vehicles and wildlife are simple specks.",
+            },
             {
                     "10.12  -  Smoother big maps",
                     "Fixed houses flickering with gunfire flashes long after the shooting inside had stopped.",

@@ -17,7 +17,7 @@ public final class GameTests {
         test("every map and size generates", new Check() {
             public void run() {
                 for (int p = 0; p < CityConfig.PRESETS.length; p++)
-                    for (int size = 0; size < 4; size++) {
+                    for (int size = 0; size < 6; size++) {
                         CityConfig c = new CityConfig();
                         c.v[CityConfig.OPT_PRESET] = p;
                         c.v[CityConfig.OPT_SIZE] = size;
@@ -78,7 +78,8 @@ public final class GameTests {
                 int dead = 0;
                 for (Entity e : w.entities) if (e.dead) dead++;
                 int carried = 0;
-                for (Fleet.Vehicle v : w.fleet.vehicles) carried += Math.max(0, v.passengers);
+                // (Crews aboard patrol cars, engines and patrols are saved as people too.)
+                for (Fleet.Vehicle v : w.fleet.vehicles) carried += Math.max(0, v.passengers) + v.crew.size();
                 check(Math.abs(l.entities.size() - (w.entities.size() - dead - posted + visiting)) <= w.fleet.riderCount() + carried + 8,
                         "same people (" + l.entities.size() + " vs " + w.entities.size() + " - " + dead + " dead - " + posted + " posted + " + visiting
                                 + " visiting, riders " + w.fleet.riderCount() + ")");
@@ -179,7 +180,7 @@ public final class GameTests {
                 java.util.HashSet<String> streets = new java.util.HashSet<String>();
                 for (int k = 0; k < Country.NAMES.length; k++) {
                     CityConfig c = new CityConfig();
-                    c.v[CityConfig.OPT_SIZE] = 0;
+                    c.v[CityConfig.OPT_SIZE] = CityConfig.SMALL;
                     c.v[CityConfig.OPT_COUNTRY] = k;
                     c.seed = 9;
                     City city = new City(c);
@@ -198,7 +199,7 @@ public final class GameTests {
         test("cars never go round in circles (round a median, a roundabout or a highway gap)", new Check() {
             public void run() {
                 CityConfig c = new CityConfig();
-                c.v[CityConfig.OPT_SIZE] = 3;
+                c.v[CityConfig.OPT_SIZE] = CityConfig.MASSIVE;
                 c.v[CityConfig.OPT_ZOMBIES] = 2;
                 c.seed = 5;
                 World w = new World(c);
@@ -243,7 +244,7 @@ public final class GameTests {
                 for (int country = 0; country < 5; country++) {
                     CityConfig c = new CityConfig();
                     c.seed = 42 + country;
-                    c.v[CityConfig.OPT_SIZE] = 3;
+                    c.v[CityConfig.OPT_SIZE] = CityConfig.MASSIVE;
                     c.v[CityConfig.OPT_COUNTRY] = country;
                     City city = new City(c);
                     java.util.HashSet<String> names = new java.util.HashSet<String>();
@@ -256,7 +257,7 @@ public final class GameTests {
                 // before the government quarter.)
                 CityConfig c = new CityConfig();
                 c.seed = 42;
-                c.v[CityConfig.OPT_SIZE] = 1;
+                c.v[CityConfig.OPT_SIZE] = CityConfig.MEDIUM;
                 c.civic = 0;
                 City city = new City(c);
                 long h = 17;
@@ -270,7 +271,7 @@ public final class GameTests {
                     CityConfig c = new CityConfig();
                     c.seed = 11 + preset;
                     c.v[CityConfig.OPT_PRESET] = preset;
-                    c.v[CityConfig.OPT_SIZE] = 1;
+                    c.v[CityConfig.OPT_SIZE] = CityConfig.MEDIUM;
                     City city = new City(c);
                     check(city.cityHall != null && city.cityHall.doorX > 0, CityConfig.PRESETS[preset] + ": a city hall with a door");
                     if (preset != 9)
@@ -280,7 +281,7 @@ public final class GameTests {
                 }
                 CityConfig c = new CityConfig();
                 c.seed = 5;
-                c.v[CityConfig.OPT_SIZE] = 1;
+                c.v[CityConfig.OPT_SIZE] = CityConfig.MEDIUM;
                 c.v[CityConfig.OPT_ZOMBIES] = 0;
                 World w = new World(c);
                 w.populate(c);
@@ -322,7 +323,7 @@ public final class GameTests {
                     CityConfig c = new CityConfig();
                     c.seed = 21 + preset;
                     c.v[CityConfig.OPT_PRESET] = preset;
-                    c.v[CityConfig.OPT_SIZE] = 1;
+                    c.v[CityConfig.OPT_SIZE] = CityConfig.MEDIUM;
                     c.v[CityConfig.OPT_ZOMBIES] = 3;
                     World w = new World(c);
                     w.populate(c);
@@ -360,7 +361,7 @@ public final class GameTests {
                     CityConfig c = new CityConfig();
                     c.seed = 3 + preset;
                     c.v[CityConfig.OPT_PRESET] = preset;
-                    c.v[CityConfig.OPT_SIZE] = 1;
+                    c.v[CityConfig.OPT_SIZE] = CityConfig.MEDIUM;
                     check(new City(c).armory != null, CityConfig.PRESETS[preset] + ": a National Guard armory");
                 }
             }
@@ -369,7 +370,7 @@ public final class GameTests {
             public void run() {
                 CityConfig c = new CityConfig();
                 c.seed = 6;
-                c.v[CityConfig.OPT_SIZE] = 1;
+                c.v[CityConfig.OPT_SIZE] = CityConfig.MEDIUM;
                 c.v[CityConfig.OPT_ZOMBIES] = 0;
                 World w = new World(c);
                 w.populate(c);
@@ -403,7 +404,7 @@ public final class GameTests {
                 // Army trucks leaving a base take the ones parked there.
                 CityConfig b = new CityConfig();
                 b.seed = 5;
-                b.v[CityConfig.OPT_SIZE] = 1;
+                b.v[CityConfig.OPT_SIZE] = CityConfig.MEDIUM;
                 City base = new City(b);
                 City.Facility f = base.nearestFacility(City.FACILITY_BASE, 0, 0);
                 check(f != null && base.takeParkedTruck(f.x, f.y, 600) != null, "a parked truck drives off the base");
@@ -413,7 +414,7 @@ public final class GameTests {
             public void run() {
                 CityConfig c = new CityConfig();
                 c.seed = 3;
-                c.v[CityConfig.OPT_SIZE] = 1;
+                c.v[CityConfig.OPT_SIZE] = CityConfig.MEDIUM;
                 c.v[CityConfig.OPT_ZOMBIES] = 4;
                 World w = new World(c);
                 w.populate(c);
@@ -437,7 +438,7 @@ public final class GameTests {
                 // A cloud of gas on someone's way: they go round it.
                 CityConfig q = new CityConfig();
                 q.seed = 7;
-                q.v[CityConfig.OPT_SIZE] = 1;
+                q.v[CityConfig.OPT_SIZE] = CityConfig.MEDIUM;
                 q.v[CityConfig.OPT_ZOMBIES] = 0;
                 World g = new World(q);
                 g.populate(q);
@@ -463,19 +464,46 @@ public final class GameTests {
                 check(tried >= 6 && walkedIn * 6 <= tried, walkedIn + " of " + tried + " people walked into a gas cloud in their way");
             }
         });
-        test("Islands: three island towns, joined up, one fixed size", new Check() {
+        test("Islands: two to four island towns, joined up, one fixed size, nobody stranded", new Check() {
             public void run() {
                 CityConfig c = new CityConfig();
                 c.seed = 9;
                 c.set(CityConfig.OPT_PRESET, CityConfig.ISLANDS);
-                c.set(CityConfig.OPT_SIZE, 0);
-                check(c.tiles() == CityConfig.ISLANDS_TILES && c.v[CityConfig.OPT_SIZE] == 3, "Islands is always " + CityConfig.ISLANDS_TILES + " tiles");
+                c.set(CityConfig.OPT_SIZE, CityConfig.SMALL);
+                check(c.tiles() == CityConfig.ISLANDS_TILES && c.v[CityConfig.OPT_SIZE] == CityConfig.MASSIVE, "Islands is always " + CityConfig.ISLANDS_TILES + " tiles");
                 CityConfig back = new CityConfig();
                 check(back.applyCode(c.code()) && back.tiles() == CityConfig.ISLANDS_TILES, "its city code (" + c.code() + ") builds the Islands again");
                 City city = new City(c);
                 check(city.w > 448, "bigger than a Massive map");
-                check(city.islandRects != null && city.islandRects.length == 3, "three islands");
-                int[] precincts = new int[3], fire = new int[3], buildings = new int[3];
+                int n = city.islandRects == null ? 0 : city.islandRects.length;
+                check(n >= 2 && n <= 4, "two to four islands (" + n + ")");
+                java.util.HashSet<Integer> counts = new java.util.HashSet<Integer>();
+                for (int sd = 1; sd <= 12; sd++) {
+                    CityConfig o = new CityConfig();
+                    o.seed = sd;
+                    o.set(CityConfig.OPT_PRESET, CityConfig.ISLANDS);
+                    counts.add(new City(o, 0.05f).islandRects.length);
+                }
+                check(counts.size() >= 2, "the number of islands varies from city to city " + counts);
+                // Every bit of land can be walked to from the causeway (no islets, no cut-off scraps of coast).
+                int[] q0 = new int[city.w * city.h];
+                boolean[] seen = new boolean[city.w * city.h];
+                int start = city.tileIndex(city.causewayEnd[0], city.causewayEnd[1]), head = 0, tail = 0;
+                q0[tail++] = start;
+                seen[start] = true;
+                while (head < tail) {
+                    int t = q0[head++], x = t % city.w, y = t / city.w;
+                    int[] nb = {x > 0 ? t - 1 : -1, x < city.w - 1 ? t + 1 : -1, y > 0 ? t - city.w : -1, y < city.h - 1 ? t + city.w : -1};
+                    for (int j : nb)
+                        if (j >= 0 && !seen[j] && city.tiles[j] != City.WATER) {
+                            seen[j] = true;
+                            q0[tail++] = j;
+                        }
+                }
+                int stranded = 0;
+                for (int t = 0; t < city.w * city.h; t++) if (city.tiles[t] != City.WATER && !seen[t]) stranded++;
+                check(stranded == 0, "no land cut off from the rest (" + stranded + " tiles)");
+                int[] precincts = new int[n], fire = new int[n], buildings = new int[n];
                 for (City.Facility f : city.facilities) {
                     int i = city.island((int) (f.x / City.T), (int) (f.y / City.T));
                     if (i < 0) continue;
@@ -487,7 +515,7 @@ public final class GameTests {
                     if (i >= 0) buildings[i]++;
                 }
                 int[] dist = new int[city.w * city.h];
-                for (int i = 0; i < 3; i++) {
+                for (int i = 0; i < n; i++) {
                     int[] q = city.islandRects[i];
                     check(buildings[i] > 150 && precincts[i] > 0 && fire[i] > 0, city.islandNames[i] + ": a town (" + buildings[i]
                             + " buildings) with its own police and fire station");
@@ -510,7 +538,7 @@ public final class GameTests {
         test("traffic keeps its distance: hardly any crashes, and patrol cars keep to their side", new Check() {
             public void run() {
                 CityConfig c = new CityConfig();
-                c.v[CityConfig.OPT_SIZE] = 1;
+                c.v[CityConfig.OPT_SIZE] = CityConfig.MEDIUM;
                 c.v[CityConfig.OPT_ZOMBIES] = 0;
                 c.seed = 3;
                 World w = new World(c);
@@ -541,7 +569,9 @@ public final class GameTests {
                     }
                 }
                 // (Each crash shows up on both cars.)
-                check(crashes / 2 <= 6, (crashes / 2) + " crashes in a minute and a half of ordinary traffic");
+                // (About one crash for every 13 vehicles about at most: the bigger maps since 10.10 have more traffic.)
+                check(crashes / 2 <= Math.max(6, w.fleet.vehicles.size() / 13), (crashes / 2) + " crashes in a minute and a half of ordinary traffic ("
+                        + w.fleet.vehicles.size() + " vehicles)");
                 check(onRoad > 50, "patrol cars out on the roads (" + onRoad + " samples)");
                 check(wrong <= onRoad * 0.04f, "patrol cars on the wrong side " + wrong + " of " + onRoad);
             }
@@ -613,6 +643,145 @@ public final class GameTests {
                 f.delete();
                 CityConfig plain = new CityConfig();
                 check(plain.applyCode("12-48392") && plain.edits.isEmpty(), "plain codes still work");
+            }
+        });
+        test("10.10: map sizes, the lie of the land, each country's countryside", new Check() {
+            public void run() {
+                CityConfig c = new CityConfig();
+                int last = 0;
+                for (int s = CityConfig.TINY; s <= CityConfig.HUGE; s++) {
+                    c.v[CityConfig.OPT_SIZE] = s;
+                    check(c.tiles() > last, CityConfig.class.getSimpleName() + " size " + s + " is bigger than the one before (" + c.tiles() + ")");
+                    last = c.tiles();
+                }
+                c.v[CityConfig.OPT_SIZE] = CityConfig.MEDIUM;
+                check(c.tiles() == 320, "Medium is a quarter bigger than it was (" + c.tiles() + ")");
+                c.civic = 2;
+                check(c.tiles() == 256, "a city saved before 10.10 rebuilds at its old size");
+                CityConfig old = new CityConfig();
+                check(old.applyCode("12-44") && old.v[CityConfig.OPT_SIZE] == CityConfig.MEDIUM, "old codes keep their size name");
+                // A USA city: hills, a mountain, water, a park with trails, a campsite.
+                CityConfig u = new CityConfig();
+                u.seed = 7;
+                u.v[CityConfig.OPT_SIZE] = CityConfig.LARGE;
+                City city = new City(u, 0.1f);
+                int[] n = new int[20];
+                for (byte b : city.tiles) n[b]++;
+                float lo = Float.MAX_VALUE, hi = -Float.MAX_VALUE;
+                for (float e : city.elev) {
+                    lo = Math.min(lo, e);
+                    hi = Math.max(hi, e);
+                }
+                check(hi - lo > 30, "the land isn't flat (" + (int) lo + " to " + (int) hi + ")");
+                check(n[City.ROCK] > 0 && n[City.WATER] > 0 && n[City.TRAIL] > 10, "mountain rock, water and trails ("
+                        + n[City.ROCK] + ", " + n[City.WATER] + ", " + n[City.TRAIL] + ")");
+                check(city.parkName != null, "a nature park");
+                boolean camp = false;
+                for (City.Building b : city.buildings) if (b.name != null && b.name.startsWith("Camp Store")) camp = b.residents > 0;
+                check(camp, "a campsite with campers");
+                // Denmark is flat; Egypt is desert; Canada is wooded with birches and pines.
+                CityConfig dk = new CityConfig();
+                dk.seed = 7;
+                dk.v[CityConfig.OPT_SIZE] = CityConfig.LARGE;
+                dk.v[CityConfig.OPT_COUNTRY] = Country.DENMARK;
+                int rock = 0;
+                for (byte b : new City(dk, 0.1f).tiles) if (b == City.ROCK) rock++;
+                check(rock == 0, "no mountains in Denmark");
+                CityConfig eg = new CityConfig();
+                eg.seed = 7;
+                eg.v[CityConfig.OPT_SIZE] = CityConfig.LARGE;
+                eg.v[CityConfig.OPT_COUNTRY] = Country.EGYPT;
+                City egypt = new City(eg, 0.1f);
+                int sand = 0, grass = 0;
+                for (int t = 0; t < egypt.w * egypt.h; t++) {
+                    float x = (t % egypt.w + 0.5f) * City.T, y = (t / egypt.w + 0.5f) * City.T;
+                    if (egypt.inTown(x, y)) continue;
+                    if (egypt.tiles[t] == City.SAND) sand++;
+                    if (egypt.tiles[t] == City.GRASS) grass++;
+                }
+                check(sand > grass * 4, "Egypt's countryside is desert (" + sand + " sand, " + grass + " grass)");
+                CityConfig ca = new CityConfig();
+                ca.seed = 7;
+                ca.v[CityConfig.OPT_SIZE] = CityConfig.LARGE;
+                ca.v[CityConfig.OPT_COUNTRY] = Country.CANADA;
+                City canada = new City(ca, 0.1f);
+                int birch = 0, pine = 0;
+                for (float[] t : canada.trees) {
+                    if (t.length < 4) continue;
+                    if (t[3] == Country.TK_BIRCH) birch++;
+                    if (t[3] == Country.TK_PINE) pine++;
+                }
+                check(birch > 100 && pine > 100, "Canada's woods are birch and pine (" + birch + ", " + pine + ")");
+                // Gun stores only where people can buy guns.
+                for (int k : new int[]{Country.USA, Country.JAPAN, Country.CANADA, Country.CHINA}) {
+                    CityConfig g = new CityConfig();
+                    g.seed = 3;
+                    g.v[CityConfig.OPT_SIZE] = CityConfig.LARGE;
+                    g.v[CityConfig.OPT_COUNTRY] = k;
+                    int guns = 0;
+                    for (City.Building b : new City(g, 0.1f).buildings) if (b.kind == City.SHOP && b.shopType == 1) guns++;
+                    check(Country.get(k).gunShops() ? guns > 0 : guns == 0, Country.NAMES[k] + ": " + guns + " gun stores");
+                }
+                check(Country.NAMES.length == 18 && Country.NAMES[Country.CANADA].equals("Canada"), "Canada, China, Egypt, Saudi Arabia and the Nordics");
+            }
+        });
+        test("10.10: new soldiers, police, vehicles; the Guard; buses; the homeless", new Check() {
+            public void run() {
+                CityConfig c = new CityConfig();
+                c.seed = 5;
+                c.v[CityConfig.OPT_SIZE] = CityConfig.LARGE;
+                c.v[CityConfig.OPT_MILITARY] = 4;
+                c.v[CityConfig.OPT_ZOMBIES] = 0;
+                World w = new World(c);
+                w.populate(c);
+                int medic = 0, gren = 0, marks = 0;
+                for (Entity e : w.entities) {
+                    if (e.role == Entity.ROLE_CORPSMAN) medic++;
+                    if (e.role == Entity.ROLE_GRENADIER) gren++;
+                    if (e.role == Entity.ROLE_MARKSMAN) marks++;
+                }
+                check(medic > 0 && gren > 0, "squads have combat medics and grenadiers (" + medic + ", " + gren + ")");
+                check(marks > 0, "a police marksman at the precinct (" + marks + ")");
+                int bikes = 0;
+                for (Fleet.Vehicle v : w.fleet.vehicles) if (v.kind == Fleet.K_BIKE) bikes++;
+                check(bikes > 0, "police motorcycles on patrol (" + bikes + ")");
+                check(w.dispatch.riotVans > 0 && w.dispatch.policeAir > 0, "riot vans and the police helicopter are ready");
+                // A wounded soldier gets patched up by the medic.
+                w.viewX0 = 0;
+                w.viewY0 = 0;
+                w.viewX1 = w.city.worldW();
+                w.viewY1 = w.city.worldH();
+                Entity doc = null;
+                for (Entity e : w.entities) if (e.role == Entity.ROLE_CORPSMAN && e.task == Dispatch.T_NONE && e.rig == null) doc = e;
+                Entity hurt = w.spawn(Entity.SOLDIER, doc.x + 20, doc.y);
+                hurt.hp = 30;
+                hurt.task = Dispatch.T_POST;
+                hurt.postX = hurt.x;
+                hurt.postY = hurt.y;
+                for (int f = 0; f < 300; f++) w.update(1 / 30f);
+                check(hurt.hp >= hurt.maxHp * 0.69f, "the combat medic patched up a wounded soldier (" + (int) hurt.hp + "/" + (int) hurt.maxHp + ")");
+                // Someone who turns up later has no home.
+                Entity drifter = w.spawn(Entity.CIVILIAN, doc.x, doc.y + 40);
+                for (int f = 0; f < 60; f++) w.update(1 / 30f);
+                check(drifter.homeChecked && drifter.home == null, "a spawned person is homeless");
+                // At war: no bus leaves town with people aboard.
+                w.alert = 2;
+                for (int f = 0; f < 600; f++) w.update(1 / 30f);
+                for (Fleet.Vehicle v : w.fleet.vehicles)
+                    check(!(v.type == Fleet.CAR && v.model == Fleet.M_BUS && v.fleeing), "a bus is leaving town");
+                // A big outbreak brings out the National Guard by itself.
+                CityConfig g = new CityConfig();
+                g.seed = 6;
+                g.v[CityConfig.OPT_SIZE] = CityConfig.MEDIUM;
+                g.v[CityConfig.OPT_ZOMBIES] = 6;
+                g.v[CityConfig.OPT_RESERVES] = 3;
+                World gw = new World(g);
+                gw.populate(g);
+                gw.outbreak = true;
+                gw.outbreakTime = 120;
+                for (int i = 0; i < 80; i++) gw.spawn(Entity.ZOMBIE, gw.city.worldW() / 2 + i, gw.city.worldH() / 2);
+                gw.callNationalGuard();
+                check(gw.guardCalled, "the governor calls out the Guard for a big outbreak, with army reserves still to come");
             }
         });
         test("every screen draws", new Check() {

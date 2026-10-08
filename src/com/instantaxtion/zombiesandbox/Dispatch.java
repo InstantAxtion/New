@@ -28,7 +28,7 @@ final class Dispatch {
         float x, y, age, clearTimer, sceneTime;
         String place;
         int reported, lastLogged, cops, soldiers, zombiesNear, officersDown;
-        boolean militaryRequested, onScene, resolved, airRequested, swatRequested;
+        boolean militaryRequested, onScene, resolved, airRequested, swatRequested, riotRequested, policeAirRequested;
         int[] field;
     }
 
@@ -137,6 +137,8 @@ final class Dispatch {
     int policeReserve, squadReserve, airSorties, tankReserve;
     /** SWAT teams still at the precinct, ready to go. */
     int swatTeams;
+    /** Riot vans the police can send, and police helicopter flights left (since 10.10). */
+    int riotVans, policeAir;
     private float ambulanceTimer;
     int calls, sheltered, messageCount;
     int copCount, soldierCount;
@@ -272,7 +274,90 @@ final class Dispatch {
         sweep(step);
         updateIncidents(step);
         mobilise(step);
+        baseLife(step);
         updateZones(step);
+    }
+
+    private float baseCd = 5;
+
+    /**
+     * The bases don't just wait to be called (cities built since 10.10): once the city knows, a Humvee patrol
+     * sweeps the roads near each base every few minutes; a call close by that has no soldiers gets a quick
+     * reaction force in a Humvee straight away; and when the dead reach the wire the alarm goes up (and the
+     * patrols wait until it's quiet again).
+     */
+    private void baseLife(float step) {
+        baseCd -= step;
+        if (baseCd > 0 || !city.cfg.nature()) return;
+        baseCd = 4;
+        for (City.Facility base : city.facilities) {
+            if (base.kind != City.FACILITY_BASE) continue;
+            base.patrolCd -= 4;
+            float reach = Math.max(220, base.r * 2.5f);
+            ArrayList<Entity> free = new ArrayList<Entity>();
+            for (int i = 0, n = w.entities.size(); i < n; i++) {
+                Entity e = w.entities.get(i);
+                if (e.dead || e.type != Entity.SOLDIER || e.task != T_NONE || e.rig != null) continue;
+                if (e.role == Entity.ROLE_GUARD || e.role == Entity.ROLE_COMMANDER || e.role == Entity.ROLE_SNIPER) continue;
+                if (e.ammo <= 0 && e.reserve <= 0) continue;
+                if ((e.x - base.x) * (e.x - base.x) + (e.y - base.y) * (e.y - base.y) > reach * reach) continue;
+                free.add(e);
+            }
+            int near = w.countZombiesNear(base.x, base.y, base.r * 1.8f + 60);
+            if (near >= 4 && !base.alarm) {
+                base.alarm = true;
+                base.quietFor = 0;
+                w.noise(base.x, base.y, 420);
+                say(WHO_MILITARY, null, base.name + ": Contact at the wire! Sound the alarm, all hands to the perimeter.", base.x, base.y);
+            } else if (base.alarm) {
+                base.quietFor = near == 0 ? base.quietFor + 4 : 0;
+                if (base.quietFor >= 40) {
+                    base.alarm = false;
+                    say(WHO_MILITARY, null, base.name + ": Perimeter secure. Stand down the alarm.", base.x, base.y);
+                }
+            }
+            if (base.alarm || free.size() < 6) continue;
+            // A call close by with no soldiers at it: the quick reaction force goes now.
+            Incident close = null;
+            float cd = 700 * 700;
+            for (int i = 0; i < incidents.size(); i++) {
+                Incident inc = incidents.get(i);
+                if (inc.resolved || inc.zombiesNear < 4 || inc.soldiers > 0 || w.fleet.inboundSoldiers(inc) > 0) continue;
+                float d = (inc.x - base.x) * (inc.x - base.x) + (inc.y - base.y) * (inc.y - base.y);
+                if (d < cd) {
+                    cd = d;
+                    close = inc;
+                }
+            }
+            if (close != null && w.alert >= 1) {
+                ArrayList<Entity> qrf = nearestOf(free, close.x, close.y, 3);
+                if (w.fleet.troopTruck(qrf, base, close, Fleet.K_HUMVEE)) {
+                    close.militaryRequested = true;
+                    say(WHO_MILITARY, null, base.name + ": Quick reaction force rolling out to " + close.place + ".", close.x, close.y);
+                    continue;
+                }
+            }
+            // A patrol round the roads near the base.
+            if (w.alert >= 1 && base.patrolCd <= 0 && free.size() >= 7 && w.fleet.basePatrols(base) == 0) {
+                base.patrolCd = 120 + w.rnd.nextFloat() * 60;
+                float a = w.rnd.nextFloat() * (float) Math.PI * 2, dist = 450 + w.rnd.nextFloat() * 350;
+                float[] to = city.nearestDrivable(base.x + (float) Math.cos(a) * dist, base.y + (float) Math.sin(a) * dist);
+                if (to != null) w.fleet.basePatrol(nearestOf(free, base.x, base.y, 3), base, to[0], to[1]);
+            }
+        }
+    }
+
+    /** The n of these nearest to (x, y). */
+    private static ArrayList<Entity> nearestOf(ArrayList<Entity> from, final float x, final float y, int n) {
+        ArrayList<Entity> sorted = new ArrayList<Entity>(from);
+        java.util.Collections.sort(sorted, new java.util.Comparator<Entity>() {
+            @Override
+            public int compare(Entity a, Entity b) {
+                return Float.compare((a.x - x) * (a.x - x) + (a.y - y) * (a.y - y), (b.x - x) * (b.x - x) + (b.y - y) * (b.y - y));
+            }
+        });
+        while (sorted.size() > n) sorted.remove(sorted.size() - 1);
+        return sorted;
     }
 
     private float sweepCd = 3, mobiliseCd = 2, unansweredSaid = -100;
@@ -620,6 +705,26 @@ final class Dispatch {
             if (!inc.swatRequested && swatTeams > 0 && (inc.zombiesNear >= 6 || (inc.officersDown > 0 && inc.zombiesNear >= 3))) {
                 inc.swatRequested = true;
                 sendSwat(inc);
+            }
+            // A crowd of the dead: the riot van brings six officers with shields to hold a line.
+            if (!inc.riotRequested && riotVans > 0 && inc.zombiesNear >= 10) {
+                inc.riotRequested = true;
+                City.Facility station = city.nearestFacility(City.FACILITY_POLICE, inc.x, inc.y);
+                if (station != null && w.fleet.sendRiotVan(station.gateX, station.gateY, inc)) {
+                    riotVans--;
+                    say(WHO_POLICE, null, "Dispatch: Riot van leaving " + station.name + " for " + inc.place
+                            + ". Six officers with shields.", station.gateX, station.gateY);
+                }
+            }
+            // The police helicopter goes up over the bigger ones.
+            if (!inc.policeAirRequested && policeAir > 0 && inc.zombiesNear >= 8 && !w.fleet.policeHeliBusy()) {
+                inc.policeAirRequested = true;
+                City.Facility station = city.nearestFacility(City.FACILITY_POLICE, inc.x, inc.y);
+                if (station != null) {
+                    policeAir--;
+                    w.fleet.sendPoliceHeli(station.x, station.y, inc);
+                    say(WHO_POLICE, null, "Dispatch: Police helicopter is up and heading for " + inc.place + ".", inc.x, inc.y);
+                }
             }
             if (!inc.airRequested && inc.zombiesNear >= 12) {
                 inc.airRequested = true;

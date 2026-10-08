@@ -17,7 +17,7 @@ import java.util.ArrayList;
  * damaged or collapsed buildings.
  */
 final class SaveGame {
-    private static final int VERSION = 21;
+    private static final int VERSION = 22;
 
     private SaveGame() {
     }
@@ -27,6 +27,8 @@ final class SaveGame {
         DataOutputStream out = new DataOutputStream(new BufferedOutputStream(new FileOutputStream(tmp)));
         try {
             out.writeInt(VERSION);
+            homeIndex = new java.util.IdentityHashMap<City.Building, Integer>();
+            for (int i = 0; i < w.city.buildings.size(); i++) homeIndex.put(w.city.buildings.get(i), i);
             CityConfig cfg = w.city.cfg;
             out.writeInt(cfg.v.length);
             for (int v : cfg.v) out.writeInt(v);
@@ -102,6 +104,7 @@ final class SaveGame {
                     Entity p = w.create(v.passengerType, v.x, v.y);
                     if (v.guardUnit) w.applyRole(p, Entity.ROLE_GUARD);
                     if (v.swat) w.applyRole(p, Entity.ROLE_SWAT);
+                    if (v.kind == Fleet.K_RIOT_VAN) w.applyRole(p, Entity.ROLE_RIOT);
                     all.add(p);
                 }
             }
@@ -276,6 +279,9 @@ final class SaveGame {
             out.writeBoolean(w.armoryLost);
             // Version 21: SWAT teams still at the precinct.
             out.writeInt(d.swatTeams);
+            out.writeInt(d.riotVans);
+            out.writeInt(d.policeAir);
+            out.writeInt(w.guardWave);
         } finally {
             out.close();
         }
@@ -337,7 +343,14 @@ final class SaveGame {
         out.writeByte(e.job);
         out.writeBoolean(e.aware);
         out.writeByte(e.agency);
+        // Version 22: where they live (homeless if nowhere).
+        Integer home = e.home != null && homeIndex != null ? homeIndex.get(e.home) : null;
+        out.writeInt(home != null ? home : -1);
+        out.writeBoolean(e.homeChecked);
     }
+
+    /** Each building's place in the city's list, while saving. */
+    private static java.util.IdentityHashMap<City.Building, Integer> homeIndex;
 
     static World load(File file) throws IOException {
         DataInputStream in = new DataInputStream(new BufferedInputStream(new FileInputStream(file)));
@@ -349,13 +362,15 @@ final class SaveGame {
             int n = in.readInt();
             for (int i = 0; i < n; i++) {
                 int v = in.readInt();
+                // (Before 10.10 there was no Tiny size, so Small was 0.)
+                if (version < 22 && i == CityConfig.OPT_SIZE) v++;
                 if (i < cfg.v.length) cfg.v[i] = Math.max(0, Math.min(cfg.values(i).length - 1, v));
             }
             cfg.seed = in.readLong();
             cfg.normalize();
             if (version >= 15) cfg.setEdits(in.readUTF());
             // (Cities saved before 10.4 were built without their government quarter.)
-            cfg.civic = version >= 20 ? 2 : version >= 19 ? 1 : 0;
+            cfg.civic = version >= 22 ? 3 : version >= 20 ? 2 : version >= 19 ? 1 : 0;
             // (Version 20 and later all build the same city.)
             World w = new World(cfg);
 
@@ -595,6 +610,11 @@ final class SaveGame {
             if (version >= 20) w.armoryLost = in.readBoolean();
             if (version >= 21) d.swatTeams = in.readInt();
             else d.swatTeams = w.city.nearestFacility(City.FACILITY_POLICE, 0, 0) == null ? 0 : 1;
+            if (version >= 22) {
+                d.riotVans = in.readInt();
+                d.policeAir = in.readInt();
+                w.guardWave = in.readInt();
+            }
             d.copCount = copCount;
             d.soldierCount = soldierCount;
             w.afterLoad();
@@ -650,6 +670,11 @@ final class SaveGame {
         if (version >= 17) {
             e.aware = in.readBoolean();
             e.agency = in.readByte();
+        }
+        if (version >= 22) {
+            int home = in.readInt();
+            e.home = home >= 0 && home < w.city.buildings.size() ? w.city.buildings.get(home) : null;
+            e.homeChecked = in.readBoolean();
         }
         if (zone >= 0 && zone < d.zones.size()) e.zone = d.zones.get(zone);
         return e;

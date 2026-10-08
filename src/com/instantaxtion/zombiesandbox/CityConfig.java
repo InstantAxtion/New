@@ -36,7 +36,7 @@ final class CityConfig implements OptionSet {
             "Reinforcements", "Country"};
     private static final String[][] VALUES = {
             PRESETS,
-            {"Small", "Medium", "Large", "Massive"},
+            {"Tiny", "Small", "Medium", "Large", "Massive", "Huge"},
             {"None", "Few", "Some", "Most", "All"},
             {"0", "5", "10", "20", "40", "60"},
             {"0", "5", "10", "20", "40"},
@@ -44,7 +44,11 @@ final class CityConfig implements OptionSet {
             {"Off", "Low", "Medium", "High"},
             Country.NAMES,
     };
-    private static final int[] SIZES = {192, 256, 320, 448};
+    /** Tiles across for each size; cities built before 10.10 (no Tiny or Huge then) were a quarter smaller. */
+    private static final int[] SIZES = {160, 240, 320, 400, 560, 704};
+    private static final int[] OLD_SIZES = {192, 192, 256, 320, 448, 448};
+    /** The size settings, by name. */
+    static final int TINY = 0, SMALL = 1, MEDIUM = 2, LARGE = 3, MASSIVE = 4, HUGE = 5;
     /** Share of the city's residents out and about when the game starts. */
     private static final float[] RESIDENT_SHARE = {0, 0.2f, 0.45f, 0.7f, 1f};
     private static final int[] COPS = {0, 5, 10, 20, 40, 60};
@@ -114,15 +118,19 @@ final class CityConfig implements OptionSet {
     };
 
     /** Current index into VALUES for each option. */
-    final int[] v = {0, 1, 4, 2, 1, 0, 2, 0};
+    final int[] v = {0, MEDIUM, 4, 2, 1, 0, 2, 0};
     long seed = new Random().nextInt(1000000);
     /** Start the next game on the city from {@link #code()} instead of a new random one. */
     boolean keepCity;
     /**
      * Which public buildings the city was laid out with: 0 as before 10.4, 1 the government quarter (10.4),
-     * 2 and the National Guard armory (10.5). Saved games rebuild with what they had.
+     * 2 and the National Guard armory (10.5), 3 the bigger maps of 10.10 with hills, mountains, lakes, streams
+     * and nature parks out in the country. Saved games rebuild with what they had.
      */
-    int civic = 2;
+    int civic = 3;
+
+    /** Hills, mountains, streams, lakes, parks and campsites (cities built since 10.10). */
+    boolean nature() { return civic >= 3; }
 
     int preset() {
         return v[OPT_PRESET];
@@ -131,11 +139,11 @@ final class CityConfig implements OptionSet {
     /** Water on the map: none, the sea along one side (a beach or a port), a river, or a lake. */
     static final int W_NONE = 0, W_SEA = 1, W_RIVER = 2, W_LAKE = 3, W_HARBOUR = 4, W_ISLANDS = 5;
     /** The Islands map, and its one size (tiles across: a bit bigger than Massive). */
-    static final int ISLANDS = 14, ISLANDS_TILES = 512;
+    static final int ISLANDS = 14, ISLANDS_TILES = 640;
 
     /** Islands only comes in one size: it counts as Massive for everything that depends on size. */
     void normalize() {
-        if (v[OPT_PRESET] == ISLANDS) v[OPT_SIZE] = 3;
+        if (v[OPT_PRESET] == ISLANDS) v[OPT_SIZE] = MASSIVE;
     }
 
     int water() {
@@ -154,7 +162,7 @@ final class CityConfig implements OptionSet {
      * Share it and anyone can play the same streets.
      */
     String code() {
-        return CODE_MAPS.charAt(v[OPT_PRESET]) + "" + (v[OPT_SIZE] + 1) + "-" + seed
+        return CODE_MAPS.charAt(v[OPT_PRESET]) + "" + v[OPT_SIZE] + "-" + seed
                 + (v[OPT_COUNTRY] == 0 ? "" : "@" + v[OPT_COUNTRY]) + (edits.isEmpty() ? "" : "~" + editString());
     }
 
@@ -216,7 +224,9 @@ final class CityConfig implements OptionSet {
         }
         int dash = t.indexOf('-');
         if (dash != 2 || t.length() < 4 || t.length() > 22) return false;
-        int preset = CODE_MAPS.indexOf(Character.toUpperCase(t.charAt(0))), size = t.charAt(1) - '1';
+        // (The size digit: 0 Tiny, 1 Small, 2 Medium, 3 Large, 4 Massive, 5 Huge. Codes from before Tiny was
+        // added used 1 to 4 for Small to Massive, so they still mean the same size.)
+        int preset = CODE_MAPS.indexOf(Character.toUpperCase(t.charAt(0))), size = t.charAt(1) - '0';
         if (preset < 0 || preset >= PRESETS.length || size < 0 || size >= SIZES.length) return false;
         long s;
         try {
@@ -241,10 +251,15 @@ final class CityConfig implements OptionSet {
         seed = r.nextInt(1000000);
     }
 
-    int tiles() { return v[OPT_PRESET] == ISLANDS ? ISLANDS_TILES : SIZES[v[OPT_SIZE]]; }
+    int tiles() {
+        if (v[OPT_PRESET] == ISLANDS) return nature() ? ISLANDS_TILES : 512;
+        return (nature() ? SIZES : OLD_SIZES)[v[OPT_SIZE]];
+    }
 
-    /** A massive map: the city sits in the middle of open countryside. */
-    boolean massive() { return v[OPT_SIZE] == 3; }
+    /** A massive (or huge) map: the city sits in the middle of open countryside. */
+    boolean massive() { return v[OPT_SIZE] >= MASSIVE; }
+
+    int size() { return v[OPT_SIZE]; }
 
     /**
      * How much of the map (across) is town; the rest is countryside with dirt roads, farms and woods. A village
@@ -258,7 +273,12 @@ final class CityConfig implements OptionSet {
         float f = p == 9 ? 0.55f : p == 6 ? 0.72f : 1f;
         // A massive map is nearly all town: a thin band of country round the edge for the highway and farms.
         if (massive()) f = p == 9 ? 0.6f : p == 6 ? 0.88f : 0.92f;
-        return f;
+        if (!nature()) return f;
+        // Since 10.10 the maps are a quarter bigger, and the extra room is countryside: hills and woods,
+        // mountains, lakes and streams, a nature park and campsites round a town a little bigger than before.
+        if (p == 9) return v[OPT_SIZE] <= SMALL ? 0.6f : 0.5f;
+        float town = new float[]{1f, 0.86f, 0.8f, 0.76f, 0.74f, 0.66f}[v[OPT_SIZE]];
+        return p == 6 ? town * 0.8f : town;
     }
     /** How many of a city's residents (everyone its homes can house) are in the game. */
     int civilians(int residents) {
@@ -304,7 +324,8 @@ final class CityConfig implements OptionSet {
     /** Police stations: the map's own number, and more on Large and Massive maps. */
     int policeStations() {
         int n = map(6);
-        return n == 0 ? 0 : n + (v[OPT_SIZE] >= 2 ? 1 : 0) + (v[OPT_SIZE] >= 3 ? 1 : 0);
+        int s = v[OPT_SIZE];
+        return n == 0 ? 0 : Math.max(1, n - (s == TINY ? 1 : 0)) + (s >= LARGE ? 1 : 0) + (s >= MASSIVE ? 1 : 0) + (s >= HUGE ? 1 : 0);
     }
 
     /** Medics: the hospital's, and the paramedics at the fire stations, growing with the city. */
@@ -318,12 +339,15 @@ final class CityConfig implements OptionSet {
         int n = LANDMARKS[v[OPT_PRESET]][kind];
         // Fire stations: one more on a Large map, two more on a Massive one.
         // (Every town has at least one.)
+        int s = v[OPT_SIZE];
         if (kind == 2) {
             n = Math.max(1, n);
-            if (v[OPT_SIZE] >= 2) return n + v[OPT_SIZE] - 1;
+            if (s >= LARGE) return n + s - MEDIUM;
         }
-        if (v[OPT_SIZE] == 0) return n > 1 ? 1 : n;
-        if (v[OPT_SIZE] == 2) return n + (n + 1) / 2;
+        if (s == TINY) return Math.min(n, kind == 2 || kind == 3 ? 1 : 0);
+        if (s == SMALL) return n > 1 ? 1 : n;
+        if (s == LARGE) return n + (n + 1) / 2;
+        if (s == HUGE) return n * 2;
         return n;
     }
 
@@ -372,7 +396,7 @@ final class CityConfig implements OptionSet {
 
     void randomize(Random r) {
         for (int i = 0; i < v.length; i++) v[i] = r.nextInt(VALUES[i].length);
-        v[OPT_SIZE] = 1;
+        v[OPT_SIZE] = MEDIUM;
         normalize();
         if (v[OPT_CIVILIANS] == 0) v[OPT_CIVILIANS] = 4;
         keepCity = false;

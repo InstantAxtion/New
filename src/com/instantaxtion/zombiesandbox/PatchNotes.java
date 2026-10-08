@@ -2,11 +2,28 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.9";
-    static final int VERSION_CODE = 47;
+    static final String VERSION = "10.10";
+    static final int VERSION_CODE = 48;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.10  -  The lie of the land",
+                    "Every map is about a quarter bigger, and there are two new sizes: Tiny and Huge. The extra room is countryside. The town sits a little off to one side, leaving a wide stretch of wild country on the other.",
+                    "The land isn't flat any more. There are gentle rises in town and rolling hills out in the country, with hill shading and contour lines. On the bigger maps there are mountains too, with crags and boulders up top, pine woods on the slopes and snow on the peaks. Walking uphill is slow going for everyone, the dead included, and shots from the high ground are better.",
+                    "Out in the wilds: streams run down off the hills, with a waterfall where one drops off a crag. There are small lakes and ponds (with a rowing boat), and a nature park with a visitor centre and hiking trails up to a lookout, the falls and the lake shore. Campsites have tents, fire rings, picnic tables, cabins and a camp store, and campers staying there.",
+                    "Each country has its own landscape. Egypt and Saudi Arabia are desert, with sand, bare rock mountains and a palm-fringed oasis. Switzerland and Norway have big snowy mountains. Canada, Sweden and Russia have birch and pine forests and plenty of lakes. Denmark is flat, Malaysia is palm-filled jungle, Australia has gum trees and Mexico and Morocco have acacias.",
+                    "Seven new countries: Canada, China, Egypt, Saudi Arabia, Sweden, Norway and Denmark. Each has its own streets, names, buildings, police cars, SWAT, Guard, government quarter and highway patrol.",
+                    "Islands has two, three or four islands now, laid out differently from city to city. The little islets are gone, and so is any scrap of coast the bridges don't reach, so nobody is ever stranded.",
+                    "New soldiers: every squad has a combat medic, who patches up the wounded nearby (bites still can't be treated), or a grenadier with an underslung grenade launcher.",
+                    "New army vehicles: the APC, armoured with a roof gun, which goes into the big fights and stays to cover its squad, and the Humvee, quick with a gunner on the roof, used for long runs, quick reaction forces and patrols.",
+                    "Livelier bases: once the city knows, a Humvee patrol sweeps the roads round each base every few minutes. A call nearby with no soldiers at it gets a quick reaction force straight away, and when the dead reach the wire the base sounds its alarm.",
+                    "The National Guard also turns out by itself when it's needed: when the outbreak gets big, or as soon as a city with no army base is at war. If the first call-up is wiped out and things are still going badly, a second one follows. A Humvee leads the convoy.",
+                    "New police: a marksman with a scoped rifle at every precinct (and one with every SWAT team), motorcycle officers on patrol, a riot van bringing six officers with shields to big crowds of the dead, and the police helicopter with a marksman at the door.",
+                    "Gun stores only exist where people can buy guns (USA, Canada, Australia, France, Switzerland, Portugal, Russia, Sweden, Norway, Denmark), and they look like gun stores now. Once everyone knows the dead are walking, people set off across town to raid them, and the first raid makes the news.",
+                    "Buses no longer leave town with people aboard. With a safe zone open, a bus takes its passengers there; otherwise the driver pulls in and everyone gets off.",
+                    "People who turn up after the city was built (anyone you spawn, for example) don't get a made-up home: they're homeless, and their card says so.",
+            },
             {
                     "10.9  -  Real islands",
                     "The Islands aren't squares any more: each has a natural outline with lobes, bays and headlands, grassland and woods running down to the water, sandy beaches along some stretches and wooded, rocky shore along others. There's always a channel of open water between the islands, the bridges run street to street, and a few small islets lie offshore.",

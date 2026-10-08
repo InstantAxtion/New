@@ -460,6 +460,12 @@ final class World {
             for (int i = 0; i < n; i++) spawn(Entity.COP, f.x + rnd.nextFloat() * 40 - 20, f.y + rnd.nextFloat() * 40 - 20);
         }
         spawnRandom(Entity.COP, cops - copsAtStations - made * 2);
+        // A marksman at each precinct (since 10.10).
+        if (cfg.nature())
+            for (City.Facility f : city.facilities)
+                if (f.kind == City.FACILITY_POLICE) spawnCop(Entity.ROLE_MARKSMAN, f.x + rnd.nextFloat() * 20 - 10, f.y + rnd.nextFloat() * 20 - 10);
+        dispatch.riotVans = cfg.nature() ? Math.min(3, stations) : 0;
+        dispatch.policeAir = cfg.nature() && stations > 0 ? 2 : 0;
         fleet.stationEngines();
         // Out of town: highway patrol on the highway, and (in the USA) sheriff's deputies on the country roads.
         // (About one patrol car to every fifty tiles of highway, four at the least.)
@@ -484,6 +490,7 @@ final class World {
                 e.grenades += 1;
             }
             if (e.member == 4) applyRole(e, Entity.ROLE_GUNNER);
+            else if (e.member == 2 && cfg.nature()) kitOut(e);
             else if (e.member == 3 && snipers > 0) {
                 applyRole(e, Entity.ROLE_SNIPER);
                 snipers--;
@@ -1114,8 +1121,8 @@ final class World {
             e.speed = 18;
             e.runSpeed = 32;
             e.mass = 1.4f;
-        } else if (role == Entity.ROLE_SWAT) {
-            applyRole(e, Entity.ROLE_SWAT);
+        } else if (role == Entity.ROLE_SWAT || role == Entity.ROLE_MARKSMAN) {
+            applyRole(e, role);
         } else if (role == Entity.ROLE_K9) {
             e.role = Entity.ROLE_K9;
             Entity dog = spawn(Entity.DOG, x + 6, y + 4);
@@ -1128,6 +1135,16 @@ final class World {
             }
         }
         return e;
+    }
+
+    /**
+     * A squad's second soldier is its combat medic or (in every other squad) its grenadier; its fourth carries
+     * the machine gun. (Reserve squads arriving by truck are made up the same way.)
+     */
+    void kitOut(Entity e) {
+        if (e.type != Entity.SOLDIER || e.role != Entity.ROLE_RIFLE) return;
+        if (e.member == 4) applyRole(e, Entity.ROLE_GUNNER);
+        else if (e.member == 2) applyRole(e, Math.max(0, e.squad) % 2 == 0 ? Entity.ROLE_CORPSMAN : Entity.ROLE_GRENADIER);
     }
 
     /** Spawns a soldier with a particular job. */
@@ -1147,6 +1164,35 @@ final class World {
     void applyRole(Entity e, int role) {
         e.role = role;
         switch (role) {
+            case Entity.ROLE_RIOT:
+                // A shield, a helmet and pads: slower, but bites from the front glance off.
+                e.hp = e.maxHp = 90;
+                e.speed = 18;
+                e.runSpeed = 32;
+                e.mass = 1.4f;
+                break;
+            case Entity.ROLE_CORPSMAN:
+                // A carbine and a medic's bag: fewer magazines, no grenades.
+                e.hp = e.maxHp = 100;
+                e.magSize = 30;
+                e.reserve = 120;
+                e.grenades = 0;
+                break;
+            case Entity.ROLE_GRENADIER:
+                // A rifle with a grenade launcher slung under it, and a bandolier of rounds for it.
+                e.hp = e.maxHp = 100;
+                e.magSize = 30;
+                e.reserve = 150;
+                e.grenades = 8;
+                break;
+            case Entity.ROLE_MARKSMAN:
+                // A scoped bolt-action rifle and a handful of rounds.
+                e.hp = e.maxHp = 70;
+                e.magSize = 5;
+                e.reserve = 40;
+                e.body = 0xFF2A3446;
+                e.head = 0xFF1A2230;
+                break;
             case Entity.ROLE_SWAT:
                 // Body armour, a helmet and a carbine.
                 e.hp = e.maxHp = 130;
@@ -1198,8 +1244,11 @@ final class World {
 
     /** Full spare ammo for a unit's weapon. */
     static int fullReserve(Entity e) {
-        if (e.type != Entity.SOLDIER) return e.role == Entity.ROLE_SWAT ? 150 : e.type == Entity.COP ? 45 : 48;
+        if (e.type != Entity.SOLDIER)
+            return e.role == Entity.ROLE_SWAT ? 150 : e.role == Entity.ROLE_MARKSMAN ? 40 : e.type == Entity.COP ? 45 : 48;
         switch (e.role) {
+            case Entity.ROLE_CORPSMAN: return 120;
+            case Entity.ROLE_GRENADIER: return 150;
             case Entity.ROLE_COMMANDER: return 60;
             case Entity.ROLE_SNIPER: return 45;
             case Entity.ROLE_GUNNER: return 200;
@@ -2985,11 +3034,13 @@ final class World {
         }
         e.aiming = false;
 
-        // Scared and unarmed, with a gun store round the corner: go and get a gun.
-        if (!e.hasGun && e.task == Dispatch.T_NONE && e.fear > 0 && threatDist > 40 && e.taskTimer <= 0 && e.leader == null) {
+        // Scared and unarmed, with a gun store round the corner: go and get a gun. Once everyone knows the dead are
+        // walking, some people (about one in three) set off across town to raid one.
+        boolean raider = e.aware && e.nameSeed % 3 == 0;
+        if (!e.hasGun && e.task == Dispatch.T_NONE && (e.fear > 0 || raider) && threatDist > 40 && e.taskTimer <= 0 && e.leader == null) {
             e.taskTimer = 2;
-            City.Building g = gunStoreNear(e, 220);
-            if (g != null && rnd.nextFloat() < 0.5f) {
+            City.Building g = gunStoreNear(e, raider ? 700 : 220);
+            if (g != null && rnd.nextFloat() < (raider ? 0.7f : 0.5f)) {
                 e.task = Dispatch.T_RESUPPLY;
                 e.building = g;
             }
@@ -3246,10 +3297,28 @@ final class World {
         return true;
     }
 
-    /** The home a civilian lives in: the nearest house or apartment block (found once). */
+    /** The middle of the nearest town, hamlet or campsite. */
+    private float[] nearestSettlement(float x, float y) {
+        float[] best = new float[]{city.worldW() / 2, city.worldH() / 2};
+        float bd = Float.MAX_VALUE;
+        for (float[] s : city.settlements) {
+            float d = (s[0] - x) * (s[0] - x) + (s[1] - y) * (s[1] - y);
+            if (d < bd) {
+                bd = d;
+                best = s;
+            }
+        }
+        return best;
+    }
+
+    /**
+     * The home a civilian lives in. Residents have theirs from the start; anyone who turns up later (spawned in,
+     * a driver who got out) moved into the nearest house before 10.10, and since then has nowhere: homeless.
+     */
     private City.Building homeOf(Entity e) {
         if (!e.homeChecked) {
             e.homeChecked = true;
+            if (city.cfg.nature()) return null;
             float bd = 400 * 400;
             for (int i = 0, n = city.buildings.size(); i < n; i++) {
                 City.Building b = city.buildings.get(i);
@@ -4280,8 +4349,21 @@ final class World {
     void launchBoats() {
         boats.clear();
         City c = city;
-        if (c.waterKind == CityConfig.W_NONE) return;
         Random r = new Random(c.cfg.seed * 13L + 5);
+        if (c.waterKind == CityConfig.W_NONE) {
+            // A rowing boat out on each lake in the country.
+            for (int i = 0; i < c.natureSpots.size(); i++) {
+                float[] q = c.natureSpots.get(i);
+                if (q[2] != City.NL_LAKE) continue;
+                for (int tries = 0; tries < 40; tries++) {
+                    float x = q[0] + (r.nextFloat() - 0.5f) * 80, y = q[1] + (r.nextFloat() - 0.5f) * 80;
+                    if (!navigable(x, y) || c.isBridge((int) (x / City.T), (int) (y / City.T))) continue;
+                    boats.add(new float[]{x, y, r.nextBoolean() ? 1 : -1, r.nextFloat() - 0.5f, 6 + r.nextFloat() * 3, 0});
+                    break;
+                }
+            }
+            return;
+        }
         int n = c.waterKind == CityConfig.W_LAKE ? 3 : Math.max(2, c.w / (c.waterKind == CityConfig.W_RIVER ? 70 : 50));
         for (int k = 0, tries = 0; k < n && tries < 400; tries++) {
             int tx = 2 + r.nextInt(c.w - 4), ty;
@@ -4313,7 +4395,7 @@ final class World {
             if (!navigable(nx + b[2] * len, ny + b[3] * len) || !navigable(nx, ny)) {
                 // Turn about (and, on a lake, off on a new heading).
                 b[2] = -b[2];
-                b[3] = city.waterKind == CityConfig.W_LAKE ? -b[3] + (rnd.nextFloat() - 0.5f) * 0.6f : 0;
+                b[3] = city.waterKind == CityConfig.W_LAKE || city.waterKind == CityConfig.W_NONE ? -b[3] + (rnd.nextFloat() - 0.5f) * 0.6f : 0;
                 continue;
             }
             b[0] = nx;
@@ -5098,8 +5180,8 @@ final class World {
     }
 
     /** An armed civilian with no bullets left walks to the nearest supermarket that still has some. */
-    /** People who armed themselves at a gun store. */
-    int armedAtStores;
+    /** People who armed themselves at a gun store, and gun stores broken into. */
+    int armedAtStores, gunStoreRaids;
 
     private City.Building gunStoreNear(Entity e, float radius) {
         City.Building best = null;
@@ -5149,6 +5231,13 @@ final class World {
         if (d < 10) {
             int take = Math.min(36, b.stock);
             b.stock -= take;
+            if (b.kind == City.SHOP && b.shopType == 1 && e.aware && !b.smashed) {
+                // The first raid: the windows go in and the guns are passed round.
+                b.smashed = true;
+                gunStoreRaids++;
+                dispatch.say(Dispatch.WHO_INFO, null, "People have broken into " + b.name + " and are arming themselves: "
+                        + b.stock + " rounds left on the shelves.", b.doorX, b.doorY);
+            }
             if (e.hasGun) e.reserve += take;
             else {
                 armCivilian(e, take);
@@ -5569,8 +5658,10 @@ final class World {
         wander(e, e.speed * 0.5f);
     }
 
-    /** Whether the governor has already called out the National Guard this outbreak. */
+    /** Whether the governor has already called out the National Guard this outbreak (and how many times, when). */
     boolean guardCalled;
+    int guardWave;
+    float guardCalledAt;
 
     /**
      * When the army has nothing left to send and the war is going badly, the governor calls out the National
@@ -5587,9 +5678,33 @@ final class World {
         boolean muster = arm != null && !armoryLost && !arm.collapsed;
         float wait = local ? 50 : hall && !hallLost ? 70 : hall ? 200 : 90;
         if (arm != null && !muster) wait += 60;
-        if (guardCalled || !outbreak || outbreakTime < wait || warBalance > (local ? 0.55f : 0.45f)
-                || (dispatch.squadReserve > 0 && !local) || readiness == 1) return;
+        // (Since 10.10 the governor doesn't only wait for the army to run out: a city with no army base of its
+        // own gets the Guard as soon as it's at war, and a big outbreak anywhere brings them out. If the first
+        // call-up is wiped out and it's still going badly, a second follows.)
+        boolean natural = false, second = false;
+        if (city.cfg.nature() && outbreak) {
+            boolean noArmy = hq == null;
+            boolean big = zombieCount() >= Math.max(40, humanCount() / 8);
+            natural = big || (noArmy && alert >= 2);
+            if (guardCalled && guardWave == 1 && time - guardCalledAt > 240 && warBalance < 0.4f) {
+                int left = 0;
+                for (int i = 0, n = entities.size(); i < n && left == 0; i++) {
+                    Entity e = entities.get(i);
+                    if (!e.dead && e.type == Entity.SOLDIER && e.role == Entity.ROLE_GUARD) left++;
+                }
+                for (int i = 0; i < fleet.vehicles.size(); i++) if (fleet.vehicles.get(i).guardUnit) left++;
+                second = left == 0;
+            }
+        }
+        if (second) {
+            guardCalled = false;
+            muster = false;
+        }
+        if (guardCalled || !outbreak || outbreakTime < (natural ? Math.min(wait, 45) : wait)) return;
+        if (!natural && !second && (warBalance > (local ? 0.55f : 0.45f) || (dispatch.squadReserve > 0 && !local) || readiness == 1)) return;
         guardCalled = true;
+        guardWave++;
+        guardCalledAt = time;
         float tx = city.worldW() / 2, ty = city.worldH() / 2;
         if (!dispatch.zones.isEmpty()) {
             tx = dispatch.zones.get(0).x;
@@ -5609,6 +5724,11 @@ final class World {
             v.guardUnit = true;
             // (Reservists take a little while to get to the armory and draw their kit.)
             if (muster) v.timer = 20 + (i - before) * 4;
+            // (A Humvee leads the convoy.)
+            if (city.cfg.nature() && i == before) {
+                fleet.setKind(v, Fleet.K_HUMVEE);
+                v.passengers = 4;
+            }
         }
         String[] g = Country.guard(city.country.id);
         if (fleet.vehicles.size() > before)
@@ -5617,6 +5737,48 @@ final class World {
                     + " trucks will head for " : "With " + (arm != null ? arm.name + " overrun" : "no armory in town")
                     + ", " + trucks + " trucks are coming from out of town to ") + city.placeName(tx, ty) + ".", from[0], from[1]);
         else guardCalled = false;
+    }
+
+    /**
+     * The squad's combat medic: with no zombie close, goes to the worst-hurt person nearby (soldiers, police,
+     * civilians) and patches them up. Returns false when there's nobody to see to or the dead are too close,
+     * so they fight like any soldier. (A bite can't be treated.)
+     */
+    private boolean fieldMedic(Entity e, float dt) {
+        if (countZombiesNear(e.x, e.y, 55) > 0) return false;
+        Entity patient = null;
+        float best = 150 * 150;
+        for (int i = 0, n = entities.size(); i < n; i++) {
+            Entity o = entities.get(i);
+            if (o == e || o.dead || o.isZombie() || o.type == Entity.RAIDER || o.type == Entity.DOG) continue;
+            if (o.hp >= o.maxHp * 0.7f) continue;
+            float ddx = o.x - e.x, ddy = o.y - e.y, d2 = (ddx * ddx + ddy * ddy) * (0.5f + o.hp / o.maxHp);
+            if (d2 < best) {
+                best = d2;
+                patient = o;
+            }
+        }
+        if (patient == null) return false;
+        float ddx = patient.x - e.x, ddy = patient.y - e.y, d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
+        e.aiming = false;
+        if (d < e.radius + patient.radius + 6) {
+            steer(e, 0, 0, 0);
+            e.angle = (float) Math.atan2(ddy, ddx);
+            float before = patient.hp;
+            patient.hp = Math.min(patient.maxHp, patient.hp + 16 * dt);
+            if (before < patient.maxHp * 0.7f && patient.hp >= patient.maxHp * 0.7f) {
+                healed++;
+                if (e.talkTimer <= 0 && rnd.nextFloat() < 0.5f) {
+                    e.talkTimer = 3;
+                    dispatch.say(Dispatch.WHO_MILITARY, e, "Patched up. You're good to go.", e.x, e.y);
+                }
+            }
+            if (rnd.nextFloat() < dt * 6)
+                particle(patient.x + rnd.nextFloat() * 6 - 3, patient.y - 4, 0, -12, 0.6f, 1.2f, 0xFF63E06B, P_DOT);
+            return true;
+        }
+        steer(e, ddx / d, ddy / d, e.runSpeed * 0.85f);
+        return true;
     }
 
     /** Medics run to the hurt, patch them up, and keep away from zombies. (There's no treating a bite.) */
@@ -5680,9 +5842,12 @@ final class World {
 
     private void thinkArmed(Entity e, float dt) {
         boolean soldier = e.type == Entity.SOLDIER;
-        float range = soldier ? (e.role == Entity.ROLE_SNIPER ? 380 : e.role == Entity.ROLE_COMMANDER ? 180 : 230)
-                : e.role == Entity.ROLE_SWAT ? 210 : 160;
+        float range = soldier ? (e.role == Entity.ROLE_SNIPER ? 380 : e.role == Entity.ROLE_COMMANDER ? 180
+                : e.role == Entity.ROLE_CORPSMAN ? 200 : 230)
+                : e.role == Entity.ROLE_SWAT ? 210 : e.role == Entity.ROLE_MARKSMAN ? 320 : 160;
         if (e.role == Entity.ROLE_COMMANDER && soldier) command(e, dt);
+        // The combat medic sees to the wounded nearby whenever the dead give them a moment.
+        if (soldier && e.role == Entity.ROLE_CORPSMAN && e.task != Dispatch.T_BOARD && fieldMedic(e, dt)) return;
         if (e.meleeCd <= 0) {
             Entity z = nearestInReach(e);
             if (z != null) shove(e, z, true);
@@ -5814,9 +5979,15 @@ final class World {
                 float side = (e.callsign + e.member) % 2 == 0 ? 1 : -1;
                 steer(e, -ddy / d * side, ddx / d * side, e.speed);
             }
-            if (soldier && e.role == Entity.ROLE_RIFLE && e.grenades > 0 && e.grenadeCd <= 0 && d > 70 && d < 200
-                    && countZombiesNear(t.x, t.y, 40) >= 5 && !peopleNear(t.x, t.y, 60)) {
+            boolean launcher = soldier && e.role == Entity.ROLE_GRENADIER;
+            if (soldier && (e.role == Entity.ROLE_RIFLE || launcher) && e.grenades > 0 && e.grenadeCd <= 0 && d > (launcher ? 60 : 70)
+                    && d < (launcher ? 280 : 200) && countZombiesNear(t.x, t.y, 40) >= (launcher ? 3 : 5) && !peopleNear(t.x, t.y, 60)) {
                 throwGrenade(e, t.x, t.y);
+                // (A launcher reloads quicker than a man can pull another pin.)
+                if (launcher) {
+                    e.grenadeCd = 3.5f;
+                    emit(Sfx.PISTOL, e.x, e.y);
+                }
             }
             return;
         }
@@ -6919,6 +7090,7 @@ final class World {
     private float headshotChance(Entity e, Entity t, float d, float range) {
         float base;
         if (e.role == Entity.ROLE_SNIPER) return 0.45f;
+        if (e.role == Entity.ROLE_MARKSMAN) return 0.5f;
         if (e.weapon == Entity.W_SHOTGUN && d < 45) return 0.3f;
         if (e.type == Entity.COP) base = e.role == Entity.ROLE_SWAT ? 0.42f : 0.3f;
         else if (e.type == Entity.SOLDIER)
@@ -6926,6 +7098,8 @@ final class World {
         else return HEADSHOT;
         float f = Math.max(0.35f, 1.25f - d / range);
         if (t.type == Entity.RUNNER) f *= 0.6f;
+        // A clearer shot from the high ground.
+        if (city.elev != null && city.elevation(e.x, e.y) > city.elevation(t.x, t.y) + 3) f *= 1.2f;
         return base * f;
     }
 
@@ -6935,7 +7109,7 @@ final class World {
      */
     private boolean holdFire(Entity e, Entity t, float d, float range) {
         if (e.type != Entity.COP && e.type != Entity.SOLDIER) return false;
-        if (e.role == Entity.ROLE_SNIPER || e == controlled || !t.isZombie()) return false;
+        if (e.role == Entity.ROLE_SNIPER || e.role == Entity.ROLE_MARKSMAN || e == controlled || !t.isZombie()) return false;
         float effective = e.type == Entity.COP ? (e.role == Entity.ROLE_SWAT ? 150 : 110) : 165;
         return d > effective && t.biteCd <= 0 && !peopleNear(t.x, t.y, 45);
     }
@@ -7025,10 +7199,10 @@ final class World {
         e.ammo--;
         shotsFired++;
         float dmg, accuracy = e.hasGun ? 0.5f : 0.7f;
-        if (soldier && e.role == Entity.ROLE_SNIPER) {
-            e.cooldown = 1.6f;
-            dmg = 75;
-            accuracy = 0.97f;
+        if ((soldier && e.role == Entity.ROLE_SNIPER) || e.role == Entity.ROLE_MARKSMAN) {
+            e.cooldown = e.role == Entity.ROLE_MARKSMAN ? 1.4f : 1.6f;
+            dmg = e.role == Entity.ROLE_MARKSMAN ? 60 : 75;
+            accuracy = e.role == Entity.ROLE_MARKSMAN ? 0.95f : 0.97f;
         } else if (soldier && e.role == Entity.ROLE_GUNNER) {
             e.cooldown = 0.075f;
             dmg = 10;
@@ -7078,7 +7252,8 @@ final class World {
         float ca = (float) Math.cos(e.angle), sa = (float) Math.sin(e.angle);
         float mx = e.x + ca * e.radius * (soldier ? 2.5f : 2f) - sa * e.radius * 0.3f;
         float my = e.y + sa * e.radius * (soldier ? 2.5f : 2f) + ca * e.radius * 0.3f;
-        float hit = accuracy * (1 - (e.role == Entity.ROLE_SNIPER ? 0.1f : 0.4f) * d / range) + (t.type == Entity.BRUTE ? 0.1f : 0);
+        boolean scoped = e.role == Entity.ROLE_SNIPER || e.role == Entity.ROLE_MARKSMAN;
+        float hit = accuracy * (1 - (scoped ? 0.1f : 0.4f) * d / range) + (t.type == Entity.BRUTE ? 0.1f : 0);
         if (t.type == Entity.CRAWLER) hit *= 0.6f;
         if (rnd.nextFloat() < hit) {
             // Only a hit to the head really stops a zombie; body shots just wear it down.
@@ -7128,7 +7303,7 @@ final class World {
             tracer(mx, my, ex, ey);
         }
         particle(mx, my, 0, 0, 0.06f, soldier ? 3.2f : 2.6f, 0xFFFFE9A0, P_FLASH);
-        emit(!soldier || e.role == Entity.ROLE_COMMANDER ? Sfx.PISTOL : e.role == Entity.ROLE_SNIPER ? Sfx.SNIPER
+        emit(e.role == Entity.ROLE_MARKSMAN ? Sfx.SNIPER : !soldier || e.role == Entity.ROLE_COMMANDER ? Sfx.PISTOL : e.role == Entity.ROLE_SNIPER ? Sfx.SNIPER
                 : e.role == Entity.ROLE_GUNNER ? Sfx.MG : Sfx.RIFLE, e.x, e.y);
     }
 
@@ -7590,10 +7765,11 @@ final class World {
                 float tx = e.threatX - e.x, ty = e.threatY - e.y;
                 if (tx * (float) Math.cos(e.wanderAngle) + ty * (float) Math.sin(e.wanderAngle) > 0) e.wanderAngle += (float) Math.PI;
                 e.paused = false;
-            } else if (e.type == Entity.CIVILIAN && e.home != null) {
+            } else if (e.type == Entity.CIVILIAN && (e.home != null || (e.homeChecked && city.outOfTown(e.x, e.y)))) {
                 // A stroll or a run doesn't go on for ever into the middle of nowhere: out in the country, or
-                // a long way from home in town, it turns back towards home.
-                float hx = e.home.doorX - e.x, hy = e.home.doorY - e.y;
+                // a long way from home in town, it turns back towards home (or, with no home, towards town).
+                float[] s = e.home == null ? nearestSettlement(e.x, e.y) : null;
+                float hx = e.home != null ? e.home.doorX - e.x : s[0] - e.x, hy = e.home != null ? e.home.doorY - e.y : s[1] - e.y;
                 float leash = city.outOfTown(e.x, e.y) ? 150 : 520;
                 if (hx * hx + hy * hy > leash * leash) {
                     e.wanderAngle = (float) Math.atan2(hy, hx) + (rnd.nextFloat() - 0.5f) * 0.9f;
@@ -7751,6 +7927,14 @@ final class World {
         e.vx += (e.mx * e.want - e.vx) * k;
         e.vy += (e.my * e.want - e.vy) * k;
         float sx = e.vx * dt, sy = e.vy * dt;
+        if (city.elev != null && (sx != 0 || sy != 0)) {
+            // Uphill is hard going (for the dead too), downhill a little quicker.
+            float l = (float) Math.sqrt(sx * sx + sy * sy);
+            float g = city.rise(e.x, e.y, sx / l, sy / l);
+            float f = g > 0 ? 1 / (1 + g * 0.3f) : Math.min(1.1f, 1 - g * 0.04f);
+            sx *= f;
+            sy *= f;
+        }
         float bx = e.x, by = e.y;
         boolean moved = tryMove(e, sx, sy);
         if (!moved && e.want > 0) e.blocked = true;
@@ -8245,6 +8429,44 @@ final class World {
             tracer(fx, fy, t.x + rnd.nextFloat() * 24 - 12, t.y + rnd.nextFloat() * 24 - 12);
         }
         emit(Sfx.RIFLE, fx, fy);
+    }
+
+    /** A marksman's careful shot from above (the police helicopter): most of them drop the zombie for good. */
+    void marksmanShot(float fx, float fy, Entity t) {
+        shotsFired++;
+        if (rnd.nextFloat() < 0.85f && !peopleNear(t.x, t.y, 10)) {
+            t.hp -= t.type != Entity.BRUTE && rnd.nextFloat() < 0.55f ? t.hp + 1 : 40;
+            t.hurt = 1;
+            t.killedByZombie = false;
+            bloodBurst(t.x, t.y, 5, 0, 0);
+            tracer(fx, fy, t.x, t.y);
+        } else {
+            tracer(fx, fy, t.x + rnd.nextFloat() * 20 - 10, t.y + rnd.nextFloat() * 20 - 10);
+        }
+        emit(Sfx.SNIPER, fx, fy);
+    }
+
+    /**
+     * A vehicle's roof gun (an APC's, a Humvee's) firing at a zombie, if it has a clear line and nobody living is
+     * standing next to it. Returns false if it held fire.
+     */
+    boolean turretShot(float fx, float fy, Entity t, float dmg) {
+        if (!city.los(fx, fy, t.x, t.y) || peopleNear(t.x, t.y, 16)) return false;
+        shotsFired++;
+        if (rnd.nextFloat() < 0.7f) {
+            boolean head = t.type != Entity.BRUTE && rnd.nextFloat() < 0.15f;
+            t.hp -= head ? t.hp + 1 : dmg;
+            t.hurt = 1;
+            t.killedByZombie = false;
+            bloodBurst(t.x, t.y, 4, 0, 0);
+            tracer(fx, fy, t.x, t.y);
+        } else {
+            tracer(fx, fy, t.x + rnd.nextFloat() * 24 - 12, t.y + rnd.nextFloat() * 24 - 12);
+        }
+        particle(fx, fy, 0, 0, 0.06f, 3.4f, 0xFFFFE9A0, P_FLASH);
+        emit(Sfx.MG, fx, fy);
+        if (rnd.nextFloat() < 0.15f) noise(fx, fy, 260);
+        return true;
     }
 
     void explode(float x, float y, float radius, float damage) {

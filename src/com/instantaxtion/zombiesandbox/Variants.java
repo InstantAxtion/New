@@ -26,7 +26,7 @@ final class Variants {
 
     // Countries (bits) and districts (bits by City.DT_ type).
     static final int US = 1, AU = 2, JP = 4, FR = 8, MX = 16, CH = 32, KR = 64, MY = 128, PT = 256, MA = 512, RU = 1024,
-            ALL = 2047, EN = US | AU | JP | MY;
+            CN = 2048, EG = 4096, SA = 8192, SE = 16384, NO = 32768, DK = 65536, CA = 131072, ALL = 262143, EN = US | AU | JP | MY;
     static final int DOWN = 1, MID = 2, OLD = 4, SUB = 8, IND = 16, UNI = 32, PARK = 64, TOWN = DOWN | MID | OLD | SUB | PARK,
             ANY = 127;
 
@@ -56,6 +56,17 @@ final class Variants {
     static int LEGACY;
     /** The random numbers for swap(), apart from the city's own (so adding variants never moves the streets). */
     static Random extra = new Random(1);
+
+    // Roof styles and colours by country (USA, AU, JP, FR, MX, CH, KR, MY, PT, MA, RU, then since 10.10 CN, EG,
+    // SA, SE, NO, DK, CA: added after the others so the older countries' buildings keep their numbers).
+    private static final int[] HALL_ROOF = {R_DOME, R_CLOCK, R_GLASS, R_MANSARD, R_COURTYARD, R_HIP, R_GLASS, R_DOME, R_TILES, R_COURTYARD, R_PARAPET,
+                R_PAGODA, R_DOME, R_COURTYARD, R_CLOCK, R_HIP, R_CLOCK, R_DOME};
+    private static final int[] HALL_COL = {0xFFD8D4C8, 0xFF8A4A32, 0xFF7A8A96, 0xFF4A5560, 0xFFC89A6A, 0xFF8A3A2E, 0xFF5E7A8A, 0xFFE8DCC0, 0xFFB0583A,
+                0xFF2E6A4E, 0xFFD8C890, 0xFF8A3A2E, 0xFFC8B494, 0xFFE0D4BC, 0xFF8A2A22, 0xFF4E5560, 0xFF3F6A4A, 0xFF3F6A4A};
+    private static final int[] COURT_ROOF = {R_PARAPET, R_PARAPET, R_FLAT, R_MANSARD, R_COURTYARD, R_HIP, R_FLAT, R_DOME, R_TILES, R_COURTYARD, R_PARAPET,
+                R_TILES, R_PARAPET, R_PARAPET, R_HIP, R_PARAPET, R_TILES, R_PARAPET};
+    private static final int[] COURT_COL = {0xFFC8C4B8, 0xFFB8AE9C, 0xFF8A8E92, 0xFF505A64, 0xFFB89A7A, 0xFF7A4A3A, 0xFF8A9096, 0xFFD8D0B8, 0xFFB86A48,
+                0xFF8A6A4A, 0xFFB8B4A8, 0xFF5A5E62, 0xFFB8A07C, 0xFFD8CCB0, 0xFF4E5560, 0xFF6A7078, 0xFF9A4A32, 0xFFB8AE9C};
 
     private static void s(String name, int countries, int districts, int roof, int roofCol, int accent, String sign, int inside) {
         ALL_VARIANTS.add(new V(name, City.SHOP, countries, districts, roof, roofCol, accent, sign, inside, 0, 0, 0));
@@ -654,22 +665,58 @@ final class Variants {
         wh("Plant nursery", ALL, PARK | SUB, R_GLASS, 0xFF4F5A66, 0xFF3FB8B0, "NURSERY", I_SHELVES);
         o("Mini golf club", ALL, PARK, R_FLAT, 0xFF59646B, 0xFF2E4F3A, "MINI GOLF", I_GYM, 1, 1);
         government();
+        newerCountries();
     }
 
     /** The government buildings, one look for each country (only ever chosen by {@link #gov}). */
     private static void government() {
-        // Roof styles and colours by country (USA, AU, JP, FR, MX, CH, KR, MY, PT, MA, RU).
-        int[] hallRoof = {R_DOME, R_CLOCK, R_GLASS, R_MANSARD, R_COURTYARD, R_HIP, R_GLASS, R_DOME, R_TILES, R_COURTYARD, R_PARAPET};
-        int[] hallCol = {0xFFD8D4C8, 0xFF8A4A32, 0xFF7A8A96, 0xFF4A5560, 0xFFC89A6A, 0xFF8A3A2E, 0xFF5E7A8A, 0xFFE8DCC0, 0xFFB0583A,
-                0xFF2E6A4E, 0xFFD8C890};
-        int[] courtRoof = {R_PARAPET, R_PARAPET, R_FLAT, R_MANSARD, R_COURTYARD, R_HIP, R_FLAT, R_DOME, R_TILES, R_COURTYARD, R_PARAPET};
-        int[] courtCol = {0xFFC8C4B8, 0xFFB8AE9C, 0xFF8A8E92, 0xFF505A64, 0xFFB89A7A, 0xFF7A4A3A, 0xFF8A9096, 0xFFD8D0B8, 0xFFB86A48,
-                0xFF8A6A4A, 0xFFB8B4A8};
-        for (int id = 0; id < 11; id++) {
+        for (int id = 0; id < 11; id++) govLooks(id);
+    }
+
+    /** The newer countries' buildings: their government quarter and a few kinds of their own. */
+    private static void newerCountries() {
+        for (int id = 11; id < 18; id++) govLooks(id);
+        // China.
+        s("Tea house", CN, TOWN | OLD, R_PAGODA, 0xFF4E5560, 0xFFC83A2E, "茶馆", I_CAFE);
+        s("Noodle shop", CN, TOWN, R_FLAT, 0xFF5A6670, 0xFFE0A030, "面馆", I_RESTAURANT);
+        s("Dumpling house", CN, TOWN | OLD, R_TILES, 0xFF4E5560, 0xFFC83A2E, "饺子", I_RESTAURANT);
+        hs("Courtyard house", CN, R_TILES, 0xFF5A5E62, 0xFFB8B0A0, 1);
+        // Egypt.
+        s("Koshary shop", EG, TOWN | OLD, R_FLAT, 0xFFB8A07C, 0xFFE0A030, "KOSHARY", I_RESTAURANT);
+        s("Ahwa coffeehouse", EG, TOWN | OLD, R_FLAT, 0xFFC8B494, 0xFF2E6A8A, "AHWA", I_CAFE);
+        s("Spice stall", EG, OLD | MID, R_STRIPES, 0xFFA88C68, 0xFFC83A2E, "SPICES", I_SHELVES);
+        hs("Mud-brick house", EG, R_FLAT, 0xFFB89870, 0xFFC8A880, 1);
+        // Saudi Arabia.
+        s("Shawarma house", SA, TOWN, R_FLAT, 0xFFD8CCB0, 0xFF2E7A4A, "SHAWARMA", I_RESTAURANT);
+        s("Dates shop", SA, TOWN | OLD, R_FLAT, 0xFFE0D4BC, 0xFF8A5A2E, "DATES", I_SHELVES);
+        s("Perfume souq", SA, OLD | DOWN, R_DOME, 0xFFC8B898, 0xFFD8B040, "OUD", I_SHELVES);
+        hs("Walled villa", SA, R_COURTYARD, 0xFFD8CCB0, 0xFFE8DCC0, 2);
+        // Sweden.
+        s("Fika café", SE, TOWN | OLD, R_GABLE, 0xFF3A3A3C, 0xFFE0C060, "FIKA", I_CAFE);
+        s("Systembolaget", SE, DOWN | MID, R_FLAT, 0xFF5A6670, 0xFF2E7A4A, "SYSTEMBOLAGET", I_SHELVES);
+        hs("Falu red cottage", SE, R_GABLE, 0xFF3A3A3C, 0xFF8A2A22, 1);
+        // Norway.
+        s("Narvesen kiosk", NO, TOWN, R_FLAT, 0xFF4E5560, 0xFFE03A3A, "NARVESEN", I_SHELVES);
+        s("Fish shop", NO, TOWN | OLD, R_GABLE, 0xFF2E3236, 0xFF2E5FB0, "FISK", I_SHELVES);
+        hs("Turf-roof cabin", NO, R_GREEN, 0xFF4E6A3A, 0xFF6E4A30, 1);
+        // Denmark.
+        s("Bakery", DK, TOWN | OLD, R_TILES, 0xFF9A4A32, 0xFFE0C060, "BAGERI", I_SHELVES);
+        s("Smørrebrød café", DK, TOWN | OLD, R_TILES, 0xFF8A3A2E, 0xFF2E5FB0, "SMØRREBRØD", I_CAFE);
+        s("Bike shop", DK, TOWN, R_FLAT, 0xFF5A6670, 0xFFE03A3A, "CYKLER", I_SHOWROOM);
+        hs("Half-timbered house", DK, R_TILES, 0xFF9A4A32, 0xFFE8D8A0, 1);
+        // Canada.
+        s("Doughnut shop", CA, TOWN, R_FLAT, 0xFF5A6670, 0xFFC83A2E, "DOUGHNUTS", I_CAFE);
+        s("Poutinerie", CA, TOWN | OLD, R_FLAT, 0xFF59646B, 0xFFE0A030, "POUTINE", I_RESTAURANT);
+        s("Outfitters", CA, TOWN | PARK, R_GABLE, 0xFF4E5560, 0xFF2E7A4A, "OUTFITTERS", I_SHELVES);
+        hs("Log house", CA, R_GABLE, 0xFF3A3A3C, 0xFF8A5A34, 1);
+    }
+
+    private static void govLooks(int id) {
+        {
             String[][] g = Country.gov(id);
             int bit = 1 << id;
-            ALL_VARIANTS.add(new V("City hall", City.CITY_HALL, bit, ANY, hallRoof[id], hallCol[id], 0xFFD8B040, g[1][0], I_OFFICE, 3, 4, 0));
-            ALL_VARIANTS.add(new V("Courthouse", City.COURTHOUSE, bit, ANY, courtRoof[id], courtCol[id], 0xFF2E4F3A, g[1][1], I_SEATS, 2, 3, 0));
+            ALL_VARIANTS.add(new V("City hall", City.CITY_HALL, bit, ANY, HALL_ROOF[id], HALL_COL[id], 0xFFD8B040, g[1][0], I_OFFICE, 3, 4, 0));
+            ALL_VARIANTS.add(new V("Courthouse", City.COURTHOUSE, bit, ANY, COURT_ROOF[id], COURT_COL[id], 0xFF2E4F3A, g[1][1], I_SEATS, 2, 3, 0));
             ALL_VARIANTS.add(new V("Jail", City.JAIL, bit, ANY, R_FLAT, 0xFF7C7F82, 0xFF2A2A2A, g[1][2], I_DORM, 2, 2, 0));
             ALL_VARIANTS.add(new V("Emergency call centre", City.CALL_CENTRE, bit, ANY, R_ANTENNA, 0xFF59646B, 0xFFE03A3A, g[1][3], I_OFFICE, 2, 3, 0));
             ALL_VARIANTS.add(new V("Public works depot", City.WORKS, bit, ANY, R_SAWTOOTH, 0xFF8A7F70, 0xFFE0702E, g[1][4], I_SHOWROOM, 1, 1, 0));

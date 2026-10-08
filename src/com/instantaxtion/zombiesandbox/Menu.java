@@ -932,7 +932,8 @@ final class Menu {
         y += 5 * dp;
         String[] values = config.values(option);
         // A long list (the countries) goes over two rows rather than squeezing into one.
-        int perRow = values.length > 6 ? (values.length + 1) / 2 : values.length;
+        int lines = values.length > 12 ? 3 : values.length > 6 ? 2 : 1;
+        int perRow = (values.length + lines - 1) / lines;
         int rows = (values.length + perRow - 1) / perRow;
         float gap = 4 * dp, bh = 36 * dp, bw = (width - gap * (perRow - 1)) / perRow;
         for (int i = 0; i < values.length; i++) {

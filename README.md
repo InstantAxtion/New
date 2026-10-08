@@ -322,6 +322,10 @@ never leave town with people aboard, and people who turn up later are homeless.
 and plazas are kept to a fixed memory budget. A whole-map route per shop used to fill a phone's memory and
 crash the game soon after an outbreak on the Islands map.
 
+**Smoother (10.12):** small changes to the map picture (a truck leaving or parking on a base, a burnt-out
+car, rubble) redraw only the close-ups over them, without holding up the game; gunfire glow in a building's
+windows always fades once the shooting stops.
+
 **Countryside:** Villages, small towns and every Massive map are surrounded by open country:
 winding dirt lanes out to the edge of the map, farms and lonely cabins along them, woods, and
 hamlets (a short street of cottages with a lane back to town). A town out in the country is never a

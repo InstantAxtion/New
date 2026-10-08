@@ -7405,6 +7405,9 @@ final class World {
         }
         for (int i = 0, n = city.buildings.size(); i < n; i++) {
             City.Building b = city.buildings.get(i);
+            // The last shot's flash in the windows fades whatever happens next (it used to stay lit for good
+            // when the fight ended, or everyone inside was lost, right after a shot).
+            if (b.flash > 0) b.flash = Math.max(0, b.flash - dt);
             updateVisitors(b, dt);
             if (b.lurkers > 0 && !b.collapsed && b.occupants.isEmpty()) {
                 // Zombies inside burst out when someone comes close, or when they get restless.
@@ -7512,7 +7515,6 @@ final class World {
         }
         b.fightTime += dt;
         b.calmTimer = 0;
-        b.flash = Math.max(0, b.flash - dt);
         int shooters = 0, others = 0;
         for (int k = 0; k < b.occupants.size(); k++) {
             Entity o = b.occupants.get(k);

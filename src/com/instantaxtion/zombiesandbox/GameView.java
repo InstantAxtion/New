@@ -1248,6 +1248,21 @@ final class GameView extends View implements Menu.Host {
             chunks.clear();
             chunkJobs.clear();
             chunkPending.clear();
+            city.changes.clear();
+        }
+        // Small changes: the close-ups over them are drawn again, the old ones staying up until they're ready.
+        for (float[] r; (r = city.changes.poll()) != null; ) {
+            // (With room for shadows, as a close-up is drawn.)
+            int ax0 = Math.max(0, (int) ((r[0] - 30) / CHUNK)), ax1 = (int) ((r[2] + 90) / CHUNK);
+            int ay0 = Math.max(0, (int) ((r[1] - 30) / CHUNK)), ay1 = (int) ((r[3] + 90) / CHUNK);
+            for (int ky = ay0; ky <= ay1; ky++)
+                for (int kx = ax0; kx <= ax1; kx++)
+                    for (int kr = 2; kr <= 4; kr += 2) {
+                        long key = ((long) kr << 40) | ((long) ky << 20) | kx;
+                        if (!chunks.containsKey(key)) continue;
+                        if (!chunksOnScreen.contains(key)) chunks.remove(key);
+                        else if (chunkPending.add(key)) chunkJobs.addFirst(new Object[]{city, key, kx * CHUNK, ky * CHUNK, (float) kr, chunkVersion});
+                    }
         }
         // Only once the map picture is being stretched noticeably.
         if (scale < city.detail * 1.6f) return;
@@ -1300,6 +1315,8 @@ final class GameView extends View implements Menu.Host {
                         long key = (Long) job[1];
                         // (Skipped if the view has moved on, or the map has changed since.)
                         if (jc != chunkCity || (Integer) job[5] != chunkVersion || !chunksOnScreen.contains(key)) {
+                            // (An out-of-date one isn't kept for later either.)
+                            if (jc == chunkCity && (Integer) job[5] == chunkVersion) chunks.remove(key);
                             chunkPending.remove(key);
                             continue;
                         }

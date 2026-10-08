@@ -2,11 +2,17 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.11";
-    static final int VERSION_CODE = 49;
+    static final String VERSION = "10.12";
+    static final int VERSION_CODE = 50;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.12  -  Smoother big maps",
+                    "Fixed houses flickering with gunfire flashes long after the shooting inside had stopped.",
+                    "Fixed the game freezing for a moment whenever an army truck left or parked on a base, or a car burnt out (worst on the big maps, where the bases send out patrols).",
+                    "Those little map changes now redraw just that spot; the rest of the sharp close-up map stays up instead of blurring and redrawing all at once.",
+            },
             {
                     "10.11  -  Islands crash fix",
                     "Fixed the game crashing soon after zombies appeared on the Islands map (and slowing down on the other big maps).",

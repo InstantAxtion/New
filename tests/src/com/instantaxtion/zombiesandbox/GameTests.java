@@ -807,6 +807,22 @@ public final class GameTests {
                 for (City.Building b : w.city.buildings) if (b.field != null) fields++;
                 check(fields == 0, "no whole-map route kept per shop (" + fields + ")");
                 check(ms < 600 * 40, "20 seconds of outbreak took " + ms + " ms");
+                // Gunfire glow in a building's windows dies away once the shooting stops.
+                City.Building quiet = null;
+                for (City.Building b : w.city.buildings) if (b.lurkers == 0 && !b.collapsed) quiet = b;
+                quiet.flash = 0.05f;
+                for (int f = 0; f < 10; f++) w.update(1 / 30f);
+                check(quiet.flash == 0, "a building's gunfire flash fades (" + quiet.flash + ")");
+                // A truck leaving its bay redraws only that bit of the map, not every close-up.
+                int version = w.city.renderVersion;
+                w.city.changes.clear();
+                float[] bay = null;
+                for (City.Facility base : w.city.facilities)
+                    if (bay == null && base.kind == City.FACILITY_BASE) bay = w.city.takeParkedTruck(base.x, base.y, 2000);
+                if (bay != null) {
+                    check(w.city.renderVersion == version && !w.city.changes.isEmpty(), "a truck leaving marks just its bay to redraw");
+                    w.city.parkTruck(bay[0], bay[1]);
+                }
             }
         });
         test("every screen draws", new Check() {

@@ -654,6 +654,18 @@ final class City {
     /** Goes up whenever the map picture changes after it's drawn (rubble, scorch marks, edits). */
     volatile int renderVersion;
 
+    /**
+     * Small changes to the map picture since the view last looked (a truck gone from its bay, a burnt-out car,
+     * rubble): {x0, y0, x1, y1} each. Only the close-ups over them are drawn again; a change to renderVersion
+     * throws them all away, which used to stall the game and blur the whole screen every time a truck moved.
+     */
+    final java.util.concurrent.ConcurrentLinkedQueue<float[]> changes = new java.util.concurrent.ConcurrentLinkedQueue<float[]>();
+
+    private void changed(float x0, float y0, float x1, float y1) {
+        if (changes.size() < 200) changes.add(new float[]{x0, y0, x1, y1});
+        else renderVersion++;
+    }
+
     private long tileSeed(int x, int y, int pass) {
         return (x * 73856093L) ^ (y * 19349663L) ^ (pass * 83492791L) ^ (cfg.seed * 2654435761L);
     }
@@ -2447,14 +2459,12 @@ final class City {
         solid[best] = false;
         int bx = best % w, by = best / w;
         // Paint the empty bay over the parked truck (and its shadow) on the map picture.
-        synchronized (this) {
-            Canvas c = new Canvas(bitmap);
-            if (detail != 1f) c.scale(detail, detail);
-            Paint p = new Paint();
-            p.setColor(0xFF6A6E5E);
-            c.drawRect(bx * T, by * T, bx * T + T + 2, by * T + T + 2, p);
-            renderVersion++;
-        }
+        Canvas c = new Canvas(bitmap);
+        if (detail != 1f) c.scale(detail, detail);
+        Paint p = new Paint();
+        p.setColor(0xFF6A6E5E);
+        c.drawRect(bx * T, by * T, bx * T + T + 2, by * T + T + 2, p);
+        changed(bx * T, by * T, bx * T + T + 2, by * T + T + 2);
         return new float[]{(bx + 0.5f) * T, (by + 0.5f) * T};
     }
 
@@ -2467,12 +2477,10 @@ final class City {
         tiles[i] = CAR;
         carKind[i] = 2;
         solid[i] = true;
-        synchronized (this) {
-            Canvas c = new Canvas(bitmap);
-            if (detail != 1f) c.scale(detail, detail);
-            drawCar(c, new Paint(), tx, ty);
-            renderVersion++;
-        }
+        Canvas c = new Canvas(bitmap);
+        if (detail != 1f) c.scale(detail, detail);
+        drawCar(c, new Paint(), tx, ty);
+        changed(tx * T - 4, ty * T - 4, tx * T + T + 4, ty * T + T + 4);
     }
 
     /** Out in the countryside round a town (or past the edge of town). */
@@ -4959,7 +4967,7 @@ final class City {
         Canvas c = new Canvas(bitmap);
         if (detail != 1f) c.scale(detail, detail);
         drawRubble(c, b);
-        renderVersion++;
+        changed(b.x0, b.y0, b.x1, b.y1);
     }
 
     private void drawRubble(Canvas c, Building b) {
@@ -4996,11 +5004,11 @@ final class City {
         if (detail != 1f) c.scale(detail, detail);
         charred.add(new int[]{tx, ty});
         charTile(c, tx, ty);
-        renderVersion++;
+        changed(tx * T - T, ty * T - T, tx * T + 2 * T, ty * T + 2 * T);
     }
 
     /** Burnt-out cars scorched into the map, so a close-up picture of the area shows them too. */
-    private final List<int[]> charred = new ArrayList<int[]>();
+    private final List<int[]> charred = new java.util.concurrent.CopyOnWriteArrayList<int[]>();
 
     private void charTile(Canvas c, int tx, int ty) {
         Paint p = new Paint();

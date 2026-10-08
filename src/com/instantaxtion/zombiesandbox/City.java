@@ -219,6 +219,12 @@ final class City {
             District d = new District();
             // The first district sits in the middle of town; the rest spread out with some space between them.
             float bestX = w / 2f, bestY = landH / 2f;
+            if (islandRects != null) {
+                // (The heart of the first island's town.)
+                int[] r0 = islandRects[0];
+                bestX = (r0[0] + r0[2]) / 2f;
+                bestY = (r0[1] + r0[3]) / 2f;
+            }
             // By the sea, the second district is the waterfront: the beach, or the docks.
             boolean front = k == 1 && seaY > 0;
             if (front) {
@@ -228,6 +234,11 @@ final class City {
                 float bestScore = -1;
                 for (int tries = 0; tries < 30; tries++) {
                     float x = m + 6 + r.nextFloat() * (w - 2 * m - 12), y = m + 6 + r.nextFloat() * (landH - 2 * m - 12);
+                    if (islandRects != null) {
+                        int[] ir = islandRects[(k + tries) % islandRects.length];
+                        x = ir[0] + 6 + r.nextFloat() * (ir[2] - ir[0] - 12);
+                        y = ir[1] + 6 + r.nextFloat() * (ir[3] - ir[1] - 12);
+                    }
                     float near = Float.MAX_VALUE;
                     for (District o : districts) near = Math.min(near, (float) Math.hypot(o.x - x, o.y - y));
                     if (near > bestScore) {
@@ -316,7 +327,7 @@ final class City {
                     }
                 }
                 districtAt[y * w + x] = (byte) best;
-                if (y >= landH) continue;
+                if (y >= landH || (islandRects != null && island(x, y) < 0)) continue;
                 sx[best] += x;
                 sy[best] += y;
                 districts.get(best).tiles++;
@@ -934,6 +945,7 @@ final class City {
         industryAngle = rnd.nextFloat() * (float) Math.PI * 2;
         waterKind = cfg.water();
         if (waterKind == CityConfig.W_SEA || waterKind == CityConfig.W_HARBOUR) seaY = h - Math.max(24, (int) (h * 0.18f));
+        if (waterKind == CityConfig.W_ISLANDS) islandLayout();
         makeDistricts();
         // Where the town is: the whole map, or a core surrounded by countryside.
         float core = cfg.coreFraction();
@@ -949,7 +961,7 @@ final class City {
         // A town out in the country grows its own shape instead of filling a square.
         boolean organic = m > 0 && !village;
         int in = organic ? 0 : 3;
-        if (m == 0) {
+        if (m == 0 && waterKind != CityConfig.W_ISLANDS) {
             carve(new Street(bx0, by0, bx1, by0 + 3, false, false));
             // (By the sea, the bottom of the ring is the seafront.)
             carve(new Street(bx0, by1 - 3, bx1, by1, false, seaY > 0));
@@ -978,6 +990,8 @@ final class City {
                     }
                 }
             ensureCrossings(bx0, bx1, railY0, railRows);
+        } else if (waterKind == CityConfig.W_ISLANDS) {
+            islands();
         } else if (waterKind == CityConfig.W_RIVER) {
             river(bx0, by0, bx1, by1, in);
         } else if (waterKind == CityConfig.W_LAKE) {
@@ -1066,6 +1080,8 @@ final class City {
                 int[] b = blocks.get(k);
                 if (used[k] || b[2] - b[0] - 2 < 6 || b[3] - b[1] - 2 < 6) continue;
                 float cx = (b[0] + b[2]) / 2f * T, cy = (b[1] + b[3]) / 2f * T;
+                // (On the Islands, the first three precincts go one to each island.)
+                if (islandRects != null && n < islandRects.length && island((b[0] + b[2]) / 2, (b[1] + b[3]) / 2) != n) continue;
                 boolean near = false;
                 for (Facility f : facilities)
                     if ((f.kind == FACILITY_POLICE && Math.hypot(f.x - cx, f.y - cy) < w * T / (cfg.policeStations() > 3 ? 4.5f : 3f))
@@ -1112,7 +1128,10 @@ final class City {
                     int[] b = blocks.get(k);
                     int iw = b[2] - b[0] - 2, ih = b[3] - b[1] - 2;
                     if (!used[k] && ((iw >= minSize[kind][0] && ih >= minSize[kind][1])
-                            || (ih >= minSize[kind][0] && iw >= minSize[kind][1]))) options.add(k);
+                            || (ih >= minSize[kind][0] && iw >= minSize[kind][1]))
+                            // (On the Islands, a fire station on each island first.)
+                            && !(kind == 2 && islandRects != null && n < islandRects.length && island((b[0] + b[2]) / 2, (b[1] + b[3]) / 2) != n))
+                        options.add(k);
                 }
                 if (options.isEmpty()) break;
                 int k = options.get(rnd.nextInt(options.size()));
@@ -1677,6 +1696,109 @@ final class City {
                     break;
             }
         }
+    }
+
+    // ------------------------------------------------------------------ islands
+
+    /** The Islands map: each island's town, as {x0, y0, x1, y1} tiles (ring road included), and its name. */
+    int[][] islandRects;
+    String[] islandNames;
+    /** Where the causeway to the mainland reaches the edge of the map {x, y} (convoys come in over it). */
+    float[] causewayEnd;
+
+    /** Where the three islands are: two across the top, one below between them, a little different each time. */
+    private void islandLayout() {
+        Random r = new Random(cfg.seed * 41L + 3);
+        int j = w / 64;
+        islandRects = new int[][]{
+                {(int) (w * 0.03f) + r.nextInt(j), (int) (h * 0.03f) + r.nextInt(j), (int) (w * 0.475f) - r.nextInt(j), (int) (h * 0.465f) - r.nextInt(j)},
+                {(int) (w * 0.525f) + r.nextInt(j), (int) (h * 0.035f) + r.nextInt(j), (int) (w * 0.97f) - r.nextInt(j), (int) (h * 0.47f) - r.nextInt(j)},
+                {(int) (w * 0.19f) + r.nextInt(j), (int) (h * 0.535f) + r.nextInt(j), (int) (w * 0.81f) - r.nextInt(j), (int) (h * 0.935f) - r.nextInt(j)}};
+        islandNames = new String[3];
+        islandNames[0] = name;
+        for (int i = 1; i < 3; i++) {
+            String n = country.townName(new Random(cfg.seed * 131L + i * 17));
+            islandNames[i] = n.equals(name) || n.equals(islandNames[1]) ? country.townName(new Random(cfg.seed * 977L + i)) : n;
+        }
+    }
+
+    /** Which island a tile is on (its town's rectangle, with the shore round it), or -1 out at sea. */
+    int island(int tx, int ty) {
+        if (islandRects == null) return -1;
+        for (int i = 0; i < islandRects.length; i++) {
+            int[] q = islandRects[i];
+            if (tx >= q[0] - 10 && tx < q[2] + 10 && ty >= q[1] - 10 && ty < q[3] + 10) return i;
+        }
+        return -1;
+    }
+
+    /**
+     * Three island towns in the sea: each with a ring road, its streets inside, a sandy shore round it; bridges
+     * between them, and a long causeway from the southern island to the mainland at the edge of the map.
+     */
+    private void islands() {
+        fill(0, 0, w, h, WATER);
+        bridge = new boolean[w * h];
+        double ph = rnd.nextDouble() * 10;
+        for (int[] q : islandRects) {
+            int x0 = q[0], y0 = q[1], x1 = q[2], y1 = q[3];
+            // The shore: sand a few tiles deep, the beach wider and narrower along it.
+            for (int y = Math.max(0, y0 - 10); y < Math.min(h, y1 + 10); y++)
+                for (int x = Math.max(0, x0 - 10); x < Math.min(w, x1 + 10); x++) {
+                    float dx = Math.max(Math.max(x0 - 1 - x, 0), x - x1), dy = Math.max(Math.max(y0 - 1 - y, 0), y - y1);
+                    double d = Math.sqrt(dx * dx + dy * dy);
+                    double beach = 4.5 + 2.2 * Math.sin(x * 0.09 + y * 0.07 + ph) + 1.3 * Math.sin(x * 0.031 - y * 0.043 + ph * 2);
+                    if (d <= beach) tiles[y * w + x] = SAND;
+                }
+            fill(x0 - 1, y0 - 1, x1 - x0 + 2, y1 - y0 + 2, SIDEWALK);
+            carve(new Street(x0, y0, x1, y0 + 3, false, false));
+            carve(new Street(x0, y1 - 3, x1, y1, false, false));
+            carve(new Street(x0, y0, x0 + 3, y1, true, false));
+            carve(new Street(x1 - 3, y0, x1, y1, true, false));
+            split(x0 + 3, y0 + 3, x1 - 3, y1 - 3, 0, -1, -1);
+            // People go down to the beach.
+            openAreas.add(new float[]{(x0 + x1) / 2f * T, (y1 + 3) * T, 0});
+            openAreas.add(new float[]{(x0 - 3) * T, (y0 + y1) / 2f * T, 0});
+        }
+        int[] a = islandRects[0], b = islandRects[1], c = islandRects[2];
+        // A to B across the top; each of them down to C; and C out to the mainland.
+        int ab = (Math.max(a[1], b[1]) + Math.min(a[3], b[3])) / 2 - 1;
+        bridgeRoad(false, ab, a[2] - 3, b[0] + 3);
+        int ac = (Math.max(a[0], c[0]) + Math.min(a[2], c[2])) / 2 - 1;
+        bridgeRoad(true, ac, a[3] - 3, c[1] + 3);
+        int bc = (Math.max(b[0], c[0]) + Math.min(b[2], c[2])) / 2 - 1;
+        bridgeRoad(true, bc, b[3] - 3, c[1] + 3);
+        int cx = (c[0] + c[2]) / 2 - 1;
+        bridgeRoad(true, cx, c[3] - 3, h);
+        causewayEnd = new float[]{(cx + 1.5f) * T, (h - 1.5f) * T};
+        // Boats out at sea.
+        for (int k = 0; k < w / 20; k++) {
+            int bx = 4 + rnd.nextInt(w - 40), by = 4 + rnd.nextInt(h - 8);
+            if (tiles[by * w + bx] != WATER || tiles[by * w + bx + 2] != WATER) continue;
+            addDecor(D_BOAT, bx * T, by * T, bx * T + 30, by * T + 10, rnd.nextInt(3));
+        }
+    }
+
+    /** A road bridge (three lanes wide, with a footpath each side) across the water between two points on a line. */
+    private void bridgeRoad(boolean vertical, int at, int from, int to) {
+        int lo = Math.min(from, to), hi = Math.min(vertical ? h : w, Math.max(from, to));
+        boolean[] wet = new boolean[(hi - lo) * 5];
+        for (int k = lo; k < hi; k++)
+            for (int s = -1; s <= 3; s++) {
+                int x = vertical ? at + s : k, y = vertical ? k : at + s;
+                if (x < 0 || y < 0 || x >= w || y >= h) continue;
+                byte t = tiles[y * w + x];
+                wet[(k - lo) * 5 + s + 1] = t == WATER;
+                // Footpaths along each side where it crosses the shore and the sea.
+                if ((s == -1 || s == 3) && (t == WATER || t == SAND)) tiles[y * w + x] = SIDEWALK;
+            }
+        carve(vertical ? new Street(at, lo, at + 3, hi, true, true) : new Street(lo, at, hi, at + 3, false, true));
+        for (int k = lo; k < hi; k++)
+            for (int s = -1; s <= 3; s++) {
+                int x = vertical ? at + s : k, y = vertical ? k : at + s;
+                if (x < 0 || y < 0 || x >= w || y >= h) continue;
+                if (wet[(k - lo) * 5 + s + 1]) bridge[y * w + x] = true;
+            }
     }
 
     // ------------------------------------------------------------------ water
@@ -6867,6 +6989,7 @@ final class City {
 
     /** A drivable spot on the edge of the map (where convoys come in), or null. */
     float[] edgeRoad(Random r) {
+        if (causewayEnd != null) return new float[]{causewayEnd[0], causewayEnd[1]};
         for (int k = 0; k < 400; k++) {
             int side = r.nextInt(4), pos = r.nextInt(w);
             int tx = side == 0 ? pos : side == 1 ? pos : side == 2 ? 1 : w - 2, ty = side == 0 ? 1 : side == 1 ? h - 2 : pos;

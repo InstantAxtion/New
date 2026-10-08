@@ -459,6 +459,42 @@ public final class GameTests {
                 check(tried >= 6 && walkedIn * 6 <= tried, walkedIn + " of " + tried + " people walked into a gas cloud in their way");
             }
         });
+        test("Islands: three island towns, joined up, one fixed size", new Check() {
+            public void run() {
+                CityConfig c = new CityConfig();
+                c.seed = 9;
+                c.set(CityConfig.OPT_PRESET, CityConfig.ISLANDS);
+                c.set(CityConfig.OPT_SIZE, 0);
+                check(c.tiles() == CityConfig.ISLANDS_TILES && c.v[CityConfig.OPT_SIZE] == 3, "Islands is always " + CityConfig.ISLANDS_TILES + " tiles");
+                CityConfig back = new CityConfig();
+                check(back.applyCode(c.code()) && back.tiles() == CityConfig.ISLANDS_TILES, "its city code (" + c.code() + ") builds the Islands again");
+                City city = new City(c);
+                check(city.w > 448, "bigger than a Massive map");
+                check(city.islandRects != null && city.islandRects.length == 3, "three islands");
+                int[] precincts = new int[3], fire = new int[3], buildings = new int[3];
+                for (City.Facility f : city.facilities) {
+                    int i = city.island((int) (f.x / City.T), (int) (f.y / City.T));
+                    if (i < 0) continue;
+                    if (f.kind == City.FACILITY_POLICE) precincts[i]++;
+                    if (f.kind == City.FACILITY_FIRE) fire[i]++;
+                }
+                for (City.Building b : city.buildings) {
+                    int i = city.island((int) (b.doorX / City.T), (int) (b.doorY / City.T));
+                    if (i >= 0) buildings[i]++;
+                }
+                int[] dist = new int[city.w * city.h];
+                for (int i = 0; i < 3; i++) {
+                    int[] q = city.islandRects[i];
+                    check(buildings[i] > 150 && precincts[i] > 0 && fire[i] > 0, city.islandNames[i] + ": a town (" + buildings[i]
+                            + " buildings) with its own police and fire station");
+                    boolean road = city.driveField(dist, (q[0] + 1.5f) * City.T, (q[1] + q[3]) / 2 * City.T)
+                            && dist[city.tileIndex(city.causewayEnd[0], city.causewayEnd[1])] < City.FAR;
+                    check(road, city.islandNames[i] + " can be reached by road from the mainland causeway");
+                }
+                float[] edge = city.edgeRoad(new java.util.Random(1));
+                check(edge != null && city.drivable(edge[0], edge[1]), "convoys come in over the causeway");
+            }
+        });
         test("traffic keeps its distance: hardly any crashes, and patrol cars keep to their side", new Check() {
             public void run() {
                 CityConfig c = new CityConfig();

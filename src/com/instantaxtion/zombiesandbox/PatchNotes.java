@@ -2,11 +2,17 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.7";
-    static final int VERSION_CODE = 45;
+    static final String VERSION = "10.8";
+    static final int VERSION_CODE = 46;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.8  -  Islands",
+                    "A new map, Islands: three island towns in the sea, each with its own name, streets, police station and fire station, ringed by sandy beaches. Bridges join the islands, and a long causeway runs from the southern island to the mainland: convoys, the Guard from out of town, raiders and traffic all come and go that way.",
+                    "Islands is always one size, 512 tiles across (bigger than Massive). Its size can't be changed: the New Game screen says so instead of offering the sizes. Zoom right out to see each island's name.",
+                    "Cars no longer turn on the spot while they're standing still (stuck in a jam or waiting at a junction), and a panicking driver who misses the turn out of town gives up on it and goes another way instead of going round and round.",
+            },
             {
                     "10.7  -  Make every round count",
                     "Police and soldiers no longer run dry after a couple of zombies. They carry real loads (an officer's 15-round pistol and three spare magazines; a soldier's seven 30-round magazines), and as trained shooters they aim for the head and usually get it up close: about 8 rounds a kill instead of 25 to 30 for police, and 15 to 19 for soldiers.",

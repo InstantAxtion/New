@@ -68,6 +68,8 @@ final class Fleet {
         /** The way along the road it was last heading (one step of its route). */
         int pdx, pdy;
         float x, y, angle, speed, timer, stuckTimer, lastDist, gunCd, soundCd, circle;
+        /** It went round in a circle (missed its turn); traffic gives up that route. */
+        boolean orbited;
         /** A SWAT team's armoured van (a truck carrying police). */
         boolean swat;
         /** How long a car on its way home has been holding back from the dead on the road ahead. */
@@ -1912,7 +1914,8 @@ final class Fleet {
         while (diff > Math.PI) diff -= Math.PI * 2;
         while (diff < -Math.PI) diff += Math.PI * 2;
         // Wheels only turn the car while it's moving.
-        float steer = dt * 5 * Math.min(1, 0.05f + Math.abs(v.speed) / 18f);
+        // (Standing still, or as good as - held at a junction or in a jam - it doesn't turn on the spot.)
+        float steer = Math.abs(v.speed) < 1.5f ? 0 : dt * 5 * Math.min(1, 0.05f + Math.abs(v.speed) / 18f);
         float turned = Math.max(-steer, Math.min(steer, diff));
         v.angle += turned;
         // A full circle and more without getting any nearer: it's missed its turn and is orbiting.
@@ -1920,6 +1923,7 @@ final class Fleet {
         if (Math.abs(v.spin) > 7.5f && v.player == null) {
             v.spin = 0;
             v.careful = 4;
+            v.orbited = true;
             int own = city.tileIndex(v.x, v.y);
             if (v.field.get(own) < City.FAR) v.pathT = own;
         }
@@ -1984,7 +1988,17 @@ final class Fleet {
             if (v.held || queue) v.stuckTimer = Math.min(v.stuckTimer, 1);
             // (On the highway: highway speeds.)
             float cruise = city.onHighway(v.x, v.y) ? 115 : v.fleeing ? 90 : 70;
-            if (!driveStep(v, dt, Math.min(limit, zombiesClose ? 60 : cruise), throttle)) {
+            boolean going = driveStep(v, dt, Math.min(limit, zombiesClose ? 60 : cruise), throttle);
+            // A panicking driver who's gone round in a circle gives up on that way out and goes somewhere else.
+            if (v.orbited) {
+                v.orbited = false;
+                if (v.fleeing) {
+                    v.fleeing = false;
+                    v.fleeCd = 20;
+                    if (!newDestination(v)) v.stuckTimer = Math.max(v.stuckTimer, 5);
+                }
+            }
+            if (!going) {
                 arrive(v);
                 // Out of town (where nobody sees it go, or off the edge of the map): gone. (Waiting at the edge
                 // in sight, they used to block the way out for everyone behind.)

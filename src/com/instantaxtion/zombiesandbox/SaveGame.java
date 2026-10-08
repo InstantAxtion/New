@@ -352,6 +352,7 @@ final class SaveGame {
                 if (i < cfg.v.length) cfg.v[i] = Math.max(0, Math.min(cfg.values(i).length - 1, v));
             }
             cfg.seed = in.readLong();
+            cfg.normalize();
             if (version >= 15) cfg.setEdits(in.readUTF());
             // (Cities saved before 10.4 were built without their government quarter.)
             cfg.civic = version >= 20 ? 2 : version >= 19 ? 1 : 0;

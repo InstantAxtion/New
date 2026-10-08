@@ -8,7 +8,7 @@ import java.util.Random;
  */
 final class CityConfig implements OptionSet {
     static final String[] PRESETS = {"Classic", "Downtown", "Suburbs", "Industrial", "Parkland", "Old Town",
-            "Small Town", "Campus", "Metropolis", "Village", "Seaside", "River City", "Lakeside", "Harbour"};
+            "Small Town", "Campus", "Metropolis", "Village", "Seaside", "River City", "Lakeside", "Harbour", "Islands"};
     /** One line about each map, shown on the New Game screen. */
     static final String[] PRESET_INFO = {
             "A bit of everything: downtown towers, suburbs, parks, a precinct and an army base.",
@@ -25,6 +25,7 @@ final class CityConfig implements OptionSet {
             "A river runs through the middle of town. Hold the bridges: the dead can't swim.",
             "Homes and parks round a lake in the middle of town, with a jetty, rowing boats and an island.",
             "A working port: quays, docks, cranes, container stacks and ships, with warehouses along the water.",
+            "Three island towns in the sea, joined by bridges, with a causeway to the mainland. Always one size: bigger than Massive.",
     };
 
     static final int STYLE_MIXED = 0, STYLE_OFFICES = 1, STYLE_HOUSES = 2, STYLE_WAREHOUSES = 3;
@@ -66,6 +67,7 @@ final class CityConfig implements OptionSet {
             {STYLE_MIXED, 1, 2, 2, 2, 0, 2, 1},       // River City
             {STYLE_HOUSES, 1, 0, 3, 1, 2, 1, 0},      // Lakeside
             {STYLE_MIXED, 1, 1, 1, 2, 0, 1, 1},       // Harbour
+            {STYLE_MIXED, 1, 1, 2, 1, 1, 2, 1},       // Islands
     };
 
     // Landmarks per medium map:  churches, schools, fire stations, supermarkets, gas stations, cemeteries,
@@ -85,11 +87,12 @@ final class CityConfig implements OptionSet {
             {1, 1, 1, 1, 1, 1, 30},   // River City
             {1, 1, 1, 1, 1, 1, 15},   // Lakeside
             {1, 1, 1, 1, 2, 0, 20},   // Harbour
+            {2, 2, 2, 2, 2, 1, 30},   // Islands
     };
     // Share of office lots that become apartment blocks, parking garages and pharmacies (percent).
     private static final int[][] BUILDING_MIX = {
             {15, 6, 5}, {15, 15, 5}, {20, 0, 6}, {5, 8, 2}, {15, 3, 6}, {10, 0, 8}, {10, 2, 8}, {20, 5, 6},
-            {25, 15, 4}, {0, 0, 10}, {25, 3, 6}, {20, 8, 5}, {15, 2, 6}, {10, 6, 3},
+            {25, 15, 4}, {0, 0, 10}, {25, 3, 6}, {20, 8, 5}, {15, 2, 6}, {10, 6, 3}, {20, 8, 5},
     };
     // Which kinds of park each map likes: park, playground, sports field, courts, garden, skatepark.
     private static final int[][] PARK_MIX = {
@@ -107,6 +110,7 @@ final class CityConfig implements OptionSet {
             {3, 1, 1, 2, 2, 1},
             {4, 2, 1, 1, 3, 0},
             {2, 1, 1, 1, 0, 2},
+            {3, 2, 1, 2, 2, 1},
     };
 
     /** Current index into VALUES for each option. */
@@ -125,7 +129,14 @@ final class CityConfig implements OptionSet {
     }
 
     /** Water on the map: none, the sea along one side (a beach or a port), a river, or a lake. */
-    static final int W_NONE = 0, W_SEA = 1, W_RIVER = 2, W_LAKE = 3, W_HARBOUR = 4;
+    static final int W_NONE = 0, W_SEA = 1, W_RIVER = 2, W_LAKE = 3, W_HARBOUR = 4, W_ISLANDS = 5;
+    /** The Islands map, and its one size (tiles across: a bit bigger than Massive). */
+    static final int ISLANDS = 14, ISLANDS_TILES = 512;
+
+    /** Islands only comes in one size: it counts as Massive for everything that depends on size. */
+    void normalize() {
+        if (v[OPT_PRESET] == ISLANDS) v[OPT_SIZE] = 3;
+    }
 
     int water() {
         switch (v[OPT_PRESET]) {
@@ -133,6 +144,7 @@ final class CityConfig implements OptionSet {
             case 11: return W_RIVER;
             case 12: return W_LAKE;
             case 13: return W_HARBOUR;
+            case ISLANDS: return W_ISLANDS;
             default: return W_NONE;
         }
     }
@@ -175,7 +187,7 @@ final class CityConfig implements OptionSet {
     }
 
     /** The character for each map in a city code. */
-    private static final String CODE_MAPS = "123456789ABCDE";
+    private static final String CODE_MAPS = "123456789ABCDEF";
 
     /** Reads a city code. Returns false (changing nothing) if it isn't one. */
     boolean applyCode(String text) {
@@ -217,6 +229,7 @@ final class CityConfig implements OptionSet {
         v[OPT_SIZE] = size;
         seed = s;
         v[OPT_COUNTRY] = country;
+        normalize();
         setEdits(ed);
         keepCity = true;
         return true;
@@ -228,7 +241,7 @@ final class CityConfig implements OptionSet {
         seed = r.nextInt(1000000);
     }
 
-    int tiles() { return SIZES[v[OPT_SIZE]]; }
+    int tiles() { return v[OPT_PRESET] == ISLANDS ? ISLANDS_TILES : SIZES[v[OPT_SIZE]]; }
 
     /** A massive map: the city sits in the middle of open countryside. */
     boolean massive() { return v[OPT_SIZE] == 3; }
@@ -318,7 +331,7 @@ final class CityConfig implements OptionSet {
 
     // Which maps have a railway line (with a station and passing trains).
     // Which maps have a railway line: 0 never, 1 about half the time (it depends on the city), 2 always.
-    private static final int[] RAIL = {1, 0, 0, 2, 0, 0, 1, 0, 2, 0, 0, 0, 0, 0};
+    private static final int[] RAIL = {1, 0, 0, 2, 0, 0, 1, 0, 2, 0, 0, 0, 0, 0, 0};
 
     boolean hasRail() {
         int r = RAIL[v[OPT_PRESET]];
@@ -342,6 +355,7 @@ final class CityConfig implements OptionSet {
             {4, 4, 2, 3, 2, 1, 1, 0},   // River City
             {1, 2, 1, 6, 0, 1, 4, 6},   // Lakeside
             {2, 3, 1, 2, 5, 0, 0, 1},   // Harbour
+            {3, 4, 2, 4, 1, 1, 2, 0},   // Islands
     };
 
     /** How likely each kind of district is on this map. */
@@ -359,6 +373,7 @@ final class CityConfig implements OptionSet {
     void randomize(Random r) {
         for (int i = 0; i < v.length; i++) v[i] = r.nextInt(VALUES[i].length);
         v[OPT_SIZE] = 1;
+        normalize();
         if (v[OPT_CIVILIANS] == 0) v[OPT_CIVILIANS] = 4;
         keepCity = false;
     }
@@ -369,5 +384,8 @@ final class CityConfig implements OptionSet {
     @Override public String label(int i) { return LABELS[i]; }
     @Override public String[] values(int i) { return VALUES[i]; }
     @Override public int get(int i) { return v[i]; }
-    @Override public void set(int i, int value) { v[i] = value; }
+    @Override public void set(int i, int value) {
+        v[i] = value;
+        normalize();
+    }
 }

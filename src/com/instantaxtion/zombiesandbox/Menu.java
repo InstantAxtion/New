@@ -1037,7 +1037,18 @@ final class Menu {
             c.drawText(CityConfig.PRESETS[i], l + cw / 2 + 2 * dp, t + ch / 2 + text.getTextSize() * 0.36f, text);
         }
         y += ((CityConfig.PRESETS.length + perRow - 1) / perRow) * (ch + gap) + 12 * dp;
-        y = segRow(c, CityConfig.OPT_SIZE, "Map size", lx, y, lw);
+        if (preset == CityConfig.ISLANDS) {
+            // Islands comes in one size only.
+            plain.setTextAlign(Paint.Align.LEFT);
+            plain.setTextSize(13 * dp);
+            plain.setColor(0xFFB8BDC4);
+            for (String line : wrap("Map size: Islands is always one size, " + CityConfig.ISLANDS_TILES
+                    + " tiles across (bigger than Massive).", lw - 4 * dp, plain)) {
+                c.drawText(line, lx + 2 * dp, y + 14 * dp, plain);
+                y += 17 * dp;
+            }
+            y += 14 * dp;
+        } else y = segRow(c, CityConfig.OPT_SIZE, "Map size", lx, y, lw);
         y = segRow(c, CityConfig.OPT_COUNTRY, "Country: how the city looks and what it's called", lx, y, lw);
         plain.setTextSize(12.5f * dp);
         plain.setColor(0xFF9AA0A8);
@@ -1107,7 +1118,7 @@ final class Menu {
     }
 
     private static final int[] MAP_COLORS = {0xFF8BD450, 0xFF6F8EC8, 0xFFE0A050, 0xFF9A9A90, 0xFF4CAF50, 0xFFB07050,
-            0xFFD8C050, 0xFF50A0C0, 0xFFC050C0, 0xFF90B060, 0xFF3A9AD8, 0xFF2F6EA8, 0xFF48B0B0, 0xFF6A8098};
+            0xFFD8C050, 0xFF50A0C0, 0xFFC050C0, 0xFF90B060, 0xFF3A9AD8, 0xFF2F6EA8, 0xFF48B0B0, 0xFF6A8098, 0xFF30B8D0};
 
     private void drawNotes(Canvas c, int w, int h) {
         float top = header(c, w, h, "Patch Notes");

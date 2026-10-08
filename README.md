@@ -318,6 +318,10 @@ turns out by itself when the outbreak gets big. The police have marksmen, motorc
 helicopter. Gun stores exist only where people can buy guns, and get raided once everyone knows. Buses
 never leave town with people aboard, and people who turn up later are homeless.
 
+**Memory (10.11):** survivors running for shops and gun stores plan a route of their own; routes to parks
+and plazas are kept to a fixed memory budget. A whole-map route per shop used to fill a phone's memory and
+crash the game soon after an outbreak on the Islands map.
+
 **Countryside:** Villages, small towns and every Massive map are surrounded by open country:
 winding dirt lanes out to the edge of the map, farms and lonely cabins along them, woods, and
 hamlets (a short street of cottages with a lane back to town). A town out in the country is never a

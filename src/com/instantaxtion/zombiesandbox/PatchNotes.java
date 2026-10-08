@@ -2,11 +2,17 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.10";
-    static final int VERSION_CODE = 48;
+    static final String VERSION = "10.11";
+    static final int VERSION_CODE = 49;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.11  -  Islands crash fix",
+                    "Fixed the game crashing soon after zombies appeared on the Islands map (and slowing down on the other big maps).",
+                    "Survivors heading for shops and gun stores now plan their own route instead of a whole-map one per shop, which filled the phone's memory.",
+                    "Routes to parks and plazas are kept to a fixed memory budget.",
+            },
             {
                     "10.10  -  The lie of the land",
                     "Every map is about a quarter bigger, and there are two new sizes: Tiny and Huge. The extra room is countryside. The town sits a little off to one side, leaving a wide stretch of wild country on the other.",

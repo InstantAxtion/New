@@ -784,6 +784,31 @@ public final class GameTests {
                 check(gw.guardCalled, "the governor calls out the Guard for a big outbreak, with army reserves still to come");
             }
         });
+        test("10.11: an outbreak on the Islands stays quick and doesn't eat memory", new Check() {
+            public void run() {
+                CityConfig c = new CityConfig();
+                c.seed = 2;
+                c.set(CityConfig.OPT_PRESET, CityConfig.ISLANDS);
+                c.v[CityConfig.OPT_ZOMBIES] = 0;
+                World w = new World(c);
+                w.populate(c);
+                w.viewX0 = w.city.worldW() / 2 - 400;
+                w.viewY0 = w.city.worldH() / 2 - 300;
+                w.viewX1 = w.viewX0 + 800;
+                w.viewY1 = w.viewY0 + 600;
+                for (int i = 0; i < 60; i++) {
+                    float[] p = w.city.randomWalkable(w.rnd);
+                    w.spawn(Entity.ZOMBIE, p[0], p[1]);
+                }
+                long t0 = System.nanoTime();
+                for (int f = 0; f < 600; f++) w.update(1 / 30f);
+                long ms = (System.nanoTime() - t0) / 1000000;
+                int fields = 0;
+                for (City.Building b : w.city.buildings) if (b.field != null) fields++;
+                check(fields == 0, "no whole-map route kept per shop (" + fields + ")");
+                check(ms < 600 * 40, "20 seconds of outbreak took " + ms + " ms");
+            }
+        });
         test("every screen draws", new Check() {
             public void run() throws Exception {
                 GameView v = new GameView(new android.app.Activity());

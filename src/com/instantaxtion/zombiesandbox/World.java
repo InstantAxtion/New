@@ -3581,8 +3581,22 @@ final class World {
         }
     }
 
-    /** Routes to the parks and plazas, made when first needed. */
-    private final java.util.HashMap<float[], int[]> areaFields = new java.util.HashMap<float[], int[]>();
+    /**
+     * Walking routes to the parks and plazas (each one a whole map of distances), the most recently used
+     * kept up to a memory budget: on the biggest maps they used to pile up until the phone ran out of memory.
+     * One that's dropped is worked out again when it's next needed.
+     */
+    private final java.util.LinkedHashMap<float[], int[]> fieldCache = new java.util.LinkedHashMap<float[], int[]>(32, 0.75f, true) {
+        @Override
+        protected boolean removeEldestEntry(java.util.Map.Entry<float[], int[]> eldest) {
+            return size() > fieldBudget();
+        }
+    };
+
+    /** How many walking routes to keep: about 32 MB worth. */
+    private int fieldBudget() {
+        return Math.max(8, (int) (32L * 1024 * 1024 / (4L * city.w * city.h)));
+    }
 
     private float[] pickArea(Entity e, boolean plaza) {
         float[] best = null;
@@ -3624,7 +3638,7 @@ final class World {
         float[] p = areaPoint(a);
         float ddx = p[0] - e.x, ddy = p[1] - e.y, d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
         if (d < near) return true;
-        int[] f = areaFields.get(a);
+        int[] f = fieldCache.get(a);
         if (f == null) {
             if (pathBudget < 1) {
                 wander(e, speed * 0.7f);
@@ -3633,7 +3647,7 @@ final class World {
             pathBudget -= 1;
             f = new int[city.w * city.h];
             city.walkFieldFromPoints(f, new float[]{p[0]}, new float[]{p[1]}, 1, 260);
-            areaFields.put(a, f);
+            fieldCache.put(a, f);
         }
         if (d < 24 || !followField(e, f, speed)) steer(e, ddx / d, ddy / d, speed);
         return false;
@@ -5254,11 +5268,9 @@ final class World {
             e.talkTimer = 2;
             return true;
         }
-        if (b.field == null) {
-            b.field = new int[city.w * city.h];
-            city.walkFieldFromPoints(b.field, new float[]{b.doorX}, new float[]{b.doorY}, 1);
-        }
-        if (!followField(e, b.field, e.speed * 1.4f)) steer(e, ddx / d, ddy / d, e.speed * 1.4f);
+        // A route of their own rather than a whole map of distances for every shop: on the big maps those
+        // filled the phone's memory within a minute of the outbreak.
+        walkTo(e, b, ddx, ddy, d, e.speed * 1.4f);
         return true;
     }
 

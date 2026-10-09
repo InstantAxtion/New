@@ -185,6 +185,10 @@ final class Entity {
     float stamina = 1;
     /** Police and soldiers: when they last radioed a sighting to the others, and a retreat already called. */
     float shareCd;
+    /** Time until this shooter's next gunshot alerts the people around (one per burst, not per round). */
+    float alertCd;
+    /** When they last came out of hiding into a quiet street (they don't go straight back in on hearsay). */
+    float emerged = -999;
     boolean retreatSaid;
 
     boolean isZombie() {

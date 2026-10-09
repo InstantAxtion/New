@@ -1162,6 +1162,8 @@ public final class GameTests {
                 inc.place = w.city.placeName(cx, cy);
                 java.lang.reflect.Method pb = Dispatch.class.getDeclaredMethod("policeBackup", Dispatch.Incident.class);
                 pb.setAccessible(true);
+                // (Not a city that rolled "unprepared", with no backup to call.)
+                w.dispatch.policeReserve = Math.max(2, w.dispatch.policeReserve);
                 check((Boolean) pb.invoke(w.dispatch, inc), "police backup called");
                 for (int f = 0; f < 30 * 4; f++) w.update(1 / 30f);
                 check(!w.dispatch.convoys.isEmpty(), "the backup shows on the map");
@@ -1305,6 +1307,134 @@ public final class GameTests {
                 for (Entity e : lw.entities) if (!e.dead && e.job == Entity.J_HIKER) out++;
                 for (int f = 0; f < 30 * 5; f++) lw.update(1 / 30f);
                 check(lw.humans > 100 && out > 0, "Los Angeles plays: " + lw.humans + " people, " + out + " hikers");
+            }
+        });
+        test("10.19: gunfire heard, the ranger off the wall, out of hiding sooner, resupply, driveways, quick close-ups", new Check() {
+            public void run() throws Exception {
+                CityConfig c = new CityConfig();
+                c.seed = 9;
+                c.v[CityConfig.OPT_COUNTRY] = Country.SWEDEN;
+                c.v[CityConfig.OPT_PRESET] = 6;
+                World w = new World(c);
+                w.populate(c);
+                for (int f = 0; f < 30 * 2; f++) w.update(1 / 30f);
+                // Everyone hears a gunshot: people nearby run, an idle cop goes to look.
+                Entity civ = null;
+                for (Entity e : w.entities)
+                    if (!e.dead && e.type == Entity.CIVILIAN && e.fleeTimer <= 0 && e.leader == null && e.task == Dispatch.T_NONE && w.city.inTown(e.x, e.y)) {
+                        civ = e;
+                        break;
+                    }
+                check(civ != null, "someone out in town");
+                float[] gp = w.city.findWalkable(civ.x + 60, civ.y);
+                Entity cop = w.spawn(Entity.COP, gp[0], gp[1]);
+                float[] lp = w.city.findWalkable(civ.x - 60, civ.y);
+                Entity other = w.spawn(Entity.COP, lp[0], lp[1]);
+                // (Into the grid of who's where, then a zombie for the cop to shoot at.)
+                w.update(1 / 30f);
+                Entity z = w.spawn(Entity.ZOMBIE, cop.x + 40, cop.y);
+                other.fear = 0;
+                other.aiming = false;
+                other.task = Dispatch.T_NONE;
+                civ.fleeTimer = 0;
+                w.heardShot(cop, z, 250);
+                check(civ.fleeTimer > 0 && civ.aware, "people near a gunshot run from it");
+                check(other.fear > 0 && Math.hypot(other.threatX - z.x, other.threatY - z.y) < 30, "an idle cop goes to see what the shooting is");
+                z.dead = true;
+                // The ranger minding the station stands out front, not against the wall.
+                CityConfig wc = new CityConfig();
+                wc.seed = 4;
+                wc.v[CityConfig.OPT_PRESET] = 8;
+                wc.v[CityConfig.OPT_SIZE] = CityConfig.MASSIVE;
+                World ww = new World(wc);
+                ww.populate(wc);
+                check(ww.rangerStation != null, "a ranger station");
+                java.lang.reflect.Method spot = World.class.getDeclaredMethod("stationSpot", float.class, float.class);
+                spot.setAccessible(true);
+                City.Building rs = ww.rangerStation;
+                for (float a : new float[]{0, 0.9f, -0.7f}) {
+                    float[] p = (float[]) spot.invoke(ww, a, 30f);
+                    float gap = Math.max(Math.max(rs.x0 - p[0], p[0] - rs.x1), Math.max(rs.y0 - p[1], p[1] - rs.y1));
+                    check(gap > 6 && !ww.city.solidAt(p[0], p[1]), "the station keeper's spot is clear of the walls (" + gap + ")");
+                }
+                // Out of hiding soon after the street goes quiet.
+                Entity hid = null;
+                City.Building home = null;
+                for (Entity e : w.entities)
+                    if (!e.dead && e.type == Entity.CIVILIAN && e.leader == null && e != civ) {
+                        for (City.Building b : w.city.buildings)
+                            if (b.kind == City.HOUSE && !b.collapsed && b.occupants.isEmpty() && b.lurkers == 0
+                                    && Math.hypot(b.doorX - e.x, b.doorY - e.y) < 400) {
+                                home = b;
+                                break;
+                            }
+                        if (home != null) {
+                            hid = e;
+                            break;
+                        }
+                    }
+                java.lang.reflect.Method enter = World.class.getDeclaredMethod("enterBuilding", Entity.class, City.Building.class);
+                enter.setAccessible(true);
+                hid.aware = true;
+                enter.invoke(w, hid, home);
+                check(home.occupants.contains(hid), "hiding inside");
+                w.alert = 2;
+                float out = -1;
+                for (int f = 0; f < 30 * 25 && out < 0; f++) {
+                    w.update(1 / 30f);
+                    if (!home.occupants.contains(hid)) out = f / 30f;
+                }
+                check(out >= 0 && out < 20, "out of hiding " + out + " s after it went quiet");
+                // Supply trucks after it's over: they come in and fill the shelves and armouries.
+                City.Facility station = null;
+                for (City.Facility f : ww.city.facilities) if (f.kind == City.FACILITY_POLICE) station = f;
+                station.ammo = 50;
+                City.Building store = null;
+                for (City.Building b : ww.city.buildings) if (b.kind == City.MARKET && !b.collapsed) store = b;
+                if (store != null) store.food = 0;
+                java.lang.reflect.Method restock = World.class.getDeclaredMethod("restockTown");
+                restock.setAccessible(true);
+                java.util.List<Fleet.Vehicle> trucks = new java.util.ArrayList<Fleet.Vehicle>();
+                for (int k = 0; k < 12; k++) {
+                    ww.time = k * 4;
+                    restock.invoke(ww);
+                }
+                for (Fleet.Vehicle v : ww.fleet.vehicles) if (v.restock) trucks.add(v);
+                check(ww.restockSent > 0 && !trucks.isEmpty(), "supply trucks sent in (" + trucks.size() + ")");
+                for (Fleet.Vehicle v : trucks) ww.restocked(v);
+                check(station.ammo >= 3000, "the police armoury restocked");
+                check(store == null || store.food >= 400, "the supermarket restocked");
+                // Driveways: houses out in the country all have a way to the road.
+                int cut5 = 0, cut6 = 0;
+                for (int civic = 5; civic <= 6; civic++) {
+                    CityConfig dc = new CityConfig();
+                    dc.seed = 5;
+                    dc.v[CityConfig.OPT_PRESET] = 8;
+                    dc.civic = civic;
+                    City city = new City(dc, 0.05f);
+                    for (City.Building b : city.buildings) {
+                        if (b.kind != City.HOUSE || city.inTown(b.doorX, b.doorY)) continue;
+                        boolean reached = false;
+                        int x0 = (int) (b.x0 / City.T) - 1, y0 = (int) (b.y0 / City.T) - 1;
+                        int x1 = (int) Math.ceil(b.x1 / City.T), y1 = (int) Math.ceil(b.y1 / City.T);
+                        for (int y = Math.max(0, y0); y <= Math.min(city.h - 1, y1); y++)
+                            for (int x = Math.max(0, x0); x <= Math.min(city.w - 1, x1); x++) {
+                                byte t = city.tiles[y * city.w + x];
+                                if (t == City.ROAD || t == City.DIRT || t == City.LOT || t == City.SIDEWALK) reached = true;
+                            }
+                        if (!reached) {
+                            if (civic == 5) cut5++;
+                            else cut6++;
+                        }
+                    }
+                }
+                check(cut5 > 5 && cut6 * 5 <= cut5, "driveways to country houses (cut off: " + cut5 + " before, " + cut6 + " now)");
+                // Close-ups draw quickly: just their own part of the map.
+                City big = ww.city;
+                long t0 = System.nanoTime();
+                for (int k = 0; k < 8; k++) big.renderRegion(big.worldW() / 2 + (k % 4) * 192, big.worldH() / 2 + (k / 4) * 192, 192, 2);
+                long ms = (System.nanoTime() - t0) / 8000000;
+                check(ms < 60, "a close-up takes " + ms + " ms");
             }
         });
         test("every screen draws", new Check() {

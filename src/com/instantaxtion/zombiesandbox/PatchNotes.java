@@ -2,11 +2,21 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.18";
-    static final int VERSION_CODE = 56;
+    static final String VERSION = "10.19";
+    static final int VERSION_CODE = 57;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.19  -  Shots fired",
+                    "Everyone reacts to gunfire now, not just the dead: people nearby run from whatever is being shot at, police and soldiers with nothing on go to see what the shooting is, raiders come looking, and medics and firefighters keep their heads down.",
+                    "The ranger minding the station stands out in front of the door, on the porch or out at the trailhead, instead of hugging the wall. When the dead come, the rangers hold a line in front of the station facing out.",
+                    "People come out of hiding much sooner once the street outside has gone quiet, and get back to their day instead of going straight back indoors. The all-clear is given sooner too.",
+                    "Once it's over, supply trucks come in from outside the city to restock: ammo for the police stations and the base, guns and ammo for the gun stores, and food for the supermarkets and shops.",
+                    "Rescue teams don't just stand at the landing spot: they search the streets around it, bring in anyone they find, and knock on the doors of buildings where people are holed up.",
+                    "Driveways: houses, farms and cabins out in the country have a track out to the lane or road, and town houses set back from the street a paved drive.",
+                    "Close-up graphics load far faster when zoomed in (around ten times quicker to draw), and the area just off the edges of the screen is drawn ahead of time so panning stays sharp.",
+            },
             {
                     "10.18  -  Real cities",
                     "Real cities, premade and always the biggest size: Los Angeles, Portland, Seattle, New York, Sydney, Tokyo and Paris. Each has its real coast, rivers, bays, lakes, hills, woods and parks, its own neighbourhoods and famous streets by name, and its bridges.",

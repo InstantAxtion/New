@@ -368,6 +368,12 @@ Needle, the Empire State Building, the Statue of Liberty, the Opera House and Ha
 the Skytree, and the Eiffel Tower. Games start with hikers out on the trails; people get clear of streets the
 dead have taken; dirt lanes stay dirt; there are no animals; the zombie count is gone from New Game.
 
+**Shots fired (10.19):** everyone reacts to gunfire: people run from it, police and soldiers go to look,
+raiders come looking. The station ranger stands out front instead of against the wall. People come out of
+hiding soon after the street goes quiet. Once it's over, supply trucks come in to restock the armouries, gun
+stores and food shops. Rescue teams search the streets round their landing spot and knock on doors. Country
+houses and farms have driveways out to the road. Zoomed-in graphics load about ten times faster.
+
 **Countryside:** Villages, small towns and every Massive map are surrounded by open country:
 winding dirt lanes out to the edge of the map, farms and lonely cabins along them, woods, and
 hamlets (a short street of cottages with a lane back to town). A town out in the country is never a

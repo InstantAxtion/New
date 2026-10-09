@@ -171,6 +171,10 @@ final class Fleet {
         Entity guard;
         /** A supply truck: rounds of ammunition it's carrying to a safe zone. */
         int supply;
+        /** A supply truck from outside, once it's over (10.19): restocking this store or armoury, then off the map. */
+        boolean restock;
+        City.Building restockShop;
+        City.Facility restockFac;
         /** The player's character, at the wheel. */
         Entity player;
         /** A stopped car rolls over to the kerb. */
@@ -271,6 +275,8 @@ final class Fleet {
             case TRUCK: {
                 String who = v.kind == K_APC ? "APC" : v.kind == K_HUMVEE ? "Humvee" : v.kind == K_RIOT_VAN ? "Riot van"
                         : v.kind == K_BIKE ? "Police motorcycle" : v.type == CRUISER ? "Police car" : "Army truck";
+                if (v.restock) return v.state == RETURN ? "Supply truck: Heading out of town"
+                        : "Supply truck: Delivering" + (where != null ? " to " + where : "");
                 if (v.type == TRUCK && v.state == SCENE) return who + ": Fire support" + (where != null ? " at " + where : "");
                 if (v.loop && v.state == DRIVE) return who + ": Patrolling" + (where != null ? " to " + where : "");
                 if (v.broken) return who + ": Wrecked";
@@ -815,6 +821,26 @@ final class Fleet {
         if (!send(Entity.SOLDIER, 0, from.x, from.y, z.x, z.y, null, z, z.place) || vehicles.size() == before) return false;
         Vehicle v = vehicles.get(vehicles.size() - 1);
         v.supply = rounds;
+        return true;
+    }
+
+    /**
+     * After the outbreak, a supply truck from outside: in from the edge of the map at (fromX, fromY) to a store
+     * or an armoury, unloads, and drives back out the way it came.
+     */
+    boolean sendRestock(float fromX, float fromY, City.Building b, City.Facility f) {
+        int before = vehicles.size();
+        fromParked = false;
+        float tx = b != null ? b.doorX : f.x, ty = b != null ? b.doorY : f.y;
+        boolean sent = send(Entity.SOLDIER, 0, fromX, fromY, tx, ty, null, null, b != null ? b.name : f.name);
+        fromParked = true;
+        if (!sent || vehicles.size() == before) return false;
+        Vehicle v = vehicles.get(vehicles.size() - 1);
+        v.restock = true;
+        v.restockShop = b;
+        v.restockFac = f;
+        v.reinforcement = true;
+        v.angle = (float) Math.atan2(ty - v.y, tx - v.x);
         return true;
     }
 
@@ -1946,6 +1972,12 @@ final class Fleet {
                 }
                 v.supply = 0;
             }
+            if (v.state == DRIVE && v.restock) {
+                if (Math.hypot(v.x - v.tx, v.y - v.ty) < 120) w.restocked(v);
+                v.state = RETURN;
+                v.speed = 0;
+                return !route(v, v.homeX, v.homeY);
+            }
             if (v.state == DRIVE && v.loop) {
                 // The end of the patrol's sweep: back to base.
                 v.state = RETURN;
@@ -1991,7 +2023,7 @@ final class Fleet {
                 return !route(v, v.homeX, v.homeY);
             }
             // An army truck back at base parks in its bay again.
-            if (v.state == RETURN && v.type == TRUCK && !v.swat && !v.broken && !w.peopleNear(v.homeX, v.homeY, 14)
+            if (v.state == RETURN && v.type == TRUCK && !v.swat && !v.restock && !v.broken && !w.peopleNear(v.homeX, v.homeY, 14)
                     && w.countZombiesNear(v.homeX, v.homeY, 14) == 0)
                 city.parkTruck(v.homeX, v.homeY);
             return true;

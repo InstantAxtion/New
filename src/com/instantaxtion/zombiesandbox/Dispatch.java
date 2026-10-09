@@ -998,7 +998,7 @@ final class Dispatch {
      * Where reinforcements from outside come onto the map, nearest the trouble first: the ends of the
      * highway (each carriageway), then the end of the nearest road at the edge of the map.
      */
-    private java.util.List<float[]> entries(float tx, float ty) {
+    java.util.List<float[]> entries(float tx, float ty) {
         java.util.List<float[]> out = new ArrayList<float[]>();
         if (city.hwyAxis >= 0) {
             int len = city.hwyAxis == 0 ? city.w : city.h;

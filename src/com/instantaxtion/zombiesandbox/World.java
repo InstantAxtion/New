@@ -1863,6 +1863,7 @@ final class World {
         e.phoneTimer -= dt;
         e.talkTimer -= dt;
         e.callCd -= dt;
+        e.alertCd -= dt;
         e.cooldown -= dt;
         e.biteCd -= dt;
         e.grenadeCd -= dt;
@@ -1962,6 +1963,73 @@ final class World {
                         float ddx = o.x - x, ddy = o.y - y;
                         if (ddx * ddx + ddy * ddy < radius * radius * 0.6f) o.aware = true;
                     }
+            }
+    }
+
+    /**
+     * Everyone (not just the dead) reacts to a gunshot: people nearby run from whatever is being shot at, armed units
+     * that aren't busy go and see what it is, raiders come looking, and medics and firefighters keep their heads down.
+     */
+    void heardShot(Entity shooter, Entity target, float radius) {
+        if (shooter == null || target == null) return;
+        float x = shooter.x, y = shooter.y;
+        // Shooting at the dead, the danger is where the bullets are going; at people, it's the gun itself.
+        boolean atDead = target.isZombie();
+        float dx = atDead ? target.x : x, dy = atDead ? target.y : y;
+        int cx0 = Math.max(0, (int) ((x - radius) / CELL)), cx1 = Math.min(gw - 1, (int) ((x + radius) / CELL));
+        int cy0 = Math.max(0, (int) ((y - radius) / CELL)), cy1 = Math.min(gh - 1, (int) ((y + radius) / CELL));
+        for (int cy = cy0; cy <= cy1; cy++)
+            for (int cx = cx0; cx <= cx1; cx++) {
+                int c = cy * gw + cx;
+                for (int k = cellStart[c] + zCount[c], end = cellStart[c] + cellCount[c]; k < end; k++) {
+                    Entity o = sorted[k];
+                    if (o == shooter || o.dead || o == controlled) continue;
+                    float ox = o.x - x, oy = o.y - y, d2 = ox * ox + oy * oy;
+                    if (d2 > radius * radius) continue;
+                    switch (o.type) {
+                        case Entity.CIVILIAN: {
+                            // Their own group's gun, sheltering behind the walls, armed and in the fight: they hold.
+                            if (o.leader == shooter || shooter.leader == o || o.militia || o.task == Dispatch.T_SHELTER
+                                    || o.ride != null || o.aiming) break;
+                            o.aware = true;
+                            o.fear = Math.max(o.fear, d2 < 120 * 120 ? 40 : 25);
+                            float run = d2 < 120 * 120 ? 6 : 3.5f;
+                            if (o.fleeTimer < run) {
+                                o.fleeTimer = run;
+                                o.threatX = dx;
+                                o.threatY = dy;
+                                if (rnd.nextFloat() < 0.04f) emit(Sfx.SCREAM, o.x, o.y);
+                            }
+                            break;
+                        }
+                        case Entity.COP:
+                        case Entity.SOLDIER:
+                            // Off duty for a moment: shots fired, so go and look.
+                            if (o.aiming || o.fear > 0 || o.task != Dispatch.T_NONE || o.scout || o.rig != null) break;
+                            if (o.ammo <= 0 && o.reserve <= 0) break;
+                            o.threatX = dx + rnd.nextFloat() * 20 - 10;
+                            o.threatY = dy + rnd.nextFloat() * 20 - 10;
+                            o.fear = 10;
+                            break;
+                        case Entity.RAIDER:
+                            if (o.noiseTimer <= 0 && !o.aiming && rnd.nextFloat() < 0.5f) {
+                                o.noiseX = x;
+                                o.noiseY = y;
+                                o.noiseTimer = 12;
+                            }
+                            break;
+                        case Entity.MEDIC:
+                        case Entity.FIREFIGHTER:
+                            if (d2 < 150 * 150 && o.fleeTimer <= 0 && atDead) {
+                                o.fleeTimer = 2;
+                                o.threatX = dx;
+                                o.threatY = dy;
+                            }
+                            break;
+                        default:
+                            break;
+                    }
+                }
             }
     }
 
@@ -3446,7 +3514,7 @@ final class World {
     /** Once a second: word of the outbreak gets round. */
     private void updateAlert() {
         // A good while after the last of them is gone, the all-clear: people get back to their lives.
-        if (alert > 0 && zombies == 0 && lurking == 0 && calmTime > 90) {
+        if (alert > 0 && zombies == 0 && lurking == 0 && calmTime > 40) {
             alert = 0;
             for (int i = 0, n = entities.size(); i < n; i++) entities.get(i).aware = false;
             dispatch.say(Dispatch.WHO_INFO, null, "News: The all-clear has been given. Residents can go about their day.",
@@ -3588,7 +3656,9 @@ final class World {
         if (e.leader != null || e.task != Dispatch.T_NONE || (e.hasGun && !e.aware)) return false;
         City.Building home = homeOf(e);
         // Word gets round: a phone call, a neighbour shouting, the radio.
-        if (alert >= 1 && !e.aware && rnd.nextFloat() < dt * (alert >= 2 ? 10 : 0.05f)) e.aware = true;
+        // (Not someone who's just come out into a street that's been quiet, unless the dead come back near.)
+        boolean outAgain = time - e.emerged < 150 && dangerDistAt(e.x, e.y) >= 3;
+        if (alert >= 1 && !e.aware && !outAgain && rnd.nextFloat() < dt * (alert >= 2 ? 10 : 0.05f)) e.aware = true;
         if (e.aware || (zombies > 0 && e.fear > 0)) {
             e.aware = true;
             return getToSafety(e, home);
@@ -4986,6 +5056,8 @@ final class World {
         if (z > 0) {
             outbreakTime += 1;
             calmTime = 0;
+            restockSent = 0;
+            restockSaid = false;
             if (recovering) {
                 recovering = false;
                 dispatch.say(Dispatch.WHO_INFO, null, "The infected are back. Recovery efforts suspended.",
@@ -5007,7 +5079,7 @@ final class World {
         }
         if (peakZombies < 5 || humans == 0) return;
         calmTime += 1;
-        if (!recovering && calmTime > 45) {
+        if (!recovering && calmTime > 30) {
             recovering = true;
             dispatch.say(Dispatch.WHO_INFO, null, "No infected seen for a while. The city is starting to recover.",
                     city.worldW() / 2, city.worldH() / 2);
@@ -5017,6 +5089,7 @@ final class World {
 
     /** Clean-up crews, repairs, wrecks towed away, safe zones closing and people going home. */
     private void recover() {
+        restockTown();
         // Volunteers clear away the bodies.
         int crews = 0;
         for (int i = 0, n = entities.size(); i < n; i++) if (entities.get(i).task == Dispatch.T_CLEANUP) crews++;
@@ -5051,6 +5124,101 @@ final class World {
                 }
         // After a while the safe zones close and everyone goes home.
         if (calmTime > 120 && !dispatch.zones.isEmpty() && rnd.nextFloat() < 0.04f) dispatch.closeZone(dispatch.zones.get(0));
+    }
+
+    // ------------------------------------------------------------------ resupply after the outbreak (10.19)
+
+    /** Supply trucks sent in since it went quiet (and whether the radio has said so). */
+    int restockSent;
+    boolean restockSaid;
+    static final int RESTOCK_TRUCKS = 14;
+
+    /**
+     * Once it's over, trucks come in from outside to refill what the outbreak used up: ammo for the police
+     * and the army, guns and ammo for the gun stores, food for the supermarkets and shops. One every few seconds,
+     * worst-off first.
+     */
+    private void restockTown() {
+        if (restockSent >= RESTOCK_TRUCKS || ((int) time) % 4 != 0) return;
+        Object best = null;
+        float worst = 0.75f;
+        for (City.Facility f : city.facilities) {
+            int full = f.kind == City.FACILITY_POLICE ? 3000 : f.kind == City.FACILITY_BASE ? 9000 : 0;
+            if (full == 0 || restockBound(f)) continue;
+            float left = f.ammo / (float) full;
+            if (left < worst) {
+                worst = left;
+                best = f;
+            }
+        }
+        for (int i = 0, n = city.buildings.size(); i < n; i++) {
+            City.Building b = city.buildings.get(i);
+            if (b.collapsed || b.fire != null) continue;
+            float left;
+            if (b.kind == City.SHOP && b.shopType == 1) left = b.stock / (float) gunStock();
+            else if (b.kind == City.MARKET) left = Math.min(b.stock / 240f, b.food / 400f);
+            else if (b.kind == City.SHOP) left = b.food / (b.shopType == 2 ? 120f : 40f) + 0.2f;
+            else continue;
+            if (left < worst && !restockBound(b)) {
+                worst = left;
+                best = b;
+            }
+        }
+        if (best == null) return;
+        City.Building b = best instanceof City.Building ? (City.Building) best : null;
+        City.Facility f = b == null ? (City.Facility) best : null;
+        float tx = b != null ? b.doorX : f.x, ty = b != null ? b.doorY : f.y;
+        java.util.List<float[]> from = dispatch.entries(tx, ty);
+        if (from.isEmpty()) return;
+        float[] p = from.get(0);
+        restockSent++;
+        if (!fleet.sendRestock(p[0], p[1], b, f)) return;
+        if (!restockSaid) {
+            restockSaid = true;
+            dispatch.say(Dispatch.WHO_INFO, null, "News: Supply trucks are on their way in from " + dispatch.sideOfMap(p[0], p[1])
+                    + " to restock the stores, the gun shops and the armouries.", p[0], p[1]);
+        }
+    }
+
+    private int gunStock() {
+        return city.cfg.nature() ? 360 : 240;
+    }
+
+    /** Whether a supply truck is already on its way to this store or armoury. */
+    private boolean restockBound(Object o) {
+        for (int i = 0; i < fleet.vehicles.size(); i++) {
+            Fleet.Vehicle v = fleet.vehicles.get(i);
+            if (v.restock && (v.restockShop == o || v.restockFac == o)) return true;
+        }
+        return false;
+    }
+
+    /** A supply truck has pulled up: the shelves and the armoury are full again. */
+    void restocked(Fleet.Vehicle v) {
+        City.Building b = v.restockShop;
+        City.Facility f = v.restockFac;
+        String what;
+        if (f != null) {
+            f.ammo = Math.max(f.ammo, f.kind == City.FACILITY_POLICE ? 3000 : 9000);
+            what = "ammunition";
+        } else if (b != null && !b.collapsed) {
+            if (b.kind == City.SHOP && b.shopType == 1) {
+                b.stock = Math.max(b.stock, gunStock());
+                what = "guns and ammunition";
+            } else if (b.kind == City.MARKET) {
+                b.stock = Math.max(b.stock, 240);
+                b.food = Math.max(b.food, 400);
+                what = "food";
+            } else {
+                b.food = Math.max(b.food, b.shopType == 2 ? 120 : 40);
+                what = "food";
+            }
+            b.smashed = false;
+            b.looted = false;
+        } else return;
+        highlight("Restocked", v.x, v.y);
+        if (rnd.nextFloat() < 0.4f)
+            dispatch.say(Dispatch.WHO_INFO, null, "Supply truck: " + what + " delivered to " + v.place + ".", v.x, v.y);
     }
 
     private Corpse freshCorpseAny(float x, float y, float radius) {
@@ -7699,6 +7867,10 @@ final class World {
         if (soldier && e.role != Entity.ROLE_COMMANDER && !commanders.isEmpty() && commanded(e)) accuracy += 0.12f;
         if (e.ammo <= 0 && e.reserve > 0) e.reload = soldier ? (e.role == Entity.ROLE_GUNNER ? 4f : 2.2f) : 1.6f;
         if (rnd.nextFloat() < (e.role == Entity.ROLE_GUNNER ? 0.08f : 0.25f)) noise(e.x, e.y, e.role == Entity.ROLE_SNIPER ? 300 : 220);
+        if (e.alertCd <= 0) {
+            e.alertCd = 1.2f;
+            heardShot(e, t, e.role == Entity.ROLE_SNIPER ? 320 : 250);
+        }
         // A spent case flies out of the side of the gun.
         float ea = e.angle + 1.57f + (rnd.nextFloat() - 0.5f) * 0.6f;
         if (rnd.nextFloat() < 0.7f)
@@ -7915,15 +8087,23 @@ final class World {
             if (!zombieWithin(b.doorX, b.doorY, 60))
                 b.barricade = Math.min(100, b.barricade + dt * (2 + b.occupants.size() * 0.5f));
             else if (b.occupants.size() >= 4) b.barricade = Math.min(100, b.barricade + dt * b.occupants.size() * 0.25f);
-            // Come out once the street has been quiet for a while.
+            // Come out once the street has been quiet for a little while (not a minute and a half of nothing).
             b.calmTimer += dt;
-            if (zombieWithin(b.doorX, b.doorY, 250)) b.calmTimer = 0;
-            if (b.calmTimer > 25 && b.holdout == null) {
+            if (zombieWithin(b.doorX, b.doorY, 200)) b.calmTimer = 0;
+            if (b.calmTimer > 10 && b.holdout == null) {
                 b.releaseTimer -= dt;
                 if (b.releaseTimer <= 0) {
-                    b.releaseTimer = 1.5f;
+                    b.releaseTimer = 0.7f;
                     Entity o = popOccupant(b);
-                    if (o != null) leaveBuilding(o, b, false);
+                    if (o != null) {
+                        leaveBuilding(o, b, false);
+                        // Out into a quiet street: back to their day, not straight back indoors again.
+                        if (zombies == 0 || dangerDistAt(b.doorX, b.doorY) >= 3) {
+                            o.aware = false;
+                            o.fear = 0;
+                            o.emerged = time;
+                        }
+                    }
                 }
             }
         }
@@ -9657,26 +9837,53 @@ final class World {
         return best;
     }
 
+    /**
+     * A spot in front of the ranger station: {@code dist} out from the door, {@code a} radians either side of
+     * straight out, nudged back towards the door if that lands on something solid. Third value: facing out.
+     */
+    private float[] stationSpot(float a, float dist) {
+        City.Building b = rangerStation;
+        float cx = (b.x0 + b.x1) / 2f, cy = (b.y0 + b.y1) / 2f;
+        float hw = Math.max(1, (b.x1 - b.x0) / 2f), hh = Math.max(1, (b.y1 - b.y0) / 2f);
+        float rx = (b.doorX - cx) / hw, ry = (b.doorY - cy) / hh;
+        float nx = 0, ny = 0;
+        if (Math.abs(rx) > Math.abs(ry)) nx = Math.signum(rx);
+        else ny = ry == 0 ? 1 : Math.signum(ry);
+        float out = (float) Math.atan2(ny, nx) + a;
+        for (float d = dist; d >= 10; d -= 6) {
+            float px = b.doorX + (float) Math.cos(out) * d, py = b.doorY + (float) Math.sin(out) * d;
+            if (!city.solidAt(px, py) && (px < b.x0 - 4 || px > b.x1 + 4 || py < b.y0 - 4 || py > b.y1 + 4)) return new float[]{px, py, out};
+        }
+        return new float[]{b.doorX + nx * 12, b.doorY + ny * 12, out - a};
+    }
+
     /** A park ranger on foot: walking the trails, or with the dead about, holding the station. */
     private boolean rangerOnFoot(Entity e, float dt) {
         if (alert >= 1 && rangerStation != null) {
-            float a = (e.callsign * 2.39996f) % TAU;
-            float px = rangerStation.doorX + (float) Math.cos(a) * 26, py = rangerStation.doorY + (float) Math.sin(a) * 26;
-            if (Math.hypot(px - e.x, py - e.y) > 300) walkToSpot(e, px, py, e.speed);
-            else standAt(e, px, py, 0.8f);
+            // Holding the station: a fan out in front of the door, facing out (not lined up against the wall).
+            float a = ((e.callsign * 0.618034f) % 1f - 0.5f) * 2.4f;
+            float[] p = stationSpot(a, 30 + (e.callsign % 3) * 8);
+            if (Math.hypot(p[0] - e.x, p[1] - e.y) > 300) walkToSpot(e, p[0], p[1], e.speed);
+            else {
+                standAt(e, p[0], p[1], 0.8f);
+                if (e.want < 1) e.angle = turn(e.angle, p[2], dt * 3);
+            }
             return true;
         }
-        // One ranger always minds the station: at the desk inside or on the porch out front.
+        // One ranger always minds the station: on the porch, or out at the trailhead in front of it.
         if (rangerStation != null && !rangerStation.collapsed) {
             if (stationKeeper == null || stationKeeper.dead || stationKeeper.agency != 3 || stationKeeper.rig != null
                     || stationKeeper.task != Dispatch.T_NONE)
                 stationKeeper = e;
             if (stationKeeper == e) {
                 e.hike = null;
-                float a = ((int) (time / 40) % 2 == 0) ? 0 : 1;
-                float px = rangerStation.doorX + (a == 0 ? 0 : 14), py = rangerStation.doorY + (a == 0 ? -6 : 10);
-                if (Math.hypot(px - e.x, py - e.y) > 300) walkToSpot(e, px, py, e.speed);
-                else standAt(e, px, py, 0.6f);
+                int phase = (int) (time / 30) % 3;
+                float[] p = phase == 0 ? stationSpot(0, 16) : phase == 1 ? stationSpot(0.9f, 34) : stationSpot(-0.7f, 46);
+                if (Math.hypot(p[0] - e.x, p[1] - e.y) > 300) walkToSpot(e, p[0], p[1], e.speed);
+                else {
+                    standAt(e, p[0], p[1], 0.6f);
+                    if (e.want < 1) e.angle = turn(e.angle, p[2], dt * 2);
+                }
                 return true;
             }
         }
@@ -10185,23 +10392,77 @@ final class World {
         Entity c = e.escort;
         if (c == null || c.dead || c.task == Dispatch.T_RESCUE || (c.leader != null && c.leader != e)) {
             c = null;
-            float bd = 230 * 230;
-            for (int i = 0, n = entities.size(); i < n; i++) {
-                Entity o = entities.get(i);
-                if (o.dead || o.type != Entity.CIVILIAN || o.aloft || o.task == Dispatch.T_RESCUE || (o.leader != null && o.leader.role == Entity.ROLE_SAR)) continue;
-                float d = (o.x - hx) * (o.x - hx) + (o.y - hy) * (o.y - hy);
-                if (d < bd) {
-                    bd = d;
-                    c = o;
+            e.escort = null;
+            e.jobTimer -= dt;
+            if (e.jobTimer <= 0) {
+                e.jobTimer = 1;
+                // Anyone out on the streets around the landing spot, nearest first (and not someone a teammate has).
+                sarClaimed.clear();
+                for (int i = 0, n = entities.size(); i < n; i++) {
+                    Entity t = entities.get(i);
+                    if (t != e && !t.dead && t.role == Entity.ROLE_SAR && t.escort != null) sarClaimed.add(t.escort);
+                }
+                float bd = 420 * 420;
+                for (int i = 0, n = entities.size(); i < n; i++) {
+                    Entity o = entities.get(i);
+                    if (o.dead || o.type != Entity.CIVILIAN || o.aloft || o.ride != null || o.task == Dispatch.T_RESCUE
+                            || (o.leader != null && o.leader.role == Entity.ROLE_SAR) || sarClaimed.contains(o)) continue;
+                    float d = (o.x - hx) * (o.x - hx) + (o.y - hy) * (o.y - hy);
+                    if (d < bd) {
+                        bd = d;
+                        c = o;
+                    }
+                }
+                e.escort = c;
+                // Nobody outside: knock on the doors of the places people are holed up in.
+                if (c == null && (e.building == null || e.building.occupants.isEmpty() || e.building.lurkers > 0)) {
+                    e.building = null;
+                    float bb = 420 * 420;
+                    for (int i = 0, n = city.buildings.size(); i < n; i++) {
+                        City.Building b = city.buildings.get(i);
+                        if (b.occupants.isEmpty() || b.lurkers > 0 || b.collapsed || b.holdout != null) continue;
+                        float d = (b.doorX - hx) * (b.doorX - hx) + (b.doorY - hy) * (b.doorY - hy);
+                        if (d < bb) {
+                            bb = d;
+                            e.building = b;
+                        }
+                    }
                 }
             }
-            e.escort = c;
+        }
+        if (c == null && e.building != null && !e.building.occupants.isEmpty() && e.building.lurkers <= 0) {
+            City.Building b = e.building;
+            float dx = b.doorX - e.x, dy = b.doorY - e.y, d = (float) Math.sqrt(dx * dx + dy * dy) + 0.001f;
+            if (d > 14) {
+                walkToSpot(e, b.doorX, b.doorY, e.runSpeed);
+                return true;
+            }
+            // "Rescue team! Anyone in there?": someone comes out with them.
+            Entity o = popOccupant(b);
+            if (o != null) {
+                leaveBuilding(o, b, false);
+                o.leader = e;
+                o.aware = true;
+                e.escort = o;
+                e.talkTimer = 1.5f;
+                c = o;
+            }
+            if (b.occupants.isEmpty()) e.building = null;
+            if (c == null) return true;
         }
         if (c == null) {
-            // Holding the landing spot, facing out.
-            float a = e.member * TAU / 3;
-            standAt(e, hx + (float) Math.cos(a) * 18, hy + (float) Math.sin(a) * 18, 1);
-            if (e.want < 1) e.angle = turn(e.angle, a, dt * 3);
+            // Nobody found yet: sweep the streets round the landing spot, each of the team a different way.
+            float a = e.member * TAU / 3 + time * 0.05f, r = 70 + ((int) (time / 20) % 3) * 60;
+            float px = hx + (float) Math.cos(a) * r, py = hy + (float) Math.sin(a) * r;
+            if (city.solidAt(px, py)) {
+                float[] w = city.findWalkable(px, py);
+                if (w != null) {
+                    px = w[0];
+                    py = w[1];
+                }
+            }
+            if (Math.hypot(px - e.x, py - e.y) > 12) walkToSpot(e, px, py, e.speed * 1.2f);
+            else standAt(e, px, py, 1);
             return true;
         }
         if (c.leader != e) {
@@ -10227,6 +10488,8 @@ final class World {
         }
         return true;
     }
+
+    private final java.util.ArrayList<Entity> sarClaimed = new java.util.ArrayList<>();
 
     /** Someone brought to a rescue team's landing spot: stays close, ducking away from the dead. */
     private boolean waitForLift(Entity e, Entity threat, float threatDist) {

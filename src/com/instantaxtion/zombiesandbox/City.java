@@ -486,13 +486,21 @@ final class City {
         buildingAt = new int[w * h];
         Arrays.fill(buildingAt, -1);
         generate();
-        for (int[] e : cfg.edits) applyEdit(e[0], e[1], e[2], false);
-        for (int i = 0; i < tiles.length; i++) {
-            byte t = tiles[i];
-            solid[i] = t == BUILDING || t == TREE || t == CAR || t == STATUE || t == FENCE || t == PUMP || (t == WATER && !isFord(i)) || t == ROCK;
-            opaque[i] = t == BUILDING;
+        if (cfg.driveways()) {
+            // The city as generated, its driveways, and only then the Build tool's edits on top (as they were
+            // made on it), so a city rebuilt from its code comes out the same as the one that was edited.
+            int generated = buildingLots.size();
+            computeSolid();
+            for (int i = 0; i < generated; i++) createBuilding(buildingLots.get(i));
+            driveways();
+            for (int[] e : cfg.edits) applyEdit(e[0], e[1], e[2], false);
+            computeSolid();
+            for (int i = generated; i < buildingLots.size(); i++) createBuilding(buildingLots.get(i));
+        } else {
+            for (int[] e : cfg.edits) applyEdit(e[0], e[1], e[2], false);
+            computeSolid();
+            for (int[] l : buildingLots) createBuilding(l);
         }
-        for (int[] l : buildingLots) createBuilding(l);
         clearDoorways();
         Arrays.fill(humanDist, FAR);
         Arrays.fill(zombieDist, FAR);
@@ -693,6 +701,12 @@ final class City {
     private long tileSeed(int x, int y, int pass) {
         return (x * 73856093L) ^ (y * 19349663L) ^ (pass * 83492791L) ^ (cfg.seed * 2654435761L);
     }
+
+    /** The tiles to draw: just the close-up's (with its margin) while drawing one, otherwise the whole map. */
+    private int gx0() { return regionOnly ? rx0 : 0; }
+    private int gy0() { return regionOnly ? ry0 : 0; }
+    private int gx1() { return regionOnly ? rx1 : w; }
+    private int gy1() { return regionOnly ? ry1 : h; }
 
     /** True when drawing a close-up and this box (with room for shadows) is nowhere near it. */
     private boolean offRegion(float x0, float y0, float x1, float y1) {
@@ -971,6 +985,161 @@ final class City {
                 tiles[i] = isPlazaTree(x, y) ? PLAZA : GRASS;
                 solid[i] = false;
             }
+    }
+
+    /**
+     * Driveways (10.19): a house, cabin or farm whose front door opens onto nothing but grass gets a track out
+     * to the nearest road or lane: dirt out in the country, paved where it meets a pavement in town. Two tiles
+     * wide where there's room, so a car fits.
+     */
+    private void driveways() {
+        int n = w * h;
+        int[] seen = new int[n], prev = new int[n], q = new int[n];
+        int stamp = 0;
+        for (Building b : buildings) {
+            if ((b.kind != HOUSE && b.kind != BARN) || b.doorX <= 0) continue;
+            int tx = (int) (b.doorX / T), ty = (int) (b.doorY / T);
+            if (tx < 1 || ty < 1 || tx >= w - 1 || ty >= h - 1) continue;
+            boolean reached = false;
+            for (int dy = -1; dy <= 1 && !reached; dy++)
+                for (int dx = -1; dx <= 1; dx++)
+                    if (drivewayEnd(tiles[(ty + dy) * w + tx + dx])) reached = true;
+            if (reached) continue;
+            if (straightDrive(b)) continue;
+            stamp++;
+            int head = 0, tail = 0, start = ty * w + tx, goal = -1;
+            q[tail++] = start;
+            seen[start] = stamp;
+            prev[start] = -1;
+            // (Each step's length, so it stops a sensible way out.)
+            int levelEnd = tail, depth = 0;
+            while (head < tail && goal < 0 && depth <= 40) {
+                int c = q[head++], x = c % w, y = c / w;
+                for (int k = 0; k < 4 && goal < 0; k++) {
+                    int nx = x + (k == 0 ? 1 : k == 1 ? -1 : 0), ny = y + (k == 2 ? 1 : k == 3 ? -1 : 0);
+                    if (nx < 1 || ny < 1 || nx >= w - 1 || ny >= h - 1) continue;
+                    int j = ny * w + nx;
+                    if (seen[j] == stamp) continue;
+                    byte t = tiles[j];
+                    if (drivewayEnd(t)) {
+                        goal = c;
+                        prev[j] = c;
+                        break;
+                    }
+                    if (t != GRASS && t != TREE) continue;
+                    if (bridge != null && bridge[j]) continue;
+                    seen[j] = stamp;
+                    prev[j] = c;
+                    q[tail++] = j;
+                }
+                if (head == levelEnd) {
+                    depth++;
+                    levelEnd = tail;
+                }
+            }
+            if (goal < 0) continue;
+            byte end = drivewaySurface(goal % w, goal / w);
+            for (int c = goal, last = -1; c >= 0; last = c, c = prev[c]) {
+                tiles[c] = end;
+                solid[c] = false;
+                // The second lane of it: the tile to one side of the way it runs (clear of the house).
+                int step = last >= 0 ? last - c : prev[c] >= 0 ? c - prev[c] : 0;
+                if (step == 0 || c == start) continue;
+                int side = step == 1 || step == -1 ? w : 1;
+                int o = c + side;
+                if (o >= 0 && o < n && (tiles[o] == GRASS || tiles[o] == TREE) && !nextToBuilding(o)) {
+                    tiles[o] = end;
+                    solid[o] = false;
+                }
+            }
+        }
+    }
+
+    /**
+     * The usual kind: straight out from the side of the house nearest a road, two tiles wide, a little to one
+     * side of the middle (where the garage would be). False if no side has a clear straight run to a road.
+     */
+    private boolean straightDrive(Building b) {
+        int x0 = (int) (b.x0 / T), y0 = (int) (b.y0 / T), x1 = (int) Math.ceil(b.x1 / T) - 1, y1 = (int) Math.ceil(b.y1 / T) - 1;
+        int best = -1, bestLen = 31, bestScore = Integer.MAX_VALUE, bestSx = 0, bestSy = 0;
+        // (The front, where the door is, wins unless another side is a lot nearer the road.)
+        float cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2;
+        float rx = (b.doorX - cx) / Math.max(1, b.x1 - b.x0), ry = (b.doorY - cy) / Math.max(1, b.y1 - b.y0);
+        int front = Math.abs(rx) > Math.abs(ry) ? (rx > 0 ? 0 : 1) : (ry > 0 ? 2 : 3);
+        for (int side = 0; side < 4; side++) {
+            int dx = side == 0 ? 1 : side == 1 ? -1 : 0, dy = side == 2 ? 1 : side == 3 ? -1 : 0;
+            int len0 = dx != 0 ? y1 - y0 + 1 : x1 - x0 + 1;
+            if (len0 < 3) continue;
+            // (A third of the way along the wall.)
+            int along = len0 / 3;
+            int sx = dx > 0 ? x1 + 1 : dx < 0 ? x0 - 1 : x0 + along, sy = dy > 0 ? y1 + 1 : dy < 0 ? y0 - 1 : y0 + along;
+            int px = dx != 0 ? 0 : 1, py = dx != 0 ? 1 : 0;
+            int len = 0;
+            boolean ok = false;
+            for (int k = 0; k < 30; k++) {
+                int ax = sx + dx * k, ay = sy + dy * k, bx = ax + px, by = ay + py;
+                if (ax < 1 || ay < 1 || bx >= w - 1 || by >= h - 1 || ax >= w - 1 || ay >= h - 1) break;
+                byte ta = tiles[ay * w + ax], tb = tiles[by * w + bx];
+                if (drivewayEnd(ta) || drivewayEnd(tb)) {
+                    ok = true;
+                    break;
+                }
+                if ((ta != GRASS && ta != TREE) || (tb != GRASS && tb != TREE)) break;
+                if (bridge != null && (bridge[ay * w + ax] || bridge[by * w + bx])) break;
+                len = k + 1;
+            }
+            int score = len - (side == front ? 8 : 0);
+            if (ok && score < bestScore) {
+                bestScore = score;
+                bestLen = len;
+                best = side;
+                bestSx = sx;
+                bestSy = sy;
+            }
+        }
+        if (best < 0) return false;
+        int dx = best == 0 ? 1 : best == 1 ? -1 : 0, dy = best == 2 ? 1 : best == 3 ? -1 : 0;
+        int px = dx != 0 ? 0 : 1, py = dx != 0 ? 1 : 0;
+        int ex = bestSx + dx * bestLen, ey = bestSy + dy * bestLen;
+        byte end = drivewaySurface(ex, ey);
+        for (int k = 0; k < bestLen; k++)
+            for (int q = 0; q <= 1; q++) {
+                int i = (bestSy + dy * k + py * q) * w + bestSx + dx * k + px * q;
+                tiles[i] = end;
+                solid[i] = false;
+            }
+        return true;
+    }
+
+    /** What a drive meeting the road at (x, y) is made of: a dirt track off a lane or out in the country, paved in town. */
+    private byte drivewaySurface(int x, int y) {
+        if (tiles[y * w + x] == DIRT) return DIRT;
+        for (int j = Math.max(0, y - 3); j <= Math.min(h - 1, y + 3); j++)
+            for (int i = Math.max(0, x - 3); i <= Math.min(w - 1, x + 3); i++)
+                if (tiles[j * w + i] == SIDEWALK || tiles[j * w + i] == LOT) return LOT;
+        return DIRT;
+    }
+
+    private boolean drivewayEnd(byte t) {
+        return t == ROAD || t == DIRT || t == LOT || t == SIDEWALK;
+    }
+
+    private boolean nextToBuilding(int i) {
+        int x = i % w, y = i / w;
+        for (int dy = -1; dy <= 1; dy++)
+            for (int dx = -1; dx <= 1; dx++) {
+                int nx = x + dx, ny = y + dy;
+                if (nx >= 0 && ny >= 0 && nx < w && ny < h && tiles[ny * w + nx] == BUILDING) return true;
+            }
+        return false;
+    }
+
+    private void computeSolid() {
+        for (int i = 0; i < tiles.length; i++) {
+            byte t = tiles[i];
+            solid[i] = t == BUILDING || t == TREE || t == CAR || t == STATUE || t == FENCE || t == PUMP || (t == WATER && !isFord(i)) || t == ROCK;
+            opaque[i] = t == BUILDING;
+        }
     }
 
     /** Puts the door in the middle of the first side that opens onto walkable ground. */
@@ -6185,9 +6354,11 @@ final class City {
      * vary in tone, and grass with lighter and darker patches.
      */
     private void drawRealGround(Canvas c, Paint p) {
-        Random r = new Random(cfg.seed * 7L + 1);
-        for (int y = 0; y < h; y++)
-            for (int x = 0; x < w; x++) {
+        // (Each tile's own randomness, so a close-up draws just its own tiles and still matches the whole map.)
+        Random r = prnd;
+        for (int y = Math.max(0, gy0()); y < Math.min(h, gy1()); y++)
+            for (int x = Math.max(0, gx0()); x < Math.min(w, gx1()); x++) {
+                r.setSeed(tileSeed(x, y, 11));
                 byte t = tiles[y * w + x];
                 float fx = x * T, fy = y * T;
                 if (t == ROAD || t == CAR) {
@@ -6335,8 +6506,8 @@ final class City {
 
     /** A raised kerb where pavement meets road: a shadow on the road side and a lit edge on top. */
     private void drawKerbs(Canvas c, Paint p) {
-        for (int y = 1; y < h - 1; y++)
-            for (int x = 1; x < w - 1; x++) {
+        for (int y = Math.max(1, gy0()); y < Math.min(h - 1, gy1()); y++)
+            for (int x = Math.max(1, gx0()); x < Math.min(w - 1, gx1()); x++) {
                 byte t = tiles[y * w + x];
                 if (t != SIDEWALK && t != PLAZA) continue;
                 float fx = x * T, fy = y * T;
@@ -6432,16 +6603,16 @@ final class City {
     private void drawBaseDetails(Canvas c, Paint p) {
         // Concrete slabs, then chain-link fences with posts.
         p.setStrokeWidth(1f);
-        for (int y = 0; y < h; y++)
-            for (int x = 0; x < w; x++) {
+        for (int y = Math.max(0, gy0()); y < Math.min(h, gy1()); y++)
+            for (int x = Math.max(0, gx0()); x < Math.min(w, gx1()); x++) {
                 byte t = tiles[y * w + x];
                 if (t != BASE && t != FENCE && !(t == CAR && carKind[y * w + x] == 2)) continue;
                 p.setColor(0xFF62665A);
                 c.drawLine(x * T, y * T, x * T + T, y * T, p);
                 c.drawLine(x * T, y * T, x * T, y * T + T, p);
             }
-        for (int y = 0; y < h; y++)
-            for (int x = 0; x < w; x++) {
+        for (int y = Math.max(0, gy0()); y < Math.min(h, gy1()); y++)
+            for (int x = Math.max(0, gx0()); x < Math.min(w, gx1()); x++) {
                 if (tiles[y * w + x] != FENCE) continue;
                 float cx = x * T + T / 2f, cy = y * T + T / 2f;
                 boolean hor = (x > 0 && tiles[y * w + x - 1] == FENCE) || (x < w - 1 && tiles[y * w + x + 1] == FENCE);
@@ -7901,6 +8072,7 @@ final class City {
     private void drawRoadMarkings(Canvas c, Paint p) {
         p.setStrokeWidth(1.2f);
         for (Street st : streets) {
+            if (offRegion((st.x0 - 2) * T, (st.y0 - 2) * T, (st.x1 + st.width + 2) * T, (st.y1 + st.width + 2) * T)) continue;
             int n = st.vertical ? st.y1 - st.y0 : st.x1 - st.x0;
             int dir = st.vertical ? 1 : 2;
             for (int k = 0; k < n; k++) {
@@ -7985,8 +8157,8 @@ final class City {
     private void drawParkingLines(Canvas c, Paint p) {
         p.setColor(0xAAE0E0E0);
         p.setStrokeWidth(1f);
-        for (int y = 0; y < h; y++)
-            for (int x = 0; x < w; x++) {
+        for (int y = Math.max(0, gy0()); y < Math.min(h, gy1()); y++)
+            for (int x = Math.max(0, gx0()); x < Math.min(w, gx1()); x++) {
                 byte t = tiles[y * w + x];
                 if ((t == LOT || (t == CAR && isLotCar(x, y))) && y > 0 && y < h - 1) {
                     boolean row = tiles[(y - 1) * w + x] == LOT || tiles[(y + 1) * w + x] == LOT;

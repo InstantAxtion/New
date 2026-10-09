@@ -1224,7 +1224,7 @@ final class GameView extends View implements Menu.Host {
      * and laid over it; the last few dozen are kept.
      */
     private static final float CHUNK = 192;
-    private static final int MAX_CHUNKS = 30;
+    private static final int MAX_CHUNKS = 44;
     private final java.util.concurrent.ConcurrentHashMap<Long, android.graphics.Bitmap> chunks =
             new java.util.concurrent.ConcurrentHashMap<Long, android.graphics.Bitmap>();
     private final java.util.Set<Long> chunkPending = java.util.Collections.newSetFromMap(
@@ -1330,6 +1330,16 @@ final class GameView extends View implements Menu.Host {
                 mapDst.set(cx * CHUNK, cy * CHUNK, (cx + 1) * CHUNK, (cy + 1) * CHUNK);
                 c.drawBitmap(b, mapSrc, mapDst, bmpPaint);
             }
+        // Just off the edges too (at the usual sharpness), so panning doesn't show the soft picture first.
+        if (res == 2)
+            for (int cy = Math.max(0, cy0 - 1); cy <= Math.min(ny - 1, cy1 + 1); cy++)
+                for (int cx = Math.max(0, cx0 - 1); cx <= Math.min(nx - 1, cx1 + 1); cx++) {
+                    if (cx >= cx0 && cx <= cx1 && cy >= cy0 && cy <= cy1) continue;
+                    long key = ((long) res << 40) | ((long) cy << 20) | cx;
+                    chunksWanted.add(key);
+                    if (!chunks.containsKey(key) && chunkPending.add(key))
+                        chunkJobs.addLast(new Object[]{city, key, cx * CHUNK, cy * CHUNK, (float) res, chunkVersion});
+                }
         chunksOnScreen = new java.util.HashSet<Long>(chunksWanted);
         // Forget the ones furthest from view when there are too many.
         if (chunks.size() > MAX_CHUNKS)
@@ -1367,7 +1377,8 @@ final class GameView extends View implements Menu.Host {
                 }
             }, "map close-ups");
             chunkWorker.setDaemon(true);
-            chunkWorker.setPriority(Thread.MIN_PRIORITY);
+            // (Not the lowest priority: on a phone that left the close-ups waiting on everything else.)
+            chunkWorker.setPriority(Thread.NORM_PRIORITY - 1);
             chunkWorker.start();
         }
     }
@@ -3378,7 +3389,7 @@ final class GameView extends View implements Menu.Host {
         boolean civ = v.type == Fleet.CAR;
         Country land0 = world.city.country;
         int body = civ ? v.color : v.kind == Fleet.K_RIOT_VAN ? land0.cruiserBody
-                : truck ? (v.swat ? 0xFF1C2026 : v.guardUnit ? 0xFF8C8260 : v.kind == Fleet.K_APC ? 0xFF46512E : 0xFF4F5A33) : engine ? 0xFFC8302A : amb ? 0xFFF2F2F2
+                : truck ? (v.restock ? 0xFFE6E3DA : v.swat ? 0xFF1C2026 : v.guardUnit ? 0xFF8C8260 : v.kind == Fleet.K_APC ? 0xFF46512E : 0xFF4F5A33) : engine ? 0xFFC8302A : amb ? 0xFFF2F2F2
                 : v.agency == 1 ? land0.hpBody : v.agency == 2 ? land0.ruralBody : v.agency == 3 ? 0xFF3E5634 : land0.cruiserBody;
         if (v.burnt) body = 0xFF2B2623;
         else if (v.broken) body = City.darken(body, 0.65f);

@@ -100,6 +100,8 @@ final class Entity {
     /** Where this one last left a footprint or a drop of blood, and how long their feet stay wet after wading. */
     float markX = -1, markY, wet;
     boolean markLeft;
+    /** Getting out of an area the dead have taken (10.18): how long to stay clear once out. */
+    float evacTime;
     /** Civilians: their home, and the errand they are on (a place to go and how long to stay). */
     City.Building home, errand;
     /**

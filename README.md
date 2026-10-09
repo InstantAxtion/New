@@ -9,11 +9,12 @@ away from the middle of the screen as you pan, and the game plays in both portra
 
 ## Main menu
 
-- **New Game** opens the city setup, with a live preview of the city and these options: the map (Classic,
-  Downtown, Suburbs, Campus, Metropolis, Village, or the water maps: Seaside, River City and Lakeside, or
-  Islands), map size (Large, Massive or Huge; Large by default), the **country** (USA, Australia, Japan, France,
+- **New Game** opens the city setup, with a live preview of the city and these options: the map (Downtown,
+  Suburbs, Metropolis, Village, or the water maps: Seaside, River City and Lakeside, or Islands; or one of the
+  real cities: Los Angeles, Portland, Seattle, New York, Sydney, Tokyo or Paris), map size (Default, Large or
+  Massive), the **country** (USA, Australia, Japan, France,
   Mexico, Switzerland, Russia, China, Sweden, Norway or Canada), how many of
-  the residents are out and about (All by default), zombies at the start, and how many reinforcements can
+  the residents are out and about (All by default) and how many reinforcements can
   be called in (Off, Low, Medium or High, each spelled out: waves of police backup, army squads, tanks
   and helicopter sorties). Police and soldiers on duty are set by the size of the city (about one officer
   per 80 residents plus two per station; a garrison at the base if the map has one). Each map decides its
@@ -359,6 +360,13 @@ show their damage in stages: shot-out windows, broken-in doors, soot after a fir
 Reinforcements are bigger, carry spare ammo and come in from outside the city along the highway, marked on the
 map, the minimap and the edge of the screen. Large is the smallest map size; a few maps and countries were
 taken off the New Game screen (old saves and codes still load).
+
+**Real cities (10.18):** Los Angeles, Portland, Seattle, New York, Sydney, Tokyo and Paris, premade at the
+biggest size from their real geography: coasts, rivers, bays, lakes, hills, woods and parks where they are,
+real neighbourhoods and street names, the famous bridges, and landmarks such as the Hollywood Sign, the Space
+Needle, the Empire State Building, the Statue of Liberty, the Opera House and Harbour Bridge, Tokyo Tower and
+the Skytree, and the Eiffel Tower. Games start with hikers out on the trails; people get clear of streets the
+dead have taken; dirt lanes stay dirt; there are no animals; the zombie count is gone from New Game.
 
 **Countryside:** Villages, small towns and every Massive map are surrounded by open country:
 winding dirt lanes out to the edge of the map, farms and lonely cabins along them, woods, and

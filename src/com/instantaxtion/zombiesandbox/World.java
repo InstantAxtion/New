@@ -654,7 +654,59 @@ final class World {
                 spawn(Entity.ZOMBIE, p[0] + rnd.nextFloat() * 30 - 15, p[1] + rnd.nextFloat() * 30 - 15);
             left -= group;
         }
+        startHikers();
         recount();
+    }
+
+    /**
+     * The game opens with people already out on the trails (since 10.18): spread along them, some on the
+     * way out, some on the way back, rather than all setting off from home at once.
+     */
+    private void startHikers() {
+        if (city.hikes.isEmpty()) return;
+        int want = Math.min(48, city.hikes.size() * 3 + 4);
+        ArrayList<Entity> pool = new ArrayList<Entity>();
+        for (int i = 0, n = entities.size(); i < n; i++) {
+            Entity e = entities.get(i);
+            if (e.dead || e.type != Entity.CIVILIAN || e.leader != null || e.rig != null || e.home == null || e.aloft
+                    || e.job == Entity.J_LOOKOUT || e.job == Entity.J_RELIEF) continue;
+            pool.add(e);
+        }
+        java.util.Collections.shuffle(pool, rnd);
+        int made = 0;
+        for (int i = 0; i < pool.size() && made < want; i++) {
+            Entity e = pool.get(i);
+            float[] h = city.hikes.get(rnd.nextInt(city.hikes.size()));
+            int n = h.length / 2;
+            if (n < 2) continue;
+            int k = rnd.nextInt(n);
+            float[] p = city.findWalkable(h[k * 2], h[k * 2 + 1]);
+            if (p == null || Math.hypot(p[0] - h[k * 2], p[1] - h[k * 2 + 1]) > 20) continue;
+            e.job = Entity.J_HIKER;
+            e.hike = h;
+            e.hikeIdx = k;
+            e.hikeDir = rnd.nextBoolean() ? 1 : -1;
+            e.jobStep = 1;
+            e.jobTimer = 0;
+            e.x = p[0];
+            e.y = p[1];
+            e.markX = -1;
+            made++;
+            // (Often with a friend or two.)
+            for (int f = 0, mates = rnd.nextFloat() < 0.45f ? 1 + rnd.nextInt(2) : 0; f < mates && i + 1 < pool.size() && made < want; f++) {
+                Entity o = pool.get(++i);
+                o.job = Entity.J_HIKER;
+                o.hike = h;
+                o.hikeIdx = k;
+                o.hikeDir = e.hikeDir;
+                o.jobStep = 1;
+                o.jobTimer = 0;
+                o.x = p[0] + rnd.nextFloat() * 8 - 4;
+                o.y = p[1] + rnd.nextFloat() * 8 - 4;
+                o.markX = -1;
+                made++;
+            }
+        }
     }
 
     private Entity follower(Entity leader, int type) {
@@ -736,6 +788,9 @@ final class World {
 
     /** Flocks of pigeons in parks and plazas. */
     void spawnBirds() {
+        // (No animals since 10.18.)
+        birds.clear();
+        if (birds.isEmpty()) return;
         int flocks = Math.min(10, city.openAreas.size() + 3);
         for (int f = 0; f < flocks; f++) {
             float[] c;
@@ -1008,6 +1063,9 @@ final class World {
     // ------------------------------------------------------------------ creation
 
     Entity spawn(int type, float x, float y) {
+        // (No animals since 10.18: no dogs, and the dead that were dogs come as runners instead.)
+        if (type == Entity.DOG) return null;
+        if (type == Entity.ZOMBIE_DOG) type = Entity.RUNNER;
         if (entities.size() >= maxEntities) return null;
         float[] p = city.findWalkable(x, y);
         if (p == null) return null;
@@ -1223,7 +1281,7 @@ final class World {
                 e.agency = -role;
                 e.body = role == -1 || city.country.ruralShirt == 0 ? city.country.hpShirt : city.country.ruralShirt;
             }
-        } else if (role == Entity.ROLE_K9) {
+        } else if (role == Entity.ROLE_K9 && !NO_ANIMALS) {
             e.role = Entity.ROLE_K9;
             Entity dog = spawn(Entity.DOG, x + 6, y + 4);
             if (dog != null) {
@@ -1394,6 +1452,13 @@ final class World {
     /** Recomputes counts and paths after a save has been loaded. */
     void afterLoad() {
         fieldTimer = 0;
+        // (Games saved before 10.18 may have dogs in them: there are no animals now.)
+        for (Entity e : entities)
+            if (e.type == Entity.DOG || e.type == Entity.ZOMBIE_DOG) {
+                e.dead = true;
+                e.removed = true;
+            }
+        for (Entity e : entities) if (e.role == Entity.ROLE_K9 && e.type == Entity.COP) e.role = 0;
         findWilds();
         launchBoats();
         spawnBirds();
@@ -1550,6 +1615,7 @@ final class World {
         updateWildlife(dt);
         updateTowers(dt);
         updateCordon(dt);
+        updateDanger(dt);
         updateGrenades(dt);
         cleanup();
         updateCorpses(dt);
@@ -2351,8 +2417,13 @@ final class World {
     final ArrayList<Animal> animals = new ArrayList<Animal>();
     private float wildlifeSaidCd;
 
+    /** No animals since 10.18: no dogs (so no K9 handlers either), birds or wildlife. */
+    static final boolean NO_ANIMALS = true;
+
     void spawnWildlife() {
         animals.clear();
+        // (No animals since 10.18.)
+        if (animals.isEmpty()) return;
         if (city.settlements.isEmpty() && city.townX0 <= 0) return;
         int herds = city.w * city.h / 2600;
         for (int h = 0; h < herds; h++) {
@@ -3340,6 +3411,7 @@ final class World {
             shelterLife(e, e.zone, dt);
             return;
         }
+        if (e.leader == null && evacuate(e, dt)) return;
         if (followLeader(e)) return;
         if (patrol(e)) return;
         // Out of sight isn't out of mind: keep going until well clear of where it was last seen.
@@ -3416,7 +3488,9 @@ final class World {
         e.errand = null;
         if (home != null && home.occupants.size() < home.capacity && home.barricade >= 40 && !home.collapsed
                 && (home.doorX - e.x) * (home.doorX - e.x) + (home.doorY - e.y) * (home.doorY - e.y) < 700 * 700
-                && countZombiesNear(home.doorX, home.doorY, 50) == 0 && !backTowardsIt(e, home.doorX, home.doorY)) {
+                && countZombiesNear(home.doorX, home.doorY, 50) == 0 && !backTowardsIt(e, home.doorX, home.doorY)
+                // (Not back home into ground the dead have taken.)
+                && dangerDistAt(home.doorX, home.doorY) > 1) {
             e.task = Dispatch.T_HIDE;
             e.building = home;
             return false;
@@ -9610,6 +9684,131 @@ final class World {
         if (e.hike == null && !pickHike(e)) return false;
         if (followHike(e, e.speed * 0.8f, dt)) return true;
         e.hike = null;
+        return true;
+    }
+
+    // ------------------------------------------------------------------ getting out (10.18)
+
+    /** The map in cells of DANGER_CELL tiles: how many of the dead are in each, and how far each is from one that has them. */
+    static final int DANGER_CELL = 20;
+    private float[] danger;
+    private int[] dangerDist;
+    private int dgw, dgh;
+    private float dangerTick;
+
+    private void updateDanger(float dt) {
+        dangerTick -= dt;
+        if (dangerTick > 0) return;
+        dangerTick = 2;
+        if (danger == null) {
+            dgw = (city.w + DANGER_CELL - 1) / DANGER_CELL;
+            dgh = (city.h + DANGER_CELL - 1) / DANGER_CELL;
+            danger = new float[dgw * dgh];
+            dangerDist = new int[dgw * dgh];
+        }
+        java.util.Arrays.fill(danger, 0);
+        if (alert < 1) return;
+        float cs = DANGER_CELL * City.T;
+        for (int i = 0, n = entities.size(); i < n; i++) {
+            Entity z = entities.get(i);
+            if (z.dead || !z.isZombie()) continue;
+            int cx = Math.min(dgw - 1, Math.max(0, (int) (z.x / cs))), cy = Math.min(dgh - 1, Math.max(0, (int) (z.y / cs)));
+            danger[cy * dgw + cx] += 1;
+        }
+        // A building with the dead shut inside counts too, once anyone knows.
+        for (int i = 0, n = city.buildings.size(); i < n; i++) {
+            City.Building b = city.buildings.get(i);
+            if (b.lurkers <= 0 || !b.infestKnown) continue;
+            int cx = Math.min(dgw - 1, (int) (b.doorX / cs)), cy = Math.min(dgh - 1, (int) (b.doorY / cs));
+            danger[cy * dgw + cx] += b.lurkers * 0.5f;
+        }
+        // How many cells from the nearest bad one (a cell with 3 or more).
+        int[] q = new int[dgw * dgh];
+        int head = 0, tail = 0;
+        for (int c = 0; c < dgw * dgh; c++) {
+            if (danger[c] >= 3) {
+                dangerDist[c] = 0;
+                q[tail++] = c;
+            } else dangerDist[c] = 999;
+        }
+        while (head < tail) {
+            int c = q[head++], x = c % dgw, y = c / dgw;
+            for (int k = 0; k < 4; k++) {
+                int nx = x + (k == 0 ? 1 : k == 1 ? -1 : 0), ny = y + (k == 2 ? 1 : k == 3 ? -1 : 0);
+                if (nx < 0 || ny < 0 || nx >= dgw || ny >= dgh) continue;
+                int nc = ny * dgw + nx;
+                if (dangerDist[nc] <= dangerDist[c] + 1) continue;
+                dangerDist[nc] = dangerDist[c] + 1;
+                q[tail++] = nc;
+            }
+        }
+    }
+
+    /** How many cells this spot is from ground the dead hold (0: in it; 999: nowhere near). */
+    int dangerDistAt(float x, float y) {
+        if (danger == null || alert < 1) return 999;
+        float cs = DANGER_CELL * City.T;
+        int cx = Math.min(dgw - 1, Math.max(0, (int) (x / cs))), cy = Math.min(dgh - 1, Math.max(0, (int) (y / cs)));
+        return dangerDist[cy * dgw + cx];
+    }
+
+    /**
+     * Nobody carries on with their day in the middle of it: someone out on the streets where the dead have
+     * taken over (or next door to it) gets out, on foot, to the nearest part of town that's still quiet, and
+     * keeps clear of it for a while. True while they're on their way (or waiting it out).
+     */
+    private boolean evacuate(Entity e, float dt) {
+        if (alert < 1 || danger == null || e.fleeTimer > 0) return false;
+        if (e.task != Dispatch.T_NONE && e.task != Dispatch.T_EVACUATE) return false;
+        int here = dangerDistAt(e.x, e.y);
+        if (e.task == Dispatch.T_EVACUATE) {
+            float d = (float) Math.hypot(e.postX - e.x, e.postY - e.y);
+            int there = dangerDistAt(e.postX, e.postY);
+            if (there <= 1) {
+                // The dead got there first: somewhere else.
+                e.task = Dispatch.T_NONE;
+            } else if (d > 30) {
+                walkToSpot(e, e.postX, e.postY, e.fear > 0 ? e.runSpeed * 0.85f : e.speed * 1.6f);
+                return true;
+            } else {
+                // Out: wait it out here a while before going back to anything.
+                e.evacTime -= dt;
+                if (e.evacTime <= 0) {
+                    e.task = Dispatch.T_NONE;
+                    return false;
+                }
+                standAt(e, e.postX + (float) Math.sin(e.nameSeed + time * 0.1f) * 12, e.postY + (float) Math.cos(e.nameSeed * 1.3f + time * 0.1f) * 12, 0.4f);
+                return true;
+            }
+        }
+        if (here > 1) return false;
+        // The quiet cell that's furthest from the trouble for the shortest walk.
+        float cs = DANGER_CELL * City.T;
+        int ex = (int) (e.x / cs), ey = (int) (e.y / cs);
+        int best = -1;
+        float bs = -Float.MAX_VALUE;
+        for (int y = Math.max(0, ey - 8); y <= Math.min(dgh - 1, ey + 8); y++)
+            for (int x = Math.max(0, ex - 8); x <= Math.min(dgw - 1, ex + 8); x++) {
+                int c = y * dgw + x;
+                if (dangerDist[c] < 3) continue;
+                float score = Math.min(dangerDist[c], 6) * 3 - (float) Math.hypot(x - ex, y - ey);
+                if (score > bs) {
+                    bs = score;
+                    best = c;
+                }
+            }
+        if (best < 0) return false;
+        float[] p = city.findWalkable(((best % dgw) + 0.5f) * cs + (rnd.nextFloat() - 0.5f) * cs * 0.5f,
+                ((best / dgw) + 0.5f) * cs + (rnd.nextFloat() - 0.5f) * cs * 0.5f);
+        if (p == null) return false;
+        e.task = Dispatch.T_EVACUATE;
+        e.postX = p[0];
+        e.postY = p[1];
+        e.evacTime = 60 + rnd.nextFloat() * 60;
+        e.paused = false;
+        if (rnd.nextFloat() < 0.04f) dispatch.say(Dispatch.WHO_INFO, e, "They're all over " + city.placeName(e.x, e.y).split(" & ")[0]
+                + ". I'm getting out of here.", e.x, e.y);
+        walkToSpot(e, p[0], p[1], e.speed * 1.6f);
         return true;
     }
 

@@ -122,6 +122,98 @@ final class Terrain {
         return e;
     }
 
+    /**
+     * A real city's lie of the land (since 10.18): gentle ground in town, its real hills where they are, the
+     * shores sloping to the water; and in each of its woods and big parks a trail from the nearest street up
+     * to the high point (the lookout), so people can be out hiking.
+     */
+    float[] buildReal(RealCities.Spec s, byte[] area) {
+        int[] waterDist = distanceToWater();
+        for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++) {
+                float fx = (x + 0.5f) / w, fy = (y + 0.5f) / h;
+                float v = 4 * land.hills * (fbm(x / 52f, y / 52f, 0) * 0.8f + fbm(x / 17f + 100, y / 17f + 100, 10) * 0.2f);
+                for (float[] hl : s.hills) {
+                    float dx = (fx - hl[0]) / hl[2], dy = (fy - hl[1]) / hl[2];
+                    float d2 = dx * dx + dy * dy;
+                    if (d2 < 4) v += hl[3] * (float) Math.exp(-d2 * 1.6f) * (0.8f + 0.4f * fbm(x / 23f + 7, y / 23f + 7, 20));
+                }
+                int i = y * w + x;
+                if (area[i] > 0 && s.areas.get(area[i] - 1).kind == 1) v += 10 * fbm(x / 14f + 50, y / 14f + 50, 30);
+                e[i] = v * smooth(waterDist[i] / 9f);
+            }
+        // Trails: from the street nearest each wood (or big park) up to its high point.
+        int[] cost = new int[w * h];
+        for (int a = 0; a < s.areas.size(); a++) {
+            RealCities.Area ar = s.areas.get(a);
+            if (ar.kind == 2) continue;
+            int top = -1, cells = 0;
+            long sx = 0, sy = 0;
+            for (int i = 0; i < w * h; i++) {
+                if (area[i] != a + 1 || (t[i] != City.GRASS && t[i] != City.TREE && t[i] != City.PLAZA)) continue;
+                cells++;
+                sx += i % w;
+                sy += i / w;
+                if (top < 0 || e[i] > e[top]) top = i;
+            }
+            if (top < 0 || cells < (ar.kind == 1 ? 150 : 500)) continue;
+            float cx = sx / (float) cells, cy = sy / (float) cells;
+            // The trailhead: the street tile nearest the middle of it.
+            int head = -1;
+            float hd = Float.MAX_VALUE;
+            for (int i = 0; i < w * h; i++) {
+                if (t[i] != City.ROAD || (c.bridge != null && c.bridge[i])) continue;
+                float d = (float) Math.hypot(i % w - cx, i / w - cy);
+                if (d < hd) {
+                    hd = d;
+                    head = i;
+                }
+            }
+            if (head < 0 || hd > 160) continue;
+            // (Starting from the verge beside the street.)
+            int start = -1;
+            for (int[] d : new int[][]{{1, 0}, {-1, 0}, {0, 1}, {0, -1}}) {
+                int x = head % w + d[0] * 2, y = head / w + d[1] * 2;
+                if (x < 1 || y < 1 || x >= w - 1 || y >= h - 1) continue;
+                int j = y * w + x;
+                if (area[j] == a + 1 && (t[j] == City.GRASS || t[j] == City.TREE || t[j] == City.PLAZA)) start = j;
+            }
+            if (start < 0) start = head;
+            float limit = (float) Math.hypot(top % w - start % w, top / w - start / w) + 40;
+            int[] from = trailSearch(new int[]{start}, (start % w + top % w) / 2f, (start / w + top / w) / 2f, limit, cost);
+            layTrail(top, from, cost, 0);
+            // A second, on round to the far side (if it's a big wood).
+            if (ar.kind == 1 && cells > 2500) {
+                int far = -1;
+                float fd = 0;
+                for (int i = 0; i < w * h; i++) {
+                    if (area[i] != a + 1 || t[i] != City.GRASS) continue;
+                    float d = (float) Math.hypot(i % w - top % w, i / w - top / w);
+                    if (d > fd && d < 120) {
+                        fd = d;
+                        far = i;
+                    }
+                }
+                if (far >= 0) {
+                    from = trailSearch(new int[]{top}, (far % w + top % w) / 2f, (far / w + top / w) / 2f, fd + 30, cost);
+                    layTrail(far, from, cost, 0);
+                }
+            }
+            c.addNatureDecor(City.D_LOOKOUT, (top % w) * City.T - 6, (top / w) * City.T - 6, (top % w) * City.T + 22, (top / w) * City.T + 22, 0);
+            if (c.trailheadX <= 0) {
+                c.trailheadX = (start % w + 0.5f) * City.T;
+                c.trailheadY = (start / w + 0.5f) * City.T;
+            }
+        }
+        countryTrees();
+        // (Evergreens in the woods: thick in the Pacific Northwest.)
+        float pines = s.name.equals("Portland") || s.name.equals("Seattle") ? 0.75f : land.pineShare;
+        for (int i = 0; i < w * h; i++)
+            if (t[i] == City.TREE && area[i] > 0 && s.areas.get(area[i] - 1).kind == 1 && rnd.nextFloat() < pines)
+                c.setTreeKind(i, Country.TK_PINE);
+        return e;
+    }
+
     /** Distance (in tiles, up to 40) from anything that isn't open grass or trees. */
     private void computeWild() {
         wild = new int[w * h];

@@ -8,7 +8,9 @@ import java.util.Random;
  */
 final class CityConfig implements OptionSet {
     static final String[] PRESETS = {"Classic", "Downtown", "Suburbs", "Industrial", "Parkland", "Old Town",
-            "Small Town", "Campus", "Metropolis", "Village", "Seaside", "River City", "Lakeside", "Harbour", "Islands"};
+            "Small Town", "Campus", "Metropolis", "Village", "Seaside", "River City", "Lakeside", "Harbour", "Islands",
+            // (Since 10.18: real cities, premade, always the biggest size. See RealCities.)
+            "Los Angeles", "Portland", "Seattle", "New York", "Sydney", "Tokyo", "Paris"};
     /** One line about each map, shown on the New Game screen. */
     static final String[] PRESET_INFO = {
             "A bit of everything: downtown towers, suburbs, parks, a precinct and an army base.",
@@ -25,7 +27,9 @@ final class CityConfig implements OptionSet {
             "A river runs through the middle of town. Hold the bridges: the dead can't swim.",
             "Homes and parks round a lake in the middle of town, with a jetty, rowing boats and an island.",
             "A working port: quays, docks, cranes, container stacks and ships, with warehouses along the water.",
-            "Three island towns in the sea, joined by bridges, with a causeway to the mainland. Always one size: bigger than Massive.",
+            "Three island towns in the sea, joined by bridges, with a causeway to the mainland. Always one size: between Large and Massive.",
+            RealCities.INFO[0], RealCities.INFO[1], RealCities.INFO[2], RealCities.INFO[3], RealCities.INFO[4],
+            RealCities.INFO[5], RealCities.INFO[6],
     };
 
     static final int STYLE_MIXED = 0, STYLE_OFFICES = 1, STYLE_HOUSES = 2, STYLE_WAREHOUSES = 3;
@@ -36,7 +40,8 @@ final class CityConfig implements OptionSet {
             "Reinforcements", "Country"};
     private static final String[][] VALUES = {
             PRESETS,
-            {"Tiny", "Small", "Medium", "Large", "Massive", "Huge"},
+            // (Since 10.18 the three sizes offered are called Default, Large and Massive.)
+            {"Tiny", "Small", "Medium", "Default", "Large", "Massive"},
             {"None", "Few", "Some", "Most", "All"},
             {"0", "5", "10", "20", "40", "60"},
             {"0", "5", "10", "20", "40"},
@@ -72,6 +77,13 @@ final class CityConfig implements OptionSet {
             {STYLE_HOUSES, 1, 0, 3, 1, 2, 1, 0},      // Lakeside
             {STYLE_MIXED, 1, 1, 1, 2, 0, 1, 1},       // Harbour
             {STYLE_MIXED, 1, 1, 2, 1, 1, 2, 1},       // Islands
+            {STYLE_MIXED, 2, 3, 1, 2, 0, 3, 1},       // Los Angeles
+            {STYLE_MIXED, 1, 2, 2, 2, 0, 3, 1},       // Portland
+            {STYLE_MIXED, 2, 3, 1, 2, 0, 3, 1},       // Seattle
+            {STYLE_OFFICES, 2, 3, 1, 2, 0, 3, 1},     // New York
+            {STYLE_MIXED, 2, 2, 2, 2, 0, 3, 1},       // Sydney
+            {STYLE_OFFICES, 2, 3, 1, 2, 0, 3, 1},     // Tokyo
+            {STYLE_MIXED, 2, 1, 2, 2, 0, 3, 1},       // Paris
     };
 
     // Landmarks per medium map:  churches, schools, fire stations, supermarkets, gas stations, cemeteries,
@@ -92,11 +104,14 @@ final class CityConfig implements OptionSet {
             {1, 1, 1, 1, 1, 1, 15},   // Lakeside
             {1, 1, 1, 1, 2, 0, 20},   // Harbour
             {2, 2, 2, 2, 2, 1, 30},   // Islands
+            {2, 2, 2, 2, 2, 1, 40}, {2, 2, 2, 2, 1, 1, 40}, {2, 2, 2, 2, 1, 1, 40}, {2, 2, 2, 2, 1, 1, 55},
+            {2, 2, 2, 2, 1, 1, 40}, {2, 2, 2, 2, 1, 1, 50}, {3, 2, 2, 2, 1, 1, 55},
     };
     // Share of office lots that become apartment blocks, parking garages and pharmacies (percent).
     private static final int[][] BUILDING_MIX = {
             {15, 6, 5}, {15, 15, 5}, {20, 0, 6}, {5, 8, 2}, {15, 3, 6}, {10, 0, 8}, {10, 2, 8}, {20, 5, 6},
             {25, 15, 4}, {0, 0, 10}, {25, 3, 6}, {20, 8, 5}, {15, 2, 6}, {10, 6, 3}, {20, 8, 5},
+            {20, 12, 5}, {20, 6, 5}, {25, 10, 5}, {35, 12, 4}, {25, 8, 5}, {35, 12, 5}, {35, 4, 6},
     };
     // Which kinds of park each map likes: park, playground, sports field, courts, garden, skatepark.
     private static final int[][] PARK_MIX = {
@@ -115,10 +130,14 @@ final class CityConfig implements OptionSet {
             {4, 2, 1, 1, 3, 0},
             {2, 1, 1, 1, 0, 2},
             {3, 2, 1, 2, 2, 1},
+            {3, 2, 1, 2, 1, 2}, {4, 2, 1, 1, 2, 1}, {3, 2, 1, 2, 2, 1}, {3, 2, 1, 3, 1, 1}, {3, 2, 2, 1, 2, 1},
+            {2, 1, 1, 1, 3, 0}, {3, 2, 0, 1, 4, 0},
     };
 
     /** Current index into VALUES for each option. */
-    final int[] v = {0, LARGE, 4, 2, 1, 0, 2, 0};
+    final int[] v = {METROPOLIS, LARGE, 4, 2, 1, 0, 2, 0};
+    /** The map a new game starts on (since Classic went in 10.18). */
+    static final int METROPOLIS = 8;
 
     /**
      * Choices no longer offered on the New Game screen (10.17): five of the maps (Industrial, Parkland, Old
@@ -126,7 +145,9 @@ final class CityConfig implements OptionSet {
      * saves and shared codes that use them still build as they were.
      */
     static boolean retired(int option, int value) {
-        if (option == OPT_PRESET) return value == 3 || value == 4 || value == 5 || value == 6 || value == 13;
+        if (option == OPT_PRESET) return value == 0 || value == 3 || value == 4 || value == 5 || value == 6 || value == 7 || value == 13;
+        // (The number of zombies at the start isn't a choice any more: the game starts quiet.)
+        if (option == OPT_ZOMBIES) return value != 0;
         if (option == OPT_SIZE) return value < LARGE;
         if (option == OPT_COUNTRY) return Country.retired(value);
         return false;
@@ -138,9 +159,10 @@ final class CityConfig implements OptionSet {
      * Which public buildings the city was laid out with: 0 as before 10.4, 1 the government quarter (10.4),
      * 2 and the National Guard armory (10.5), 3 the bigger maps of 10.10 with hills, mountains, lakes, streams
      * and nature parks out in the country, 4 the wilds of 10.14 (streams you can wade, trails that cross the
-     * lanes, a ranger station and fire lookout towers). Saved games rebuild with what they had.
+     * lanes, a ranger station and fire lookout towers), 5 the lanes of 10.18 (no stretch of tarmac in the
+     * middle of a dirt lane) and the real cities. Saved games rebuild with what they had.
      */
-    int civic = 4;
+    int civic = 5;
 
     /** Hills, mountains, streams, lakes, parks and campsites (cities built since 10.10). */
     boolean nature() { return civic >= 3; }
@@ -148,21 +170,38 @@ final class CityConfig implements OptionSet {
     /** Fords, trails that cross the lanes and the railway, the ranger station and fire towers (since 10.14). */
     boolean wilds() { return civic >= 4; }
 
+    /** Country lanes that stay dirt all the way (since 10.18). */
+    boolean dirtLanes() { return civic >= 5; }
+
     int preset() {
         return v[OPT_PRESET];
     }
 
     /** Water on the map: none, the sea along one side (a beach or a port), a river, or a lake. */
-    static final int W_NONE = 0, W_SEA = 1, W_RIVER = 2, W_LAKE = 3, W_HARBOUR = 4, W_ISLANDS = 5;
+    static final int W_NONE = 0, W_SEA = 1, W_RIVER = 2, W_LAKE = 3, W_HARBOUR = 4, W_ISLANDS = 5, W_REAL = 6;
     /** The Islands map, and its one size (tiles across: a bit bigger than Massive). */
     static final int ISLANDS = 14, ISLANDS_TILES = 640;
 
     /** Islands only comes in one size: it counts as Massive for everything that depends on size. */
     void normalize() {
         if (v[OPT_PRESET] == ISLANDS) v[OPT_SIZE] = MASSIVE;
+        // A real city is always the same city: the biggest size, in its own country.
+        RealCities.Spec real = RealCities.get(v[OPT_PRESET]);
+        if (real != null) {
+            v[OPT_SIZE] = HUGE;
+            v[OPT_COUNTRY] = real.country;
+            seed = real.seed;
+            edits.clear();
+        }
+    }
+
+    /** The real city this is (null for a generated one). */
+    RealCities.Spec real() {
+        return civic >= 5 ? RealCities.get(v[OPT_PRESET]) : null;
     }
 
     int water() {
+        if (RealCities.isReal(v[OPT_PRESET])) return W_REAL;
         switch (v[OPT_PRESET]) {
             case 10: return W_SEA;
             case 11: return W_RIVER;
@@ -211,7 +250,7 @@ final class CityConfig implements OptionSet {
     }
 
     /** The character for each map in a city code. */
-    private static final String CODE_MAPS = "123456789ABCDEF";
+    private static final String CODE_MAPS = "123456789ABCDEFGHIJKLM";
 
     /** Reads a city code. Returns false (changing nothing) if it isn't one. */
     boolean applyCode(String text) {
@@ -265,6 +304,8 @@ final class CityConfig implements OptionSet {
     void newSeed(Random r) {
         edits.clear();
         seed = r.nextInt(1000000);
+        // (A real city stays the same.)
+        normalize();
     }
 
     int tiles() {
@@ -372,7 +413,7 @@ final class CityConfig implements OptionSet {
 
     // Which maps have a railway line (with a station and passing trains).
     // Which maps have a railway line: 0 never, 1 about half the time (it depends on the city), 2 always.
-    private static final int[] RAIL = {1, 0, 0, 2, 0, 0, 1, 0, 2, 0, 0, 0, 0, 0, 0};
+    private static final int[] RAIL = {1, 0, 0, 2, 0, 0, 1, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
     boolean hasRail() {
         int r = RAIL[v[OPT_PRESET]];
@@ -397,6 +438,8 @@ final class CityConfig implements OptionSet {
             {1, 2, 1, 6, 0, 1, 4, 6},   // Lakeside
             {2, 3, 1, 2, 5, 0, 0, 1},   // Harbour
             {3, 4, 2, 4, 1, 1, 2, 0},   // Islands
+            {3, 3, 2, 3, 1, 1, 1, 0}, {3, 3, 2, 3, 1, 1, 1, 0}, {3, 3, 2, 3, 1, 1, 1, 0}, {3, 3, 2, 3, 1, 1, 1, 0},
+            {3, 3, 2, 3, 1, 1, 1, 0}, {3, 3, 2, 3, 1, 1, 1, 0}, {3, 3, 2, 3, 1, 1, 1, 0},
     };
 
     /** How likely each kind of district is on this map. */
@@ -413,8 +456,9 @@ final class CityConfig implements OptionSet {
 
     void randomize(Random r) {
         for (int i = 0; i < v.length; i++) {
+            // (A random city is a made-up one: not one of the real cities.)
             do v[i] = r.nextInt(VALUES[i].length);
-            while (retired(i, v[i]));
+            while (retired(i, v[i]) || (i == OPT_PRESET && RealCities.isReal(v[i])));
         }
         v[OPT_SIZE] = LARGE;
         normalize();

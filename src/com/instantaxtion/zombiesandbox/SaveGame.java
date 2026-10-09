@@ -17,7 +17,7 @@ import java.util.ArrayList;
  * damaged or collapsed buildings.
  */
 final class SaveGame {
-    private static final int VERSION = 23;
+    private static final int VERSION = 24;
 
     private SaveGame() {
     }
@@ -372,7 +372,7 @@ final class SaveGame {
             cfg.normalize();
             if (version >= 15) cfg.setEdits(in.readUTF());
             // (Cities saved before 10.4 were built without their government quarter.)
-            cfg.civic = version >= 23 ? 4 : version >= 22 ? 3 : version >= 20 ? 2 : version >= 19 ? 1 : 0;
+            cfg.civic = version >= 24 ? 5 : version >= 23 ? 4 : version >= 22 ? 3 : version >= 20 ? 2 : version >= 19 ? 1 : 0;
             // (Version 20 and later all build the same city.)
             World w = new World(cfg);
 

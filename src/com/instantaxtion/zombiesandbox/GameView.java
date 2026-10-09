@@ -36,15 +36,15 @@ final class GameView extends View implements Menu.Host {
             "City alarm", "Infect"};
     private static final int TOOL_COP = 3;
     // (Negative roles are the other agencies: World.spawnCop.)
-    private static final int[] COP_ROLES = {0, Entity.ROLE_RIOT, Entity.ROLE_K9, Entity.ROLE_SWAT, Entity.ROLE_MARKSMAN,
+    private static final int[] COP_ROLES = {0, Entity.ROLE_RIOT, Entity.ROLE_SWAT, Entity.ROLE_MARKSMAN,
             -1, -2, -3, Entity.ROLE_SAR};
-    private static final String[] COP_NAMES = {"Cop", "Riot cop", "K9 unit", "SWAT", "Marksman", "Highway patrol", "Sheriff's deputy",
+    private static final String[] COP_NAMES = {"Cop", "Riot cop", "SWAT", "Marksman", "Highway patrol", "Sheriff's deputy",
             "Park ranger", "Search & rescue"};
     private static final String[] CLEAR_NAMES = {"Everyone", "Zombies only", "Bodies & blood", "Wrecks & fires",
             "Barricades"};
     private static final int[] ZOMBIE_VARIANTS = {Entity.ZOMBIE, Entity.RUNNER, Entity.BRUTE, Entity.CRAWLER,
-            Entity.SCREAMER, Entity.ZOMBIE_DOG, Entity.SPITTER, Entity.BLOATER};
-    private static final int[] CIV_VARIANTS = {Entity.CIVILIAN, Entity.MEDIC, Entity.FIREFIGHTER, Entity.DOG, Entity.RAIDER};
+            Entity.SCREAMER, Entity.SPITTER, Entity.BLOATER};
+    private static final int[] CIV_VARIANTS = {Entity.CIVILIAN, Entity.MEDIC, Entity.FIREFIGHTER, Entity.RAIDER};
     private static final int[] MIL_ROLES = {Entity.ROLE_RIFLE, Entity.ROLE_COMMANDER, Entity.ROLE_SNIPER, Entity.ROLE_GUNNER,
             Entity.ROLE_GUARD, Entity.ROLE_CORPSMAN, Entity.ROLE_GRENADIER};
     private static final String[] MIL_NAMES = {"Soldier", "Commander", "Sniper", "Machine gunner", "National Guard",
@@ -52,9 +52,9 @@ final class GameView extends View implements Menu.Host {
     // One line about each option in the pickers.
     private static final String[] CIV_INFO = {"Goes about their day, runs and hides from zombies",
             "Heals the hurt (bites can't be treated)", "Puts out fires, gives first aid, fights with an axe",
-            "Follows its owner and fights zombies", "Armed gang member: robs, loots and shoots"};
+            "Armed gang member: robs, loots and shoots"};
     private static final String[] COP_INFO = {"Pistol, answers 911 calls", "Shield blocks bites from the front",
-            "Officer with a police dog", "Body armour and a carbine; sent to the worst trouble",
+            "Body armour and a carbine; sent to the worst trouble",
             "Scoped rifle: picks off the dead from a long way off", "State trooper: works the highways, backs up the town",
             "County deputy: patrols the back roads", "Patrols the trails and dirt roads, guards the ranger station",
             "Rescue specialist: finds the cut-off and gets them out"};
@@ -62,7 +62,7 @@ final class GameView extends View implements Menu.Host {
             "Long-range scoped rifle", "Belt-fed machine gun", "Guardsmen who protect civilians and safe zones",
             "Carbine and a medic's bag: patches up the wounded", "Grenade launcher for packs of the dead"};
     private static final String[] ZOMBIE_INFO = {"Slow, relentless shambler", "Fast and fragile", "Huge, knocks people flying",
-            "Low and hard to hit", "Its shriek calls the horde", "Fast and vicious", "Keeps its distance and spits acid",
+            "Low and hard to hit", "Its shriek calls the horde", "Keeps its distance and spits acid",
             "Bursts into infectious gas"};
     private static final String[] PLACE_INFO = {"A car in traffic", "A police car with two officers", "Holds the area for a few minutes",
             "Heads for the nearest fire", "Drag to build a wall zombies must batter down", "Ammo for anyone passing",
@@ -141,8 +141,8 @@ final class GameView extends View implements Menu.Host {
     private String[] copNames() {
         String[] n = COP_NAMES.clone();
         Country land = world.city.country;
-        if (land.hpName != null) n[5] = land.hpName;
-        n[6] = land.ruralName != null ? land.ruralName : "Rural police";
+        if (land.hpName != null) n[4] = land.hpName;
+        n[5] = land.ruralName != null ? land.ruralName : "Rural police";
         return n;
     }
     private int zombieVariant, civVariant, milVariant, placeVariant, eventVariant, copVariant, buildVariant;
@@ -1996,6 +1996,7 @@ final class GameView extends View implements Menu.Host {
                 if (b.flash > 0) drawGunGlow(c, b, b.x0, b.y0, b.x1, b.y1);
                 if (see > 0) drawInterior(c, b, see);
             }
+            drawStructures(c, vx0, vy0, vx1, vy1, false, cx, cy, camH);
             return;
         }
 
@@ -2054,6 +2055,352 @@ final class GameView extends View implements Menu.Host {
             drawRoofLabels(c, b, cx, cy, s, roofA);
         }
         wallFade = 1;
+        drawStructures(c, vx0, vy0, vx1, vy1, true, cx, cy, camH);
+    }
+
+    // ------------------------------------------------------------------ real landmarks standing up (10.18)
+
+    private float stCx, stCy, stCamH;
+    private boolean st3d;
+    private final android.graphics.Path stPath = new android.graphics.Path();
+
+    /** How much a point this high is pushed out from the middle of the view (1 on the ground, or bird's-eye). */
+    private float lift(float z) {
+        if (!st3d) return 1;
+        return stCamH / (stCamH - Math.min(z, stCamH * 0.85f));
+    }
+
+    private float px(float x, float z) {
+        return stCx + (x - stCx) * lift(z);
+    }
+
+    private float py(float y, float z) {
+        return stCy + (y - stCy) * lift(z);
+    }
+
+    private void stLine(Canvas c, float x0, float y0, float z0, float x1, float y1, float z1, int col, float width) {
+        stroke.setColor(col);
+        stroke.setStrokeWidth(width);
+        c.drawLine(px(x0, z0), py(y0, z0), px(x1, z1), py(y1, z1), stroke);
+    }
+
+    /** A quad standing up: from (x0, y0)-(x1, y1) at height z0 to the same at z1. */
+    private void stWall(Canvas c, float x0, float y0, float x1, float y1, float z0, float z1, int col) {
+        stPath.reset();
+        stPath.moveTo(px(x0, z0), py(y0, z0));
+        stPath.lineTo(px(x1, z0), py(y1, z0));
+        stPath.lineTo(px(x1, z1), py(y1, z1));
+        stPath.lineTo(px(x0, z1), py(y0, z1));
+        stPath.close();
+        fill.setColor(col);
+        c.drawPath(stPath, fill);
+    }
+
+    /** A real city's towers, statues, signs, wheels and bridge arches, standing up off the map. */
+    private void drawStructures(Canvas c, float vx0, float vy0, float vx1, float vy1, boolean in3d, float cx, float cy, float camH) {
+        java.util.List<float[]> list = world.city.structures;
+        if (list.isEmpty()) return;
+        st3d = in3d;
+        stCx = cx;
+        stCy = cy;
+        stCamH = camH;
+        for (int i = 0, n = list.size(); i < n; i++) {
+            float[] s = list.get(i);
+            int kind = (int) s[0];
+            float x = s[1], y = s[2], hgt = s[3];
+            float bx0 = Math.min(x, kind >= RealCities.ST_BRIDGE_ARCH ? s[4] : x), bx1 = Math.max(x, kind >= RealCities.ST_BRIDGE_ARCH ? s[4] : x);
+            float by0 = Math.min(y, kind >= RealCities.ST_BRIDGE_ARCH ? s[5] : y), by1 = Math.max(y, kind >= RealCities.ST_BRIDGE_ARCH ? s[5] : y);
+            float m = 120 + (in3d ? hgt * 1.5f : 0);
+            if (bx1 + m < vx0 || bx0 - m > vx1 || by1 + m < vy0 || by0 - m > vy1) continue;
+            drawStructure(c, kind, x, y, hgt, s[4], s[5]);
+        }
+    }
+
+    private void drawStructure(Canvas c, int kind, float x, float y, float h, float x2, float y2) {
+        // A shadow on the ground first.
+        if (kind != RealCities.ST_BRIDGE_ARCH && kind != RealCities.ST_BRIDGE_TOWERS && kind != RealCities.ST_HOLLYWOOD) {
+            fill.setColor(0x30000000);
+            c.drawCircle(x + 6, y + 8, kind == RealCities.ST_EIFFEL ? 70 : kind == RealCities.ST_TOKYO_TOWER ? 50 : 22, fill);
+        }
+        switch (kind) {
+            case RealCities.ST_NEEDLE: {
+                float waist = h * 0.45f, top = h * 0.9f;
+                for (int k = 0; k < 3; k++) {
+                    double a = k * Math.PI * 2 / 3 + 0.4;
+                    stLine(c, x + (float) Math.cos(a) * 20, y + (float) Math.sin(a) * 20, 0, x, y, waist, 0xFFE8E4DC, 5f);
+                }
+                stLine(c, x, y, waist, x, y, top, 0xFFE8E4DC, 5.5f);
+                stLine(c, x, y, top, x, y, h * 1.05f, 0xFFB8BCC0, 1f);
+                float k = lift(top);
+                fill.setColor(0xFF9AA0A6);
+                c.drawCircle(px(x, top), py(y, top), 28 * k, fill);
+                fill.setColor(0xFFF2F0EA);
+                c.drawCircle(px(x, top), py(y, top), 23 * k, fill);
+                fill.setColor(0xFFB8BCC0);
+                c.drawCircle(px(x, top), py(y, top), 15 * k, fill);
+                fill.setColor(0xFFE8783A);
+                c.drawCircle(px(x, top), py(y, top), 7 * k, fill);
+                break;
+            }
+            case RealCities.ST_EIFFEL: case RealCities.ST_TOKYO_TOWER: {
+                boolean tokyo = kind == RealCities.ST_TOKYO_TOWER;
+                float base = tokyo ? 44 : 62;
+                float[] zs = {0, h * 0.2f, h * 0.45f, h * 0.75f, h};
+                float[] rs = {base, base * 0.5f, base * 0.28f, base * 0.12f, 0.5f};
+                for (int t = 0; t < 4; t++) {
+                    int col = tokyo ? (t % 2 == 0 ? 0xFFE8603A : 0xFFF2F2F0) : (t % 2 == 0 ? 0xFF6E5A44 : 0xFF7E6A52);
+                    // Each face a see-through lattice panel, tapering up.
+                    for (int f = 0; f < 4; f++) {
+                        float ax0 = f == 0 || f == 3 ? -1 : 1, ay0 = f < 2 ? -1 : 1, ax1 = f < 2 ? 1 : -1, ay1 = f == 0 || f == 3 ? (f == 0 ? -1 : 1) : (f == 1 ? 1 : 1);
+                        float[][] cs = {{-1, -1, 1, -1}, {1, -1, 1, 1}, {1, 1, -1, 1}, {-1, 1, -1, -1}};
+                        ax0 = cs[f][0];
+                        ay0 = cs[f][1];
+                        ax1 = cs[f][2];
+                        ay1 = cs[f][3];
+                        stPath.reset();
+                        stPath.moveTo(px(x + ax0 * rs[t], zs[t]), py(y + ay0 * rs[t], zs[t]));
+                        stPath.lineTo(px(x + ax1 * rs[t], zs[t]), py(y + ay1 * rs[t], zs[t]));
+                        stPath.lineTo(px(x + ax1 * rs[t + 1], zs[t + 1]), py(y + ay1 * rs[t + 1], zs[t + 1]));
+                        stPath.lineTo(px(x + ax0 * rs[t + 1], zs[t + 1]), py(y + ay0 * rs[t + 1], zs[t + 1]));
+                        stPath.close();
+                        fill.setColor((col & 0x00FFFFFF) | 0xA0000000);
+                        c.drawPath(stPath, fill);
+                    }
+                    for (int sx = -1; sx <= 1; sx += 2)
+                        for (int sy = -1; sy <= 1; sy += 2)
+                            stLine(c, x + sx * rs[t], y + sy * rs[t], zs[t], x + sx * rs[t + 1], y + sy * rs[t + 1], zs[t + 1], col, t == 0 ? 6f : 4f - t * 0.7f);
+                    // The lattice: crossed bracing on each face.
+                    for (int f = 0; f < 4; f++) {
+                        float ax = f < 2 ? -1 : 1, ay = f % 2 == 0 ? -1 : 1;
+                        float bxx = f < 2 ? 1 : -1, byy = ay;
+                        if (f >= 2) {
+                            ax = f == 2 ? -1 : 1;
+                            ay = -1;
+                            bxx = ax;
+                            byy = 1;
+                        }
+                        stLine(c, x + ax * rs[t], y + ay * rs[t], zs[t], x + bxx * rs[t + 1], y + byy * rs[t + 1], zs[t + 1], City.darken(col, 0.85f), 1.3f);
+                        stLine(c, x + bxx * rs[t], y + byy * rs[t], zs[t], x + ax * rs[t + 1], y + ay * rs[t + 1], zs[t + 1], City.darken(col, 0.85f), 1.3f);
+                    }
+                    if (t == 1 || t == 2) {
+                        // The platforms.
+                        float r = rs[t] * 1.15f;
+                        stWall(c, x - r, y - r, x + r, y - r, zs[t], zs[t] + 4, tokyo ? 0xFFF2F2F0 : 0xFF5A4A38);
+                        stWall(c, x - r, y + r, x + r, y + r, zs[t], zs[t] + 4, tokyo ? 0xFFE0E0DE : 0xFF4E4030);
+                    }
+                }
+                if (!tokyo) {
+                    // The great arch between the legs.
+                    for (int sd = 0; sd < 2; sd++) {
+                        float prevX = 0, prevY = 0;
+                        for (int q = 0; q <= 8; q++) {
+                            float t = q / 8f, ax = x - base * 0.8f + base * 1.6f * t, az = h * 0.13f * (float) Math.sin(Math.PI * t);
+                            float ayy = y + (sd == 0 ? -base * 0.8f : base * 0.8f);
+                            float sx = px(ax, az), sy = py(ayy, az);
+                            if (q > 0) {
+                                stroke.setColor(0xFF6E5A44);
+                                stroke.setStrokeWidth(1.6f);
+                                c.drawLine(prevX, prevY, sx, sy, stroke);
+                            }
+                            prevX = sx;
+                            prevY = sy;
+                        }
+                    }
+                }
+                fill.setColor(tokyo ? 0xFFE8603A : 0xFFD8B040);
+                c.drawCircle(px(x, h), py(y, h), 1.6f * lift(h), fill);
+                break;
+            }
+            case RealCities.ST_SKYTREE: {
+                for (int k = 0; k < 3; k++) {
+                    double a = k * Math.PI * 2 / 3 + 0.2;
+                    stLine(c, x + (float) Math.cos(a) * 24, y + (float) Math.sin(a) * 24, 0, x, y, h * 0.3f, 0xFFD8E0E6, 7f);
+                }
+                stLine(c, x, y, h * 0.3f, x, y, h * 0.85f, 0xFFDCE4EA, 6.5f);
+                stLine(c, x, y, h * 0.85f, x, y, h, 0xFFB0B8C0, 1.2f);
+                for (float[] ring : new float[][]{{0.6f, 20}, {0.75f, 14}}) {
+                    float z = h * ring[0], k = lift(z);
+                    fill.setColor(0xFF7A8E9E);
+                    c.drawCircle(px(x, z), py(y, z), ring[1] * k, fill);
+                    fill.setColor(0xFFE8F0F4);
+                    c.drawCircle(px(x, z), py(y, z), ring[1] * 0.7f * k, fill);
+                }
+                break;
+            }
+            case RealCities.ST_SYDNEY_TOWER: {
+                for (int k = 0; k < 6; k++) {
+                    double a = k * Math.PI / 3;
+                    stLine(c, x + (float) Math.cos(a) * 5, y + (float) Math.sin(a) * 5, 0, x, y, h * 0.8f, 0xFFA8B0B6, 0.8f);
+                }
+                stLine(c, x, y, 0, x, y, h * 0.8f, 0xFFB8C0C6, 5f);
+                float z = h * 0.84f, k = lift(z);
+                fill.setColor(0xFFC89A30);
+                c.drawCircle(px(x, z), py(y, z), 22 * k, fill);
+                fill.setColor(0xFFE8C050);
+                c.drawCircle(px(x, z), py(y, z), 15 * k, fill);
+                stLine(c, x, y, z, x, y, h, 0xFFB0B8C0, 1f);
+                break;
+            }
+            case RealCities.ST_LIBERTY: {
+                // The star-shaped fort, the pedestal, and Liberty in green copper with her torch up.
+                stPath.reset();
+                for (int k = 0; k < 22; k++) {
+                    double a = k * Math.PI * 2 / 22;
+                    float r = k % 2 == 0 ? 44 : 28;
+                    float sx = x + (float) Math.cos(a) * r, sy = y + (float) Math.sin(a) * r;
+                    if (k == 0) stPath.moveTo(sx, sy);
+                    else stPath.lineTo(sx, sy);
+                }
+                stPath.close();
+                fill.setColor(0xFFC8BCA0);
+                c.drawPath(stPath, fill);
+                float ped = h * 0.45f;
+                stWall(c, x - 11, y + 11, x + 11, y + 11, 0, ped, 0xFFB8AC90);
+                stWall(c, x - 11, y - 11, x - 11, y + 11, 0, ped, 0xFFC8BCA0);
+                stWall(c, x + 11, y - 11, x + 11, y + 11, 0, ped, 0xFFA89C80);
+                fill.setColor(0xFFD8CCB0);
+                c.drawRect(px(x - 11, ped), py(y - 11, ped), px(x + 11, ped), py(y + 11, ped), fill);
+                stLine(c, x, y, ped, x, y, h * 0.88f, 0xFF5E9E86, 11f);
+                stLine(c, x + 3, y, h * 0.8f, x + 9, y - 3, h, 0xFF5E9E86, 3.4f);
+                fill.setColor(0xFFF2C040);
+                c.drawCircle(px(x + 9, h), py(y - 3, h), 3.6f * lift(h), fill);
+                fill.setColor(0xFF6EAE96);
+                c.drawCircle(px(x, h * 0.88f), py(y, h * 0.88f), 5f * lift(h * 0.88f), fill);
+                break;
+            }
+            case RealCities.ST_HOLLYWOOD: {
+                // White letters standing on the hillside.
+                String sign = "HOLLYWOOD";
+                text.setTextAlign(Paint.Align.CENTER);
+                float size = 54, kk = lift(h);
+                text.setTextSize(size * kk);
+                text.setColor(0x60000000);
+                c.drawText(sign, x + 3, y + 3, text);
+                text.setColor(0xFFF6F6F2);
+                c.drawText(sign, px(x, h), py(y, h), text);
+                break;
+            }
+            case RealCities.ST_ARC: {
+                float hx = 34, hy = 22, top = h;
+                int stone = 0xFFE0D6BE;
+                stWall(c, x - hx, y + hy, x + hx, y + hy, 0, top, City.darken(stone, 0.85f));
+                stWall(c, x - hx, y - hy, x - hx, y + hy, 0, top, City.darken(stone, 0.92f));
+                stWall(c, x + hx, y - hy, x + hx, y + hy, 0, top, City.darken(stone, 0.78f));
+                // The great arch through it.
+                stWall(c, x - hx * 0.4f, y + hy + 0.2f, x + hx * 0.4f, y + hy + 0.2f, 0, top * 0.62f, 0xFF3A3630);
+                fill.setColor(stone);
+                c.drawRect(px(x - hx, top), py(y - hy, top), px(x + hx, top), py(y + hy, top), fill);
+                break;
+            }
+            case RealCities.ST_FERRIS: {
+                float r = h / 2, az = h / 2 + 4;
+                stLine(c, x - 6, y, 0, x, y, az, 0xFF8A9096, 2f);
+                stLine(c, x + 6, y, 0, x, y, az, 0xFF8A9096, 2f);
+                float prevX = 0, prevY = 0;
+                for (int q = 0; q <= 24; q++) {
+                    double a = q * Math.PI * 2 / 24;
+                    float wx = x + (float) Math.cos(a) * r, wz = az + (float) Math.sin(a) * r;
+                    float sx = px(wx, wz), sy = py(y, wz);
+                    if (q > 0) {
+                        stroke.setColor(0xFFE8E8E8);
+                        stroke.setStrokeWidth(1.4f);
+                        c.drawLine(prevX, prevY, sx, sy, stroke);
+                    }
+                    if (q % 3 == 0) {
+                        stroke.setColor(0x80E8E8E8);
+                        stroke.setStrokeWidth(0.5f);
+                        c.drawLine(px(x, az), py(y, az), sx, sy, stroke);
+                        fill.setColor(q % 6 == 0 ? 0xFFE84A3A : 0xFF3A8AE0);
+                        c.drawCircle(sx, sy, 2.2f, fill);
+                    }
+                    prevX = sx;
+                    prevY = sy;
+                }
+                break;
+            }
+            case RealCities.ST_SCREENS: {
+                // Giant screens and signs round the crossing, flickering.
+                int[] cols = {0xFF30D0F0, 0xFFF040A0, 0xFFF0D030, 0xFF60F060, 0xFFF06030};
+                for (int k = 0; k < 6; k++) {
+                    double a = k * Math.PI / 3 + 0.3;
+                    float sx = x + (float) Math.cos(a) * 40, sy = y + (float) Math.sin(a) * 40;
+                    float tx = (float) -Math.sin(a) * 12, ty = (float) Math.cos(a) * 12;
+                    int col = cols[(k + (int) (world.time * 1.5f)) % cols.length];
+                    stWall(c, sx - tx, sy - ty, sx + tx, sy + ty, h * 0.35f, h, 0xFF202428);
+                    stWall(c, sx - tx * 0.9f, sy - ty * 0.9f, sx + tx * 0.9f, sy + ty * 0.9f, h * 0.38f, h * 0.96f, col);
+                }
+                break;
+            }
+            case RealCities.ST_OBELISK: {
+                stWall(c, x - 4, y + 4, x + 4, y + 4, 0, 3, 0xFFC8BCA0);
+                stLine(c, x, y, 0, x, y, h, 0xFFC8B08A, 3.4f);
+                fill.setColor(0xFFE8C050);
+                c.drawCircle(px(x, h), py(y, h), 1.6f * lift(h), fill);
+                break;
+            }
+            case RealCities.ST_BRIDGE_ARCH: case RealCities.ST_BRIDGE_TOWERS: {
+                boolean vertical = Math.abs(x2 - x) < Math.abs(y2 - y);
+                float ox = vertical ? 30 : 0, oy = vertical ? 0 : 30;
+                if (kind == RealCities.ST_BRIDGE_ARCH) {
+                    // The steel arch: two ribs braced together, hangers down to the deck.
+                    for (int q = 0; q <= 20; q++) {
+                        float t = q / 20f, az = h * (float) Math.sin(Math.PI * t);
+                        float ax = x + (x2 - x) * t, ayy = y + (y2 - y) * t;
+                        if (q % 2 == 1) stLine(c, ax - ox, ayy - oy, az, ax + ox, ayy + oy, az, 0xFF3E464E, 4f);
+                    }
+                    for (int sd = -1; sd <= 1; sd += 2) {
+                        float prevX = 0, prevY = 0;
+                        for (int q = 0; q <= 20; q++) {
+                            float t = q / 20f, ax = x + (x2 - x) * t + ox * sd, ayy = y + (y2 - y) * t + oy * sd;
+                            float az = h * (float) Math.sin(Math.PI * t);
+                            float sx = px(ax, az), sy = py(ayy, az);
+                            if (q > 0) {
+                                stroke.setColor(0xFF3E464E);
+                                stroke.setStrokeWidth(10f);
+                                c.drawLine(prevX, prevY, sx, sy, stroke);
+                            }
+                            if (q % 2 == 0 && q > 0 && q < 20) stLine(c, ax, ayy, az, ax, ayy, 0, 0xB05E666E, 1f);
+                            prevX = sx;
+                            prevY = sy;
+                        }
+                    }
+                    // (The granite pylons at each end.)
+                    for (int e = 0; e < 2; e++) {
+                        float ex = e == 0 ? x : x2, ey = e == 0 ? y : y2;
+                        stWall(c, ex - ox - oy * 0.3f, ey - oy - ox * 0.3f, ex + ox + oy * 0.3f, ey + oy + ox * 0.3f, 0, 30, 0xFFB8AC94);
+                    }
+                } else {
+                    // Two towers and the cables slung between them.
+                    float[] ts = {0.18f, 0.82f};
+                    for (float t : ts) {
+                        float tx = x + (x2 - x) * t, ty = y + (y2 - y) * t;
+                        for (int sd = -1; sd <= 1; sd += 2)
+                            stLine(c, tx + ox * sd, ty + oy * sd, 0, tx + ox * sd, ty + oy * sd, h, 0xFF8E8A80, 5f);
+                        stLine(c, tx - ox, ty - oy, h * 0.8f, tx + ox, ty + oy, h * 0.8f, 0xFF8E8A80, 3f);
+                    }
+                    for (int sd = -1; sd <= 1; sd += 2) {
+                        float prevX = 0, prevY = 0;
+                        for (int q = 0; q <= 24; q++) {
+                            float t = q / 24f, ax = x + (x2 - x) * t + ox * sd, ayy = y + (y2 - y) * t + oy * sd;
+                            // Up to the first tower, the long sag between, down from the second.
+                            float az = t < ts[0] ? h * t / ts[0] : t > ts[1] ? h * (1 - t) / (1 - ts[1])
+                                    : h * (0.35f + 0.65f * (float) Math.pow(Math.abs((t - 0.5f) / (ts[1] - 0.5f)), 2));
+                            float sx = px(ax, az), sy = py(ayy, az);
+                            if (q > 0) {
+                                stroke.setColor(0xFF6E7278);
+                                stroke.setStrokeWidth(1.2f);
+                                c.drawLine(prevX, prevY, sx, sy, stroke);
+                            }
+                            prevX = sx;
+                            prevY = sy;
+                        }
+                    }
+                }
+                break;
+            }
+            default:
+                break;
+        }
     }
 
     /**
@@ -3993,7 +4340,7 @@ final class GameView extends View implements Menu.Host {
                 float tw = text.measureText(label);
                 oval.set(sx - tw / 2, sy - text.getTextSize(), sx + tw / 2, sy + 3 * dp);
                 if (!claim(oval)) continue;
-                int col = kind == City.NL_LAKE || kind == City.NL_FALLS ? 0xFFBFE6F2 : kind == City.NL_CAMP ? 0xFFF2DDB0
+                int col = kind == City.NL_LANDMARK ? 0xFFF2D27A : kind == City.NL_LAKE || kind == City.NL_FALLS ? 0xFFBFE6F2 : kind == City.NL_CAMP ? 0xFFF2DDB0
                         : kind == City.NL_PEAK ? 0xFFF2F2EA : 0xFFD8F0C0;
                 text.setColor(alpha(0xFF000000, a * 0.6f));
                 c.drawText(label, sx + 1.5f * dp, sy + 1.5f * dp, text);
@@ -5693,6 +6040,7 @@ final class GameView extends View implements Menu.Host {
             case Dispatch.T_SHELTER: return "Sheltering in a safe zone";
             case Dispatch.T_POST: return "On guard duty";
             case Dispatch.T_CORDON: return "Holding the perimeter";
+            case Dispatch.T_EVACUATE: return "Getting out of the danger zone";
             case Dispatch.T_BORROW: return "Borrowing ammo";
             case Dispatch.T_MOVE: return "Following orders";
             case Dispatch.T_HOLD: return "Holding position";

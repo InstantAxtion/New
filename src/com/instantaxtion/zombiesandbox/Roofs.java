@@ -542,6 +542,513 @@ final class Roofs {
         }
     }
 
+    // ------------------------------------------------------------------ real landmarks (10.18)
+
+    /** A landmark's roof and wall colours (the walls show in 3D). */
+    static int[] landmarkColours(int style) {
+        switch (style) {
+            case RealCities.L_STEPPED: return new int[]{0xFF9A9488, 0xFFB8B0A0};
+            case RealCities.L_CROWN: return new int[]{0xFFC8CCD0, 0xFFB8B4AC};
+            case RealCities.L_OCTAGON: return new int[]{0xFF8AA6BE, 0xFF7E9AB2};
+            case RealCities.L_HELIPAD: return new int[]{0xFF8E949A, 0xFFA8A496};
+            case RealCities.L_SAIL: return new int[]{0xFF7C98B0, 0xFF6E8CA6};
+            case RealCities.L_OBSERVATORY: return new int[]{0xFFE8E4DA, 0xFFE8E2D4};
+            case RealCities.L_SAILS: return new int[]{0xFFF2F0EA, 0xFFD8C8A8};
+            case RealCities.L_PYRAMID: return new int[]{0xFF6A7078, 0xFFD8CCB0};
+            case RealCities.L_MARKET: return new int[]{0xFF5E6268, 0xFFB8A890};
+            case RealCities.L_CATHEDRAL: return new int[]{0xFF4E5560, 0xFFC8BCA0};
+            case RealCities.L_TEMPLE: case RealCities.L_SHRINE: return new int[]{0xFF3A4048, 0xFFB03A2A};
+            case RealCities.L_HALL: return new int[]{0xFFD8D4C8, 0xFFE0DCD0};
+            case RealCities.L_DOME: case RealCities.L_GOLD_DOME: return new int[]{0xFF6A7A78, 0xFFD8D0BC};
+            case RealCities.L_WHITE_DOMES: return new int[]{0xFFF2F0EA, 0xFFEDEAE2};
+            case RealCities.L_PINK: return new int[]{0xFFB08A8A, 0xFFB48C88};
+            case RealCities.L_DARK: return new int[]{0xFF2A2E34, 0xFF30343A};
+            case RealCities.L_LIBRARY: return new int[]{0xFF7AA0B8, 0xFF8AAEC4};
+            case RealCities.L_ARENA: case RealCities.L_DOME_STADIUM: return new int[]{0xFFC8CCD0, 0xFF8A9096};
+            case RealCities.L_CLASSIC: return new int[]{0xFF6E8E7E, 0xFFD8D0BC};
+            case RealCities.L_STATION: return new int[]{0xFF8A9AA4, 0xFFC8BCA0};
+            case RealCities.L_THEATRE: return new int[]{0xFF2E7A4A, 0xFFB03A2A};
+            case RealCities.L_CAMPUS: return new int[]{0xFFEAE6DC, 0xFFE4DCC8};
+            case RealCities.L_CLOCK: return new int[]{0xFF8A4A32, 0xFFB8946C};
+            case RealCities.L_ROUND: return new int[]{0xFF9AA8B4, 0xFFA8B4BE};
+            case RealCities.L_PIPES: return new int[]{0xFFE8E8E8, 0xFF3A6AB0};
+            case RealCities.L_WEDGE: return new int[]{0xFF8A8478, 0xFFD0C4A8};
+            case RealCities.L_SLAB: return new int[]{0xFF8E8A82, 0xFFB8B2A4};
+            case RealCities.L_SPIRAL: return new int[]{0xFFF0EEE8, 0xFFF0EEE8};
+            case RealCities.L_BLOB: return new int[]{0xFFB0507A, 0xFF7A60B0};
+            case RealCities.L_TWIN: return new int[]{0xFF9A9AA0, 0xFFA8A8AE};
+            case RealCities.L_PALACE: return new int[]{0xFF4A5058, 0xFFF0EEE6};
+            case RealCities.L_CUBE_ARCH: return new int[]{0xFFE8E8EA, 0xFFDCDEE2};
+            case RealCities.L_CURVES: return new int[]{0xFFD0D4D8, 0xFFC4C8CC};
+            case RealCities.L_BRICK: return new int[]{0xFF7A4A3A, 0xFFA8503A};
+            case RealCities.L_MANSION: return new int[]{0xFF5A4E46, 0xFFC8B89A};
+            case RealCities.L_SIGN: return new int[]{0xFF5E6268, 0xFFB86A3A};
+            default: return new int[]{0xFF8A8A8A, 0xFFA0A0A0};
+        }
+    }
+
+    private static void glassGrid(Canvas c, Paint p, float x0, float y0, float x1, float y1, int col, float gap) {
+        p.setColor(col);
+        c.drawRect(x0, y0, x1, y1, p);
+        p.setColor(City.darken(col, 0.82f));
+        p.setStrokeWidth(0.5f);
+        for (float x = x0 + gap; x < x1; x += gap) c.drawLine(x, y0, x, y1, p);
+        for (float y = y0 + gap; y < y1; y += gap) c.drawLine(x0, y, x1, y, p);
+        p.setColor(0x30FFFFFF);
+        c.drawRect(x0, y0, (x0 + x1) / 2, y1, p);
+    }
+
+    private static void dome(Canvas c, Paint p, float x, float y, float r, int col, boolean ribs) {
+        p.setColor(0x50000000);
+        c.drawCircle(x + r * 0.15f, y + r * 0.2f, r, p);
+        p.setColor(col);
+        c.drawCircle(x, y, r, p);
+        p.setColor(City.lighten(col, 0.25f));
+        c.drawCircle(x - r * 0.25f, y - r * 0.25f, r * 0.55f, p);
+        if (ribs) {
+            p.setColor(City.darken(col, 0.75f));
+            p.setStrokeWidth(0.5f);
+            for (int k = 0; k < 8; k++) {
+                double a = k * Math.PI / 4;
+                c.drawLine(x, y, x + (float) Math.cos(a) * r, y + (float) Math.sin(a) * r, p);
+            }
+        }
+        p.setColor(City.lighten(col, 0.5f));
+        c.drawCircle(x, y, Math.max(0.8f, r * 0.12f), p);
+    }
+
+    /** The roof of one of a real city's landmarks. False to draw it as an ordinary building. */
+    static boolean drawLandmark(City city, Canvas c, Paint p, int[] b, City.Building own) {
+        float T = City.T;
+        float x0 = b[0] * T, y0 = b[1] * T, x1 = (b[0] + b[2]) * T, y1 = (b[1] + b[3]) * T, bw = x1 - x0, bh = y1 - y0;
+        float mx = (x0 + x1) / 2, my = (y0 + y1) / 2, m = Math.min(bw, bh);
+        int roof = b[4];
+        boolean along = bw >= bh;
+        switch (own.landmark) {
+            case RealCities.L_STEPPED: {
+                // Setback after setback up to the mast.
+                for (int k = 0; k < 4; k++) {
+                    float in = k * m * 0.11f;
+                    p.setColor(k % 2 == 0 ? City.darken(roof, 0.92f + k * 0.03f) : City.lighten(roof, 0.05f + k * 0.04f));
+                    c.drawRect(x0 + in, y0 + in, x1 - in, y1 - in, p);
+                }
+                p.setColor(0xFFDAD6CC);
+                c.drawCircle(mx, my, m * 0.08f, p);
+                p.setColor(0xFF6A6660);
+                c.drawCircle(mx, my, m * 0.03f, p);
+                return true;
+            }
+            case RealCities.L_CROWN: {
+                p.setColor(City.darken(roof, 0.8f));
+                c.drawRect(x0, y0, x1, y1, p);
+                // The steel crown: terraced arches fanning out, with the triangular windows.
+                for (int k = 0; k < 5; k++) {
+                    float in = k * m * 0.09f;
+                    p.setColor(k % 2 == 0 ? 0xFFDCE2E8 : 0xFF9AA2AA);
+                    c.drawRect(x0 + in, y0 + in, x1 - in, y1 - in, p);
+                    p.setColor(0xFF2A2E34);
+                    for (int q = 1; q < 4; q++) c.drawCircle(x0 + in + (bw - 2 * in) * q / 4f, y0 + in + 1, 0.6f, p);
+                }
+                p.setColor(0xFFF2F4F6);
+                c.drawCircle(mx, my, m * 0.06f, p);
+                return true;
+            }
+            case RealCities.L_OCTAGON: {
+                // A square twisted round on itself: glass triangles to a square crown.
+                glassGrid(c, p, x0, y0, x1, y1, City.darken(roof, 0.9f), 4);
+                path.reset();
+                path.moveTo(mx, y0 + 1);
+                path.lineTo(x1 - 1, my);
+                path.lineTo(mx, y1 - 1);
+                path.lineTo(x0 + 1, my);
+                path.close();
+                p.setColor(City.lighten(roof, 0.2f));
+                c.drawPath(path, p);
+                p.setColor(City.lighten(roof, 0.35f));
+                c.drawRect(mx - m * 0.18f, my - m * 0.18f, mx + m * 0.18f, my + m * 0.18f, p);
+                p.setColor(0xFFE8ECF0);
+                c.drawCircle(mx, my, m * 0.05f, p);
+                return true;
+            }
+            case RealCities.L_HELIPAD: {
+                glassGrid(c, p, x0, y0, x1, y1, roof, 5);
+                p.setColor(0xFFB8BCC0);
+                c.drawCircle(mx, my, m * 0.45f, p);
+                p.setColor(0xFF5A6066);
+                c.drawCircle(mx, my, m * 0.36f, p);
+                p.setColor(0xFFF2F2F2);
+                c.drawRect(mx - m * 0.12f, my - m * 0.16f, mx - m * 0.07f, my + m * 0.16f, p);
+                c.drawRect(mx + m * 0.07f, my - m * 0.16f, mx + m * 0.12f, my + m * 0.16f, p);
+                c.drawRect(mx - m * 0.1f, my - m * 0.025f, mx + m * 0.1f, my + m * 0.025f, p);
+                return true;
+            }
+            case RealCities.L_SAIL: {
+                glassGrid(c, p, x0, y0, x1, y1, roof, 4);
+                // The sail-shaped crown curving up to a spire.
+                path.reset();
+                path.moveTo(x0 + 1, y1 - 1);
+                path.quadTo(x0 + bw * 0.2f, y0 + 1, x1 - 1, y0 + 1);
+                path.lineTo(x1 - 1, y1 - 1);
+                path.close();
+                p.setColor(City.lighten(roof, 0.28f));
+                c.drawPath(path, p);
+                p.setColor(0xFFF0F4F8);
+                c.drawCircle(x1 - m * 0.15f, y0 + m * 0.15f, m * 0.05f, p);
+                return true;
+            }
+            case RealCities.L_OBSERVATORY: {
+                p.setColor(0xFFD8D2C4);
+                c.drawRect(x0, y0, x1, y1, p);
+                p.setColor(0xFFEDE8DE);
+                c.drawRect(x0 + 1.5f, y0 + 1.5f, x1 - 1.5f, y1 - 1.5f, p);
+                // Three copper-green domes: the big one in the middle, a telescope each end.
+                dome(c, p, mx, my, m * 0.36f, 0xFF3E7A6A, true);
+                dome(c, p, x0 + bw * 0.12f, my, m * 0.22f, 0xFF3E7A6A, false);
+                dome(c, p, x1 - bw * 0.12f, my, m * 0.22f, 0xFF3E7A6A, false);
+                return true;
+            }
+            case RealCities.L_SAILS: {
+                // The podium, then the shells: overlapping white sails, tiled, facing the harbour.
+                p.setColor(0xFFC8B494);
+                c.drawRect(x0, y0, x1, y1, p);
+                for (int k = 0; k < 2; k++) {
+                    float sy = k == 0 ? y0 + bh * 0.28f : y0 + bh * 0.72f;
+                    for (int q = 0; q < 4; q++) {
+                        float sx = x0 + bw * (0.12f + q * 0.21f), r = m * (0.24f - q * 0.03f);
+                        path.reset();
+                        path.moveTo(sx - r, sy + r * 0.6f);
+                        path.quadTo(sx, sy - r * 1.3f, sx + r * 1.4f, sy + r * 0.6f);
+                        path.close();
+                        p.setColor(0x40000000);
+                        c.save();
+                        c.translate(1.5f, 1.5f);
+                        c.drawPath(path, p);
+                        c.restore();
+                        p.setColor(q % 2 == 0 ? 0xFFF4F2EC : 0xFFE6E2D8);
+                        c.drawPath(path, p);
+                    }
+                }
+                return true;
+            }
+            case RealCities.L_PYRAMID: {
+                // The palace round its court, and the glass pyramid in the middle.
+                p.setColor(0xFFD8CCB0);
+                c.drawRect(x0, y0, x1, y1, p);
+                p.setColor(roof);
+                float t = m * 0.22f;
+                c.drawRect(x0, y0, x1, y0 + t, p);
+                c.drawRect(x0, y0, x0 + t, y1, p);
+                c.drawRect(x1 - t, y0, x1, y1, p);
+                p.setColor(0xFFCFC2A4);
+                c.drawRect(x0 + t, y0 + t, x1 - t, y1, p);
+                float r = m * 0.2f, px = mx, py = (y0 + t + y1) / 2;
+                quad(c, p, 0xFFB8D4E4, px - r, py - r, px + r, py - r, px, py, px, py);
+                quad(c, p, 0xFF7E9EB4, px - r, py + r, px + r, py + r, px, py, px, py);
+                quad(c, p, 0xFF9CBACC, px - r, py - r, px - r, py + r, px, py, px, py);
+                quad(c, p, 0xFF6A8AA0, px + r, py - r, px + r, py + r, px, py, px, py);
+                return true;
+            }
+            case RealCities.L_MARKET: {
+                p.setColor(roof);
+                c.drawRect(x0, y0, x1, y1, p);
+                courses(c, p, x0, y0, x1, y1, City.darken(roof, 0.8f), 3, !along);
+                // The red neon sign and the clock.
+                p.setColor(0xFFC8282A);
+                c.drawRect(x0 + bw * 0.25f, y1 - 6, x1 - bw * 0.25f, y1 - 1, p);
+                city.label("PUBLIC MARKET", mx, y1 - 2, Math.min(5f, bw / 18f), 0xFFFFE0E0);
+                p.setColor(0xFFF2F2E8);
+                c.drawCircle(x0 + bw * 0.18f, y1 - 3.5f, 2.5f, p);
+                return true;
+            }
+            case RealCities.L_CATHEDRAL:
+                cathedral(c, p, x0, y0, x1, y1);
+                if (own.name != null && own.name.startsWith("Notre")) {
+                    // The twin towers at the west front.
+                    p.setColor(0xFFB8AC90);
+                    float s = m * 0.32f;
+                    c.drawRect(x0 + 1, y0 + 1, x0 + 1 + s, y0 + 1 + s, p);
+                    c.drawRect(x0 + 1, y1 - 1 - s, x0 + 1 + s, y1 - 1, p);
+                }
+                return true;
+            case RealCities.L_TEMPLE:
+                temple(c, p, x0, y0, x1, y1);
+                // The five-storey pagoda beside it.
+                pagoda(c, p, x1 - m * 0.4f, y0 + 1, x1 - 1, y0 + m * 0.4f);
+                return true;
+            case RealCities.L_SHRINE:
+                shrine(c, p, x0, y0, x1, y1);
+                return true;
+            case RealCities.L_HALL: {
+                // The white tower stepping up to its pyramid top.
+                p.setColor(City.darken(roof, 0.88f));
+                c.drawRect(x0, y0, x1, y1, p);
+                p.setColor(roof);
+                c.drawRect(x0 + m * 0.12f, y0 + m * 0.12f, x1 - m * 0.12f, y1 - m * 0.12f, p);
+                float r = m * 0.24f;
+                quad(c, p, 0xFFE8E4DA, mx - r, my - r, mx + r, my - r, mx, my, mx, my);
+                quad(c, p, 0xFFB8B4AA, mx - r, my + r, mx + r, my + r, mx, my, mx, my);
+                quad(c, p, 0xFFD0CCC2, mx - r, my - r, mx - r, my + r, mx, my, mx, my);
+                quad(c, p, 0xFFA8A49A, mx + r, my - r, mx + r, my + r, mx, my, mx, my);
+                return true;
+            }
+            case RealCities.L_DOME: case RealCities.L_GOLD_DOME: {
+                p.setColor(0xFFC8C0AC);
+                c.drawRect(x0, y0, x1, y1, p);
+                p.setColor(0xFFD8D0BC);
+                c.drawRect(x0 + 2, y0 + 2, x1 - 2, y1 - 2, p);
+                boolean gold = own.landmark == RealCities.L_GOLD_DOME;
+                if (own.name != null && own.name.startsWith("Queen")) {
+                    // A long arcade under a row of copper domes.
+                    for (int k = 0; k < 3; k++) dome(c, p, mx, y0 + bh * (0.2f + k * 0.3f), m * 0.38f, 0xFF4E8A78, k == 1);
+                    return true;
+                }
+                dome(c, p, mx, my, m * 0.36f, gold ? 0xFFD8A830 : 0xFF6A7A78, true);
+                return true;
+            }
+            case RealCities.L_WHITE_DOMES: {
+                p.setColor(0xFFE4E0D6);
+                c.drawRect(x0, y0, x1, y1, p);
+                dome(c, p, mx, my, m * 0.34f, 0xFFF4F2EC, true);
+                dome(c, p, x0 + bw * 0.2f, y0 + bh * 0.25f, m * 0.14f, 0xFFF0EEE8, false);
+                dome(c, p, x1 - bw * 0.2f, y0 + bh * 0.25f, m * 0.14f, 0xFFF0EEE8, false);
+                dome(c, p, mx, y1 - bh * 0.15f, m * 0.12f, 0xFFF0EEE8, false);
+                return true;
+            }
+            case RealCities.L_PINK: case RealCities.L_DARK: case RealCities.L_LIBRARY: case RealCities.L_ROUND: case RealCities.L_TWIN: {
+                boolean lib = own.landmark == RealCities.L_LIBRARY;
+                glassGrid(c, p, x0, y0, x1, y1, roof, lib ? 3 : 5);
+                if (lib) {
+                    // The diamond steel net over the glass.
+                    p.setColor(0x80303A44);
+                    p.setStrokeWidth(0.6f);
+                    for (float k = -bh; k < bw; k += 6) {
+                        c.drawLine(x0 + k, y0, x0 + k + bh, y1, p);
+                        c.drawLine(x0 + k + bh, y0, x0 + k, y1, p);
+                    }
+                }
+                if (own.landmark == RealCities.L_ROUND) {
+                    p.setColor(City.lighten(roof, 0.15f));
+                    c.drawCircle(mx, my, m * 0.42f, p);
+                    p.setColor(City.darken(roof, 0.8f));
+                    c.drawCircle(mx, my, m * 0.3f, p);
+                    p.setColor(0xFFE8E8E8);
+                    c.drawCircle(mx, my, m * 0.06f, p);
+                }
+                if (own.landmark == RealCities.L_TWIN) {
+                    // Two towers on the block, split at the top.
+                    p.setColor(City.lighten(roof, 0.12f));
+                    c.drawRect(x0 + 1, y0 + 1, mx - 2, y1 - 1, p);
+                    c.drawRect(mx + 2, y0 + 1, x1 - 1, y1 - 1, p);
+                    p.setColor(0xFF4A4E54);
+                    c.drawRect(mx - 2, y0, mx + 2, y1, p);
+                }
+                if (own.landmark == RealCities.L_DARK) {
+                    p.setColor(0xFF8A9096);
+                    c.drawRect(mx - m * 0.1f, my - m * 0.1f, mx + m * 0.1f, my + m * 0.1f, p);
+                }
+                return true;
+            }
+            case RealCities.L_ARENA: case RealCities.L_DOME_STADIUM: {
+                p.setColor(0xFF6A7076);
+                c.drawRect(x0, y0, x1, y1, p);
+                boolean big = own.landmark == RealCities.L_DOME_STADIUM;
+                oval.set(x0 + 1, y0 + 1, x1 - 1, y1 - 1);
+                p.setColor(big ? 0xFFF2F2F0 : roof);
+                c.drawOval(oval, p);
+                oval.set(x0 + bw * 0.18f, y0 + bh * 0.18f, x1 - bw * 0.18f, y1 - bh * 0.18f);
+                p.setColor(big ? 0xFFE0E2E4 : City.darken(roof, 0.88f));
+                c.drawOval(oval, p);
+                p.setColor(City.darken(roof, 0.7f));
+                p.setStrokeWidth(0.5f);
+                for (int k = 0; k < 12; k++) {
+                    double a = k * Math.PI / 6;
+                    c.drawLine(mx, my, mx + (float) Math.cos(a) * bw * 0.48f, my + (float) Math.sin(a) * bh * 0.48f, p);
+                }
+                return true;
+            }
+            case RealCities.L_CLASSIC: case RealCities.L_STATION: case RealCities.L_BRICK: {
+                boolean station = own.landmark != RealCities.L_CLASSIC;
+                p.setColor(own.landmark == RealCities.L_BRICK ? 0xFFA8503A : 0xFFD0C6AE);
+                c.drawRect(x0, y0, x1, y1, p);
+                if (station) {
+                    // The great arched train shed (or the hall's glass vault), ribbed.
+                    float in = m * 0.18f;
+                    p.setColor(own.landmark == RealCities.L_BRICK ? 0xFF5A5E66 : 0xFF8AA0AC);
+                    c.drawRect(x0 + (along ? 2 : in), y0 + (along ? in : 2), x1 - (along ? 2 : in), y1 - (along ? in : 2), p);
+                    p.setColor(0xFF4A5560);
+                    p.setStrokeWidth(0.6f);
+                    for (float k = 3; k < (along ? bw : bh) - 2; k += 4) {
+                        if (along) c.drawLine(x0 + k, y0 + in, x0 + k, y1 - in, p);
+                        else c.drawLine(x0 + in, y0 + k, x1 - in, y0 + k, p);
+                    }
+                    if (own.landmark == RealCities.L_BRICK) {
+                        dome(c, p, x0 + bw * 0.12f, my, m * 0.3f, 0xFF4A5058, true);
+                        dome(c, p, x1 - bw * 0.12f, my, m * 0.3f, 0xFF4A5058, true);
+                    }
+                } else {
+                    // Green copper roofs round a court.
+                    p.setColor(roof);
+                    float t = m * 0.3f;
+                    c.drawRect(x0 + 1, y0 + 1, x1 - 1, y0 + t, p);
+                    c.drawRect(x0 + 1, y1 - t, x1 - 1, y1 - 1, p);
+                    c.drawRect(x0 + 1, y0 + 1, x0 + t, y1 - 1, p);
+                    c.drawRect(x1 - t, y0 + 1, x1 - 1, y1 - 1, p);
+                    p.setColor(0xFFBDB29A);
+                    c.drawRect(x0 + t, y0 + t, x1 - t, y1 - t, p);
+                    courses(c, p, x0 + 1, y0 + 1, x1 - 1, y1 - 1, City.darken(roof, 0.8f), 2.5f, along);
+                }
+                return true;
+            }
+            case RealCities.L_CLOCK: {
+                p.setColor(0xFFB8946C);
+                c.drawRect(x0, y0, x1, y1, p);
+                hip(c, p, x0 + 1, y0 + 1, x1 - 1, y1 - 1, roof);
+                // The clock tower at one end.
+                float s = m * 0.3f, tx = along ? x0 + bw * 0.15f : mx, ty = along ? my : y0 + bh * 0.15f;
+                p.setColor(0xFFC8A47C);
+                c.drawRect(tx - s / 2, ty - s / 2, tx + s / 2, ty + s / 2, p);
+                quad(c, p, 0xFF6A3A28, tx - s / 2, ty - s / 2, tx + s / 2, ty - s / 2, tx, ty, tx, ty);
+                quad(c, p, 0xFF4A2A1C, tx - s / 2, ty + s / 2, tx + s / 2, ty + s / 2, tx, ty, tx, ty);
+                if (own.name != null && own.name.startsWith("Union")) city.label("GO BY TRAIN", tx, ty + s, 3.2f, 0xFFF2D070);
+                return true;
+            }
+            case RealCities.L_THEATRE: {
+                p.setColor(0xFFB03A2A);
+                c.drawRect(x0, y0, x1, y1, p);
+                // A green pagoda roof in tiers over the red front.
+                for (int k = 0; k < 3; k++) {
+                    float in = k * m * 0.14f;
+                    p.setColor(k % 2 == 0 ? roof : City.lighten(roof, 0.2f));
+                    c.drawRect(x0 + in, y0 + in, x1 - in, y1 - in, p);
+                }
+                p.setColor(0xFFD8B040);
+                c.drawCircle(mx, my, m * 0.06f, p);
+                return true;
+            }
+            case RealCities.L_CAMPUS: {
+                // White travertine pavilions round gardens and a round hall.
+                p.setColor(0xFFDAD4C6);
+                c.drawRect(x0, y0, x1, y1, p);
+                p.setColor(0xFFF0ECE2);
+                c.drawRect(x0 + 1, y0 + 1, x0 + bw * 0.4f, y1 - 1, p);
+                c.drawRect(x0 + bw * 0.6f, y0 + 1, x1 - 1, y0 + bh * 0.45f, p);
+                p.setColor(0xFF6A9A5A);
+                c.drawRect(x0 + bw * 0.6f, y0 + bh * 0.55f, x1 - 1, y1 - 1, p);
+                p.setColor(0xFFF6F2E8);
+                c.drawCircle(x0 + bw * 0.5f, my, m * 0.22f, p);
+                return true;
+            }
+            case RealCities.L_PIPES: {
+                // Inside out: the frame on the outside, pipes in blue, green, yellow and red.
+                p.setColor(0xFFE0E0DC);
+                c.drawRect(x0, y0, x1, y1, p);
+                int[] cols = {0xFF2E6AC0, 0xFF3A9A4A, 0xFFE8C030, 0xFFC83A2A};
+                for (int k = 0; k < 8; k++) {
+                    p.setColor(cols[k % 4]);
+                    float yy = y0 + 2 + k * (bh - 4) / 8f;
+                    c.drawRect(x0 + 1, yy, x1 - 1, yy + 1.6f, p);
+                }
+                p.setColor(0xFF6A6E74);
+                p.setStrokeWidth(0.5f);
+                for (float k = 0; k < bw; k += 5) c.drawLine(x0 + k, y0, x0 + k, y1, p);
+                return true;
+            }
+            case RealCities.L_WEDGE: {
+                // A triangle on its corner of the block.
+                path.reset();
+                path.moveTo(x0, y0);
+                path.lineTo(x1, y0);
+                path.lineTo(mx, y1);
+                path.close();
+                p.setColor(roof);
+                c.drawPath(path, p);
+                p.setColor(City.lighten(roof, 0.2f));
+                c.drawCircle(mx, y0 + bh * 0.3f, m * 0.08f, p);
+                return true;
+            }
+            case RealCities.L_SLAB: {
+                glassGrid(c, p, x0, y0, x1, y1, roof, 3);
+                // The stepped slab, its long roof terraced at the ends.
+                p.setColor(City.lighten(roof, 0.12f));
+                c.drawRect(x0 + bw * 0.15f, y0 + bh * 0.2f, x1 - bw * 0.15f, y1 - bh * 0.2f, p);
+                p.setColor(City.lighten(roof, 0.22f));
+                c.drawRect(x0 + bw * 0.3f, y0 + bh * 0.3f, x1 - bw * 0.3f, y1 - bh * 0.3f, p);
+                return true;
+            }
+            case RealCities.L_SPIRAL: {
+                p.setColor(0xFFDAD6CE);
+                c.drawRect(x0, y0, x1, y1, p);
+                // The white spiral widening as it rises, the glass dome in the middle.
+                for (int k = 0; k < 4; k++) {
+                    p.setColor(k % 2 == 0 ? 0xFFF6F4EE : 0xFFE2DED6);
+                    c.drawCircle(mx, my, m * (0.48f - k * 0.08f), p);
+                }
+                p.setColor(0xFF9AB6C8);
+                c.drawCircle(mx, my, m * 0.14f, p);
+                return true;
+            }
+            case RealCities.L_BLOB: {
+                // Sheet metal in waves of colour.
+                int[] cols = {0xFFB0507A, 0xFF7A60B0, 0xFFD8A030, 0xFF4E8AC0, 0xFFC0C4C8};
+                for (int k = 0; k < 5; k++) {
+                    oval.set(x0 + (k % 3) * bw * 0.25f, y0 + (k / 3) * bh * 0.4f, x0 + (k % 3) * bw * 0.25f + bw * 0.5f, y0 + (k / 3) * bh * 0.4f + bh * 0.6f);
+                    p.setColor(cols[k]);
+                    c.drawOval(oval, p);
+                }
+                return true;
+            }
+            case RealCities.L_PALACE: {
+                // White walls under deep grey tiled roofs, round a court, in its gardens.
+                p.setColor(0xFFE8E4DA);
+                c.drawRect(x0, y0, x1, y1, p);
+                hip(c, p, x0 + 1, y0 + 1, x1 - 1, y0 + bh * 0.45f, roof);
+                hip(c, p, x0 + 1, y0 + bh * 0.55f, x1 - 1, y1 - 1, roof);
+                courses(c, p, x0 + 1, y0 + 1, x1 - 1, y1 - 1, City.darken(roof, 0.8f), 1.4f, !along);
+                return true;
+            }
+            case RealCities.L_CUBE_ARCH: {
+                // A hollow cube: the frame, and through the middle, open sky.
+                p.setColor(roof);
+                c.drawRect(x0, y0, x1, y1, p);
+                p.setColor(City.darken(roof, 0.82f));
+                c.drawRect(x0 + bw * 0.2f, y0 + bh * 0.2f, x1 - bw * 0.2f, y1 - bh * 0.2f, p);
+                if (own.name != null && own.name.startsWith("Fuji")) {
+                    p.setColor(0xFFC0C4C8);
+                    c.drawCircle(mx, my, m * 0.22f, p);
+                }
+                return true;
+            }
+            case RealCities.L_CURVES: {
+                // Sweeping stainless-steel sails.
+                p.setColor(0xFFA8AEB4);
+                c.drawRect(x0, y0, x1, y1, p);
+                for (int k = 0; k < 5; k++) {
+                    path.reset();
+                    float sx = x0 + bw * (0.1f + k * 0.17f);
+                    path.moveTo(sx, y1 - 1);
+                    path.quadTo(sx + bw * 0.3f, y0 + bh * (0.1f + (k % 2) * 0.2f), sx + bw * 0.22f, y1 - bh * 0.3f);
+                    path.close();
+                    p.setColor(k % 2 == 0 ? 0xFFE6EAEE : 0xFFC4CAD0);
+                    c.drawPath(path, p);
+                }
+                return true;
+            }
+            case RealCities.L_MANSION:
+                frenchHouse(c, p, x0, y0, x1, y1, roof, new Random(b[5]));
+                return true;
+            case RealCities.L_SIGN: {
+                p.setColor(roof);
+                c.drawRect(x0, y0, x1, y1, p);
+                p.setColor(0xFFB86A3A);
+                c.drawRect(x0, y1 - 5, x1, y1 - 1, p);
+                city.label("POWELL'S", mx, my + 2, Math.min(8f, bw / 7f), 0xFFF2E8D8);
+                return true;
+            }
+            default:
+                return false;
+        }
+    }
+
     // ------------------------------------------------------------------ building variants
 
     /** The roof of one of the many kinds of building (see {@link Variants}). */

@@ -18,6 +18,8 @@ public final class GameTests {
             public void run() {
                 // (Every map at Medium is built by the government buildings test.)
                 for (int p = 0; p < CityConfig.PRESETS.length + 5; p++) {
+                    // (The real cities only come in one size: see the 10.18 test.)
+                    if (RealCities.isReal(p)) continue;
                     CityConfig c = new CityConfig();
                     boolean sizes = p >= CityConfig.PRESETS.length;
                     c.v[CityConfig.OPT_PRESET] = sizes ? 0 : p;
@@ -247,6 +249,7 @@ public final class GameTests {
                 // before the government quarter.)
                 CityConfig c = new CityConfig();
                 c.seed = 42;
+                c.v[CityConfig.OPT_PRESET] = 0;
                 c.v[CityConfig.OPT_SIZE] = CityConfig.MEDIUM;
                 c.civic = 0;
                 City city = new City(c);
@@ -353,6 +356,7 @@ public final class GameTests {
             public void run() {
                 CityConfig c = new CityConfig();
                 c.seed = 6;
+                c.v[CityConfig.OPT_PRESET] = 0;
                 c.v[CityConfig.OPT_SIZE] = CityConfig.MEDIUM;
                 c.v[CityConfig.OPT_ZOMBIES] = 0;
                 World w = new World(c);
@@ -521,6 +525,7 @@ public final class GameTests {
         test("traffic keeps its distance: hardly any crashes, and patrol cars keep to their side", new Check() {
             public void run() {
                 CityConfig c = new CityConfig();
+                c.v[CityConfig.OPT_PRESET] = 0;
                 c.v[CityConfig.OPT_SIZE] = CityConfig.MEDIUM;
                 c.v[CityConfig.OPT_ZOMBIES] = 0;
                 c.seed = 3;
@@ -913,6 +918,7 @@ public final class GameTests {
             public void run() {
                 CityConfig c = new CityConfig();
                 c.seed = 77;
+                c.v[CityConfig.OPT_PRESET] = 0;
                 c.v[CityConfig.OPT_SIZE] = CityConfig.MEDIUM;
                 c.v[CityConfig.OPT_ZOMBIES] = 0;
                 World w = new World(c);
@@ -1011,8 +1017,14 @@ public final class GameTests {
                 }
                 check(climber.dead || keeper.hp < hp || keeper.dead, "the dead can climb up and get at the lookout");
                 // Someone who has just seen one keeps running after it's out of sight.
+                // (Someone just out and about in town, with open ground beside them for it to appear on.)
                 Entity runner = null;
-                for (Entity e : w.entities) if (e.type == Entity.CIVILIAN && !e.dead && e.task == Dispatch.T_NONE && !w.city.inTown(e.x, e.y) == false) runner = e;
+                for (Entity e : w.entities) {
+                    if (e.type != Entity.CIVILIAN || e.dead || e.task != Dispatch.T_NONE || !w.city.inTown(e.x, e.y) || e.aloft
+                            || e.leader != null || e.job == Entity.J_LOOKOUT || e.job == Entity.J_RELIEF || e.job == Entity.J_HIKER) continue;
+                    float[] q = w.city.findWalkable(e.x + 30, e.y);
+                    if (q != null && Math.hypot(q[0] - e.x - 30, q[1] - e.y) < 6) runner = e;
+                }
                 if (runner != null) {
                     Entity scare = w.spawn(Entity.ZOMBIE, runner.x + 30, runner.y);
                     for (int f = 0; f < 10; f++) w.update(1 / 30f);
@@ -1138,6 +1150,7 @@ public final class GameTests {
                 // Reinforcements drive in from the edge of the map, and are tracked on it.
                 CityConfig c = new CityConfig();
                 c.seed = 5;
+                c.v[CityConfig.OPT_PRESET] = 0;
                 c.v[CityConfig.OPT_ZOMBIES] = 0;
                 c.v[CityConfig.OPT_RESERVES] = 3;
                 World w = new World(c);
@@ -1195,6 +1208,103 @@ public final class GameTests {
                 w.fires.add(fire);
                 for (int f = 0; f < 30 * 5; f++) w.update(1 / 30f);
                 check(b.scorch > 0, "a fire leaves soot on the building");
+            }
+        });
+        test("10.18: fewer maps, no animals, hikers out, people get clear, dirt lanes, the real cities", new Check() {
+            public void run() throws Exception {
+                check(CityConfig.retired(CityConfig.OPT_PRESET, 0) && CityConfig.retired(CityConfig.OPT_PRESET, 7), "Classic and Campus are gone");
+                CityConfig d = new CityConfig();
+                check(d.values(CityConfig.OPT_SIZE)[CityConfig.LARGE].equals("Default") && d.values(CityConfig.OPT_SIZE)[CityConfig.HUGE].equals("Massive"),
+                        "the sizes are Default, Large and Massive");
+                check(CityConfig.retired(CityConfig.OPT_ZOMBIES, 3) && d.zombies() == 0, "no choosing how many zombies: the game starts quiet");
+                // No animals.
+                CityConfig c = new CityConfig();
+                c.seed = 9;
+                c.v[CityConfig.OPT_COUNTRY] = Country.SWEDEN;
+                c.v[CityConfig.OPT_PRESET] = 6;
+                World w = new World(c);
+                w.populate(c);
+                int dogs = 0, hikers = 0;
+                for (Entity e : w.entities) {
+                    if (e.type == Entity.DOG || e.type == Entity.ZOMBIE_DOG) dogs++;
+                    if (!e.dead && e.job == Entity.J_HIKER && e.jobStep == 1) hikers++;
+                }
+                check(dogs == 0 && w.birds.isEmpty() && w.animals.isEmpty() && w.spawn(Entity.DOG, 100, 100) == null, "no animals");
+                check(hikers >= 5, "people already out on the trails (" + hikers + ")");
+                // People get out of where the dead are.
+                for (int f = 0; f < 30 * 5; f++) w.update(1 / 30f);
+                float[] cp = null;
+                for (Entity e : w.entities) if (!e.dead && e.type == Entity.CIVILIAN && w.city.inTown(e.x, e.y)) cp = new float[]{e.x, e.y};
+                int sp = 0;
+                for (int i = 0; i < 400 && sp < 30; i++) {
+                    float[] q = w.city.findWalkable(cp[0] + (i % 20) * 6 - 60, cp[1] + (i / 20) * 6 - 60);
+                    if (q != null && w.spawn(Entity.ZOMBIE, q[0], q[1]) != null) sp++;
+                }
+                w.alert = 2;
+                int evac = 0;
+                for (int f = 0; f < 30 * 12; f++) {
+                    w.update(1 / 30f);
+                    if (f % 30 == 0) for (Entity e : w.entities) if (!e.dead && e.task == Dispatch.T_EVACUATE) evac++;
+                }
+                check(evac > 0, "people get clear of the outbreak");
+                // Dirt lanes stay dirt.
+                CityConfig lc = new CityConfig();
+                lc.seed = 2;
+                lc.v[CityConfig.OPT_PRESET] = 8;
+                lc.v[CityConfig.OPT_SIZE] = CityConfig.MASSIVE;
+                City lanes = new City(lc, 0.05f);
+                int stubs = 0;
+                for (int y = 0; y < lanes.h; y++)
+                    for (int x = 1; x < lanes.w - 1; x++) {
+                        if (lanes.tiles[y * lanes.w + x - 1] != City.DIRT || lanes.tiles[y * lanes.w + x] != City.ROAD) continue;
+                        int k = x;
+                        while (k < lanes.w && lanes.tiles[y * lanes.w + k] == City.ROAD) k++;
+                        int across = 0;
+                        for (int dy = -6; dy <= 6; dy++)
+                            if (y + dy >= 0 && y + dy < lanes.h && lanes.tiles[(y + dy) * lanes.w + (x + k) / 2] == City.ROAD) across++;
+                        if (k < lanes.w && k - x < 25 && lanes.tiles[y * lanes.w + k] == City.DIRT && across <= 4) stubs++;
+                    }
+                check(stubs == 0, stubs + " stretches of tarmac in the middle of a dirt lane");
+                // The real cities.
+                for (int i = 0; i < RealCities.NAMES.length; i++) {
+                    CityConfig rc = new CityConfig();
+                    rc.v[CityConfig.OPT_PRESET] = RealCities.FIRST + i;
+                    rc.normalize();
+                    RealCities.Spec spec = RealCities.get(RealCities.FIRST + i);
+                    check(rc.size() == CityConfig.HUGE && rc.country() == spec.country, spec.name + " is always Massive, in its country");
+                    CityConfig back = new CityConfig();
+                    check(back.applyCode(rc.code()) && back.preset() == rc.preset() && back.seed == rc.seed, spec.name + ": its city code");
+                    City city = new City(rc, 0.05f);
+                    check(city.name.equals(spec.name), spec.name + " is called " + spec.name);
+                    int marks = city.structures.size(), water = 0;
+                    for (City.Building b : city.buildings) if (b.landmark >= 0 || (b.kind == City.STADIUM && b.name != null && !b.name.endsWith(" Stadium"))) marks++;
+                    for (byte t : city.tiles) if (t == City.WATER) water++;
+                    check(marks >= 4, spec.name + ": its landmarks (" + marks + ")");
+                    check(water > 0, spec.name + ": its water");
+                    boolean named = false;
+                    for (City.District dd : city.districts) if (dd.name.equals(spec.places.get(0).name)) named = true;
+                    check(named, spec.name + ": its neighbourhoods");
+                    boolean streets = false;
+                    for (City.Street st : city.streets)
+                        for (RealCities.StreetName sn : spec.eastWest) if (sn.name.equals(st.name)) streets = true;
+                    check(streets, spec.name + ": its streets");
+                    if (!spec.crossings.isEmpty()) {
+                        boolean bridge = false;
+                        for (City.Street st : city.streets)
+                            for (RealCities.Crossing cr : spec.crossings) if (cr.name.equals(st.name)) bridge = true;
+                        check(bridge, spec.name + ": its bridges");
+                    }
+                }
+                // A game in one: people about, hikers on its trails.
+                CityConfig la = new CityConfig();
+                la.v[CityConfig.OPT_PRESET] = RealCities.FIRST;
+                la.normalize();
+                World lw = new World(la);
+                lw.populate(la);
+                int out = 0;
+                for (Entity e : lw.entities) if (!e.dead && e.job == Entity.J_HIKER) out++;
+                for (int f = 0; f < 30 * 5; f++) lw.update(1 / 30f);
+                check(lw.humans > 100 && out > 0, "Los Angeles plays: " + lw.humans + " people, " + out + " hikers");
             }
         });
         test("every screen draws", new Check() {

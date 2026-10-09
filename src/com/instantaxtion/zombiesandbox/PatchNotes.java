@@ -2,11 +2,21 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.17";
-    static final int VERSION_CODE = 55;
+    static final String VERSION = "10.18";
+    static final int VERSION_CODE = 56;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.18  -  Real cities",
+                    "Real cities, premade and always the biggest size: Los Angeles, Portland, Seattle, New York, Sydney, Tokyo and Paris. Each has its real coast, rivers, bays, lakes, hills, woods and parks, its own neighbourhoods and famous streets by name, and its bridges.",
+                    "Their landmarks: the Hollywood Sign, Griffith Observatory and the Santa Monica Pier; Big Pink and the Willamette bridges; the Space Needle and Pike Place Market; the Empire State Building, Central Park and the Statue of Liberty; the Opera House and the Harbour Bridge; Tokyo Tower, the Skytree and the Imperial Palace; the Eiffel Tower, the Louvre and Notre-Dame. And many more.",
+                    "The game starts with people already out hiking the trails.",
+                    "People get out of the streets the dead have taken over and keep clear for a while, instead of carrying on with their day in the middle of it.",
+                    "Country lanes stay dirt all the way, instead of turning into a stretch of tarmac and back.",
+                    "No more animals: no dogs, birds or wildlife (the dead that were dogs are runners now).",
+                    "Map sizes are now Default, Large and Massive. Classic and Campus are off the New Game screen, and so is the zombie count: every game starts quiet.",
+            },
             {
                     "10.17  -  Scars of the fight",
                     "Footprints in sand, dirt and mud (and wet ones just out of a stream), paw prints, a trail of blood behind the badly hurt and drag marks behind the crawling dead, all slowly fading.",

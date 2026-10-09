@@ -961,6 +961,32 @@ final class Menu {
         return y + rows * bh + (rows - 1) * gap + 14 * dp;
     }
 
+    /** A grid of map cards (the maps given by index); returns the y below it. */
+    private float mapCards(Canvas c, int[] shown, int cards, int preset, float lx, float y, float cw, float ch, float gap, int perRow) {
+        for (int k = 0; k < cards; k++) {
+            int i = shown[k];
+            float l = lx + (k % perRow) * (cw + gap), t = y + (k / perRow) * (ch + gap);
+            Seg sg = seg(CityConfig.OPT_PRESET, i, l, t, l + cw, t + ch);
+            boolean on = preset == i;
+            fill.setColor(on ? 0xFF2F5E2B : 0xFF23262C);
+            c.drawRoundRect(sg.r, 9 * dp, 9 * dp, fill);
+            // A strip in the map's colour.
+            fill.setColor(MAP_COLORS[i % MAP_COLORS.length]);
+            tmp.set(l, t, l + 5 * dp, t + ch);
+            c.drawRoundRect(tmp, 3 * dp, 3 * dp, fill);
+            if (on) {
+                stroke.setColor(0xFF9BE08A);
+                stroke.setStrokeWidth(1.5f * dp);
+                c.drawRoundRect(sg.r, 9 * dp, 9 * dp, stroke);
+            }
+            text.setTextAlign(Paint.Align.CENTER);
+            text.setTextSize(Math.min(13.5f * dp, cw / 7.5f));
+            text.setColor(on ? 0xFFFFFFFF : 0xFFC8CCD2);
+            c.drawText(CityConfig.PRESETS[i], l + cw / 2 + 2 * dp, t + ch / 2 + text.getTextSize() * 0.36f, text);
+        }
+        return y + ((cards + perRow - 1) / perRow) * (ch + gap) + 12 * dp;
+    }
+
     private void drawSetup(Canvas c, int w, int h) {
         float top = header(c, w, h, "New Game");
         updatePreview();
@@ -1023,45 +1049,36 @@ final class Menu {
         y += 22 * dp;
         int perRow = lw > 520 * dp ? 5 : lw > 330 * dp ? 4 : 3;
         float gap = 6 * dp, cw = (lw - gap * (perRow - 1)) / perRow, ch = 40 * dp;
-        // (Maps no longer offered are left out, unless a loaded city code is using one.)
+        // (Maps no longer offered are left out, unless a loaded city code is using one. The real cities have
+        // their own section below.)
         int cards = 0;
         int[] shown = new int[CityConfig.PRESETS.length];
         for (int i = 0; i < CityConfig.PRESETS.length; i++)
-            if (!CityConfig.retired(CityConfig.OPT_PRESET, i) || preset == i) shown[cards++] = i;
-        for (int k = 0; k < cards; k++) {
-            int i = shown[k];
-            float l = lx + (k % perRow) * (cw + gap), t = y + (k / perRow) * (ch + gap);
-            Seg sg = seg(CityConfig.OPT_PRESET, i, l, t, l + cw, t + ch);
-            boolean on = preset == i;
-            fill.setColor(on ? 0xFF2F5E2B : 0xFF23262C);
-            c.drawRoundRect(sg.r, 9 * dp, 9 * dp, fill);
-            // A strip in the map's colour.
-            fill.setColor(MAP_COLORS[i]);
-            tmp.set(l, t, l + 5 * dp, t + ch);
-            c.drawRoundRect(tmp, 3 * dp, 3 * dp, fill);
-            if (on) {
-                stroke.setColor(0xFF9BE08A);
-                stroke.setStrokeWidth(1.5f * dp);
-                c.drawRoundRect(sg.r, 9 * dp, 9 * dp, stroke);
-            }
-            text.setTextAlign(Paint.Align.CENTER);
-            text.setTextSize(Math.min(13.5f * dp, cw / 7.5f));
-            text.setColor(on ? 0xFFFFFFFF : 0xFFC8CCD2);
-            c.drawText(CityConfig.PRESETS[i], l + cw / 2 + 2 * dp, t + ch / 2 + text.getTextSize() * 0.36f, text);
-        }
-        y += ((cards + perRow - 1) / perRow) * (ch + gap) + 12 * dp;
-        if (preset == CityConfig.ISLANDS) {
-            // Islands comes in one size only.
+            if ((!CityConfig.retired(CityConfig.OPT_PRESET, i) || preset == i) && !RealCities.isReal(i)) shown[cards++] = i;
+        y = mapCards(c, shown, cards, preset, lx, y, cw, ch, gap, perRow);
+        plain.setTextAlign(Paint.Align.LEFT);
+        plain.setTextSize(13 * dp);
+        plain.setColor(0xFFB8BDC4);
+        c.drawText("Real cities: premade, always Massive", lx + 2 * dp, y + 14 * dp, plain);
+        y += 22 * dp;
+        cards = 0;
+        for (int i = 0; i < RealCities.NAMES.length; i++) shown[cards++] = RealCities.FIRST + i;
+        y = mapCards(c, shown, cards, preset, lx, y, cw, ch, gap, perRow);
+        boolean real = RealCities.isReal(preset);
+        if (preset == CityConfig.ISLANDS || real) {
+            // Islands comes in one size only; a real city is always the same city.
             plain.setTextAlign(Paint.Align.LEFT);
             plain.setTextSize(13 * dp);
             plain.setColor(0xFFB8BDC4);
-            for (String line : wrap("Map size: Islands is always one size, " + CityConfig.ISLANDS_TILES
-                    + " tiles across (bigger than Massive).", lw - 4 * dp, plain)) {
+            String note = real ? "Map size: Massive, and always the same city, in " + Country.NAMES[config.v[CityConfig.OPT_COUNTRY]] + "."
+                    : "Map size: Islands is always one size, " + CityConfig.ISLANDS_TILES + " tiles across (between Large and Massive).";
+            for (String line : wrap(note, lw - 4 * dp, plain)) {
                 c.drawText(line, lx + 2 * dp, y + 14 * dp, plain);
                 y += 17 * dp;
             }
             y += 14 * dp;
         } else y = segRow(c, CityConfig.OPT_SIZE, "Map size", lx, y, lw);
+        if (!real) {
         y = segRow(c, CityConfig.OPT_COUNTRY, "Country: how the city looks and what it's called", lx, y, lw);
         plain.setTextSize(12.5f * dp);
         plain.setColor(0xFF9AA0A8);
@@ -1071,6 +1088,7 @@ final class Menu {
             y += 16 * dp;
         }
         y += 12 * dp;
+        }
         int homes = previewResidents;
         boolean known = homes > 0 && config.code().equals(previewKey);
         y = segRow(c, CityConfig.OPT_CIVILIANS, known
@@ -1087,7 +1105,6 @@ final class Menu {
             y += 16 * dp;
         }
         y += 10 * dp;
-        y = segRow(c, CityConfig.OPT_ZOMBIES, "Zombies", lx, y, lw);
         y = segRow(c, CityConfig.OPT_RESERVES, "Reinforcements: who comes to help once the fighting starts", lx, y, lw);
         plain.setTextSize(12.5f * dp);
         plain.setColor(0xFF9AA0A8);
@@ -1131,7 +1148,8 @@ final class Menu {
     }
 
     private static final int[] MAP_COLORS = {0xFF8BD450, 0xFF6F8EC8, 0xFFE0A050, 0xFF9A9A90, 0xFF4CAF50, 0xFFB07050,
-            0xFFD8C050, 0xFF50A0C0, 0xFFC050C0, 0xFF90B060, 0xFF3A9AD8, 0xFF2F6EA8, 0xFF48B0B0, 0xFF6A8098, 0xFF30B8D0};
+            0xFFD8C050, 0xFF50A0C0, 0xFFC050C0, 0xFF90B060, 0xFF3A9AD8, 0xFF2F6EA8, 0xFF48B0B0, 0xFF6A8098, 0xFF30B8D0,
+            0xFFE8A040, 0xFF4E9A5A, 0xFF5A86B0, 0xFFC8C8C8, 0xFF3AA8D0, 0xFFE05A6A, 0xFFB898D0};
 
     private void drawNotes(Canvas c, int w, int h) {
         float top = header(c, w, h, "Patch Notes");

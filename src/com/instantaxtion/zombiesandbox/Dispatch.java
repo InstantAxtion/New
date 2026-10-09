@@ -11,7 +11,7 @@ import java.util.Random;
 final class Dispatch {
     static final int T_NONE = 0, T_RESPOND = 1, T_GUARD = 2, T_SEEK = 3, T_SHELTER = 4, T_POST = 5, T_MOVE = 6,
             T_HOLD = 7, T_HIDE = 8, T_PICKUP = 9, T_RESUPPLY = 10, T_HEAL = 11, T_RIDE = 12, T_ENLIST = 13,
-            T_CLEANUP = 14, T_LOOT = 15, T_PATROL = 16, T_BOARD = 17, T_RESCUE = 18, T_BORROW = 19, T_CORDON = 20;
+            T_CLEANUP = 14, T_LOOT = 15, T_PATROL = 16, T_BOARD = 17, T_RESCUE = 18, T_BORROW = 19, T_CORDON = 20, T_EVACUATE = 21;
     static final int WHO_911 = 0, WHO_POLICE = 1, WHO_MILITARY = 2, WHO_INFO = 3, WHO_FIRE = 4;
     static final int[] WHO_COLORS = {0xFFFFA64D, 0xFF7FB0FF, 0xFFA6DC72, 0xFFBDBDBD, 0xFFFF7A5C};
     static final String[] SQUADS = {"Alpha", "Bravo", "Charlie", "Delta", "Echo", "Foxtrot", "Golf", "Hotel"};

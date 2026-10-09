@@ -399,6 +399,11 @@ final class City {
     private final boolean[] mainRoad;
     /** Block rectangles (including their sidewalk ring) as {x0, y0, x1, y1}, x1/y1 exclusive. */
     private final List<int[]> blocks = new ArrayList<int[]>();
+
+    /** The town's blocks (between its streets): {x0, y0, x1, y1, ...} in tiles. */
+    List<int[]> blocks() {
+        return blocks;
+    }
     /** 0 normal car, 1 police car, 2 army truck. */
     private byte[] carKind;
     private final List<float[]> helipads = new ArrayList<float[]>();
@@ -8648,9 +8653,21 @@ final class City {
         spread(dist, tail, FAR);
     }
 
+    /** More places the living can be smelled from: the walls of safe zones with people inside (set by Dispatch). */
+    int[] extraScent;
+    int extraScentN;
+
     private void bfs(int[] dist, List<Entity> entities, boolean zombies, int limit) {
         Arrays.fill(dist, FAR);
         int tail = 0;
+        if (!zombies && extraScent != null)
+            for (int i = 0; i < extraScentN; i++) {
+                int t = extraScent[i];
+                if (dist[t] != 0) {
+                    dist[t] = 0;
+                    queue[tail++] = t;
+                }
+            }
         for (int i = 0, n = entities.size(); i < n; i++) {
             Entity e = entities.get(i);
             if (e.dead || e.isZombie() != zombies) continue;

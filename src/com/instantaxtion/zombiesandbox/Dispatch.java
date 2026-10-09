@@ -32,70 +32,121 @@ final class Dispatch {
         int[] field;
     }
 
+    /**
+     * A safe zone (since 10.15): a walled compound made of a whole city block. A wall of concrete barriers
+     * and fencing goes up round the block's edge (its buildings stand in for the wall where they reach it),
+     * with gates onto the streets where guards check everyone for bites before letting them through. Inside:
+     * rows of tents to sleep in, a medical tent and a food tent. The dead have to claw through the wall to get
+     * in; guards repair the breaches. People inside eat through the rations; supply trucks bring more.
+     */
     static final class SafeZone {
-        float x, y, r, age, attackCd, statusTimer, quietTime, checkCd, emptyTime;
+        float x, y, r, age, attackCd, statusTimer, quietTime, checkCd, emptyTime, breachCd, foodSaid;
         boolean military, removed, full, fullAnnounced;
         String place;
         int guards, sheltered, wantGuards, capacity;
         /** Ammunition the zone has on hand for its guards, and whether a supply truck is on its way. */
         int ammo = 300;
         boolean supplyComing;
-
-        static final int SECTORS = 24;
-        /**
-         * Setting up: the guards make their way there and put the sandbags up a section at a time (0 to 1).
-         * Nobody is let in until it opens.
-         */
+        /** Rations for the people sheltering there, and as many as the stores hold. */
+        float food, foodMax;
+        /** Setting up: the wall goes up a section at a time (0 to 1). Nobody is let in until it opens. */
         float built;
         boolean open;
         /** How many guards are actually there (not still on their way). */
         int onSite;
-        /** The size it was planned at. */
+        /** Half its size (for how near is near). */
         float baseR;
-        /**
-         * The perimeter, as its distance from the centre in each direction. It grows as people come in and
-         * guards arrive, follows the streets around it, and gives ground where the dead push on it.
-         */
-        final float[] edge = new float[SECTORS];
-        final float[] shape = new float[SECTORS];
-        final int[] pressure = new int[SECTORS];
+        /** The dead are inside the wall: the guards fall back on the tents. */
         boolean fallingBack;
         /** The way there, for the guards. */
         int[] field;
+        /** The compound in tiles, wall included (inclusive). */
+        int tx0, ty0, tx1, ty1;
+        /** The wall: its tiles in order round the block, each section's strength (0 to 100) and whether it's up. */
+        int[] wall = new int[0];
+        float[] hp = new float[0];
+        boolean[] up = new boolean[0];
+        /** Gates: each one's two tiles, the spot just outside and just inside, strength, open or shut. */
+        int[][] gateTiles = new int[0][];
+        float[][] gateOut = new float[0][], gateIn = new float[0][];
+        float[] gateHp = new float[0], gateHold = new float[0];
+        boolean[] gateOpen = new boolean[0];
+        /** Tents to sleep in: {x, y}; the medical tent and the food tent. */
+        final ArrayList<float[]> tents = new ArrayList<float[]>();
+        float medX, medY, foodX, foodY;
+        /** Sections of wall down right now. */
+        int breaches;
 
-        void initEdge(float r, java.util.Random rnd) {
-            baseR = r;
-            float[] raw = new float[SECTORS];
-            for (int k = 0; k < SECTORS; k++) raw[k] = 0.82f + rnd.nextFloat() * 0.36f;
-            for (int k = 0; k < SECTORS; k++)
-                shape[k] = (raw[(k + SECTORS - 1) % SECTORS] + raw[k] * 2 + raw[(k + 1) % SECTORS]) / 4;
-            for (int k = 0; k < SECTORS; k++) edge[k] = r * shape[k] * 0.7f;
-            this.r = r * 0.7f;
+        float left() {
+            return tx0 * City.T;
         }
 
-        /** How far the line is from the centre in the direction of an angle. */
-        float edgeAt(float a) {
-            float f = (float) (a / (Math.PI * 2) * SECTORS);
-            f -= (float) Math.floor(f / SECTORS) * SECTORS;
-            int k = (int) f % SECTORS;
-            float t = f - (int) f;
-            return edge[k] * (1 - t) + edge[(k + 1) % SECTORS] * t;
+        float top() {
+            return ty0 * City.T;
         }
 
-        /** How far the line is from the centre in the direction of (px, py). */
-        float reach(float px, float py) {
-            return edgeAt((float) Math.atan2(py - y, px - x));
+        float right() {
+            return (tx1 + 1) * City.T;
         }
 
+        float bottom() {
+            return (ty1 + 1) * City.T;
+        }
+
+        /** Within the compound (the wall included), scaled about its middle by margin. */
         boolean contains(float px, float py, float margin) {
-            float dx = px - x, dy = py - y, e = reach(px, py) * margin;
-            return dx * dx + dy * dy < e * e;
+            float cx = (left() + right()) / 2, cy = (top() + bottom()) / 2;
+            float hw = (right() - left()) / 2 * margin, hh = (bottom() - top()) / 2 * margin;
+            return Math.abs(px - cx) < hw && Math.abs(py - cy) < hh;
+        }
+
+        /** Inside the wall. */
+        boolean inside(float px, float py) {
+            return px > left() + City.T && px < right() - City.T && py > top() + City.T && py < bottom() - City.T;
+        }
+
+        /** How far the wall is from the middle in the direction of (px, py). */
+        float reach(float px, float py) {
+            float dx = px - x, dy = py - y, l = (float) Math.sqrt(dx * dx + dy * dy);
+            if (l < 0.001f) return baseR;
+            dx /= l;
+            dy /= l;
+            float tx = dx > 0.0001f ? (right() - x) / dx : dx < -0.0001f ? (left() - x) / dx : Float.MAX_VALUE;
+            float ty = dy > 0.0001f ? (bottom() - y) / dy : dy < -0.0001f ? (top() - y) / dy : Float.MAX_VALUE;
+            return Math.min(tx, ty);
+        }
+
+        float edgeAt(float a) {
+            return reach(x + (float) Math.cos(a), y + (float) Math.sin(a));
         }
 
         float area() {
-            float a = 0, s = (float) Math.sin(Math.PI * 2 / SECTORS);
-            for (int k = 0; k < SECTORS; k++) a += edge[k] * edge[(k + 1) % SECTORS] * s / 2;
-            return a;
+            return (right() - left()) * (bottom() - top());
+        }
+
+        /** The spot just inside a wall tile (where a guard stands at it). */
+        float[] innerOf(int t, int w) {
+            int tx = t % w, ty = t / w;
+            float x = (tx + 0.5f) * City.T, y = (ty + 0.5f) * City.T;
+            if (ty == ty0) y += City.T;
+            else if (ty == ty1) y -= City.T;
+            if (tx == tx0) x += City.T;
+            else if (tx == tx1) x -= City.T;
+            return new float[]{x, y};
+        }
+
+        /** The nearest gate to (px, py), or -1. */
+        int gateNear(float px, float py) {
+            int best = -1;
+            float bd = Float.MAX_VALUE;
+            for (int g = 0; g < gateOut.length; g++) {
+                float d = (gateOut[g][0] - px) * (gateOut[g][0] - px) + (gateOut[g][1] - py) * (gateOut[g][1] - py);
+                if (d < bd) {
+                    bd = d;
+                    best = g;
+                }
+            }
+            return best;
         }
     }
 
@@ -263,6 +314,7 @@ final class Dispatch {
         }
         zoneFieldTimer -= dt;
         if (zonesDirty || zoneFieldTimer <= 0) updateZoneField();
+        updateGates(dt);
         tick += dt;
         if (tick < 0.5f) return;
         float step = tick;
@@ -957,57 +1009,77 @@ final class Dispatch {
                 + a.place + ".", p[0], p[1]);
     }
 
-    // ------------------------------------------------------------------ safe zones
+    // ------------------------------------------------------------------ safe zones (walled compounds, 10.15)
+
+    /** Which zone's wall (or gate) is on each tile, and which section: index, or -2 - gate. */
+    SafeZone[] wallOwner;
+    int[] wallSeg;
 
     private void updateZones(float step) {
+        int scentN = 0;
         for (int i = zones.size() - 1; i >= 0; i--) {
             SafeZone z = zones.get(i);
             z.age += step;
             z.checkCd -= step;
             z.attackCd -= step;
-            int near = w.countZombiesNear(z.x, z.y, z.r * 1.6f);
+            z.breachCd -= step;
+            int near = w.countZombiesNear(z.x, z.y, z.r * 1.5f);
             if (z.guards == 0 && z.age > 10) {
                 removeZone(z, near > 0 && z.open);
                 continue;
             }
-            shapeEdge(z, step);
             if (!z.open) {
-                // Setting up: the sandbags go up as fast as there are hands on site to fill them.
-                if (w.countZombiesNear(z.x, z.y, z.baseR * 1.4f) >= 3) {
+                // Setting up: the wall goes up a section at a time, as fast as there are hands on site.
+                if (w.countZombiesNear(z.x, z.y, z.baseR * 1.2f) >= 3 && z.built < 0.7f) {
                     say(z.military ? WHO_MILITARY : WHO_POLICE, null, (z.military ? "Military" : "Police") + ": The dead got to "
-                            + z.place + " before the safe zone was ready. Pulling out!", z.x, z.y);
-                    z.removed = true;
-                    zones.remove(i);
-                    zonesDirty = true;
-                    for (int k = 0, n = w.entities.size(); k < n; k++) if (w.entities.get(k).zone == z) release(w.entities.get(k));
+                            + z.place + " before the wall was up. Pulling out!", z.x, z.y);
+                    removeZone(z, false, true);
                     if (z.military) militaryZoneCd = 40;
                     else policeZoneCd = 45;
                     continue;
                 }
-                z.built += step * Math.min(6, z.onSite) / (z.military ? 110f : 120f);
+                z.built += step * Math.min(8, z.onSite) * 26f / Math.max(40, z.wall.length) / (z.military ? 26f : 30f);
+                raiseWall(z);
                 if (z.built >= 1) {
                     z.built = 1;
+                    raiseWall(z);
                     z.open = true;
                     z.age = 0;
                     zonesDirty = true;
                     say(z.military ? WHO_MILITARY : WHO_POLICE, null, (z.military ? "Military: " : "Police Command: ")
-                            + "The safe zone at " + z.place + " is open, room for " + z.capacity
-                            + ". Civilians, head there now!", z.x, z.y);
+                            + "The safe zone at " + z.place + " is open: walled in, room for " + z.capacity
+                            + ". Civilians, come to the gates!", z.x, z.y);
                 }
                 if (z.guards < z.wantGuards) assignGuards(z, z.wantGuards - z.guards, 900, z.military ? Entity.SOLDIER : Entity.COP);
                 continue;
             }
-            // Overrun: more of the dead inside the line than the guards can hold.
+            // Overrun: more of the dead inside the wall than the guards can hold.
             int inside = 0;
             for (int k = 0, n = w.entities.size(); k < n && near > 0; k++) {
                 Entity o = w.entities.get(k);
                 if (o.dead || !o.isZombie() || o.hidden) continue;
-                if (Math.abs(o.x - z.x) < z.r * 1.5f && Math.abs(o.y - z.y) < z.r * 1.5f && z.contains(o.x, o.y, 1)) inside++;
+                if (z.inside(o.x, o.y)) inside++;
             }
+            boolean falling = inside > 0 && z.breaches > 0;
+            if (falling && !z.fallingBack)
+                say(z.military ? WHO_MILITARY : WHO_POLICE, null, (z.military ? "Military" : "Police") + ": They're through the wall at "
+                        + z.place + "! Fall back on the tents!", z.x, z.y);
+            z.fallingBack = falling;
             if (inside >= Math.max(4, z.onSite * 2)) {
                 removeZone(z, true);
                 continue;
             }
+            repairWall(z, step);
+            // Rations: a day's worth goes in a couple of minutes of game time.
+            z.food = Math.max(0, z.food - z.sheltered * step / 110f);
+            if (z.food <= 0 && z.sheltered > 0 && w.time - z.foodSaid > 90) {
+                z.foodSaid = w.time;
+                say(z.military ? WHO_MILITARY : WHO_POLICE, null, (z.military ? "Military" : "Police") + ": " + z.place
+                        + " is out of food. We need that supply truck!", z.x, z.y);
+            }
+            // The dead can smell the people in there through the fence.
+            if (z.sheltered > 0 || z.onSite > 0)
+                for (int k = 0; k < z.wall.length && scentN < scent.length; k += 3) if (z.up[k]) scent[scentN++] = z.wall[k];
             // Stand the zone down when its own neighbourhood has been quiet for a while, when nobody has
             // needed it for a while, or soon after the outbreak is over.
             if (w.countZombiesNear(z.x, z.y, 380) == 0) z.quietTime += step;
@@ -1025,7 +1097,7 @@ final class Dispatch {
             if (near >= 5 && z.attackCd <= 0) {
                 z.attackCd = 30;
                 say(z.military ? WHO_MILITARY : WHO_POLICE, null, (z.military ? "Military" : "Police") + ": The "
-                        + z.place + " safe zone is under attack! " + near + " hostiles at the perimeter!", z.x, z.y);
+                        + z.place + " safe zone is under attack! " + near + " of them at the wall!", z.x, z.y);
                 if (!z.military) requestMilitary(z.x, z.y, z.place, null, z);
                 else sendReserveSquad(z.x, z.y, z.place, null, z);
                 if (near >= 8) requestAir(z.x, z.y, z.place);
@@ -1038,7 +1110,7 @@ final class Dispatch {
                 if (full && !z.fullAnnounced) {
                     z.fullAnnounced = true;
                     say(z.military ? WHO_MILITARY : WHO_POLICE, null, (z.military ? "Military" : "Police") + ": The "
-                            + z.place + " safe zone is full (" + z.capacity + "). Turning people away!", z.x, z.y);
+                            + z.place + " safe zone is full (" + z.capacity + "). The gates are shut to newcomers.", z.x, z.y);
                 }
             }
             if (z.sheltered < z.capacity * 0.8f) z.fullAnnounced = false;
@@ -1047,9 +1119,12 @@ final class Dispatch {
                 z.statusTimer = 0;
                 if (z.sheltered > 0)
                     say(z.military ? WHO_MILITARY : WHO_POLICE, null, (z.military ? "Military" : "Police") + ": "
-                            + z.place + " safe zone is holding. " + z.sheltered + " civilians sheltered.", z.x, z.y);
+                            + z.place + " safe zone is holding. " + z.sheltered + " civilians inside"
+                            + (z.breaches > 0 ? ", " + z.breaches + " breach" + (z.breaches == 1 ? "" : "es") + " in the wall" : "") + ".", z.x, z.y);
             }
         }
+        city.extraScent = scent;
+        city.extraScentN = scentN;
         int zombies = w.zombieCount();
         // New zones only while there are live 911 incidents to shelter people from.
         if (incidents.isEmpty()) return;
@@ -1063,205 +1138,422 @@ final class Dispatch {
         }
     }
 
+    private final int[] scent = new int[600];
+
+    /** Puts up the wall sections the setting up has got to (not on top of anyone standing there). */
+    private void raiseWall(SafeZone z) {
+        int upTo = (int) Math.min(z.wall.length, Math.ceil(z.built * z.wall.length));
+        for (int k = 0; k < upTo; k++) {
+            if (z.up[k] || z.hp[k] < 80) continue;
+            if (occupied(z.wall[k])) continue;
+            z.up[k] = true;
+            city.solid[z.wall[k]] = true;
+        }
+        if (z.built >= 1)
+            for (int g = 0; g < z.gateTiles.length; g++) setGate(z, g, z.gateOpen[g]);
+    }
+
+    /** Someone standing on this tile. */
+    private boolean occupied(int t) {
+        float x = (t % city.w + 0.5f) * City.T, y = (t / city.w + 0.5f) * City.T;
+        return w.peopleNear(x, y, City.T * 0.85f) || w.countZombiesNear(x, y, City.T * 0.85f) > 0;
+    }
+
+    /** Guards patch up the breaches once the dead have been driven off from them. */
+    private void repairWall(SafeZone z, float step) {
+        int down = 0;
+        for (int k = 0; k < z.wall.length; k++) {
+            if (z.up[k] && z.hp[k] < 100) {
+                // Dented sections still standing are shored up once it's quiet there.
+                float[] p = z.innerOf(z.wall[k], city.w);
+                if (w.countZombiesNear(p[0], p[1], 50) == 0 && guardNear(z, p[0], p[1], 90)) z.hp[k] = Math.min(100, z.hp[k] + 10 * step);
+                continue;
+            }
+            if (z.up[k] || z.hp[k] >= 80) continue;
+            down++;
+            float[] p = z.innerOf(z.wall[k], city.w);
+            if (w.countZombiesNear(p[0], p[1], 50) > 0 || !guardNear(z, p[0], p[1], 40)) continue;
+            z.hp[k] = Math.min(100, z.hp[k] + 28 * step);
+        }
+        // (Mended sections go back up as soon as nobody's standing in the gap.)
+        raiseWall(z);
+        for (int g = 0; g < z.gateTiles.length; g++) {
+            if (z.gateHp[g] > 0) continue;
+            down++;
+            if (w.countZombiesNear(z.gateIn[g][0], z.gateIn[g][1], 50) > 0 || !guardNear(z, z.gateIn[g][0], z.gateIn[g][1], 40)) continue;
+            z.gateHp[g] = 100;
+        }
+        z.breaches = down;
+    }
+
+    private boolean guardNear(SafeZone z, float x, float y, float r) {
+        for (int i = 0, n = w.entities.size(); i < n; i++) {
+            Entity e = w.entities.get(i);
+            if (!e.dead && e.task == T_GUARD && e.zone == z && Math.abs(e.x - x) < r && Math.abs(e.y - y) < r) return true;
+        }
+        return false;
+    }
+
+    /**
+     * The gates (every frame): open for people waiting to come in (and guards), shut the moment the dead are
+     * close. A gate the dead have broken stays open until it's fixed.
+     */
+    void updateGates(float dt) {
+        for (int i = 0; i < zones.size(); i++) {
+            SafeZone z = zones.get(i);
+            if (!z.open) continue;
+            for (int g = 0; g < z.gateTiles.length; g++) {
+                if (z.gateHp[g] <= 0) {
+                    setGate(z, g, true);
+                    continue;
+                }
+                float gx = (z.gateOut[g][0] + z.gateIn[g][0]) / 2, gy = (z.gateOut[g][1] + z.gateIn[g][1]) / 2;
+                boolean danger = w.countZombiesNear(gx, gy, 75) > 0;
+                boolean waiting = !z.full && w.peopleNear(z.gateOut[g][0], z.gateOut[g][1], 30);
+                if (waiting && !danger) z.gateHold[g] = 2.5f;
+                else z.gateHold[g] -= dt;
+                boolean want = !danger && z.gateHold[g] > 0;
+                if (want != z.gateOpen[g]) {
+                    // (Not shut on someone standing in it.)
+                    if (!want && (occupied(z.gateTiles[g][0]) || occupied(z.gateTiles[g][1]))) continue;
+                    setGate(z, g, want);
+                }
+            }
+        }
+    }
+
+    private void setGate(SafeZone z, int g, boolean open) {
+        z.gateOpen[g] = open;
+        for (int t : z.gateTiles[g]) city.solid[t] = !open;
+    }
+
+    /** The dead clawing at a section of wall (or a gate). */
+    void damageWall(SafeZone z, int seg, float dmg) {
+        if (seg >= 0) {
+            if (!z.up[seg]) return;
+            z.hp[seg] -= dmg;
+            if (z.hp[seg] > 0) return;
+            z.hp[seg] = 0;
+            z.up[seg] = false;
+            city.solid[z.wall[seg]] = false;
+            z.breaches++;
+            float[] p = z.innerOf(z.wall[seg], city.w);
+            if (z.breachCd <= 0) {
+                z.breachCd = 15;
+                say(z.military ? WHO_MILITARY : WHO_POLICE, null, (z.military ? "Military" : "Police") + ": Breach in the wall at "
+                        + z.place + "! Get it covered!", p[0], p[1]);
+            }
+        } else {
+            int g = -2 - seg;
+            if (g < 0 || g >= z.gateTiles.length || z.gateHp[g] <= 0) return;
+            z.gateHp[g] -= dmg;
+            if (z.gateHp[g] > 0) return;
+            z.gateHp[g] = 0;
+            z.breaches++;
+            setGate(z, g, true);
+            say(z.military ? WHO_MILITARY : WHO_POLICE, null, (z.military ? "Military" : "Police") + ": The gate at " + z.place
+                    + " is down! Hold the gap!", z.gateIn[g][0], z.gateIn[g][1]);
+        }
+    }
+
+    /** The nearest breach in a zone's wall (the spot just inside it), or null. */
+    float[] nearestBreach(SafeZone z, float x, float y) {
+        float[] best = null;
+        float bd = Float.MAX_VALUE;
+        for (int k = 0; k < z.wall.length; k++) {
+            if (z.up[k] || (z.built < 1 && z.hp[k] > 0)) continue;
+            float[] p = z.innerOf(z.wall[k], city.w);
+            float d = (p[0] - x) * (p[0] - x) + (p[1] - y) * (p[1] - y);
+            if (d < bd) {
+                bd = d;
+                best = p;
+            }
+        }
+        for (int g = 0; g < z.gateTiles.length; g++) {
+            if (z.gateHp[g] > 0) continue;
+            float d = (z.gateIn[g][0] - x) * (z.gateIn[g][0] - x) + (z.gateIn[g][1] - y) * (z.gateIn[g][1] - y);
+            if (d < bd) {
+                bd = d;
+                best = z.gateIn[g];
+            }
+        }
+        return best;
+    }
+
     private int countZones(boolean military) {
         int n = 0;
         for (int i = 0; i < zones.size(); i++) if (zones.get(i).military == military) n++;
         return n;
     }
 
-    /** Picks an open area away from zombies and near the people who need it. */
-    private float[] chooseSite() {
-        float px = 0, py = 0;
-        int n = 0;
-        for (int i = 0, count = w.entities.size(); i < count; i++) {
-            Entity e = w.entities.get(i);
-            if (e.type == Entity.CIVILIAN) {
-                px += e.x;
-                py += e.y;
-                n++;
-            }
-        }
-        if (n == 0) {
-            px = city.worldW() / 2;
-            py = city.worldH() / 2;
-        } else {
-            px /= n;
-            py /= n;
-        }
-        float bestScore = -Float.MAX_VALUE;
-        float[] best = null;
-        for (float[] a : city.openAreas) {
-            boolean taken = false;
-            for (int i = 0; i < zones.size(); i++) {
-                float dx = zones.get(i).x - a[0], dy = zones.get(i).y - a[1];
-                if (dx * dx + dy * dy < 260 * 260) taken = true;
-            }
-            if (taken) continue;
-            int d = Math.min(40, city.fieldAt(city.zombieDist, a[0], a[1]));
-            if (d < 5 || w.countZombiesNear(a[0], a[1], CLEAR_OF_DEAD) > 0) continue;
-            float dx = a[0] - px, dy = a[1] - py;
-            float score = d * 3 - (float) Math.sqrt(dx * dx + dy * dy) / City.T * 0.6f;
-            if (score > bestScore) {
-                bestScore = score;
-                best = a;
-            }
-        }
-        return best;
-    }
-
-    /** A police station or military base that doesn't have a zone yet and isn't swarmed. */
-    private City.Facility freeFacility(boolean military) {
-        for (City.Facility f : city.facilities) {
-            if (f.kind != (military ? City.FACILITY_BASE : City.FACILITY_POLICE)) continue;
-            boolean taken = false;
-            for (int i = 0; i < zones.size(); i++)
-                if (Math.hypot(zones.get(i).x - f.x, zones.get(i).y - f.y) < 150) taken = true;
-            if (!taken && city.fieldAt(city.zombieDist, f.x, f.y) >= 3 && w.countZombiesNear(f.x, f.y, CLEAR_OF_DEAD) == 0) return f;
-        }
-        return null;
-    }
+    /** No safe zone is set up with the dead closer than this. */
+    static final float CLEAR_OF_DEAD = 250;
 
     /**
-     * A church, school or supermarket to shelter people at: big buildings with open ground outside.
-     * Soldiers only use schools and supermarkets.
+     * The block to wall in: one with room inside for tents, away from the dead and near the people who need
+     * it; better still with the precinct (or the base) in it, or a school, church, market, mall or stadium.
+     * With a spot given, the block there.
      */
-    private City.Building freeLandmark(boolean military, float[] out) {
-        City.Building best = null;
+    private int[] chooseBlock(boolean military, float[] at) {
+        float px = city.worldW() / 2, py = city.worldH() / 2;
+        if (at == null) {
+            float sx = 0, sy = 0;
+            int n = 0;
+            for (int i = 0, count = w.entities.size(); i < count; i++) {
+                Entity e = w.entities.get(i);
+                if (e.type != Entity.CIVILIAN || e.dead) continue;
+                sx += e.x;
+                sy += e.y;
+                n++;
+            }
+            if (n > 0) {
+                px = sx / n;
+                py = sy / n;
+            }
+        }
+        int[] best = null;
         float bestScore = -Float.MAX_VALUE;
-        for (int i = 0, n = city.buildings.size(); i < n; i++) {
-            City.Building b = city.buildings.get(i);
-            if (b.collapsed || b.name == null || (military && b.kind == City.CHURCH) || b.kind == City.JAIL) continue;
-            boolean taken = false;
-            for (int k = 0; k < zones.size(); k++)
-                if (Math.hypot(zones.get(k).x - b.doorX, zones.get(k).y - b.doorY) < 150) taken = true;
-            if (taken) continue;
-            int d = Math.min(30, city.fieldAt(city.zombieDist, b.doorX, b.doorY));
-            if (d < 4 || w.countZombiesNear(b.doorX, b.doorY, CLEAR_OF_DEAD) > 0) continue;
-            // Somewhere quiet, but not miles from the people who need it.
-            float score = d - Math.min(40, city.fieldAt(city.humanDist, b.doorX, b.doorY)) * 0.3f + (b.kind == City.SCHOOL ? 2 : 0);
+        for (int[] b : city.blocks()) {
+            int tx0 = b[0] + 1, ty0 = b[1] + 1, tx1 = b[2] - 2, ty1 = b[3] - 2;
+            int bw = tx1 - tx0 + 1, bh = ty1 - ty0 + 1;
+            if (bw < 9 || bh < 9 || bw > 60 || bh > 60) continue;
+            float cx = (tx0 + tx1 + 1) * City.T / 2f, cy = (ty0 + ty1 + 1) * City.T / 2f;
+            if (at != null) {
+                float d = Math.max(Math.abs(at[0] - cx) - bw * City.T / 2f, Math.abs(at[1] - cy) - bh * City.T / 2f);
+                if (d > 3 * City.T) continue;
+                float score = -d;
+                if (score > bestScore && free(tx0, ty0, tx1, ty1)) {
+                    bestScore = score;
+                    best = b;
+                }
+                continue;
+            }
+            if (!free(tx0, ty0, tx1, ty1)) continue;
+            int zd = Math.min(40, city.fieldAt(city.zombieDist, cx, cy));
+            if (zd < 5 || w.countZombiesNear(cx, cy, CLEAR_OF_DEAD) > 0) continue;
+            int open = 0;
+            for (int y = ty0 + 1; y < ty1; y++)
+                for (int x = tx0 + 1; x < tx1; x++) if (!city.solid[y * city.w + x]) open++;
+            if (open < (military ? 70 : 50)) continue;
+            float score = Math.min(open, 500) * 0.03f + zd * 2 - (float) Math.hypot(cx - px, cy - py) / City.T * 0.5f;
+            for (City.Facility f : city.facilities)
+                if (f.x > tx0 * City.T && f.x < (tx1 + 1) * City.T && f.y > ty0 * City.T && f.y < (ty1 + 1) * City.T
+                        && f.kind == (military ? City.FACILITY_BASE : City.FACILITY_POLICE)) score += 25;
+            City.Building mark = landmarkIn(tx0, ty0, tx1, ty1);
+            if (mark != null) score += 8;
             if (score > bestScore) {
                 bestScore = score;
                 best = b;
             }
         }
-        if (best == null) return null;
-        // The zone sits in front of the door.
-        float cx = (best.x0 + best.x1) / 2, cy = (best.y0 + best.y1) / 2;
-        float dx = best.doorX - cx, dy = best.doorY - cy, d = (float) Math.sqrt(dx * dx + dy * dy) + 0.001f;
-        float[] p = city.findWalkable(best.doorX + dx / d * 20, best.doorY + dy / d * 20);
-        if (p == null) return null;
-        out[0] = p[0];
-        out[1] = p[1];
         return best;
     }
 
-    /** No safe zone is set up with the dead closer than this. */
-    static final float CLEAR_OF_DEAD = 250;
+    /** Not taken by another zone (with a street between). */
+    private boolean free(int tx0, int ty0, int tx1, int ty1) {
+        for (int i = 0; i < zones.size(); i++) {
+            SafeZone o = zones.get(i);
+            if (tx0 <= o.tx1 + 3 && tx1 >= o.tx0 - 3 && ty0 <= o.ty1 + 3 && ty1 >= o.ty0 - 3) return false;
+        }
+        return true;
+    }
+
+    private City.Building landmarkIn(int tx0, int ty0, int tx1, int ty1) {
+        for (int i = 0, n = city.buildings.size(); i < n; i++) {
+            City.Building b = city.buildings.get(i);
+            if (b.collapsed || b.name == null) continue;
+            if (b.kind != City.SCHOOL && b.kind != City.CHURCH && b.kind != City.MARKET && b.kind != City.MALL
+                    && b.kind != City.STADIUM && b.kind != City.HOSPITAL && b.kind != City.STATION) continue;
+            if (b.doorX > tx0 * City.T && b.doorX < (tx1 + 1) * City.T && b.doorY > ty0 * City.T && b.doorY < (ty1 + 1) * City.T) return b;
+        }
+        return null;
+    }
 
     /**
-     * The line follows the ground: each section reaches out as far as the zone needs (more people, more
-     * room; more guards, a longer line they can hold), stops at walls, and falls back where the dead push.
+     * Lays out the compound on a block: the wall round its edge (where buildings don't already close it),
+     * the gates onto the streets, and the tents inside. False if there's no proper way in.
      */
-    private void shapeEdge(SafeZone z, float step) {
-        int n = SafeZone.SECTORS;
-        java.util.Arrays.fill(z.pressure, 0);
-        float look = z.r + 70;
-        for (int k = 0, count = w.entities.size(); k < count; k++) {
-            Entity o = w.entities.get(k);
-            if (o.dead || !o.isZombie() || Math.abs(o.x - z.x) > look || Math.abs(o.y - z.y) > look) continue;
-            float a = (float) Math.atan2(o.y - z.y, o.x - z.x);
-            int s = ((int) Math.floor(a / (Math.PI * 2) * n) % n + n) % n;
-            if (Math.hypot(o.x - z.x, o.y - z.y) < z.edge[s] + 60) z.pressure[s]++;
+    private boolean buildCompound(SafeZone z, int[] b) {
+        int W = city.w;
+        z.tx0 = b[0] + 1;
+        z.ty0 = b[1] + 1;
+        z.tx1 = b[2] - 2;
+        z.ty1 = b[3] - 2;
+        // The ring, side by side (top, right, bottom, left).
+        ArrayList<int[]> sides = new ArrayList<int[]>();
+        int[][] dirs = {{0, -1}, {1, 0}, {0, 1}, {-1, 0}};
+        for (int s = 0; s < 4; s++) {
+            ArrayList<Integer> side = new ArrayList<Integer>();
+            if (s == 0) for (int x = z.tx0; x <= z.tx1; x++) side.add(z.ty0 * W + x);
+            else if (s == 1) for (int y = z.ty0 + 1; y <= z.ty1; y++) side.add(y * W + z.tx1);
+            else if (s == 2) for (int x = z.tx1 - 1; x >= z.tx0; x--) side.add(z.ty1 * W + x);
+            else for (int y = z.ty1 - 1; y > z.ty0; y--) side.add(y * W + z.tx0);
+            int[] a = new int[side.size()];
+            for (int k = 0; k < a.length; k++) a[k] = side.get(k);
+            sides.add(a);
         }
-        float guardFactor = Math.min(1, z.onSite / (float) Math.max(1, z.wantGuards));
-        float maxR = z.baseR * (0.7f + 0.6f * guardFactor);
-        float needed = (float) Math.sqrt((z.sheltered + 10) * 330 / Math.PI);
-        float target = Math.max(z.baseR * 0.6f, Math.min(maxR, needed));
-        if (!z.open) target = z.baseR * 0.85f;
-        float sum = 0;
-        int squeezed = 0;
-        for (int k = 0; k < n; k++) {
-            int p = z.pressure[k] + (z.pressure[(k + 1) % n] + z.pressure[(k + n - 1) % n]) / 2;
-            float want = target * z.shape[k] * (1 - 0.45f * Math.min(1, p / 4f));
-            // Stop short of buildings and water: the line is sandbags across the street, not through walls.
-            double a = k * Math.PI * 2 / n;
-            float ca = (float) Math.cos(a), sa = (float) Math.sin(a);
-            for (float d = 14; d < want; d += 6)
-                if (city.tiles[city.tileIndex(z.x + ca * d, z.y + sa * d)] == City.BUILDING) {
-                    want = Math.max(z.baseR * 0.45f, d - 4);
-                    break;
+        // Gates: on the two best sides facing a street, as near the middle as the ground allows.
+        ArrayList<int[]> gates = new ArrayList<int[]>();
+        ArrayList<Integer> gateSide = new ArrayList<Integer>();
+        Integer[] order = {0, 1, 2, 3};
+        final int[] lens = {sides.get(0).length, sides.get(1).length, sides.get(2).length, sides.get(3).length};
+        java.util.Arrays.sort(order, new java.util.Comparator<Integer>() {
+            public int compare(Integer p, Integer q) {
+                return lens[q] - lens[p];
+            }
+        });
+        for (int oi = 0; oi < 4 && gates.size() < 2; oi++) {
+            int s = order[oi];
+            if (!gateSide.isEmpty() && gateSide.get(0) % 2 != s % 2 && oi < 2) continue;
+            int[] side = sides.get(s);
+            int bestK = -1;
+            float bestD = Float.MAX_VALUE;
+            for (int k = 1; k < side.length - 2; k++) {
+                if (!walkable(side[k]) || !walkable(side[k + 1])) continue;
+                int ox = dirs[s][0], oy = dirs[s][1];
+                if (!walkable(side[k] + oy * W + ox) || !walkable(side[k + 1] + oy * W + ox)) continue;
+                if (!walkable(side[k] - oy * W - ox) || !walkable(side[k + 1] - oy * W - ox)) continue;
+                float d = Math.abs(k + 0.5f - side.length / 2f);
+                if (d < bestD) {
+                    bestD = d;
+                    bestK = k;
                 }
-            float rate = want < z.edge[k] ? 14 : 6;
-            z.edge[k] += Math.max(-rate * step, Math.min(rate * step, want - z.edge[k]));
-            sum += z.edge[k];
-            if (p >= 4) squeezed++;
+            }
+            if (bestK < 0) continue;
+            gates.add(new int[]{side[bestK], side[bestK + 1]});
+            gateSide.add(s);
         }
-        z.r = sum / n;
-        // Room for as many as the line could stretch to hold with the guards it has.
-        int cap = Math.max(8, (int) (Math.PI * maxR * maxR / 330));
-        if (cap != z.capacity && z.open) zonesDirty = true;
-        z.capacity = cap;
-        boolean falling = z.open && squeezed >= n / 3;
-        if (falling && !z.fallingBack)
-            say(z.military ? WHO_MILITARY : WHO_POLICE, null, (z.military ? "Military" : "Police") + ": " + z.place
-                    + " perimeter is giving way. Pulling the line back!", z.x, z.y);
-        z.fallingBack = falling;
+        if (gates.isEmpty()) return false;
+        // The wall: every open tile of the ring that isn't a gate (buildings and trees close the rest).
+        ArrayList<Integer> wall = new ArrayList<Integer>();
+        java.util.HashSet<Integer> gateSet = new java.util.HashSet<Integer>();
+        for (int[] g : gates) {
+            gateSet.add(g[0]);
+            gateSet.add(g[1]);
+        }
+        for (int[] side : sides)
+            for (int t : side) if (!gateSet.contains(t) && walkable(t)) wall.add(t);
+        int n = wall.size(), ng = gates.size();
+        z.wall = new int[n];
+        z.hp = new float[n];
+        z.up = new boolean[n];
+        for (int k = 0; k < n; k++) {
+            z.wall[k] = wall.get(k);
+            z.hp[k] = 100;
+        }
+        z.gateTiles = new int[ng][];
+        z.gateOut = new float[ng][];
+        z.gateIn = new float[ng][];
+        z.gateHp = new float[ng];
+        z.gateHold = new float[ng];
+        z.gateOpen = new boolean[ng];
+        for (int g = 0; g < ng; g++) {
+            int[] t = gates.get(g);
+            int s = gateSide.get(g);
+            float gx = ((t[0] % W + t[1] % W) / 2f + 0.5f) * City.T, gy = ((t[0] / W + t[1] / W) / 2f + 0.5f) * City.T;
+            z.gateTiles[g] = t;
+            z.gateOut[g] = new float[]{gx + dirs[s][0] * City.T * 1.6f, gy + dirs[s][1] * City.T * 1.6f};
+            z.gateIn[g] = new float[]{gx - dirs[s][0] * City.T * 1.6f, gy - dirs[s][1] * City.T * 1.6f};
+            z.gateHp[g] = 160;
+        }
+        if (wallOwner == null) {
+            wallOwner = new SafeZone[W * city.h];
+            wallSeg = new int[W * city.h];
+        }
+        for (int k = 0; k < n; k++) {
+            wallOwner[z.wall[k]] = z;
+            wallSeg[z.wall[k]] = k;
+        }
+        for (int g = 0; g < ng; g++)
+            for (int t : z.gateTiles[g]) {
+                wallOwner[t] = z;
+                wallSeg[t] = -2 - g;
+            }
+        // Inside: the open ground, the middle of it, and the tents (the medical and food tents nearest the middle).
+        float sx = 0, sy = 0;
+        int open = 0;
+        for (int y = z.ty0 + 1; y < z.ty1; y++)
+            for (int x = z.tx0 + 1; x < z.tx1; x++)
+                if (walkable(y * W + x)) {
+                    sx += x;
+                    sy += y;
+                    open++;
+                }
+        if (open < 12) return false;
+        float[] mid = city.findWalkable((sx / open + 0.5f) * City.T, (sy / open + 0.5f) * City.T);
+        z.x = mid != null && z.inside(mid[0], mid[1]) ? mid[0] : (sx / open + 0.5f) * City.T;
+        z.y = mid != null && z.inside(mid[0], mid[1]) ? mid[1] : (sy / open + 0.5f) * City.T;
+        z.baseR = Math.max(z.tx1 - z.tx0 + 1, z.ty1 - z.ty0 + 1) * City.T / 2f;
+        z.r = z.baseR;
+        ArrayList<float[]> spots = new ArrayList<float[]>();
+        for (int y = z.ty0 + 2; y < z.ty1 - 1; y += 2)
+            for (int x = z.tx0 + 2; x < z.tx1 - 2; x += 3) {
+                if (!walkable(y * W + x) || !walkable(y * W + x + 1)) continue;
+                float tx = (x + 1) * City.T, ty = (y + 0.5f) * City.T;
+                boolean lane = false;
+                for (int g = 0; g < ng; g++) if (Math.hypot(z.gateIn[g][0] - tx, z.gateIn[g][1] - ty) < 3 * City.T) lane = true;
+                if (!lane) spots.add(new float[]{tx, ty});
+            }
+        if (spots.size() < 3) return false;
+        final float zx = z.x, zy = z.y;
+        java.util.Collections.sort(spots, new java.util.Comparator<float[]>() {
+            public int compare(float[] p, float[] q) {
+                return Float.compare((p[0] - zx) * (p[0] - zx) + (p[1] - zy) * (p[1] - zy), (q[0] - zx) * (q[0] - zx) + (q[1] - zy) * (q[1] - zy));
+            }
+        });
+        z.medX = spots.get(0)[0];
+        z.medY = spots.get(0)[1];
+        z.foodX = spots.get(1)[0];
+        z.foodY = spots.get(1)[1];
+        z.tents.clear();
+        for (int k = 2; k < spots.size() && z.tents.size() < (z.military ? 36 : 24); k++) z.tents.add(spots.get(k));
+        z.capacity = Math.max(10, Math.min(z.military ? 160 : 110, 6 + z.tents.size() * 4));
+        z.foodMax = 60 + z.capacity * 2;
+        z.food = z.foodMax;
+        return true;
+    }
+
+    private boolean walkable(int t) {
+        return t >= 0 && t < city.solid.length && !city.solid[t] && city.tiles[t] != City.WATER && city.tiles[t] != City.ROAD;
     }
 
     private SafeZone establish(boolean military, float[] at) {
-        String place;
-        float x, y;
-        float radius = military ? 80 : 60;
-        City.Facility facility = at == null ? freeFacility(military) : null;
-        float[] spot = new float[2];
-        City.Building landmark = at == null && facility == null ? freeLandmark(military, spot) : null;
-        if (facility != null) {
-            x = facility.x;
-            y = facility.y;
-            place = facility.name;
-            radius = Math.max(radius, facility.r);
-        } else if (landmark != null) {
-            x = spot[0];
-            y = spot[1];
-            place = landmark.name;
-            radius = 64;
-        } else if (at == null) {
-            float[] area = chooseSite();
-            if (area == null) return null;
-            float[] p = city.findWalkable(area[0], area[1]);
-            if (p == null) return null;
-            x = p[0];
-            y = p[1];
-            place = city.areaName(area);
-        } else {
-            x = at[0];
-            y = at[1];
-            place = city.placeName(x, y);
+        int[] b = chooseBlock(military, at);
+        if (b == null) {
+            if (at != null) say(WHO_INFO, null, "No block there to wall in as a safe zone.", at[0], at[1]);
+            return null;
         }
         SafeZone z = new SafeZone();
-        z.x = x;
-        z.y = y;
         z.military = military;
-        z.initEdge(radius, rnd);
-        // Bases and stations hold more people than a zone thrown up in a park.
-        z.capacity = Math.max(8, (int) (Math.PI * radius * radius / 330));
-        z.wantGuards = military ? 6 : 4;
-        z.place = place;
+        if (!buildCompound(z, b)) {
+            releaseWallMap(z);
+            return null;
+        }
+        City.Facility fac = null;
+        for (City.Facility f : city.facilities)
+            if (z.contains(f.x, f.y, 1) && (f.kind == City.FACILITY_POLICE || f.kind == City.FACILITY_BASE)) fac = f;
+        City.Building mark = landmarkIn(z.tx0, z.ty0, z.tx1, z.ty1);
+        z.place = fac != null ? fac.name : mark != null ? mark.name : city.placeName(z.x, z.y);
+        // Two at each gate, the rest along the wall.
+        z.wantGuards = z.gateTiles.length * 2 + (military ? 6 : 3);
         int got = assignGuards(z, z.wantGuards, Float.MAX_VALUE, military ? Entity.SOLDIER : Entity.COP);
-        if (got == 0) return null;
+        if (got == 0) {
+            releaseWallMap(z);
+            return null;
+        }
         zones.add(z);
         if (!military) {
             int n = w.fleet.roadblocks(z);
             if (n > 0) say(WHO_POLICE, null, "Police Command: Sending " + n + (n == 1 ? " car" : " cars")
-                    + " to close the roads into " + place + ".", x, y);
+                    + " to close the roads into " + z.place + ".", z.x, z.y);
         }
         zonesDirty = true;
         if (military)
-            say(WHO_MILITARY, null, "Military: " + got + " soldiers moving to " + place
-                    + " to set up a safe zone. It opens once the perimeter is up.", x, y);
+            say(WHO_MILITARY, null, "Military: " + got + " soldiers moving to " + z.place
+                    + " to wall it in as a safe zone. It opens once the wall is up.", z.x, z.y);
         else
-            say(WHO_POLICE, null, "Police Command: Officers on the way to set up a safe zone at " + place
-                    + ". Stay put until it's ready.", x, y);
+            say(WHO_POLICE, null, "Police Command: Officers on the way to wall in " + z.place
+                    + " as a safe zone. Stay put until it's ready.", z.x, z.y);
         return z;
     }
 
@@ -1288,10 +1580,24 @@ final class Dispatch {
         removeZone(z, overrun, false);
     }
 
+    /** Takes the wall down (the ground is as it was). */
+    private void releaseWallMap(SafeZone z) {
+        for (int t : z.wall) {
+            if (wallOwner != null && wallOwner[t] == z) wallOwner[t] = null;
+            city.solid[t] = false;
+        }
+        for (int[] g : z.gateTiles)
+            for (int t : g) {
+                if (wallOwner != null && wallOwner[t] == z) wallOwner[t] = null;
+                city.solid[t] = false;
+            }
+    }
+
     private void removeZone(SafeZone z, boolean overrun, boolean closing) {
         z.removed = true;
         zones.remove(z);
         zonesDirty = true;
+        releaseWallMap(z);
         for (int i = 0, n = w.entities.size(); i < n; i++) {
             Entity e = w.entities.get(i);
             if (e.zone == z) {
@@ -1320,13 +1626,8 @@ final class Dispatch {
 
     /** The Safe Zone tool: the player orders a safe zone at a spot. */
     void orderZone(float x, float y) {
-        float[] p = city.findWalkable(x, y);
-        if (p == null) {
-            say(WHO_INFO, null, "Can't set up a safe zone there.", x, y);
-            return;
-        }
-        if (w.countZombiesNear(p[0], p[1], CLEAR_OF_DEAD) > 0) {
-            say(WHO_INFO, null, "Too close to the dead to set up a safe zone. Pick somewhere quieter.", p[0], p[1]);
+        if (w.countZombiesNear(x, y, CLEAR_OF_DEAD) > 0) {
+            say(WHO_INFO, null, "Too close to the dead to set up a safe zone. Pick somewhere quieter.", x, y);
             return;
         }
         census();
@@ -1339,11 +1640,11 @@ final class Dispatch {
             census();
         }
         if (freeSoldiers + freeCops == 0) {
-            say(WHO_INFO, null, "No police or military available to guard a safe zone. Spawn some first!", p[0], p[1]);
+            say(WHO_INFO, null, "No police or military available to guard a safe zone. Spawn some first!", x, y);
             return;
         }
         boolean military = freeSoldiers >= 2 || freeCops == 0;
-        SafeZone z = establish(military, p);
+        SafeZone z = establish(military, new float[]{x, y});
         if (z != null && z.guards < z.wantGuards)
             assignGuards(z, z.wantGuards - z.guards, Float.MAX_VALUE, military ? Entity.COP : Entity.SOLDIER);
     }
@@ -1354,32 +1655,32 @@ final class Dispatch {
             SafeZone z = zones.get(i);
             float dx = z.x - x, dy = z.y - y;
             if (dx * dx + dy * dy < (z.r * 0.4f) * (z.r * 0.4f)) {
-                z.removed = true;
-                zones.remove(i);
-                zonesDirty = true;
                 say(WHO_INFO, null, "Safe zone at " + z.place + " closed.", z.x, z.y);
+                removeZone(z, false, true);
                 return true;
             }
         }
         return false;
     }
 
-    /** Recreates a safe zone from a save. */
+    /** Recreates a safe zone from a save (the block it was on, walled in again). */
     void restoreZone(float x, float y, float r, boolean military, String place, int capacity, int wantGuards) {
+        int[] b = chooseBlock(military, new float[]{x, y});
+        if (b == null) return;
         SafeZone z = new SafeZone();
-        z.x = x;
-        z.y = y;
-        z.initEdge(r, rnd);
-        java.util.Arrays.fill(z.edge, r);
-        z.r = r;
         z.military = military;
+        if (!buildCompound(z, b)) {
+            releaseWallMap(z);
+            return;
+        }
         z.place = place;
-        z.capacity = capacity;
-        z.wantGuards = wantGuards;
+        z.wantGuards = Math.max(wantGuards, z.gateTiles.length * 2 + 2);
         z.age = 20;
         z.built = 1;
         z.open = true;
+        java.util.Arrays.fill(z.up, false);
         zones.add(z);
+        raiseWall(z);
         zonesDirty = true;
         if (!military) w.fleet.roadblocks(z);
     }
@@ -1409,17 +1710,22 @@ final class Dispatch {
         return null;
     }
 
+    /** The way to the gates of the zones with room. */
     private void updateZoneField() {
         zonesDirty = false;
         zoneFieldTimer = 2;
-        // Only zones with room attract people.
         int n = 0;
-        float[] xs = new float[zones.size()], ys = new float[zones.size()];
+        for (int i = 0; i < zones.size(); i++) n += zones.get(i).gateOut.length;
+        float[] xs = new float[n], ys = new float[n];
+        n = 0;
         for (int i = 0; i < zones.size(); i++) {
-            if (zones.get(i).full || !zones.get(i).open) continue;
-            xs[n] = zones.get(i).x;
-            ys[n] = zones.get(i).y;
-            n++;
+            SafeZone z = zones.get(i);
+            if (z.full || !z.open) continue;
+            for (int g = 0; g < z.gateOut.length; g++) {
+                xs[n] = z.gateOut[g][0];
+                ys[n] = z.gateOut[g][1];
+                n++;
+            }
         }
         city.walkFieldFromPoints(zoneField, xs, ys, n);
     }

@@ -889,7 +889,12 @@ public final class GameTests {
                 }
                 // The dead round a fire tower: the rescue helicopter lowers its team and lifts people out.
                 float[] t = city.fireTowers.get(0);
-                for (int i = 0; i < 4; i++) w.spawn(Entity.ZOMBIE, t[0] - 70 + i * 8, t[1] - 70);
+                // (No rangers about: with help close by, nobody calls the helicopter.)
+                for (Entity e : w.entities) if (e.agency == 3 && e.rig == null) {
+                    e.dead = true;
+                    e.removed = true;
+                }
+                for (int i = 0; i < 4; i++) w.spawn(Entity.ZOMBIE, t[0] - 70 + i * 8, t[1] - 50);
                 w.alert = Math.max(1, w.alert);
                 boolean sent = false, lowered = false;
                 for (int f = 0; f < 30 * 120 && !lowered; f++) {
@@ -902,6 +907,122 @@ public final class GameTests {
                         }
                 }
                 check(sent && lowered, "the rescue helicopter comes and lowers its team");
+            }
+        });
+        test("10.15: walled safe zones with gates, the dead climb fire towers, people keep running", new Check() {
+            public void run() {
+                CityConfig c = new CityConfig();
+                c.seed = 77;
+                c.v[CityConfig.OPT_SIZE] = CityConfig.MEDIUM;
+                c.v[CityConfig.OPT_ZOMBIES] = 0;
+                World w = new World(c);
+                w.populate(c);
+                w.viewX0 = 0;
+                w.viewY0 = 0;
+                w.viewX1 = w.city.worldW();
+                w.viewY1 = w.city.worldH();
+                w.update(1 / 30f);
+                // A safe zone: a block walled in, gates onto the street, tents inside.
+                // (On a park: open ground all round its edge to wall in.)
+                for (float[] a : w.city.openAreas) {
+                    if (!w.dispatch.zones.isEmpty()) break;
+                    if (!w.city.inTown(a[0], a[1])) continue;
+                    w.dispatch.orderZone(a[0], a[1]);
+                    if (!w.dispatch.zones.isEmpty() && w.dispatch.zones.get(0).wall.length <= 10) w.dispatch.removeZoneAt(w.dispatch.zones.get(0).x, w.dispatch.zones.get(0).y);
+                }
+                check(!w.dispatch.zones.isEmpty(), "a safe zone is set up");
+                Dispatch.SafeZone z = w.dispatch.zones.get(0);
+                check(z.wall.length > 10 && z.gateTiles.length >= 1 && z.tents.size() >= 3 && z.medX > 0 && z.foodX > 0,
+                        "a wall (" + z.wall.length + "), gates (" + z.gateTiles.length + "), tents (" + z.tents.size() + "), a medical and a food tent");
+                w.alert = 2;
+                int seeking = 0;
+                for (Entity e : w.entities)
+                    if (e.type == Entity.CIVILIAN && !e.dead && Math.hypot(e.x - z.x, e.y - z.y) < 700 && seeking < 30) {
+                        e.aware = true;
+                        e.task = Dispatch.T_SEEK;
+                        seeking++;
+                    }
+                for (int f = 0; f < 30 * 150 && (!z.open || z.sheltered < 5); f++) {
+                    w.update(1 / 30f);
+                    w.evCount = 0;
+                }
+                check(z.open, "the wall goes up and it opens");
+                int solid = 0;
+                for (int k = 0; k < z.wall.length; k++) if (z.up[k] && w.city.solid[z.wall[k]]) solid++;
+                check(solid * 10 >= z.wall.length * 9, "the wall is solid (" + solid + " of " + z.wall.length + ")");
+                check(z.sheltered >= 5, "people come in through the gates (" + z.sheltered + ")");
+                int inside = 0;
+                for (Entity e : w.entities) if (!e.dead && e.task == Dispatch.T_SHELTER && e.zone == z && z.inside(e.x, e.y)) inside++;
+                check(inside >= 3, "the sheltered are inside the wall (" + inside + ")");
+                // The dead claw through a section; it's mended once they're gone.
+                int k = z.wall.length / 3;
+                w.dispatch.damageWall(z, k, 1000);
+                check(!z.up[k] && !w.city.solid[z.wall[k]], "a section broken down is a gap in the wall");
+                boolean mended = false;
+                for (int f = 0; f < 30 * 60 && !mended; f++) {
+                    w.update(1 / 30f);
+                    w.evCount = 0;
+                    mended = z.up[k];
+                }
+                check(mended, "the guards mend the breach");
+                // The dead at the wall claw at it.
+                for (int i = 0; i < 6; i++) {
+                    int kk = (i * z.wall.length / 6 + 1) % z.wall.length;
+                    float[] q = z.innerOf(z.wall[kk], w.city.w);
+                    int wt = z.wall[kk];
+                    float ox = wt % w.city.w == z.tx0 ? -1 : wt % w.city.w == z.tx1 ? 1 : 0;
+                    float oy = wt / w.city.w == z.ty0 ? -1 : wt / w.city.w == z.ty1 ? 1 : 0;
+                    w.spawn(Entity.BRUTE, q[0] + ox * City.T * 2, q[1] + oy * City.T * 2);
+                }
+                for (Entity e : w.entities) {
+                    if (e.isArmed()) {
+                        e.ammo = 0;
+                        e.reserve = 0;
+                    }
+                    // (Nobody left outside for them to go after instead.)
+                    if (!e.dead && !e.isZombie() && !z.inside(e.x, e.y) && Math.hypot(e.x - z.x, e.y - z.y) < 900) {
+                        e.dead = true;
+                        e.removed = true;
+                    }
+                }
+                float weakest = 100;
+                for (int f = 0; f < 30 * 8; f++) {
+                    w.update(1 / 30f);
+                    for (int i = 0; i < z.hp.length; i++) if (i != k) weakest = Math.min(weakest, z.hp[i]);
+                }
+                check(weakest < 99, "the dead claw at the wall (weakest section " + (int) weakest + ")");
+                // Up a fire tower: they have to climb to get the lookout (it takes them a while).
+                CityConfig t = new CityConfig();
+                t.seed = 9;
+                t.v[CityConfig.OPT_COUNTRY] = Country.SWEDEN;
+                t.v[CityConfig.OPT_PRESET] = 6;
+                t.v[CityConfig.OPT_SIZE] = CityConfig.LARGE;
+                t.v[CityConfig.OPT_ZOMBIES] = 0;
+                World tw = new World(t);
+                tw.populate(t);
+                Entity keeper = tw.towerKeeper[0];
+                float hp = keeper.hp;
+                Entity climber = tw.spawn(Entity.ZOMBIE, keeper.x + 6, keeper.y + 6);
+                for (int f = 0; f < 30 * 3; f++) tw.update(1 / 30f);
+                check(keeper.hp >= hp, "not bitten straight away up the tower");
+                for (int f = 0; f < 30 * 15; f++) {
+                    if (climber.dead) break;
+                    tw.update(1 / 30f);
+                }
+                check(climber.dead || keeper.hp < hp || keeper.dead, "the dead can climb up and get at the lookout");
+                // Someone who has just seen one keeps running after it's out of sight.
+                Entity runner = null;
+                for (Entity e : w.entities) if (e.type == Entity.CIVILIAN && !e.dead && e.task == Dispatch.T_NONE && !w.city.inTown(e.x, e.y) == false) runner = e;
+                if (runner != null) {
+                    Entity scare = w.spawn(Entity.ZOMBIE, runner.x + 30, runner.y);
+                    for (int f = 0; f < 10; f++) w.update(1 / 30f);
+                    float sx = scare.x, sy = scare.y;
+                    scare.dead = true;
+                    scare.removed = true;
+                    for (int f = 0; f < 30 * 6; f++) w.update(1 / 30f);
+                    check(runner.dead || runner.task != Dispatch.T_NONE || runner.fleeTimer > 0 || Math.hypot(runner.x - sx, runner.y - sy) > 90,
+                            "still getting away six seconds after it's out of sight (" + (int) Math.hypot(runner.x - sx, runner.y - sy) + " away)");
+                }
             }
         });
         test("every screen draws", new Check() {

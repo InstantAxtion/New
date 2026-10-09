@@ -3474,87 +3474,138 @@ final class GameView extends View implements Menu.Host {
         c.restore();
     }
 
-    /** A safe zone on the ground: tinted area, a sandbag ring with gaps for entrances and a tent. */
-    private final android.graphics.Path zonePath = new android.graphics.Path();
-
+    /**
+     * A safe zone: the compound tinted, its wall (concrete barriers with fencing on top; broken sections as
+     * rubble and a sagging fence), the gates (a boom, sandbags either side), and the tents inside: rows to
+     * sleep in, the medical tent with its red cross and the food tent with crates stacked by it.
+     */
     private void drawZone(Canvas c, Dispatch.SafeZone z) {
         int tint = z.military ? 0xFF6FBF3F : 0xFF4F8FE0;
-        int n = Dispatch.SafeZone.SECTORS;
-        // The ground inside the line (fainter while it's still going up).
-        zonePath.reset();
-        for (int k = 0; k < n; k++) {
-            double a = k * Math.PI * 2 / n;
-            float px = z.x + (float) Math.cos(a) * z.edge[k], py = z.y + (float) Math.sin(a) * z.edge[k];
-            if (k == 0) zonePath.moveTo(px, py);
-            else zonePath.lineTo(px, py);
-        }
-        zonePath.close();
-        fill.setColor(alpha(tint, z.open ? (z.fallingBack ? 0.1f : 0.16f) : 0.07f));
-        c.drawPath(zonePath, fill);
-        // Sandbags along the line, as far round as they've got; a gap for a gate every quarter.
-        float total = 0;
-        for (int k = 0; k < n; k++) total += segLen(z, k);
-        float done = total * z.built, run = 0;
-        for (int k = 0; k < n; k++) {
-            double a0 = k * Math.PI * 2 / n, a1 = (k + 1) * Math.PI * 2 / n;
-            float x0 = z.x + (float) Math.cos(a0) * z.edge[k], y0 = z.y + (float) Math.sin(a0) * z.edge[k];
-            float x1 = z.x + (float) Math.cos(a1) * z.edge[(k + 1) % n], y1 = z.y + (float) Math.sin(a1) * z.edge[(k + 1) % n];
-            float len = segLen(z, k);
-            int bags = Math.max(1, (int) (len / 5.5f));
-            boolean gate = k % 6 == 0;
-            for (int i = 0; i < bags; i++) {
-                float t = (i + 0.5f) / bags;
-                if (run + t * len > done) break;
-                if (gate && t > 0.3f && t < 0.7f) continue;
-                float bx = x0 + (x1 - x0) * t, by = y0 + (y1 - y0) * t;
-                fill.setColor(0x60000000);
-                c.drawCircle(bx + 0.8f, by + 1f, 3f, fill);
-                fill.setColor((k + i) % 2 == 0 ? 0xFFA38D5E : 0xFF917C50);
-                c.drawCircle(bx, by, 3f, fill);
-            }
-            run += len;
-        }
-        // Army checkpoints in the gaps: a striped boom and a guard hut.
-        if (z.military && z.open) {
-            for (int k = 0; k < n; k += 6) {
-                double a = (k + 0.5) * Math.PI * 2 / n;
-                float cx = (float) Math.cos(a), cy = (float) Math.sin(a);
-                float er = (z.edge[k] + z.edge[(k + 1) % n]) / 2 * (float) Math.cos(Math.PI / n);
-                float gx = z.x + cx * er, gy = z.y + cy * er;
-                float tx = -cy, ty = cx;
-                for (int q = 0; q < 4; q++) {
-                    float s0 = -5.5f + q * 2.75f, s1 = s0 + 2.75f;
-                    stroke.setColor(q % 2 == 0 ? 0xFFE03A30 : 0xFFF2F2F2);
-                    stroke.setStrokeWidth(1.4f);
-                    c.drawLine(gx + tx * s0, gy + ty * s0, gx + tx * s1, gy + ty * s1, stroke);
+        float T = City.T;
+        int W = world.city.w;
+        fill.setColor(alpha(tint, z.open ? (z.fallingBack ? 0.08f : 0.13f) : 0.06f));
+        c.drawRect(z.left() + T, z.top() + T, z.right() - T, z.bottom() - T, fill);
+        // The wall.
+        for (int k = 0; k < z.wall.length; k++) {
+            int t = z.wall[k], tx = t % W, ty = t / W;
+            float x0 = tx * T, y0 = ty * T;
+            boolean horizontal = ty == z.ty0 || ty == z.ty1;
+            if (z.up[k]) {
+                // Concrete barriers in a line, a fence along the top with a post at each.
+                fill.setColor(0x66000000);
+                c.drawRect(x0 + 2, y0 + 3, x0 + T + 2, y0 + T + 3, fill);
+                fill.setColor(0xFF56534C);
+                if (horizontal) c.drawRect(x0, y0 + 2.5f, x0 + T, y0 + T - 2.5f, fill);
+                else c.drawRect(x0 + 2.5f, y0, x0 + T - 2.5f, y0 + T, fill);
+                fill.setColor(0xFFA8A49A);
+                if (horizontal) c.drawRect(x0 + 0.6f, y0 + 3.5f, x0 + T - 0.6f, y0 + T - 3.5f, fill);
+                else c.drawRect(x0 + 3.5f, y0 + 0.6f, x0 + T - 3.5f, y0 + T - 0.6f, fill);
+                fill.setColor(0xFFCAC6BC);
+                if (horizontal) c.drawRect(x0 + 0.6f, y0 + 5.5f, x0 + T - 0.6f, y0 + T - 7, fill);
+                else c.drawRect(x0 + 5.5f, y0 + 0.6f, x0 + T - 7, y0 + T - 0.6f, fill);
+                stroke.setColor(0xFF2E3236);
+                stroke.setStrokeWidth(1.3f);
+                if (horizontal) c.drawLine(x0, y0 + T / 2, x0 + T, y0 + T / 2, stroke);
+                else c.drawLine(x0 + T / 2, y0, x0 + T / 2, y0 + T, stroke);
+                stroke.setStrokeWidth(0.5f);
+                stroke.setColor(0x9033363A);
+                for (int q = 1; q < 4; q++) {
+                    if (horizontal) c.drawLine(x0 + q * 4, y0 + T / 2 - 2, x0 + q * 4 + 2, y0 + T / 2 + 2, stroke);
+                    else c.drawLine(x0 + T / 2 - 2, y0 + q * 4, x0 + T / 2 + 2, y0 + q * 4 + 2, stroke);
                 }
-                float hx = gx + cx * 6 + tx * 8, hy = gy + cy * 6 + ty * 8;
-                fill.setColor(0x60000000);
-                c.drawRect(hx - 2.5f, hy - 2f, hx + 3.5f, hy + 4f, fill);
-                fill.setColor(0xFF6F7A55);
-                c.drawRect(hx - 3, hy - 3, hx + 3, hy + 3, fill);
-                fill.setColor(0xFF9FD0E8);
-                c.drawRect(hx - 2, hy - 2, hx + 2, hy - 0.5f, fill);
+                fill.setColor(0xFF22262A);
+                c.drawCircle(x0 + T / 2, y0 + T / 2, 1.5f, fill);
+                if (z.hp[k] < 60) {
+                    // Dented and buckling.
+                    fill.setColor(0x80302820);
+                    c.drawCircle(x0 + T / 2 + 2, y0 + T / 2 - 1, 2.4f, fill);
+                }
+            } else if (z.built >= 1 || z.hp[k] <= 0) {
+                // A breach: barriers knocked aside, the fence torn down.
+                fill.setColor(0xFF8E8A80);
+                c.drawRect(x0 + 1, y0 + 2, x0 + 6, y0 + 5, fill);
+                c.drawRect(x0 + T - 6, y0 + T - 5, x0 + T - 1, y0 + T - 2, fill);
+                stroke.setColor(0xFF5E6266);
+                stroke.setStrokeWidth(0.6f);
+                c.drawLine(x0 + 2, y0 + T / 2, x0 + T * 0.4f, y0 + T * 0.7f, stroke);
+            } else if (k < (int) (z.built * z.wall.length) + 4) {
+                // The next sections, waiting to go up.
+                fill.setColor(0xFF9E9A90);
+                c.drawRect(x0 + 3, y0 + 3, x0 + T - 3, y0 + 7, fill);
             }
         }
-        fill.setColor(0x60000000);
-        c.drawRect(z.x - 7, z.y - 5, z.x + 9, z.y + 7, fill);
-        fill.setColor(z.military ? 0xFF5B6B3A : 0xFF2F4F86);
-        c.drawRect(z.x - 8, z.y - 6, z.x + 8, z.y + 6, fill);
-        fill.setColor(z.military ? 0xFF6F8048 : 0xFF3F64A6);
-        c.drawRect(z.x - 8, z.y - 6, z.x + 8, z.y - 0.5f, fill);
+        // The gates.
+        for (int g = 0; g < z.gateTiles.length; g++) {
+            float gx = (z.gateOut[g][0] + z.gateIn[g][0]) / 2, gy = (z.gateOut[g][1] + z.gateIn[g][1]) / 2;
+            float dx = z.gateOut[g][0] - z.gateIn[g][0], dy = z.gateOut[g][1] - z.gateIn[g][1], l = (float) Math.sqrt(dx * dx + dy * dy) + 0.001f;
+            dx /= l;
+            dy /= l;
+            float px = -dy, py = dx;
+            // Sandbags either side, on the inside.
+            for (int s = -1; s <= 1; s += 2)
+                for (int q = 0; q < 3; q++) {
+                    float bx = gx + px * s * (T + 4) - dx * (5 + q * 3), by = gy + py * s * (T + 4) - dy * (5 + q * 3);
+                    fill.setColor(0x60000000);
+                    c.drawCircle(bx + 0.8f, by + 1, 3, fill);
+                    fill.setColor(q % 2 == 0 ? 0xFFA38D5E : 0xFF917C50);
+                    c.drawCircle(bx, by, 3, fill);
+                }
+            if (z.gateHp[g] <= 0) continue;
+            if (!z.open) continue;
+            // The boom: across the gap when shut, swung up when open.
+            float len = z.gateOpen[g] ? 6 : T * 2 - 2;
+            float sx = gx - px * (T - 1), sy = gy - py * (T - 1);
+            for (int q = 0; q < 4; q++) {
+                float s0 = len * q / 4, s1 = len * (q + 1) / 4;
+                stroke.setColor(q % 2 == 0 ? 0xFFE03A30 : 0xFFF2F2F2);
+                stroke.setStrokeWidth(1.6f);
+                c.drawLine(sx + px * s0, sy + py * s0, sx + px * s1, sy + py * s1, stroke);
+            }
+            fill.setColor(0xFF3A3E42);
+            c.drawCircle(sx, sy, 1.6f, fill);
+        }
+        // The tents.
+        int canvas = z.military ? 0xFF5B6B3A : 0xFF3F64A6, ridge = z.military ? 0xFF6F8048 : 0xFF5A7EC0;
+        for (int i = 0; i < z.tents.size(); i++) {
+            float[] t = z.tents.get(i);
+            drawTent(c, t[0], t[1], 11, 7, canvas, ridge);
+        }
+        if (z.medX > 0) {
+            drawTent(c, z.medX, z.medY, 13, 8, 0xFFEDEDED, 0xFFFFFFFF);
+            fill.setColor(0xFFD83A3A);
+            c.drawRect(z.medX - 1.2f, z.medY - 4, z.medX + 1.2f, z.medY + 4, fill);
+            c.drawRect(z.medX - 4, z.medY - 1.2f, z.medX + 4, z.medY + 1.2f, fill);
+        }
+        if (z.foodX > 0) {
+            drawTent(c, z.foodX, z.foodY, 13, 8, 0xFFB09068, 0xFFC8A880);
+            int crates = z.foodMax > 0 ? (int) Math.ceil(5 * z.food / z.foodMax) : 0;
+            for (int q = 0; q < crates; q++) {
+                float cx = z.foodX + 16 + (q % 2) * 5, cy = z.foodY - 5 + (q / 2) * 5;
+                fill.setColor(0xFF7A5A34);
+                c.drawRect(cx - 2.2f, cy - 2.2f, cx + 2.2f, cy + 2.2f, fill);
+                fill.setColor(0xFF9A7A4E);
+                c.drawRect(cx - 1.6f, cy - 1.6f, cx + 1.6f, cy - 0.4f, fill);
+            }
+        }
+        // A flag on a pole by the medical tent.
+        float fx = z.medX > 0 ? z.medX - 18 : z.x, fy = z.medX > 0 ? z.medY : z.y;
         stroke.setColor(0xFFDDDDDD);
         stroke.setStrokeWidth(1f);
-        c.drawLine(z.x + 11, z.y + 6, z.x + 11, z.y - 12, stroke);
+        c.drawLine(fx, fy + 6, fx, fy - 12, stroke);
         fill.setColor(tint);
-        c.drawRect(z.x + 11, z.y - 12, z.x + 19, z.y - 7, fill);
+        c.drawRect(fx, fy - 12, fx + 8, fy - 7, fill);
     }
 
-    private static float segLen(Dispatch.SafeZone z, int k) {
-        int n = Dispatch.SafeZone.SECTORS;
-        double a0 = k * Math.PI * 2 / n, a1 = (k + 1) * Math.PI * 2 / n;
-        float r0 = z.edge[k], r1 = z.edge[(k + 1) % n];
-        return (float) Math.hypot(Math.cos(a1) * r1 - Math.cos(a0) * r0, Math.sin(a1) * r1 - Math.sin(a0) * r0);
+    private void drawTent(Canvas c, float x, float y, float hw, float hh, int canvas, int ridge) {
+        fill.setColor(0x55000000);
+        c.drawRect(x - hw + 2, y - hh + 2.5f, x + hw + 2, y + hh + 2.5f, fill);
+        fill.setColor(canvas);
+        c.drawRect(x - hw, y - hh, x + hw, y + hh, fill);
+        fill.setColor(ridge);
+        c.drawRect(x - hw, y - hh, x + hw, y - 0.6f, fill);
+        stroke.setColor(City.darken(canvas, 0.7f));
+        stroke.setStrokeWidth(0.7f);
+        c.drawLine(x - hw, y, x + hw, y, stroke);
     }
 
     private static final int[] LEAF_DARK = {0xFF24481C, 0xFF2A4E1E, 0xFF2E4A22};
@@ -3730,7 +3781,8 @@ final class GameView extends View implements Menu.Host {
             String label = !z.open ? (z.military ? "MILITARY" : "POLICE") + " SAFE ZONE  -  SETTING UP " + (int) (z.built * 100)
                     + "%" + (z.onSite == 0 ? " (on the way)" : "")
                     : (z.military ? "MILITARY" : "POLICE") + " SAFE ZONE  -  " + z.sheltered + "/" + z.capacity
-                    + (z.full ? "  FULL" : z.fallingBack ? "  FALLING BACK" : "") + "  -  ammo " + z.ammo + (z.supplyComing ? " (truck coming)" : "");
+                    + (z.full ? "  FULL" : z.fallingBack ? "  FALLING BACK" : z.breaches > 0 ? "  BREACHED" : "")
+                    + "  -  food " + (z.foodMax > 0 ? (int) (100 * z.food / z.foodMax) : 0) + "%  ammo " + z.ammo + (z.supplyComing ? " (truck coming)" : "");
             float tw = text.measureText(label);
             oval.set(sx - tw / 2 - 8 * dp, sy - 14 * dp, sx + tw / 2 + 8 * dp, sy + 5 * dp);
             if (!claim(oval)) continue;

@@ -339,6 +339,13 @@ fish from the lake shores and sit round the campfires. When people are cut off o
 helicopter hovers and lowers a search and rescue team on the winch, lifts everyone out and flies them to the
 hospital. Nobody reports zombies that nobody has seen. Saved games from before keep their old maps.
 
+**Walled safe zones (10.15):** a safe zone is a whole city block walled in with concrete barriers and fencing
+(its buildings close the gaps), with gates onto the streets where guards check people for bites and let them
+through, shutting them when the dead come near. Inside are rows of tents, a medical tent and a food tent;
+the rations run down and supply trucks bring more. The dead smell the people inside and claw at the wall
+until sections give; guards cover and mend the breaches. The dead climb fire towers, go round to doors
+instead of into walls, and people who've had a close call keep running until they're clear.
+
 **Countryside:** Villages, small towns and every Massive map are surrounded by open country:
 winding dirt lanes out to the edge of the map, farms and lonely cabins along them, woods, and
 hamlets (a short street of cottages with a lane back to town). A town out in the country is never a
@@ -370,17 +377,18 @@ a Guard Headquarters (the National Guard comes sooner).
   under attack make police request military support. The military sends a free squad, or one of its
   limited reserve squads. Police get backup officers from the precinct when every unit is busy.
   Reserves never refill; the stats panel shows how many are left.
-- **Safe zones**: police and military pick a spot with no zombies within about 250 units (a station,
-  the base, a school, a park or a plaza) and send guards there. Nothing happens instantly: the zone is
-  set up first, the sandbag line going up a section at a time as the guards arrive, and it only opens
-  (and only lets people in) once it's finished. If the dead get there first, the setup is abandoned.
-  Its border is an irregular line, not a circle: it grows as people arrive and more guards take the
-  line, stops at building walls, and pulls back on the side the dead are pushing ("falling back").
-  Capacity follows how far the line can stretch with the guards it has; a full zone turns people
-  away. Civilians run there when scared or when they hear about one, and shelter inside. A zone with
-  no guards left, or with more zombies inside the line than the guards can hold, is overrun; police then fall back
-  to a military zone. When a zone has been quiet for a while (or empty of people for 90 seconds),
-  it packs up; once the outbreak is over, zones close within half a minute of the last zombie.
+- **Safe zones**: police and military pick a city block with no zombies within about 250 units (the
+  precinct's or the base's block, a school, a church, a market, a park) and wall it in: concrete barriers
+  with fencing round the block's edge, its buildings closing the gaps, and gates onto the streets. The
+  wall goes up a section at a time as the guards arrive; nobody is let in until it's finished, and if
+  the dead get there first the setup is abandoned. People queue at the gates, are checked for bites
+  (the army misses fewer) and let through; the gates shut whenever the dead come near. Inside are rows
+  of tents (capacity follows how many fit), a medical tent and a food tent; rations run down and supply
+  trucks bring food with the ammo. Guards stand two to a gate and along the wall; the dead claw at the
+  wall until sections give, and guards cover and mend breaches. A zone with no guards left, or with
+  more zombies inside the wall than the guards can hold, is overrun; police then fall back to a
+  military zone. When a zone has been quiet for a while (or empty of people for 90 seconds), it packs
+  up; once the outbreak is over, zones close within half a minute of the last zombie.
 - **Roadblocks**: when a zone opens, police cars from the nearest precinct drive to the roads
   leading into it (up to three), park across the road with cones out and an officer on guard. They
   pack up and drive back when the zone closes.

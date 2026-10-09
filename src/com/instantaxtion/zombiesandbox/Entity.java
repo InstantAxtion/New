@@ -125,7 +125,7 @@ final class Entity {
             // Out in the wilds (10.14): hiking the trails, fishing at a lake, round the campfire, and the fire
             // lookouts: on duty up a tower, on the way to start a shift, and heading home after one.
             J_HIKER = 10, J_FISHER = 11, J_CAMPER = 12, J_LOOKOUT = 13, J_RELIEF = 14, J_OFFDUTY = 15;
-    /** Up a fire lookout tower: out of reach of the dead. */
+    /** Up a fire lookout tower: the dead have to climb the stairs to get at them. */
     boolean aloft;
     /** A walk along a trail (see City.hikes): how far along, and which way (1 out, -1 back). */
     float[] hike;
@@ -135,6 +135,8 @@ final class Entity {
     /** Rescue team: seconds left coming down the winch line, and the person they're bringing back. */
     float roping;
     Entity escort;
+    /** A zombie: how long it has been climbing the stairs of a fire tower. */
+    float climb;
     float errandTimer;
     boolean homeChecked;
     /** The last hard knock (blast, car, charge), so the body flies the right way if it kills them. Fades fast. */

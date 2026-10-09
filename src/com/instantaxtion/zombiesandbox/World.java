@@ -1637,7 +1637,7 @@ final class World {
                 int c = cy * gw + cx;
                 for (int k = wantZombie ? cellStart[c] : cellStart[c] + zCount[c], end = wantZombie ? cellStart[c] + zCount[c] : cellStart[c] + cellCount[c]; k < end; k++) {
                     Entity o = sorted[k];
-                    if (o.dead || o.isZombie() != wantZombie || o == from || o.aloft) continue;
+                    if (o.dead || o.isZombie() != wantZombie || o == from) continue;
                     float ddx = o.x - from.x, ddy = o.y - from.y, d2 = ddx * ddx + ddy * ddy;
                     if (o.hidden && d2 > 22 * 22) continue;
                     if (d2 < best && (!needLos || city.los(from.x, from.y, o.x, o.y))) {
@@ -1872,22 +1872,41 @@ final class World {
                 }
             }
             // Seen through a fence or across the highway barrier: the way round (by smell), not into it.
-            if (d > 16 && !city.passLine(z.x, z.y, t.x, t.y) && followField(z, city.humanDist, d < 45 ? z.runSpeed : z.speed)) return;
+            if (d > 16 && !city.passLine(z.x, z.y, t.x, t.y)) {
+                // Right up against a safe zone's wall with them on the other side: tear at it.
+                if (dispatch.wallOwner != null && clawWall(z, dt)) return;
+                if (followField(z, city.humanDist, d < 45 ? z.runSpeed : z.speed)) return;
+            }
+            if (t.aloft && d < 22) {
+                // Up a fire tower: the stairs are steep and narrow, but they climb (runners quickest).
+                z.climb += dt;
+                steer(z, ddx / d, ddy / d, z.speed * 0.3f);
+                float need = z.type == Entity.RUNNER ? 4 : z.type == Entity.CRAWLER || z.type == Entity.ZOMBIE_DOG ? 14 : 8;
+                if (z.climb >= need && z.biteCd <= 0) bite(z, t, ddx / d, ddy / d);
+                return;
+            }
+            z.climb = 0;
             steer(z, ax, ay, d < 45 ? z.runSpeed : z.speed);
             if (d < z.radius + t.radius + 2.5f && z.biteCd <= 0) bite(z, t, ddx / d, ddy / d);
             return;
         }
+        // At the wall of a safe zone with people inside: claw at it.
+        if (dispatch.wallOwner != null && clawWall(z, dt)) return;
         // Lost sight of them: go to where they were last seen, then search around there for a while.
         if (z.memory > 0) {
             float ddx = z.lastX - z.x, ddy = z.lastY - z.y;
             float d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
-            if (d < 14 || (z.blocked && d < 40)) {
+            City.Building hid = occupiedNear(z.lastX, z.lastY, 40);
+            if (hid != null) {
+                // They got inside: on to the door, with the rest of the dead (below).
+                z.memory = 0;
+                z.path = null;
+            } else if (d < 14 || (z.blocked && d < 40)) {
                 z.memory = 0;
                 z.searchTimer = 5 + rnd.nextFloat() * 4;
                 z.blocked = false;
             } else {
-                if (city.passLine(z.x, z.y, z.lastX, z.lastY) || !followField(z, city.humanDist, z.speed * 1.2f))
-                    steer(z, ddx / d, ddy / d, z.speed * 1.25f);
+                if (!followField(z, city.humanDist, z.speed * 1.2f)) zombieWalkTo(z, z.lastX, z.lastY, z.speed * 1.25f);
                 return;
             }
         }
@@ -1940,7 +1959,7 @@ final class World {
                 if (cell == null) continue;
                 for (int i = 0, n = cell.size(); i < n; i++) {
                     City.Building b = cell.get(i);
-                    if (b.occupants.isEmpty()) continue;
+                    if (b.occupants.isEmpty() && b.visitors.isEmpty()) continue;
                     float ddx = b.doorX - z.x, ddy = b.doorY - z.y, d2 = ddx * ddx + ddy * ddy;
                     if (d2 < best) {
                         best = d2;
@@ -1953,6 +1972,32 @@ final class World {
             float d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
             // At the door, or pressed up behind the others at it: batter it.
             boolean atDoor = d < 14 || (d < 30 && (z.blocked || countZombiesNear(target.doorX, target.doorY, 16) >= 2));
+            // Crowded out of the door, or up against the building's wall: claw at the walls and windows
+            // (slowly weakening the barricade) all round it, rather than shoving at the back of the crowd.
+            boolean atWall = !atDoor && (z.blocked || z.stuckTime > 0.6f) && z.x > target.x0 - 12 && z.x < target.x1 + 12
+                    && z.y > target.y0 - 12 && z.y < target.y1 + 12;
+            if (!atDoor && !atWall && d < 70 && countZombiesNear(target.doorX, target.doorY, 24) >= 4) {
+                // Spread round the building instead.
+                float a = (z.nameSeed & 0xFFF) / 4096f * TAU;
+                float bx = (target.x0 + target.x1) / 2, by = (target.y0 + target.y1) / 2;
+                float rx = (target.x1 - target.x0) / 2 + 9, ry = (target.y1 - target.y0) / 2 + 9;
+                float px = bx + (float) Math.cos(a) * rx, py = by + (float) Math.sin(a) * ry;
+                if (!city.solidAt(px, py)) {
+                    zombieWalkTo(z, px, py, z.speed);
+                    if (Math.hypot(px - z.x, py - z.y) < 8) atWall = true;
+                    else return;
+                }
+            }
+            if (atWall) {
+                float wx = Math.max(target.x0, Math.min(target.x1, z.x)) - z.x, wy = Math.max(target.y0, Math.min(target.y1, z.y)) - z.y;
+                steer(z, 0, 0, 0);
+                z.angle = turn(z.angle, (float) Math.atan2(wy, wx), dt * 4);
+                target.barricade -= (z.type == Entity.BRUTE ? 5 : 1.2f) * dt;
+                target.calmTimer = 0;
+                if (rnd.nextFloat() < dt * 0.6f) emit(Sfx.THUD, z.x, z.y);
+                z.stuckTime = 0;
+                return;
+            }
             if (atDoor) {
                 if (d > 9 && !z.blocked) steer(z, ddx / d, ddy / d, z.speed * 0.5f);
                 else steer(z, 0, 0, 0);
@@ -2006,10 +2051,11 @@ final class World {
             float d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
             if (d < 25) z.noiseTimer = 0;
             else {
-                steer(z, ddx / d, ddy / d, z.speed * 1.2f);
-                if (z.blocked) {
-                    z.blocked = false;
-                    z.noiseTimer -= 2;
+                // (Round the buildings in the way, not into their walls: the noise is often a fight indoors.)
+                zombieWalkTo(z, z.noiseX, z.noiseY, z.speed * 1.2f);
+                if (z.stuckTime > 3) {
+                    z.noiseTimer = 0;
+                    z.path = null;
                 }
                 return;
             }
@@ -2958,13 +3004,14 @@ final class World {
                 if (rnd.nextFloat() < 0.3f) emit(Sfx.SCREAM, e.x, e.y);
                 alarm(e, threat);
             }
-            e.fleeTimer = 4f;
-            e.fear = 40;
+            float ddx = threat.x - e.x, ddy = threat.y - e.y;
+            threatDist = (float) Math.sqrt(ddx * ddx + ddy * ddy);
+            // A close call stays with you: the nearer it came, the longer they keep running.
+            e.fleeTimer = Math.max(e.fleeTimer, threatDist < 50 ? 10 : 7);
+            e.fear = 60;
             e.aware = true;
             e.threatX = threat.x;
             e.threatY = threat.y;
-            float ddx = threat.x - e.x, ddy = threat.y - e.y;
-            threatDist = (float) Math.sqrt(ddx * ddx + ddy * ddy);
             // Some people call 911 when they see one.
             if (e.callCd <= 0 && threatDist > 20) {
                 e.callCd = 45;
@@ -3129,22 +3176,15 @@ final class World {
         // With the power out, nobody hears the broadcasts about safe zones any more.
         if (e.task == Dispatch.T_NONE && room && !e.refused && (e.fleeTimer > 0 || (broadcasting() && readiness != 2 && rnd.nextFloat() < dt * 0.03f)))
             e.task = Dispatch.T_SEEK;
-        if (e.task == Dispatch.T_SEEK) {
-            Dispatch.SafeZone z = dispatch.zoneAt(e.x, e.y, 0.7f);
-            if (z != null && (!z.military || !checkpoint(e, z))) dispatch.admit(e, z);
-        }
-
         if (e.task == Dispatch.T_SEEK && threatDist > 28) {
             e.paused = false;
             float speed = e.fleeTimer > 0 ? e.runSpeed : e.speed * 1.7f;
-            if (followField(e, dispatch.zoneField, speed)) return;
-            // No open zone within reach yet: make for the nearest one (still being set up, perhaps) and wait by
-            // it; with none at all, get indoors instead of milling about.
+            // The nearest zone taking people (still going up, perhaps).
             Dispatch.SafeZone z = null;
             float bd = Float.MAX_VALUE;
             for (int i = 0; i < dispatch.zones.size(); i++) {
                 Dispatch.SafeZone q = dispatch.zones.get(i);
-                if (q.removed || q.full) continue;
+                if (q.removed || q.full || q.gateOut.length == 0) continue;
                 float d = (q.x - e.x) * (q.x - e.x) + (q.y - e.y) * (q.y - e.y);
                 if (d < bd) {
                     bd = d;
@@ -3156,29 +3196,43 @@ final class World {
                 getToSafety(e, homeOf(e));
                 return;
             }
-            float d = (float) Math.sqrt(bd) + 0.001f, wait = z.baseR * 1.3f + 20;
-            if (d > wait) {
-                if (z.field == null || !followField(e, z.field, speed)) steer(e, (z.x - e.x) / d, (z.y - e.y) / d, speed);
-            } else {
-                // Waiting outside for it to open, a little way back.
-                float a = (float) Math.atan2(e.y - z.y, e.x - z.x);
-                standAt(e, z.x + (float) Math.cos(a) * wait, z.y + (float) Math.sin(a) * wait, 0.5f);
+            // In through the gate: they're in.
+            if (z.open && z.inside(e.x, e.y)) {
+                if (dispatch.admit(e, z)) return;
+                e.task = Dispatch.T_NONE;
+                return;
             }
+            int g = z.gateNear(e.x, e.y);
+            float[] out = z.gateOut[g], in = z.gateIn[g];
+            float ox = out[0] - e.x, oy = out[1] - e.y, od = (float) Math.sqrt(ox * ox + oy * oy) + 0.001f;
+            boolean atGate = od < 22 || (z.gateOpen[g] && Math.hypot(in[0] - e.x, in[1] - e.y) < od);
+            if (!atGate) {
+                if (!z.open || !followField(e, dispatch.zoneField, speed)) walkToSpot(e, out[0], out[1], speed);
+                return;
+            }
+            if (!z.open) {
+                // A queue outside the gate, waiting for the wall to be finished.
+                float a = (e.nameSeed & 0xFF) / 256f * TAU;
+                standAt(e, out[0] + (float) Math.cos(a) * 18, out[1] + (float) Math.sin(a) * 18, 0.5f);
+                return;
+            }
+            // At the gate: checked for bites, then through when it opens.
+            if (checkpoint(e, z)) return;
+            if (z.gateOpen[g]) {
+                float ix = in[0] - e.x, iy = in[1] - e.y, id = (float) Math.sqrt(ix * ix + iy * iy) + 0.001f;
+                steer(e, ix / id, iy / id, e.speed * 1.2f);
+            } else standAt(e, out[0], out[1], 0.4f);
             return;
         }
         if (e.task == Dispatch.T_SHELTER && threatDist > 28 && e.zone != null) {
-            float ddx = e.zone.x - e.x, ddy = e.zone.y - e.y;
-            float d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
-            // Mill around inside the zone; head back in (around walls) if drifting out.
-            if (d > e.zone.reach(e.x, e.y) * 0.75f) {
-                if (!followField(e, dispatch.zoneField, e.speed)) steer(e, ddx / d, ddy / d, e.speed);
-            } else {
-                wander(e, e.speed * 0.4f);
-            }
+            shelterLife(e, e.zone, dt);
             return;
         }
         if (followLeader(e)) return;
         if (patrol(e)) return;
+        // Out of sight isn't out of mind: keep going until well clear of where it was last seen.
+        if (e.fleeTimer <= 0 && e.fear > 20 && e.task == Dispatch.T_NONE
+                && (e.x - e.threatX) * (e.x - e.threatX) + (e.y - e.threatY) * (e.y - e.threatY) < 170 * 170) e.fleeTimer = 1.5f;
         if (e.fleeTimer > 0) {
             e.paused = false;
             float ax = e.x - e.threatX, ay = e.y - e.threatY;
@@ -3250,7 +3304,7 @@ final class World {
         e.errand = null;
         if (home != null && home.occupants.size() < home.capacity && home.barricade >= 40 && !home.collapsed
                 && (home.doorX - e.x) * (home.doorX - e.x) + (home.doorY - e.y) * (home.doorY - e.y) < 700 * 700
-                && countZombiesNear(home.doorX, home.doorY, 50) == 0) {
+                && countZombiesNear(home.doorX, home.doorY, 50) == 0 && !backTowardsIt(e, home.doorX, home.doorY)) {
             e.task = Dispatch.T_HIDE;
             e.building = home;
             return false;
@@ -5464,7 +5518,7 @@ final class World {
         for (java.util.ArrayList<City.Building> l : occGrid) if (l != null) l.clear();
         for (int i = 0, n = city.buildings.size(); i < n; i++) {
             City.Building b = city.buildings.get(i);
-            if (b.occupants.isEmpty()) continue;
+            if (b.occupants.isEmpty() && b.visitors.isEmpty()) continue;
             int gx = Math.max(0, Math.min(occGW - 1, (int) (b.doorX / OCC_CELL))), gy = Math.max(0, Math.min(occGH - 1, (int) (b.doorY / OCC_CELL)));
             java.util.ArrayList<City.Building> l = occGrid[gy * occGW + gx];
             if (l == null) occGrid[gy * occGW + gx] = l = new java.util.ArrayList<City.Building>();
@@ -5677,7 +5731,8 @@ final class World {
     private boolean checkpoint(Entity e, Dispatch.SafeZone z) {
         if (!e.infected || e.screened) return false;
         e.screened = true;
-        if (rnd.nextFloat() < 0.2f) return false; // The bite was missed.
+        // The bite was missed (the army's medics miss fewer than the police).
+        if (rnd.nextFloat() < (z.military ? 0.2f : 0.4f)) return false;
         String where = z.place;
         turnedAway++;
         e.refused = true;
@@ -5685,7 +5740,7 @@ final class World {
         e.talkTimer = 2;
         if (z.checkCd <= 0) {
             z.checkCd = 20;
-            dispatch.say(Dispatch.WHO_MILITARY, null, "Checkpoint: Bite found on someone at the " + where
+            dispatch.say(z.military ? Dispatch.WHO_MILITARY : Dispatch.WHO_POLICE, null, "Checkpoint: Bite found on someone at the " + where
                     + " gate. Turned away.", z.x, z.y);
         }
         return true;
@@ -6327,7 +6382,7 @@ final class World {
         if (!outbreak || ((int) time) % 15 != 0) return;
         for (int i = 0; i < dispatch.zones.size(); i++) {
             Dispatch.SafeZone z = dispatch.zones.get(i);
-            if (z.removed || z.supplyComing || z.ammo > 150) continue;
+            if (z.removed || z.supplyComing || (z.ammo > 150 && z.food > z.foodMax * 0.35f)) continue;
             City.Facility best = null;
             float bd = Float.MAX_VALUE;
             for (City.Facility f : city.facilities) {
@@ -7444,7 +7499,7 @@ final class World {
             City.Building b = city.buildings.get(i);
             if (b.capacity == 0 || b.occupants.size() >= b.capacity || b.barricade < 40) continue;
             float ddx = b.doorX - e.x, ddy = b.doorY - e.y, d2 = ddx * ddx + ddy * ddy;
-            if (d2 < bd && countZombiesNear(b.doorX, b.doorY, 35) == 0) {
+            if (d2 < bd && countZombiesNear(b.doorX, b.doorY, 35) == 0 && !backTowardsIt(e, b.doorX, b.doorY)) {
                 bd = d2;
                 best = b;
             }
@@ -7833,26 +7888,140 @@ final class World {
         return z.contains(e.x, e.y, margin);
     }
 
-    /** Guards spread out around the edge of their safe zone, facing outward. */
+    /**
+     * A safe zone's guards: in through a gate if they're outside; two at each gate, the rest along the inside
+     * of the wall facing out, and some of those off to cover (and mend) any breach. While it's going up they
+     * work on the next stretch of wall.
+     */
     private void holdPost(Entity e, Dispatch.SafeZone z, float speedFactor) {
-        float a = e.slot * TAU / Math.max(1, z.guards);
-        // On the line itself; while it's going up, filling sandbags at their stretch of it.
-        float er = z.edgeAt(a) * (z.open ? 0.85f : 0.95f);
-        float px = z.x + (float) Math.cos(a) * er, py = z.y + (float) Math.sin(a) * er;
-        float ddx = px - e.x, ddy = py - e.y;
-        float d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
-        if (d > z.r * 2.5f) {
-            if (z.field == null) {
-                z.field = new int[city.w * city.h];
-                city.walkFieldFromPoints(z.field, new float[]{z.x}, new float[]{z.y}, 1);
-            }
-            if (followField(e, z.field, e.runSpeed * speedFactor)) return;
+        float run = e.runSpeed * speedFactor, walk = e.speed * speedFactor;
+        int gates = z.gateTiles.length;
+        if (gates == 0) {
+            standAt(e, z.x, z.y, speedFactor);
+            return;
         }
-        if (d > 5) {
-            steer(e, ddx / d, ddy / d, (d > 30 ? e.runSpeed : e.speed) * speedFactor);
+        if (z.field == null) {
+            // The way there from anywhere in town: to the gates (and, while the wall is going up, the middle).
+            float[] xs = new float[gates + 1], ys = new float[gates + 1];
+            for (int g = 0; g < gates; g++) {
+                xs[g] = z.gateOut[g][0];
+                ys[g] = z.gateOut[g][1];
+            }
+            xs[gates] = z.x;
+            ys[gates] = z.y;
+            z.field = new int[city.w * city.h];
+            city.walkFieldFromPoints(z.field, xs, ys, gates + 1);
+        }
+        float far = Math.max(Math.abs(e.x - z.x) - (z.right() - z.left()) / 2, Math.abs(e.y - z.y) - (z.bottom() - z.top()) / 2);
+        if (far > 160 && followField(e, z.field, e.runSpeed * speedFactor)) return;
+        if (!z.open) {
+            // Building the wall: at the stretch going up now.
+            int k = Math.min(z.wall.length - 1, (int) (z.built * z.wall.length) + e.slot * 2);
+            if (z.wall.length == 0 || k < 0) {
+                standAt(e, z.x, z.y, speedFactor);
+                return;
+            }
+            float[] p = z.innerOf(z.wall[k], city.w);
+            if (z.contains(e.x, e.y, 1) || Math.hypot(p[0] - e.x, p[1] - e.y) < 200) walkToSpot(e, p[0], p[1], run);
+            else if (z.field == null || !followField(e, z.field, run)) walkToSpot(e, p[0], p[1], run);
+            return;
+        }
+        if (!z.inside(e.x, e.y)) {
+            // In through the nearest gate.
+            int g = z.gateNear(e.x, e.y);
+            float[] out = z.gateOut[g], in = z.gateIn[g];
+            if (Math.hypot(out[0] - e.x, out[1] - e.y) > 20 && !(z.gateOpen[g] && Math.hypot(in[0] - e.x, in[1] - e.y) < 30)) {
+                walkToSpot(e, out[0], out[1], run);
+                return;
+            }
+            float ix = in[0] - e.x, iy = in[1] - e.y, id = (float) Math.sqrt(ix * ix + iy * iy) + 0.001f;
+            if (z.gateOpen[g]) steer(e, ix / id, iy / id, walk);
+            else standAt(e, out[0], out[1], speedFactor);
+            return;
+        }
+        float px, py, face;
+        if (e.slot < gates * 2) {
+            // On the gate: one each side, just inside it, facing the street.
+            int g = e.slot / 2;
+            float[] out = z.gateOut[g], in = z.gateIn[g];
+            float dx = out[0] - in[0], dy = out[1] - in[1], l = (float) Math.sqrt(dx * dx + dy * dy) + 0.001f;
+            float side = e.slot % 2 == 0 ? -1 : 1;
+            px = in[0] - dy / l * 16 * side;
+            py = in[1] + dx / l * 16 * side;
+            face = (float) Math.atan2(dy, dx);
         } else {
+            float[] breach = z.breaches > 0 && e.slot % 2 == 0 ? dispatch.nearestBreach(z, e.x, e.y) : null;
+            if (breach != null) {
+                // Covering a breach (and mending it once it's clear).
+                px = breach[0];
+                py = breach[1];
+                face = (float) Math.atan2(breach[1] - z.y, breach[0] - z.x);
+            } else {
+                // Spaced out along the wall.
+                int n = Math.max(1, z.guards - gates * 2), k = e.slot - gates * 2;
+                int idx = Math.max(0, Math.min(z.wall.length - 1, (int) ((k + 0.5f) / n * z.wall.length)));
+                if (z.wall.length == 0) {
+                    standAt(e, z.x, z.y, speedFactor);
+                    return;
+                }
+                float[] p = z.innerOf(z.wall[idx], city.w);
+                px = p[0];
+                py = p[1];
+                face = (float) Math.atan2(p[1] - z.y, p[0] - z.x);
+            }
+        }
+        float ddx = px - e.x, ddy = py - e.y, d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
+        if (d > 40) walkToSpot(e, px, py, run);
+        else if (d > 4) steer(e, ddx / d, ddy / d, d > 20 ? run : walk);
+        else {
             steer(e, 0, 0, 0);
-            if (!e.aiming) e.angle = turn(e.angle, a, 0.1f);
+            if (!e.aiming) e.angle = turn(e.angle, face, 0.1f);
+        }
+    }
+
+    /**
+     * Life inside the wall: a tent to sleep in, meals at the food tent, the medical tent when hurt. Anyone who
+     * strays outside (pushed out through a breach) makes for the gate again.
+     */
+    private void shelterLife(Entity e, Dispatch.SafeZone z, float dt) {
+        if (!z.inside(e.x, e.y)) {
+            int g = z.gateNear(e.x, e.y);
+            if (g < 0) return;
+            float[] out = z.gateOut[g], in = z.gateIn[g];
+            if (Math.hypot(out[0] - e.x, out[1] - e.y) > 20 && !(z.gateOpen[g] && Math.hypot(in[0] - e.x, in[1] - e.y) < 30))
+                walkToSpot(e, out[0], out[1], e.speed * 1.3f);
+            else if (z.gateOpen[g]) walkToSpot(e, in[0], in[1], e.speed);
+            else standAt(e, out[0], out[1], 0.4f);
+            return;
+        }
+        e.jobTimer += dt;
+        float tx, ty;
+        boolean hurt = e.hp < e.maxHp * 0.85f && z.medX > 0;
+        // (Each on their own clock: a meal now and then, the rest of the time by their tent.)
+        int phase = ((int) ((e.jobTimer + (e.nameSeed & 0xFF)) / 30)) % 5;
+        if (hurt) {
+            tx = z.medX + ((e.nameSeed & 7) - 3.5f) * 3;
+            ty = z.medY + 12;
+        } else if (phase == 1 && z.food > 0 && z.foodX > 0) {
+            // In the line at the food tent: two rows in front of it.
+            int q = (e.nameSeed >> 3) & 15;
+            tx = z.foodX - 18 + (q % 8) * 5;
+            ty = z.foodY + 13 + (q / 8) * 6;
+        } else if (!z.tents.isEmpty()) {
+            float[] t = z.tents.get((e.nameSeed & 0x7FFF) % z.tents.size());
+            int side = (e.nameSeed >> 4) & 3;
+            tx = t[0] + (side % 2 == 0 ? -7 : 7);
+            ty = t[1] + (side < 2 ? 10 : -10);
+        } else {
+            tx = z.x;
+            ty = z.y;
+        }
+        float dx = tx - e.x, dy = ty - e.y, d = (float) Math.sqrt(dx * dx + dy * dy) + 0.001f;
+        if (d > 8) walkToSpot(e, tx, ty, e.speed);
+        else {
+            steer(e, 0, 0, 0);
+            // Patched up at the medical tent.
+            if (hurt) e.hp = Math.min(e.maxHp, e.hp + 4 * dt);
         }
     }
 
@@ -8957,7 +9126,7 @@ final class World {
 
     /**
      * A fire lookout on duty: up in the cab, pacing round the windows. From up there they see the dead coming
-     * a long way off and phone it in, and nothing can get at them. True while they're up there.
+     * a long way off and phone it in; the dead have to climb the stairs to get them. True while they're up there.
      */
     private boolean lookout(Entity e, float dt) {
         float[] t = e.spot;
@@ -9238,6 +9407,10 @@ final class World {
         rescueCd = 90;
     }
 
+    Entity nearestArmedFor(float x, float y, float r) {
+        return nearestArmed(x, y, r);
+    }
+
     private Entity nearestArmed(float x, float y, float r) {
         for (int i = 0, n = entities.size(); i < n; i++) {
             Entity o = entities.get(i);
@@ -9384,5 +9557,101 @@ final class World {
         dispatch.say(Dispatch.WHO_POLICE, null, "Rescue " + v.number + ": " + n + " survivor" + (n == 1 ? "" : "s") + " safe at "
                 + (h != null ? h.name : "the hospital") + ".", x, y);
         highlight("Rescued: " + n, x, y);
+    }
+
+    // ------------------------------------------------------------------ the dead finding their way (10.15)
+
+    /** A building with people inside (sheltering or visiting) whose door is within r of (x, y). */
+    private City.Building occupiedNear(float x, float y, float r) {
+        if (occGrid == null || occTimer <= 0) buildOccGrid();
+        int ocx = (int) (x / OCC_CELL), ocy = (int) (y / OCC_CELL);
+        for (int gy = Math.max(0, ocy - 1); gy <= Math.min(occGH - 1, ocy + 1); gy++)
+            for (int gx = Math.max(0, ocx - 1); gx <= Math.min(occGW - 1, ocx + 1); gx++) {
+                java.util.ArrayList<City.Building> cell = occGrid[gy * occGW + gx];
+                if (cell == null) continue;
+                for (int i = 0, n = cell.size(); i < n; i++) {
+                    City.Building b = cell.get(i);
+                    if ((b.doorX - x) * (b.doorX - x) + (b.doorY - y) * (b.doorY - y) < r * r
+                            || (x > b.x0 - 8 && x < b.x1 + 8 && y > b.y0 - 8 && y < b.y1 + 8)) return b;
+                }
+            }
+        return null;
+    }
+
+    /**
+     * One of the dead heading for a spot (a noise, where it last saw someone): straight there when nothing is
+     * in the way, otherwise round the buildings by a planned route instead of grinding into a wall.
+     */
+    private void zombieWalkTo(Entity z, float x, float y, float speed) {
+        float dx = x - z.x, dy = y - z.y, d = (float) Math.sqrt(dx * dx + dy * dy) + 0.001f;
+        boolean clear = !z.blocked && z.stuckTime < 0.5f && (d < 40 || city.los(z.x, z.y, x, y));
+        if (clear && z.path == null) {
+            steer(z, dx / d, dy / d, speed);
+            return;
+        }
+        if (z.path == null || Math.abs(z.planX - x) > 24 || Math.abs(z.planY - y) > 24) {
+            if (pathBudget < 0.25f) {
+                steer(z, dx / d, dy / d, speed);
+                return;
+            }
+            pathBudget -= 0.25f;
+            float[] goal = city.solidAt(x, y) ? city.findWalkable(x, y) : new float[]{x, y};
+            z.path = goal == null ? null : city.findPath(z.x, z.y, goal[0], goal[1], 6000);
+            if (z.path == null) z.path = new int[0];
+            z.pathIdx = 0;
+            z.pathDest = null;
+            z.planX = x;
+            z.planY = y;
+        }
+        z.blocked = false;
+        if (!followPath(z, speed)) steer(z, dx / d, dy / d, speed);
+    }
+
+    /**
+     * Somewhere that means going back past the one they've just run from: right by where it was seen, or on
+     * the far side of it, while that's still fresh in their mind.
+     */
+    private boolean backTowardsIt(Entity e, float x, float y) {
+        if (e.fear <= 0) return false;
+        float tx = e.threatX - e.x, ty = e.threatY - e.y, td = (float) Math.sqrt(tx * tx + ty * ty) + 0.001f;
+        float gx = x - e.x, gy = y - e.y, gd = (float) Math.sqrt(gx * gx + gy * gy) + 0.001f;
+        if ((x - e.threatX) * (x - e.threatX) + (y - e.threatY) * (y - e.threatY) < 90 * 90) return true;
+        // On ahead in its direction, and further than it is.
+        return gd > td * 0.8f && (tx * gx + ty * gy) / (td * gd) > 0.6f;
+    }
+
+    /**
+     * One of the dead at the wall (or a shut gate) of a safe zone with people in it: claws at it, a little
+     * at a time, until the section gives. True while it's doing that.
+     */
+    private boolean clawWall(Entity z, float dt) {
+        int tx = (int) (z.x / City.T), ty = (int) (z.y / City.T);
+        Dispatch.SafeZone zone = null;
+        int seg = 0, tile = -1;
+        float bd = Float.MAX_VALUE;
+        for (int oy = -1; oy <= 1; oy++)
+            for (int ox = -1; ox <= 1; ox++) {
+                int x = tx + ox, y = ty + oy;
+                if (x < 0 || y < 0 || x >= city.w || y >= city.h) continue;
+                int t = y * city.w + x;
+                Dispatch.SafeZone o = dispatch.wallOwner[t];
+                if (o == null || o.removed || !city.solid[t]) continue;
+                float cx = (x + 0.5f) * City.T - z.x, cy = (y + 0.5f) * City.T - z.y, d = cx * cx + cy * cy;
+                if (d < bd) {
+                    bd = d;
+                    zone = o;
+                    seg = dispatch.wallSeg[t];
+                    tile = t;
+                }
+            }
+        if (zone == null || zone.inside(z.x, z.y) || (zone.sheltered == 0 && zone.onSite == 0)) return false;
+        float cx = (tile % city.w + 0.5f) * City.T - z.x, cy = (tile / city.w + 0.5f) * City.T - z.y;
+        float d = (float) Math.sqrt(cx * cx + cy * cy) + 0.001f;
+        if (d > City.T * 0.5f + z.radius + 3) steer(z, cx / d, cy / d, z.speed * 0.6f);
+        else steer(z, 0, 0, 0);
+        z.angle = turn(z.angle, (float) Math.atan2(cy, cx), dt * 4);
+        dispatch.damageWall(zone, seg, (z.type == Entity.BRUTE ? 22 : z.type == Entity.CRAWLER ? 1.5f : 4) * dt);
+        if (rnd.nextFloat() < dt * 0.8f) emit(Sfx.THUD, z.x, z.y);
+        return true;
     }
 }

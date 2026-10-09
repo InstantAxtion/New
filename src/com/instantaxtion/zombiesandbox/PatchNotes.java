@@ -2,11 +2,21 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.14";
-    static final int VERSION_CODE = 52;
+    static final String VERSION = "10.15";
+    static final int VERSION_CODE = 53;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.15  -  Walled safe zones",
+                    "Safe zones redesigned: police and soldiers wall in a whole city block (the precinct's, the base's, a school, a park) with concrete barriers and fencing, its buildings closing the gaps. Nobody gets in until the wall is up.",
+                    "Gates onto the streets with a boom and sandbags: people queue outside, are checked for bites (by the police now too, if less thoroughly than the army) and let through. The gates shut the moment the dead come near.",
+                    "Inside: rows of tents, a medical tent that patches people up, and a food tent with a line in front of it. The rations run down; supply trucks bring food along with the ammo.",
+                    "Guards: two on each gate, the rest spaced along the inside of the wall facing out. The dead smell the people inside and claw at the wall; sections give way, guards rush to the breach and mend it once it's clear. Too many of them inside and it's overrun.",
+                    "The dead can climb fire lookout towers now (slowly, up the stairs): the lookout isn't safe up there for ever.",
+                    "Zombies no longer grind against walls: heading for a noise (often a fight inside a building) or where they last saw someone, they go round to the door. A crowd at a door spreads round the building and claws at the walls and windows.",
+                    "People don't forget so quickly: after a close call they keep running until well clear, and don't head back past the one they ran from to get home or to shelter.",
+            },
             {
                     "10.14  -  The wilds",
                     "Streams can be waded: police, people and the dead cross them (slowly) instead of getting stuck. Lakes and ponds are still deep.",

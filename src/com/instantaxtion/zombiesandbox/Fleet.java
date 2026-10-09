@@ -1929,8 +1929,9 @@ final class Fleet {
                 z.supplyComing = false;
                 if (!z.removed && Math.hypot(v.x - z.x, v.y - z.y) < z.r + 90) {
                     z.ammo += v.supply;
+                    z.food = Math.min(z.foodMax, z.food + z.foodMax * 0.7f);
                     w.dispatch.say(Dispatch.WHO_MILITARY, null, "Military: Supply truck at " + z.place + ". " + v.supply
-                            + " rounds delivered.", v.x, v.y);
+                            + " rounds and food delivered.", v.x, v.y);
                 } else {
                     w.dispatch.say(Dispatch.WHO_MILITARY, null, "Military: The supply truck couldn't get through to "
                             + z.place + ". Turning back.", v.x, v.y);

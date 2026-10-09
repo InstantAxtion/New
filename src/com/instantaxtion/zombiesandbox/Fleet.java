@@ -2773,6 +2773,15 @@ final class Fleet {
     }
 
     private void unload(Vehicle v, boolean announce) {
+        w.arriving = v.reinforcement || v.guardUnit;
+        try {
+            unloadAll(v, announce);
+        } finally {
+            w.arriving = false;
+        }
+    }
+
+    private void unloadAll(Vehicle v, boolean announce) {
         Entity first = null;
         for (int i = 0; i < v.passengers; i++) {
             Entity e = w.spawn(v.passengerType, v.x + (float) Math.cos(v.angle + 1.57f) * (8 + i * 3),

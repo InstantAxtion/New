@@ -246,6 +246,10 @@ final class World {
     int evCount;
 
     int maxEntities = 1600;
+    /** How far past the cap people already in the game (getting out of cars) and help from outside may go. */
+    static final int OVER_CAP = 900;
+    /** Set while help from outside is getting out of its vehicles (or coming in on foot). */
+    boolean arriving;
     /** Detail level, lowered on a phone that's struggling (see GameView.tuneQuality). */
     static final int Q_FULL = 0, Q_REDUCED = 1, Q_LOW = 2;
     int quality = Q_FULL;
@@ -1070,7 +1074,8 @@ final class World {
         // (No animals since 10.18: no dogs, and the dead that were dogs come as runners instead.)
         if (type == Entity.DOG) return null;
         if (type == Entity.ZOMBIE_DOG) type = Entity.RUNNER;
-        if (entities.size() >= maxEntities) return null;
+        // (Help arriving from outside always gets out of its vehicles: the cap stretches for them.)
+        if (entities.size() >= maxEntities + (arriving ? OVER_CAP : 0)) return null;
         float[] p = city.findWalkable(x, y);
         if (p == null) return null;
         Entity e = make(type, p[0], p[1], -1, 0);
@@ -9149,7 +9154,9 @@ final class World {
 
     /** Puts someone who was in a car (or indoors) back on the street. Returns false if there's no room. */
     boolean release(Entity o, float x, float y) {
-        if (entities.size() >= maxEntities) return false;
+        // (Someone already alive getting out of a car or a building is never turned away by the cap; only well
+        // past it.)
+        if (entities.size() >= maxEntities + OVER_CAP) return false;
         float[] p = city.findWalkable(x, y);
         if (p == null) return false;
         o.x = p[0];

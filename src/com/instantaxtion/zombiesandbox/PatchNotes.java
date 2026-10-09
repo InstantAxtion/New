@@ -2,11 +2,17 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.20";
-    static final int VERSION_CODE = 58;
+    static final String VERSION = "10.21";
+    static final int VERSION_CODE = 59;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.21  -  Here they come",
+                    "Police from outside the city always arrive in their vehicles: if no road in is open they wait and try again, instead of walking in. A SWAT team waits for its van too.",
+                    "Outside police are quicker: the first cars pull in within about ten seconds of the call, and a new wave follows every ten seconds or so.",
+                    "The full numbers turn up: once the outbreak is serious the towns around keep sending waves until their 220 officers are used or it calms down, and the army is called in by itself when it gets bad. Help from outside is no longer lost to the population limit when it gets out of its vehicles.",
+            },
             {
                     "10.20  -  Help is on the way",
                     "Help from outside the city is simply on or off. On: police come first, within a minute of being asked, in waves from the towns around: their police, the highway patrol, SWAT teams, sheriff's deputies and FBI agents (about 220 officers in all), each in their own cars. The army is the slowest to come, several minutes, but then arrives all at once: about 120 soldiers in one long convoy of Humvees, trucks, APCs and tanks, with the city's own army helicopters flying cover over it.",

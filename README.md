@@ -381,6 +381,10 @@ who board before it takes off; none come from outside. Helicopters hover and sli
 circling. Units in trouble radio for backup, shown on the map. Aim varies up to +15%. Cars drive faster. Busier
 outskirts with small towns that have their own police and fire stations, and a Little nature option.
 
+**Here they come (10.21):** outside police always come in their vehicles, arrive within seconds of the call and
+keep coming in waves while the outbreak is serious; the army calls itself in when it gets bad, and all of the help
+gets out of its vehicles even when the city is crowded.
+
 **Countryside:** Villages, small towns and every Massive map are surrounded by open country:
 winding dirt lanes out to the edge of the map, farms and lonely cabins along them, woods, and
 hamlets (a short street of cottages with a lane back to town). A town out in the country is never a

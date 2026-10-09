@@ -240,6 +240,8 @@ final class Dispatch {
         SafeZone zone;
         String place;
         int tries;
+        /** Seconds this one has waited at its way in for the road to clear. */
+        float wait;
     }
 
     private final ArrayList<Queued> column = new ArrayList<Queued>();
@@ -264,7 +266,7 @@ final class Dispatch {
      * Brings the waiting columns onto the map, one vehicle at a time at each way in, each as soon as the one
      * in front has pulled clear: no pile-up at the edge of the map.
      */
-    private void feedColumns() {
+    private void feedColumns(float dt) {
         if (column.isEmpty()) return;
         ArrayList<float[]> used = new ArrayList<float[]>();
         for (int i = 0; i < column.size(); i++) {
@@ -274,11 +276,35 @@ final class Dispatch {
             if (taken) continue;
             used.add(new float[]{q.x, q.y});
             boolean clear = true;
-            for (int k = 0, n = w.fleet.vehicles.size(); k < n && clear; k++) {
+            for (int k = 0; k < w.fleet.vehicles.size() && clear; k++) {
                 Fleet.Vehicle v = w.fleet.vehicles.get(k);
-                if (!Fleet.airborne(v) && Math.abs(v.x - q.x) < 34 && Math.abs(v.y - q.y) < 34) clear = false;
+                if (Fleet.airborne(v) || Math.abs(v.x - q.x) >= 24 || Math.abs(v.y - q.y) >= 24) continue;
+                // (An abandoned or broken-down car on the way in is towed off; anything else, wait for it.)
+                if (w.fleet.clearFromEntry(v)) k--;
+                else clear = false;
             }
-            if (!clear) continue;
+            if (!clear) {
+                q.wait += dt;
+                if (q.wait > 10) {
+                    // Blocked for good here: the rest of the column tries another way in.
+                    q.wait = 0;
+                    java.util.List<float[]> from = entries(q.tx, q.ty);
+                    for (float[] e : from) {
+                        if (Math.abs(e[0] - q.x) < 1 && Math.abs(e[1] - q.y) < 1) continue;
+                        if (!w.fleet.canDrive(e[0], e[1], q.tx, q.ty)) continue;
+                        float ox = q.x, oy = q.y;
+                        for (Queued o : column)
+                            if (o.cv == q.cv && Math.abs(o.x - ox) < 1 && Math.abs(o.y - oy) < 1) {
+                                o.x = e[0];
+                                o.y = e[1];
+                            }
+                        q.cv.fromX = e[0];
+                        q.cv.fromY = e[1];
+                        break;
+                    }
+                }
+                continue;
+            }
             column.remove(i--);
             q.cv.pending--;
             int before = w.fleet.vehicles.size();
@@ -458,7 +484,7 @@ final class Dispatch {
         for (int i = 0; i < log.size(); i++) log.get(i).age += dt;
         for (int i = callouts.size() - 1; i >= 0; i--) if ((callouts.get(i).age += dt) > 6) callouts.remove(i);
         updateArmy(dt);
-        feedColumns();
+        feedColumns(dt);
         updateAir(dt);
         updateConvoys(dt);
         for (int i = arrivals.size() - 1; i >= 0; i--) {

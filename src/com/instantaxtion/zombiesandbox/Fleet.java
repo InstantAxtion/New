@@ -119,6 +119,16 @@ final class Fleet {
         boolean guardUnit;
         /** Bringing reinforcements in from outside the city (10.17): tagged on the map. */
         boolean reinforcement;
+        /**
+         * A car or truck that has dropped its people off (10.23): it stays as their staging point with the spare
+         * ammunition it brought, hands it round to anyone on its side who comes by, and moves up behind them when
+         * the fight moves on. Only once it's run out does it go back for more.
+         */
+        boolean staging;
+        int stock;
+        float stageCd;
+        /** The people it dropped off. */
+        final ArrayList<Entity> squad = new ArrayList<Entity>();
         /** A fire engine's crew is already off fighting the fire. */
         /**
          * The real people aboard: a fire crew or two patrol officers. They're out of the world while they ride,
@@ -297,6 +307,8 @@ final class Fleet {
                         : v.kind == K_BIKE ? "Police motorcycle" : v.type == CRUISER ? "Police car" : "Army truck";
                 if (v.restock) return v.state == RETURN ? "Supply truck: Heading out of town"
                         : "Supply truck: Delivering" + (where != null ? " to " + where : "");
+                if (v.staging && !v.broken) return who + (v.state == SCENE ? ": Staging point" + (v.stock > 0 ? ", " + v.stock + " spare rounds" : "")
+                        : v.state == RETURN ? ": Out of ammo, going for more" : ": Moving up behind its " + (v.passengerType == Entity.SOLDIER ? "squad" : "officers"));
                 if (v.type == TRUCK && v.state == SCENE) return who + ": Fire support" + (where != null ? " at " + where : "");
                 if (v.loop && v.state == DRIVE) return who + ": Patrolling" + (where != null ? " to " + where : "");
                 if (v.broken) return who + ": Wrecked";
@@ -730,6 +742,18 @@ final class Fleet {
             v.spin = 0;
             vehicles.add(v);
         }
+        return true;
+    }
+
+    /**
+     * A civilian car sitting in the way of help coming onto the map (parked, wrecked or stopped for good, with
+     * nobody aboard) is cleared off the road. Returns true if it was.
+     */
+    boolean clearFromEntry(Vehicle o) {
+        if (o.type != CAR || o.player != null || !o.riders.isEmpty() || o.block != null) return false;
+        if (!(o.parked || o.broken || o.stillT > 3)) return false;
+        o.removedFromFleet = true;
+        vehicles.remove(o);
         return true;
     }
 
@@ -2091,6 +2115,7 @@ final class Fleet {
 
     private boolean updateCar(Vehicle v, float dt) {
         if (v.type == TRUCK) turret(v, dt);
+        if (v.staging && v.state == SCENE) return stage(v, dt);
         if (v.state == SCENE && v.type == TRUCK) {
             // An APC that dropped its squad stays a while to cover them with its gun, then heads home.
             v.speed = Math.max(0, v.speed - dt * 200);
@@ -2244,6 +2269,7 @@ final class Fleet {
                         e.onScene = false;
                     }
                 }
+                v.squad.addAll(out);
                 if (!out.isEmpty() && v.place != null)
                     w.dispatch.say(Dispatch.WHO_MILITARY, out.get(0), "On the ground at " + v.place + ". Moving in.", v.x, v.y);
             }
@@ -2258,6 +2284,7 @@ final class Fleet {
                     v.speed = 0;
                     return false;
                 }
+                if (startStaging(v)) return false;
                 v.state = RETURN;
                 v.speed = 0;
                 return !route(v, v.homeX, v.homeY);
@@ -2274,6 +2301,97 @@ final class Fleet {
             w.emit(Sfx.SIREN, v.x, v.y);
         }
         return false;
+    }
+
+    /**
+     * Once its people are out (10.23), a police car or army truck stays as their staging point instead of
+     * driving off: parked up behind them with the spare ammo it brought. Not for a supply run, a roadblock car
+     * or one delivering to a safe zone.
+     */
+    private boolean startStaging(Vehicle v) {
+        if (v.type != CRUISER && v.type != TRUCK) return false;
+        if (v.restock || v.zone != null || v.block != null || v.loop || v.broken) return false;
+        if (!v.staging) {
+            if (v.squad.isEmpty()) return false;
+            v.staging = true;
+            v.passengerType = v.squad.get(0).type;
+            v.stock = v.type == TRUCK ? 900 : 240;
+            if (v.type == TRUCK)
+                w.dispatch.say(Dispatch.WHO_MILITARY, v.squad.get(0), "Truck's staying put on " + city.placeName(v.x, v.y)
+                        + " with spare ammo. Come back to it when you're low.", v.x, v.y);
+        }
+        v.incident = null;
+        v.state = SCENE;
+        v.speed = 0;
+        v.quiet = 0;
+        v.stageCd = 1;
+        return true;
+    }
+
+    /** A staging point: hands out ammo, moves up behind its people when it's quiet, and goes for more once it's empty. */
+    private boolean stage(Vehicle v, float dt) {
+        v.speed = Math.max(0, v.speed - dt * 200);
+        v.stageCd -= dt;
+        if (v.stageCd > 0) return false;
+        v.stageCd = 1;
+        if (v.stock > 0) v.stock -= w.issueAmmo(v.x, v.y, 60, v.passengerType, v.stock);
+        v.quiet = w.countZombiesNear(v.x, v.y, 220) > 0 ? 0 : v.quiet + 1;
+        for (int i = v.squad.size() - 1; i >= 0; i--) {
+            Entity e = v.squad.get(i);
+            if (e.dead || e.removed || e.type != v.passengerType) v.squad.remove(i);
+        }
+        if (v.quiet < 20) return false;
+        if (v.stock <= 0) {
+            // Empty: back out for more.
+            v.state = RETURN;
+            v.quiet = 0;
+            return !route(v, v.homeX, v.homeY);
+        }
+        // Its people have moved on: follow them up (or, if they're gone, whoever on its side has no truck near).
+        Entity lead = null;
+        float best = Float.MAX_VALUE;
+        for (Entity e : v.squad) {
+            float d = (e.x - v.x) * (e.x - v.x) + (e.y - v.y) * (e.y - v.y);
+            if (d > 300 * 300 && d < best) {
+                best = d;
+                lead = e;
+            }
+        }
+        if (lead == null && v.squad.isEmpty() && v.quiet >= 40) {
+            for (int i = 0, n = w.entities.size(); i < n; i++) {
+                Entity e = w.entities.get(i);
+                if (e.dead || e.type != v.passengerType || e.rig != null) continue;
+                float d = (e.x - v.x) * (e.x - v.x) + (e.y - v.y) * (e.y - v.y);
+                if (d > 300 * 300 && d < best && ammoPoint(e, 400) == null) {
+                    best = d;
+                    lead = e;
+                }
+            }
+            if (lead != null) v.squad.add(lead);
+        }
+        if (lead == null) return false;
+        v.quiet = 0;
+        if (!route(v, lead.x, lead.y)) return false;
+        v.state = DRIVE;
+        v.stuckTimer = 0;
+        v.place = city.placeName(lead.x, lead.y);
+        return false;
+    }
+
+    /** The nearest staging vehicle with spare rounds for this person, within {@code reach}. */
+    Vehicle ammoPoint(Entity e, float reach) {
+        Vehicle best = null;
+        float bd = reach * reach;
+        for (int i = 0, n = vehicles.size(); i < n; i++) {
+            Vehicle v = vehicles.get(i);
+            if (!v.staging || v.stock <= 0 || v.state != SCENE || v.broken || v.passengerType != e.type) continue;
+            float d = (v.x - e.x) * (v.x - e.x) + (v.y - e.y) * (v.y - e.y);
+            if (d < bd) {
+                bd = d;
+                best = v;
+            }
+        }
+        return best;
     }
 
     /** Running zombies over dents the car. */
@@ -2788,6 +2906,7 @@ final class Fleet {
                     v.y + (float) Math.sin(v.angle + 1.57f) * (8 + i * 3));
             if (e == null) continue;
             if (first == null) first = e;
+            v.squad.add(e);
             if (v.guardUnit) w.applyRole(e, Entity.ROLE_GUARD);
             if (v.kind == K_RIOT_VAN) w.applyRole(e, Entity.ROLE_RIOT);
             // (Each SWAT team has a marksman with it.)

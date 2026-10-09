@@ -172,9 +172,9 @@ final class CityConfig implements OptionSet {
      * 2 and the National Guard armory (10.5), 3 the bigger maps of 10.10 with hills, mountains, lakes, streams
      * and nature parks out in the country, 4 the wilds of 10.14 (streams you can wade, trails that cross the
      * lanes, a ranger station and fire lookout towers), 5 the lanes of 10.18 (no stretch of tarmac in the
-     * middle of a dirt lane) and the real cities, 6 the driveways of 10.19, 7 the helipads and busier outskirts of 10.20. Saved games rebuild with what they had.
+     * middle of a dirt lane) and the real cities, 6 the driveways of 10.19, 7 the helipads and busier outskirts of 10.20, 8 dirt lanes that stay dirt into town (10.23). Saved games rebuild with what they had.
      */
-    int civic = 7;
+    int civic = 8;
 
     /** Hills, mountains, streams, lakes, parks and campsites (cities built since 10.10). */
     boolean nature() { return civic >= 3; }

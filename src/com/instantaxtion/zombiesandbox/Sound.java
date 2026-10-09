@@ -25,7 +25,7 @@ final class Sound {
     private final SoundPool pool;
     private final int[] ids = new int[Sfx.COUNT];
     private final boolean[] loaded = new boolean[Sfx.COUNT];
-    private final long[] lastPlay = new long[Sfx.COUNT];
+    private final Sfx.Fatigue fatigue = new Sfx.Fatigue();
     private final String[] trackPaths = new String[Synth.TRACKS];
     private final AudioAttributes musicAttrs;
 
@@ -101,11 +101,11 @@ final class Sound {
     void play(int id, float volume, float pan) {
         if (released || !loaded[id] || sfxVol <= 0 || paused) return;
         long now = SystemClock.uptimeMillis();
-        if (now - lastPlay[id] < Sfx.MIN_GAP[id] * 1000) return;
-        lastPlay[id] = now;
-        float v = Math.max(0, Math.min(1, volume)) * sfxVol;
+        float g = fatigue.gain(id, now);
+        if (g <= 0) return;
+        float v = Math.max(0, Math.min(1, volume)) * sfxVol * g;
         float left = v * Math.min(1, 1 - pan), right = v * Math.min(1, 1 + pan);
-        float rate = id == Sfx.CLICK ? 1f : 0.9f + rnd.nextFloat() * 0.2f;
+        float rate = id == Sfx.CLICK ? 1f : Sfx.REPEATS[id] ? 0.82f + rnd.nextFloat() * 0.36f : 0.9f + rnd.nextFloat() * 0.2f;
         pool.play(ids[id], left, right, id == Sfx.CLICK ? 2 : 1, 0, rate);
     }
 

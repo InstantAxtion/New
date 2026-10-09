@@ -6281,6 +6281,9 @@ final class World {
             v.guardUnit = true;
             // (Reservists take a little while to get to the armory and draw their kit.)
             if (muster) v.timer = 20 + (i - before) * 4;
+            // (From out of town, one after another down the road rather than all on one spot.)
+            else v.timer = 0.5f + (i - before) * 5;
+            v.reinforcement = true;
             // (A Humvee leads the convoy.)
             if (city.cfg.nature() && i == before) {
                 fleet.setKind(v, Fleet.K_HUMVEE);
@@ -6416,6 +6419,25 @@ final class World {
         boolean dry = e.ammo <= 0 && e.reserve <= 0 && e.reload <= 0;
         float stock = (e.ammo + e.reserve) / (float) Math.max(1, e.magSize + fullReserve(e));
         e.lowCd -= dt;
+        // Dry or running low with a staging truck or car of their own side close by (10.23): back to it for
+        // rounds, rather than all the way to the precinct or the base.
+        if ((dry || stock < 0.22f && nearest(e, 70, true, false) == null) && e.task != Dispatch.T_BOARD
+                && e.task != Dispatch.T_RESCUE && fleet.vehicles.size() > 0) {
+            Fleet.Vehicle av = fleet.ammoPoint(e, dry ? 900 : 450);
+            if (av != null) {
+                float ax = av.x - e.x, ay = av.y - e.y;
+                if (ax * ax + ay * ay < 26 * 26) {
+                    av.stock -= topUp(e, av.stock);
+                    dry = false;
+                    stock = 1;
+                } else {
+                    Entity t = nearest(e, 50, true, false);
+                    if (t != null) flee(e, (e.x - t.x) / 50, (e.y - t.y) / 50, e.runSpeed);
+                    else walkToSpot(e, av.x, av.y, e.runSpeed);
+                    return;
+                }
+            }
+        }
         if (e.scout && !dry) {
             e.scout = false;
             dispatch.say(soldier ? Dispatch.WHO_MILITARY : Dispatch.WHO_POLICE, e, "Got some rounds. Back in the fight.", e.x, e.y);
@@ -6809,6 +6831,40 @@ final class World {
 
     /** Radios a sighting: other police and soldiers nearby with nothing in view come to look. */
     /** Police and soldiers on their feet within r of (x, y). */
+    /**
+     * A staging vehicle hands out its spare rounds (10.23) to anyone of this type within r who is short;
+     * returns how many it gave.
+     */
+    int issueAmmo(float x, float y, float r, int type, int stock) {
+        int given = 0;
+        int cx0 = Math.max(0, (int) ((x - r) / CELL)), cx1 = Math.min(gw - 1, (int) ((x + r) / CELL));
+        int cy0 = Math.max(0, (int) ((y - r) / CELL)), cy1 = Math.min(gh - 1, (int) ((y + r) / CELL));
+        for (int cy = cy0; cy <= cy1 && given < stock; cy++)
+            for (int cx = cx0; cx <= cx1 && given < stock; cx++) {
+                int c = cy * gw + cx;
+                for (int k = cellStart[c] + zCount[c], end = cellStart[c] + cellCount[c]; k < end && given < stock; k++) {
+                    Entity o = sorted[k];
+                    if (o.dead || o.type != type || (o.x - x) * (o.x - x) + (o.y - y) * (o.y - y) > r * r) continue;
+                    given += topUp(o, stock - given);
+                }
+            }
+        return given;
+    }
+
+    /** Gives a unit up to {@code most} rounds towards full spare ammo; returns how many it took. */
+    private int topUp(Entity o, int most) {
+        int want = Math.min(most, fullReserve(o) - o.reserve);
+        if (want <= 0) return 0;
+        o.reserve += want;
+        if (o.ammo <= 0) o.reload = 2;
+        o.outOfAmmoSaid = false;
+        if (o.task == Dispatch.T_RESUPPLY || o.task == Dispatch.T_BORROW) {
+            o.task = Dispatch.T_NONE;
+            o.protector = null;
+        }
+        return want;
+    }
+
     int armedNear(float x, float y, float r) {
         int n = 0;
         int cx0 = Math.max(0, (int) ((x - r) / CELL)), cx1 = Math.min(gw - 1, (int) ((x + r) / CELL));

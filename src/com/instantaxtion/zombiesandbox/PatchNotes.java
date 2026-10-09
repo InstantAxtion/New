@@ -2,11 +2,19 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.22";
-    static final int VERSION_CODE = 60;
+    static final String VERSION = "10.23";
+    static final int VERSION_CODE = 61;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.23  -  Staying put",
+                    "Police cars and army trucks no longer drive off once their people are out. They stay on as a staging point with the spare ammunition they brought: anyone on their side who runs low heads back to the nearest one to restock, instead of trekking to the precinct or the base. When the fight moves on, the car or truck moves up behind its people, and only goes back out for more once it has handed out everything it carried.",
+                    "The army convoy no longer gets stuck coming in off the highway: a parked or abandoned car blocking the way in is towed off, and if a road in stays blocked the column switches to another one. National Guard trucks also leave their armory one after another instead of all at once.",
+                    "Dirt lanes stay dirt: a lane no longer turns into a short stretch of tarmac where it runs into a small side street or meets the driveways (new cities only; saved games keep their map).",
+                    "Civilians are fainter dots on the zoomed-out map, so police, soldiers and the dead stand out.",
+                    "Sounds that kept repeating (sirens, groans, screams, radios, helicopters, engines, horns, alarms) are spaced out more, and a sound that keeps firing fades into the background instead of playing at full volume each time. Gunfire is unchanged.",
+            },
             {
                     "10.22  -  Who's first?",
                     "Help from outside comes in a random mix: any of the other towns' police, the highway patrol, a SWAT team, the sheriff's deputies or the FBI can be first on the scene, and the order is different every game (never the same force twice in a row).",

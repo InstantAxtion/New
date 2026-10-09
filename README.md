@@ -387,6 +387,11 @@ gets out of its vehicles even when the city is crowded.
 
 **Who's first? (10.22):** the outside police forces arrive in a random mix, a different order every game.
 
+**Staying put (10.23):** police cars and army trucks stay after dropping their people off, as staging points
+with spare ammo that units come back to; they follow their people up and only leave to fetch more once empty. The
+army convoy gets in off the highway (blocking cars towed, blocked roads swapped). Dirt lanes stay dirt. Fainter
+civilian dots. Repeating sounds are spaced out and fade instead of playing at full volume every time.
+
 **Countryside:** Villages, small towns and every Massive map are surrounded by open country:
 winding dirt lanes out to the edge of the map, farms and lonely cabins along them, woods, and
 hamlets (a short street of cottages with a lane back to town). A town out in the country is never a

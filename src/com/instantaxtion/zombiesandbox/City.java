@@ -496,6 +496,8 @@ final class City {
             for (int i = 0; i < generated; i++) createBuilding(buildingLots.get(i));
             driveways();
             if (cfg.servicePads()) servicePads();
+            // Again now the drives are in: a lane they made into a bit of paved street carries on as dirt.
+            if (cfg.civic >= 8) unpaveLaneStubs();
             for (int[] e : cfg.edits) applyEdit(e[0], e[1], e[2], false);
             computeSolid();
             for (int i = generated; i < buildingLots.size(); i++) createBuilding(buildingLots.get(i));
@@ -1789,7 +1791,25 @@ final class City {
                     }
                 }
             }
-            if (groups < 2) continue;
+            if (groups == 0) continue;
+            if (groups < 2) {
+                // A bit of town street a dirt lane runs into (10.23): it carries on as dirt rather than turning to
+                // tarmac for a stretch, since it doesn't join the paved roads anyway.
+                if (cfg.civic < 8) continue;
+                boolean rail = false;
+                for (int c : part) if (railY0 >= 0 && c / w >= railY0 - 1 && c / w <= railY0 + railRows) rail = true;
+                if (rail) continue;
+                for (int c : part) {
+                    int x = c % w, y = c / w;
+                    int[] nb = {x > 0 ? c - 1 : -1, x < w - 1 ? c + 1 : -1, y > 0 ? c - w : -1, y < h - 1 ? c + w : -1};
+                    for (int j : nb) if (j >= 0 && tiles[j] == CAR) tiles[j] = DIRT;
+                    tiles[c] = DIRT;
+                    roadDir[c] = 0;
+                    mainRoad[c] = false;
+                    if (oneWay != null) oneWay[c] = 0;
+                }
+                continue;
+            }
             // The paving goes back to grass, and the lane runs on through it, two tiles wide like the rest.
             for (int c : part) {
                 tiles[c] = GRASS;

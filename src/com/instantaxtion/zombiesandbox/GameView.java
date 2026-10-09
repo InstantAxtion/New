@@ -1670,9 +1670,13 @@ final class GameView extends View implements Menu.Host {
                     dotSeen[cell] = (seen >>> 8) == (dotFrame & 0xFFFFFF) ? seen | (1 << side) : mark;
                 }
                 float r = Math.max(e.radius * 1.35f, 2.6f * dp / scale);
-                fill.setColor(0xD0101010);
-                c.drawCircle(e.x, e.y, r + 1.1f * dp / scale, fill);
-                fill.setColor(e.type == Entity.RAIDER ? 0xFFE0483A : e.type == Entity.DOG ? 0xFFB08A5A : ROW_COLORS[side]);
+                // (Civilians are the crowd, not the story: smaller, see-through, with a faint edge.)
+                boolean civ = side == 0 && e.type == Entity.CIVILIAN;
+                if (civ) r *= 0.7f;
+                fill.setColor(civ ? 0x60101010 : 0xD0101010);
+                c.drawCircle(e.x, e.y, r + (civ ? 0.6f : 1.1f) * dp / scale, fill);
+                int col = e.type == Entity.RAIDER ? 0xFFE0483A : e.type == Entity.DOG ? 0xFFB08A5A : ROW_COLORS[side];
+                fill.setColor(civ ? (col & 0x00FFFFFF) | 0x99000000 : col);
                 c.drawCircle(e.x, e.y, r, fill);
             }
         }

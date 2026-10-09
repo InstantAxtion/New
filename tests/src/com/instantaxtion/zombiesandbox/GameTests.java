@@ -1586,6 +1586,121 @@ public final class GameTests {
                 check(satPolice >= 1 && satFire >= 1, "small towns out in the country with their own police (" + satPolice + ") and fire stations (" + satFire + ")");
             }
         });
+        test("10.23: lanes stay dirt, the army gets in, quieter repeats, drop-off vehicles stay", new Check() {
+            public void run() throws Exception {
+                // A siren or groan that keeps firing spaces out and fades; gunfire keeps up.
+                Sfx.Fatigue fat = new Sfx.Fatigue();
+                int sirens = 0, shots = 0;
+                float lastGain = 1;
+                for (long t = 0; t < 60000; t += 33) {
+                    float g = fat.gain(Sfx.SIREN, t);
+                    if (g > 0) {
+                        sirens++;
+                        lastGain = g;
+                    }
+                    if (fat.gain(Sfx.RIFLE, t) > 0) shots++;
+                }
+                check(sirens < 60 / 1.5f / 3 && lastGain < 0.5f, "a constant siren thins out to under a third of before (every 1.5s) and quietens (" + sirens + " plays, gain " + lastGain + ")");
+                check(shots > 850, "gunfire keeps its pace, no longer gaps (" + shots + ")");
+                // No stretch of tarmac in the middle of a dirt lane, even where the drives join it.
+                for (int[] ps : new int[][]{{0, 2}, {2, 2}, {1, 3}}) {
+                    CityConfig rc = new CityConfig();
+                    rc.v[CityConfig.OPT_PRESET] = ps[0];
+                    rc.seed = ps[1];
+                    rc.normalize();
+                    rc.seed = ps[1];
+                    City city = new City(rc, 0.05f);
+                    int n = city.w * city.h, biggest = 0;
+                    int[] comp = new int[n], qq = new int[n];
+                    java.util.Arrays.fill(comp, -1);
+                    java.util.List<int[]> parts = new java.util.ArrayList<int[]>();
+                    for (int s0 = 0; s0 < n; s0++) {
+                        if (city.tiles[s0] != City.ROAD || comp[s0] >= 0) continue;
+                        int head = 0, tail = 0;
+                        qq[tail++] = s0;
+                        comp[s0] = parts.size();
+                        while (head < tail) {
+                            int cc = qq[head++], x = cc % city.w, y = cc / city.w;
+                            int[] nb = {x > 0 ? cc - 1 : -1, x < city.w - 1 ? cc + 1 : -1, y > 0 ? cc - city.w : -1, y < city.h - 1 ? cc + city.w : -1};
+                            for (int j : nb)
+                                if (j >= 0 && comp[j] < 0 && city.tiles[j] == City.ROAD) {
+                                    comp[j] = parts.size();
+                                    qq[tail++] = j;
+                                }
+                        }
+                        parts.add(java.util.Arrays.copyOf(qq, tail));
+                        biggest = Math.max(biggest, tail);
+                    }
+                    int stray = 0;
+                    for (int[] part : parts) {
+                        if (part.length >= biggest / 3 || part.length > 600) continue;
+                        boolean dirt = false, odd = false;
+                        for (int cc : part) {
+                            if (city.bridge != null && city.bridge[cc]) odd = true;
+                            if (city.railY0 >= 0 && cc / city.w >= city.railY0 - 1 && cc / city.w <= city.railY0 + city.railRows) odd = true;
+                            int x = cc % city.w, y = cc / city.w;
+                            int[] nb = {x > 0 ? cc - 1 : -1, x < city.w - 1 ? cc + 1 : -1, y > 0 ? cc - city.w : -1, y < city.h - 1 ? cc + city.w : -1};
+                            for (int j : nb) if (j >= 0 && city.tiles[j] == City.DIRT) dirt = true;
+                        }
+                        if (dirt && !odd) stray++;
+                    }
+                    check(stray == 0, "map " + ps[0] + "/" + ps[1] + ": no paved bits in the dirt lanes (" + stray + ")");
+                }
+                check(new CityConfig().civic == 8, "new cities are built the 10.23 way");
+                // The army column gets in off the highway, and its trucks stay as staging points once the squads are out.
+                CityConfig c = new CityConfig();
+                c.v[CityConfig.OPT_PRESET] = 0;
+                c.seed = 1;
+                c.normalize();
+                c.seed = 1;
+                World w = new World(c);
+                w.populate(c);
+                for (int f = 0; f < 60; f++) w.update(1 / 30f);
+                float[] q = w.city.findWalkable(w.city.worldW() / 2 + 200, w.city.worldH() / 2);
+                w.alert = 2;
+                w.outbreak = true;
+                for (int i = 0; i < 30; i++) w.spawn(Entity.ZOMBIE, q[0] + (i % 6) * 6, q[1] + (i / 6) * 6);
+                Dispatch.Incident inc = new Dispatch.Incident();
+                inc.x = q[0];
+                inc.y = q[1];
+                inc.place = "the test";
+                inc.field = new int[w.city.w * w.city.h];
+                w.city.walkFieldFromPoints(inc.field, new float[]{inc.x}, new float[]{inc.y}, 1);
+                w.dispatch.incidents.add(inc);
+                java.lang.reflect.Method sr = Dispatch.class.getDeclaredMethod("sendReserveSquad", float.class, float.class, String.class, Dispatch.Incident.class, Dispatch.SafeZone.class);
+                sr.setAccessible(true);
+                sr.invoke(w.dispatch, q[0], q[1], "the test", inc, null);
+                w.dispatch.armyEta = 1;
+                java.util.Set<Fleet.Vehicle> army = new java.util.HashSet<Fleet.Vehicle>();
+                float fx = 0, fy = 0;
+                for (int f = 0; f < 30 * 120; f++) {
+                    w.update(1 / 30f);
+                    w.evCount = 0;
+                    for (Dispatch.Convoy cv : w.dispatch.convoys)
+                        if (cv.label.startsWith("ARMY")) {
+                            army.addAll(cv.vehicles);
+                            fx = cv.fromX;
+                            fy = cv.fromY;
+                        }
+                }
+                int stuck = 0, staging = 0;
+                for (Fleet.Vehicle v : army) {
+                    if (!v.removedFromFleet && !v.broken && Math.hypot(v.x - fx, v.y - fy) < 200) stuck++;
+                    if (!v.removedFromFleet && v.staging) staging++;
+                }
+                check(army.size() >= 10 && stuck <= 2, "the army convoy gets clear of the highway (" + stuck + " of " + army.size() + " still at the entry)");
+                check(staging >= 3, "the trucks stay on as staging points (" + staging + ")");
+                Fleet.Vehicle post = null;
+                for (Fleet.Vehicle v : w.fleet.vehicles) if (v.staging && v.state == Fleet.SCENE && v.stock > 0 && v.passengerType == Entity.SOLDIER) post = v;
+                check(post != null && w.fleet.status(post).contains("Staging point"), "a staging point with spare rounds: " + (post == null ? null : w.fleet.status(post)));
+                Entity dry = w.spawn(Entity.SOLDIER, post.x + 120, post.y);
+                dry.ammo = 0;
+                dry.reserve = 0;
+                int stock = post.stock;
+                for (int f = 0; f < 30 * 30 && dry.reserve == 0 && !dry.dead; f++) w.update(1 / 30f);
+                check(dry.reserve > 0 && post.stock < stock, "a soldier out of ammo restocks from the truck");
+            }
+        });
         test("every screen draws", new Check() {
             public void run() throws Exception {
                 GameView v = new GameView(new android.app.Activity());

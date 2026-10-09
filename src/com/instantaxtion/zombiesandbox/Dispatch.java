@@ -1184,7 +1184,8 @@ final class Dispatch {
         return true;
     }
 
-    private int policeWaves;
+    private int policeWaves, lastWave = -1;
+    private final ArrayList<Integer> waveBag = new ArrayList<Integer>();
     /** Help from outside has been asked for once: from then on it keeps coming while the outbreak is serious. */
     boolean outsideStarted;
 
@@ -1220,7 +1221,15 @@ final class Dispatch {
         policeCd = 10;
         outsideStarted = true;
         Country c = city.country;
-        int kind = policeWaves++ % 6;
+        // (Who comes next is a random mix: each force in turn from a shuffled round, so any of them can be first.)
+        if (waveBag.isEmpty()) {
+            for (int k = 0; k < 6; k++) waveBag.add(k);
+            java.util.Collections.shuffle(waveBag, rnd);
+            if (waveBag.get(0) == lastWave && waveBag.size() > 1) java.util.Collections.swap(waveBag, 0, 1 + rnd.nextInt(waveBag.size() - 1));
+        }
+        int kind = waveBag.remove(0);
+        lastWave = kind;
+        policeWaves++;
         if (kind == 3 && c.ruralShort == null) kind = 0;
         Arrival a = new Arrival();
         a.type = Entity.COP;

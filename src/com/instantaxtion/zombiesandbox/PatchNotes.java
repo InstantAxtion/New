@@ -2,11 +2,15 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.21";
-    static final int VERSION_CODE = 59;
+    static final String VERSION = "10.22";
+    static final int VERSION_CODE = 60;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.22  -  Who's first?",
+                    "Help from outside comes in a random mix: any of the other towns' police, the highway patrol, a SWAT team, the sheriff's deputies or the FBI can be first on the scene, and the order is different every game (never the same force twice in a row).",
+            },
             {
                     "10.21  -  Here they come",
                     "Police from outside the city always arrive in their vehicles: if no road in is open they wait and try again, instead of walking in. A SWAT team waits for its van too.",

@@ -385,6 +385,8 @@ outskirts with small towns that have their own police and fire stations, and a L
 keep coming in waves while the outbreak is serious; the army calls itself in when it gets bad, and all of the help
 gets out of its vehicles even when the city is crowded.
 
+**Who's first? (10.22):** the outside police forces arrive in a random mix, a different order every game.
+
 **Countryside:** Villages, small towns and every Massive map are surrounded by open country:
 winding dirt lanes out to the edge of the map, farms and lonely cabins along them, woods, and
 hamlets (a short street of cottages with a lane back to town). A town out in the country is never a

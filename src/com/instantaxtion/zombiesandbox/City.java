@@ -126,6 +126,12 @@ final class City {
         boolean infestKnown;
         /** Shop windows smashed in, and shelves stripped bare. */
         boolean smashed, looted;
+        /**
+         * How it looks after what it's been through (10.17, for drawing only): soot from a fire (0 to 1),
+         * windows shot out in a fight inside (0 to 1), and the door broken in by the dead.
+         */
+        float scorch, shotUp;
+        boolean doorBroken;
         /** How long survivors inside have gone without food, and whether that's been reported. */
         float hunger;
         boolean outOfFood;
@@ -622,7 +628,9 @@ final class City {
                     opaque[y * w + x] = true;
                     roadDir[y * w + x] = 0;
                 }
-            return createBuilding(buildingLots.get(buildingLots.size() - 1));
+            Building nb = createBuilding(buildingLots.get(buildingLots.size() - 1));
+            if (nb != null) clearDoorway(nb);
+            return nb;
         }
         if (buildingAt[i] >= 0 && !buildings.isEmpty()) {
             // Only Clear touches a building: it knocks it down.
@@ -933,20 +941,24 @@ final class City {
     /** Nothing grows in a doorway: trees right outside a door are cleared, so the way in is always open. */
     private void clearDoorways() {
         doorway = new boolean[w * h];
-        for (Building b : buildings) {
-            if (b.doorX <= 0) continue;
-            int tx = (int) (b.doorX / T), ty = (int) (b.doorY / T);
-            for (int dy = -1; dy <= 1; dy++)
-                for (int dx = -1; dx <= 1; dx++) {
-                    int x = tx + dx, y = ty + dy;
-                    if (x < 0 || y < 0 || x >= w || y >= h) continue;
-                    int i = y * w + x;
-                    doorway[i] = true;
-                    if (tiles[i] != TREE) continue;
-                    tiles[i] = isPlazaTree(x, y) ? PLAZA : GRASS;
-                    solid[i] = false;
-                }
-        }
+        for (Building b : buildings) clearDoorway(b);
+    }
+
+    /** One building's doorway (also for a house put up with the Build tool, as it would be in the code's city). */
+    private void clearDoorway(Building b) {
+        if (b.doorX <= 0) return;
+        if (doorway == null) doorway = new boolean[w * h];
+        int tx = (int) (b.doorX / T), ty = (int) (b.doorY / T);
+        for (int dy = -1; dy <= 1; dy++)
+            for (int dx = -1; dx <= 1; dx++) {
+                int x = tx + dx, y = ty + dy;
+                if (x < 0 || y < 0 || x >= w || y >= h) continue;
+                int i = y * w + x;
+                doorway[i] = true;
+                if (tiles[i] != TREE) continue;
+                tiles[i] = isPlazaTree(x, y) ? PLAZA : GRASS;
+                solid[i] = false;
+            }
     }
 
     /** Puts the door in the middle of the first side that opens onto walkable ground. */

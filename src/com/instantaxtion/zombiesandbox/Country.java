@@ -12,6 +12,11 @@ final class Country {
             NORWAY = 15, DENMARK = 16, CANADA = 17;
     static final String[] NAMES = {"USA", "Australia", "Japan", "France", "Mexico", "Switzerland", "South Korea",
             "Malaysia", "Portugal", "Morocco", "Russia", "China", "Egypt", "Saudi Arabia", "Sweden", "Norway", "Denmark", "Canada"};
+    /** Countries taken off the New Game screen in 10.17 (kept so old saves and city codes still build). */
+    static boolean retired(int id) {
+        return id == KOREA || id == MALAYSIA || id == PORTUGAL || id == MOROCCO || id == EGYPT || id == SAUDI || id == DENMARK;
+    }
+
     static final String[] INFO = {
             "Wide avenues with yellow centre lines, clapboard houses and black-and-white cruisers.",
             "Brick and weatherboard homes under tile and Colorbond roofs, dry grass, chequered police cars. Traffic drives on the left.",

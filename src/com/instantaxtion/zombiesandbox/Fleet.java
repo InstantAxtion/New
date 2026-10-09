@@ -117,6 +117,8 @@ final class Fleet {
         Entity patient;
         /** An army truck carrying the National Guard. */
         boolean guardUnit;
+        /** Bringing reinforcements in from outside the city (10.17): tagged on the map. */
+        boolean reinforcement;
         /** A fire engine's crew is already off fighting the fire. */
         /**
          * The real people aboard: a fire crew or two patrol officers. They're out of the world while they ride,
@@ -1917,7 +1919,8 @@ final class Fleet {
             v.speed *= 0.3f;
         }
         // Give up and stop where we are if the car hasn't made progress for a while.
-        if (v.stuckTimer > 4) arrived = true;
+        // (Reinforcements on their long drive in wait a little longer in a jam before getting out to walk.)
+        if (v.stuckTimer > (v.reinforcement ? 12 : 4)) arrived = true;
         if (arrived) {
             if (v.state == DRIVE && v.block != null) {
                 // A roadblock car: only set up if the zone still needs it and it got close to its spot.
@@ -2506,6 +2509,10 @@ final class Fleet {
             // (Each SWAT team has a marksman with it.)
             if (v.swat) w.applyRole(e, i == v.passengers - 1 && city.cfg.nature() ? Entity.ROLE_MARKSMAN : Entity.ROLE_SWAT);
             else if (v.passengerType == Entity.SOLDIER && !v.guardUnit && city.cfg.nature()) w.kitOut(e);
+            if (v.reinforcement) {
+                w.reinforce(e);
+                w.dispatch.convoyUnloaded(v, e);
+            }
             if (v.incident != null && !v.incident.resolved) {
                 e.task = Dispatch.T_RESPOND;
                 e.incident = v.incident;

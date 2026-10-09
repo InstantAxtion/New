@@ -135,6 +135,7 @@ final class GameView extends View implements Menu.Host {
     private int speedIdx, brushIdx;
     private int tool = TOOL_PAN;
     private int iconCopBody;
+    private final RectF tmpRect = new RectF();
 
     /** The police picker's names, with this country's highway and rural police. */
     private String[] copNames() {
@@ -218,7 +219,8 @@ final class GameView extends View implements Menu.Host {
         // The main menu shows a live demo city in the background.
         CityConfig demo = new CityConfig();
         // (Not the Islands: it's too big to build behind the menu.)
-        demo.v[CityConfig.OPT_PRESET] = rnd.nextInt(CityConfig.ISLANDS);
+        do demo.v[CityConfig.OPT_PRESET] = rnd.nextInt(CityConfig.ISLANDS);
+        while (CityConfig.retired(CityConfig.OPT_PRESET, demo.v[CityConfig.OPT_PRESET]));
         demo.v[CityConfig.OPT_MILITARY] = 1;
         demo.v[CityConfig.OPT_ZOMBIES] = 2;
         loadWorld(demo);
@@ -1006,6 +1008,17 @@ final class GameView extends View implements Menu.Host {
                 fill.setColor(0xFFE6E6E6);
                 c.drawRect(rx - 1f * dp, ry - 1f * dp, rx + 1f * dp, ry + 1f * dp, fill);
             }
+            // Reinforcements on their way in: a line from the head of the column to where they're going.
+            for (int i = 0; i < world.dispatch.convoys.size(); i++) {
+                Dispatch.Convoy cv = world.dispatch.convoys.get(i);
+                int col = convoyColor(cv);
+                stroke.setColor(col);
+                stroke.setStrokeWidth(1.5f * dp);
+                float hx = miniRect.left + cv.x * sx, hy = miniRect.top + cv.y * sy;
+                c.drawLine(hx, hy, miniRect.left + cv.toX * sx, miniRect.top + cv.toY * sy, stroke);
+                fill.setColor(col);
+                c.drawCircle(hx, hy, (2.5f + 1.2f * (float) Math.abs(Math.sin(world.time * 5))) * dp, fill);
+            }
             float dot = Math.max(1.2f, dp * 0.9f);
             for (int i = 0, n = world.fleet.vehicles.size(); i < n; i++) {
                 Fleet.Vehicle v = world.fleet.vehicles.get(i);
@@ -1422,6 +1435,8 @@ final class GameView extends View implements Menu.Host {
             }
         }
 
+        if (scale > 0.7f) drawMarks(c, vx0, vy0, vx1, vy1);
+
         for (int i = 0, n = world.dispatch.zones.size(); i < n; i++) drawZone(c, world.dispatch.zones.get(i));
         for (int i = 0, n = world.holdouts.size(); i < n; i++) {
             World.Holdout h = world.holdouts.get(i);
@@ -1540,6 +1555,11 @@ final class GameView extends View implements Menu.Host {
             float flicker = 0.7f + 0.3f * (float) Math.sin(world.time * 17 + i);
             fill.setColor(alpha(0xFFFF8A20, 0.25f * flicker * Math.min(1, f.life / 10)));
             c.drawCircle(f.x, f.y, 16, fill);
+        }
+        for (int i = 0, n = world.city.buildings.size(); i < n; i++) {
+            City.Building b = world.city.buildings.get(i);
+            if (!b.doorBroken || b.collapsed || b.doorX < vx0 || b.doorX > vx1 || b.doorY < vy0 || b.doorY > vy1) continue;
+            drawBrokenDoor(c, b);
         }
         for (int i = 0, n = world.city.buildings.size(); i < n; i++) {
             City.Building b = world.city.buildings.get(i);
@@ -1806,6 +1826,7 @@ final class GameView extends View implements Menu.Host {
         }
 
         drawBuildings(c, vx0, vy0, vx1, vy1, detailed);
+        drawHaze(c, vx0, vy0, vx1, vy1);
         for (int i = 0, n = world.fleet.vehicles.size(); i < n; i++) {
             Fleet.Vehicle v = world.fleet.vehicles.get(i);
             if (v.type == Fleet.HELI) drawHeli(c, v);
@@ -2097,7 +2118,8 @@ final class GameView extends View implements Menu.Host {
 
     /** Cracks and scorch marks on the roof of a building that has taken blast damage. */
     private void drawDamage(Canvas c, City.Building b, float x0, float y0, float x1, float y1, float a) {
-        float dmg = 1 - b.hp / b.maxHp;
+        float dmg = b.maxHp > 0 ? 1 - b.hp / b.maxHp : 0;
+        if (a > 0.05f) drawWear(c, b, x0, y0, x1, y1, a, dmg);
         if (dmg < 0.12f || a <= 0.05f) return;
         float w = x1 - x0, h = y1 - y0;
         int n = 2 + (int) (dmg * 9);
@@ -2120,6 +2142,191 @@ final class GameView extends View implements Menu.Host {
             // Still smouldering.
             world.particle(x0 + world.rnd.nextFloat() * w, y0 + world.rnd.nextFloat() * h, 3, -8, 1.5f, 2.5f, 0xFF3A3A3A,
                     World.P_SMOKE);
+        }
+    }
+
+    // ------------------------------------------------------------------ wear and tear (10.17)
+
+    /**
+     * A building shows what it's been through, in stages: windows broken (in a fight inside, a blast, a
+     * shop smashed in), soot spreading over it after a fire, and at worst the roof caved in, with the beams
+     * showing and rubble below.
+     */
+    private void drawWear(Canvas c, City.Building b, float x0, float y0, float x1, float y1, float a, float dmg) {
+        float w = x1 - x0, h = y1 - y0;
+        if (w < 4 || h < 4) return;
+        int hsh = b.seed * 69069 + 1;
+        // Broken windows round the edge of the roof: dark holes, a glint of glass.
+        int windows = (int) (b.shotUp * 8 + (b.smashed ? 4 : 0) + (dmg > 0.12f ? dmg * 8 : 0) + b.scorch * 4);
+        for (int k = 0; k < windows; k++) {
+            hsh = hsh * 1103515245 + 12345;
+            int side = (hsh >>> 20) & 3;
+            float t = 0.12f + ((hsh >>> 8) & 1023) / 1023f * 0.76f;
+            float px = side < 2 ? x0 + t * w : side == 2 ? x0 + 1.4f : x1 - 1.4f;
+            float py = side >= 2 ? y0 + t * h : side == 0 ? y0 + 1.4f : y1 - 1.4f;
+            boolean across = side < 2;
+            float hw = across ? 2.6f : 1.3f, hh = across ? 1.3f : 2.6f;
+            if (b.scorch > 0.3f) {
+                // Soot licked up out of a burnt-out window.
+                fill.setColor(alpha(0xFF141110, a * 0.35f * b.scorch));
+                c.drawCircle(px, py, 4.5f, fill);
+            }
+            fill.setColor(alpha(0xF00C0F12, a));
+            c.drawRect(px - hw, py - hh, px + hw, py + hh, fill);
+            // Jagged glass left in the frame.
+            stroke.setColor(alpha(0xD0CFE8F2, a));
+            stroke.setStrokeWidth(0.45f);
+            c.drawLine(px - hw, py - hh, px - hw * 0.2f, py + hh * 0.1f, stroke);
+            c.drawLine(px + hw, py + hh, px + hw * 0.3f, py - hh * 0.2f, stroke);
+        }
+        // Soot from a fire: blotches spreading from where it burned, the roof edge blackened at the end.
+        if (b.scorch > 0.05f) {
+            int blots = 3 + (int) (b.scorch * 7);
+            hsh = b.seed * 31 + 7;
+            for (int k = 0; k < blots; k++) {
+                hsh = hsh * 1103515245 + 12345;
+                float u = ((hsh >>> 8) & 1023) / 1023f, v = ((hsh >>> 18) & 1023) / 1023f;
+                float r = (3 + ((hsh >>> 4) & 15) / 15f * 6) * (0.4f + b.scorch);
+                // (Soft-edged: rings of thinner soot round a darker middle.)
+                float sa = a * Math.min(0.75f, b.scorch * 0.9f);
+                for (int ring = 0; ring < 3; ring++) {
+                    fill.setColor(alpha(0xFF141110, sa * 0.32f));
+                    c.drawCircle(x0 + u * w, y0 + v * h, r * (1 - ring * 0.3f), fill);
+                }
+            }
+            if (b.scorch > 0.5f) {
+                stroke.setColor(alpha(0xFF0E0C0B, a * (b.scorch - 0.4f)));
+                stroke.setStrokeWidth(1.6f);
+                c.drawRect(x0 + 0.8f, y0 + 0.8f, x1 - 0.8f, y1 - 0.8f, stroke);
+            }
+        }
+        // The roof caved in: a ragged hole, beams across it, rubble round it.
+        float cave = Math.max(dmg > 0.5f ? (dmg - 0.5f) * 2 : 0, b.scorch > 0.85f ? (b.scorch - 0.85f) * 6 : 0);
+        if (cave > 0) {
+            cave = Math.min(1, cave);
+            hsh = b.seed * 7919 + 3;
+            hsh = hsh * 1103515245 + 12345;
+            float cx = x0 + w * (0.35f + ((hsh >>> 8) & 255) / 255f * 0.3f);
+            hsh = hsh * 1103515245 + 12345;
+            float cy = y0 + h * (0.35f + ((hsh >>> 8) & 255) / 255f * 0.3f);
+            float rx = w * (0.12f + 0.22f * cave), ry = h * (0.12f + 0.22f * cave);
+            wearPath.reset();
+            for (int k = 0; k < 10; k++) {
+                hsh = hsh * 1103515245 + 12345;
+                double ang = k * Math.PI / 5;
+                float rr = 0.7f + ((hsh >>> 8) & 255) / 255f * 0.45f;
+                float px = cx + (float) Math.cos(ang) * rx * rr, py = cy + (float) Math.sin(ang) * ry * rr;
+                if (k == 0) wearPath.moveTo(px, py);
+                else wearPath.lineTo(px, py);
+            }
+            wearPath.close();
+            fill.setColor(alpha(0xF0181412, a));
+            c.drawPath(wearPath, fill);
+            stroke.setColor(alpha(0xFF6E4E30, a));
+            stroke.setStrokeWidth(0.9f);
+            for (int k = -1; k <= 1; k++)
+                c.drawLine(cx - rx * 0.9f, cy + k * ry * 0.45f - ry * 0.1f, cx + rx * 0.9f, cy + k * ry * 0.45f + ry * 0.1f, stroke);
+            for (int k = 0; k < 14; k++) {
+                hsh = hsh * 1103515245 + 12345;
+                double ang = ((hsh >>> 8) & 1023) / 1023f * Math.PI * 2;
+                float rr = 1 + ((hsh >>> 18) & 255) / 255f * 0.5f;
+                fill.setColor(alpha(k % 2 == 0 ? 0xFF8A8478 : 0xFF6A645A, a));
+                float px = cx + (float) Math.cos(ang) * rx * rr, py = cy + (float) Math.sin(ang) * ry * rr;
+                float rs = 1.2f + ((hsh >>> 4) & 7) * 0.35f;
+                c.drawRect(px - rs, py - rs * 0.7f, px + rs, py + rs * 0.7f, fill);
+            }
+        }
+    }
+
+    private final android.graphics.Path wearPath = new android.graphics.Path();
+
+    /** A door the dead broke in: hanging off, splinters on the step (boarded back up once it's been fixed). */
+    private void drawBrokenDoor(Canvas c, City.Building b) {
+        float x = b.doorX, y = b.doorY;
+        if (b.barricade >= 60) {
+            // Patched up: planks nailed across the gap.
+            fill.setColor(0xFF8A6238);
+            c.drawRect(x - 4.5f, y - 2.2f, x + 4.5f, y - 1f, fill);
+            c.drawRect(x - 4f, y + 0.2f, x + 4f, y + 1.4f, fill);
+            fill.setColor(0xFF4A3420);
+            c.drawCircle(x - 3.5f, y - 1.6f, 0.35f, fill);
+            c.drawCircle(x + 3.5f, y + 0.8f, 0.35f, fill);
+            return;
+        }
+        fill.setColor(0xE0141210);
+        c.drawRect(x - 3.2f, y - 1.6f, x + 3.2f, y + 1.6f, fill);
+        // The door itself, knocked askew.
+        stroke.setColor(0xFF7A5634);
+        stroke.setStrokeWidth(1.4f);
+        c.drawLine(x - 3.6f, y + 1.8f, x + 1.8f, y + 3.6f, stroke);
+        fill.setColor(0xFFB08A5C);
+        int hsh = b.seed;
+        for (int k = 0; k < 6; k++) {
+            hsh = hsh * 1103515245 + 12345;
+            float u = (((hsh >>> 8) & 255) / 255f - 0.5f) * 9, v = 2 + ((hsh >>> 16) & 255) / 255f * 4;
+            c.drawRect(x + u - 0.6f, y + v - 0.2f, x + u + 0.6f, y + v + 0.2f, fill);
+        }
+    }
+
+    // ------------------------------------------------------------------ marks on the ground (10.17)
+
+    /** Footprints, blood trails, drag marks and spent cases, fading with age. */
+    private void drawMarks(Canvas c, float vx0, float vy0, float vx1, float vy1) {
+        boolean close = scale > 1.8f;
+        float now = world.time;
+        stroke.setStrokeWidth(1.5f);
+        for (int i = 0; i < world.mcount; i++) {
+            float x = world.mx[i], y = world.my[i];
+            if (x < vx0 || x > vx1 || y < vy0 || y > vy1) continue;
+            byte kind = world.mkind[i];
+            float age = (now - world.mborn[i]) / World.MARK_LIFE[kind];
+            if (age >= 1 || age < 0) continue;
+            float f = 1 - age;
+            float ca = (float) Math.cos(world.mang[i]), sa = (float) Math.sin(world.mang[i]);
+            switch (kind) {
+                case World.M_FOOT:
+                    // Toe and heel.
+                    fill.setColor(alpha(0x70302418, f));
+                    c.drawCircle(x + ca * 0.75f, y + sa * 0.75f, 0.62f, fill);
+                    c.drawCircle(x - ca * 0.55f, y - sa * 0.55f, 0.48f, fill);
+                    break;
+                case World.M_PAW:
+                    fill.setColor(alpha(0x60302418, f));
+                    c.drawCircle(x, y, 0.5f, fill);
+                    c.drawCircle(x + ca * 0.8f - sa * 0.35f, y + sa * 0.8f + ca * 0.35f, 0.25f, fill);
+                    c.drawCircle(x + ca * 0.8f + sa * 0.35f, y + sa * 0.8f - ca * 0.35f, 0.25f, fill);
+                    break;
+                case World.M_DRIP:
+                    fill.setColor(alpha(world.mside[i] == 1 ? 0xC0600606 : 0x9A6E0A0A, f));
+                    c.drawCircle(x, y, world.mside[i] == 1 ? 0.9f : 0.6f, fill);
+                    break;
+                case World.M_DRAG:
+                    stroke.setColor(alpha(0x70520606, f));
+                    c.drawLine(x - ca * 3, y - sa * 3, x + ca * 3, y + sa * 3, stroke);
+                    break;
+                case World.M_CASING:
+                    if (!close) break;
+                    // Brass, dulling as it lies there.
+                    fill.setColor(alpha(age < 0.3f ? 0xFFC9A442 : 0xFF8F7A48, Math.min(1, f * 2.5f)));
+                    c.drawRect(x - ca * 0.45f - 0.2f, y - sa * 0.45f - 0.2f, x + ca * 0.45f + 0.2f, y + sa * 0.45f + 0.2f, fill);
+                    break;
+                default:
+                    break;
+            }
+        }
+    }
+
+    /** Gunsmoke drifting off a firefight. */
+    private void drawHaze(Canvas c, float vx0, float vy0, float vx1, float vy1) {
+        float now = world.time;
+        for (int i = 0; i < World.MAXH; i++) {
+            float age = now - world.hborn[i];
+            if (world.hsize[i] <= 0 || age < 0 || age >= World.HAZE_LIFE) continue;
+            float x = world.hx[i] + age * 2.6f, y = world.hy[i] - age * 1.1f;
+            if (x < vx0 - 20 || x > vx1 + 20 || y < vy0 - 20 || y > vy1 + 20) continue;
+            float k = age / World.HAZE_LIFE, f = k < 0.1f ? k * 10 : 1 - (k - 0.1f) / 0.9f;
+            fill.setColor(alpha(0xFFCFCFC6, 0.2f * f));
+            c.drawCircle(x, y, world.hsize[i] + age * 1.7f, fill);
         }
     }
 
@@ -4926,6 +5133,7 @@ final class GameView extends View implements Menu.Host {
 
         drawHeadlines(c);
         float infoY = barTop - 12 * dp;
+        drawConvoys(c);
         drawPins(c);
         text.setTextSize(13 * dp);
         if (tool == TOOL_ORDER && follow == null) {
@@ -5175,6 +5383,85 @@ final class GameView extends View implements Menu.Host {
                 pinned.remove(i);
             }
         }
+    }
+
+    // ------------------------------------------------------------------ reinforcements (10.17)
+
+    private static int convoyColor(Dispatch.Convoy cv) {
+        return cv.type == Entity.SOLDIER ? 0xFFB4C85A : 0xFF5A9CFF;
+    }
+
+    /**
+     * Reinforcements coming in from outside: where they came onto the map (for a while), a dashed line from
+     * the head of the column to where they're going, a tag over the column, and an arrow at the edge of the
+     * screen pointing to them while they're off it.
+     */
+    private void drawConvoys(Canvas c) {
+        int w = getWidth();
+        float top = topRects[0].bottom + (portrait ? 150 : 115) * dp, bottom = barTop - 60 * dp;
+        float pulse = (float) Math.abs(Math.sin(world.time * 4));
+        for (int i = 0; i < world.dispatch.convoys.size(); i++) {
+            Dispatch.Convoy cv = world.dispatch.convoys.get(i);
+            int col = convoyColor(cv), faint = (col & 0x00FFFFFF) | 0x90000000;
+            float hx = screenX(cv.x), hy = screenY(cv.y), tx = screenX(cv.toX), ty = screenY(cv.toY);
+            // The route: dashes from the column to the destination, marching along.
+            float dx = tx - hx, dy = ty - hy, len = (float) Math.sqrt(dx * dx + dy * dy);
+            if (len > 1) {
+                stroke.setColor(faint);
+                stroke.setStrokeWidth(2.5f * dp);
+                float dash = 10 * dp, off = (world.time * 30 * dp) % (dash * 2);
+                for (float d = off; d < len; d += dash * 2) {
+                    float e = Math.min(len, d + dash);
+                    c.drawLine(hx + dx * d / len, hy + dy * d / len, hx + dx * e / len, hy + dy * e / len, stroke);
+                }
+            }
+            // Where they're going.
+            stroke.setColor(col);
+            stroke.setStrokeWidth(2 * dp);
+            c.drawCircle(tx, ty, (12 + 6 * pulse) * dp, stroke);
+            // Where they came in (for the first half minute).
+            if (cv.age < 30) {
+                float ex = screenX(cv.fromX), ey = screenY(cv.fromY);
+                fill.setColor((col & 0x00FFFFFF) | ((int) (0x60 + 0x60 * pulse) << 24));
+                c.drawCircle(ex, ey, (16 + 10 * pulse) * dp, fill);
+                tagAt(c, "ENTERING: " + cv.label, ex, ey - 26 * dp, col);
+            }
+            boolean on = hx > 0 && hx < w && hy > top && hy < bottom;
+            if (on) {
+                tagAt(c, cv.label + " ▸ " + (cv.place != null ? cv.place : ""), hx, hy - 22 * dp, col);
+                continue;
+            }
+            // Off screen: an arrow at the edge pointing to them.
+            float cx = w / 2f, cy = (top + bottom) / 2, ddx = hx - cx, ddy = hy - cy;
+            float k = Math.min(Math.abs((w / 2f - 30 * dp) / (ddx == 0 ? 0.001f : ddx)), Math.abs(((bottom - top) / 2 - 30 * dp) / (ddy == 0 ? 0.001f : ddy)));
+            float ix = cx + ddx * k, iy = cy + ddy * k;
+            float a = (float) Math.atan2(ddy, ddx);
+            android.graphics.Path p = new android.graphics.Path();
+            float r = 15 * dp;
+            p.moveTo(ix + (float) Math.cos(a) * r, iy + (float) Math.sin(a) * r);
+            p.lineTo(ix + (float) Math.cos(a + 2.4f) * r, iy + (float) Math.sin(a + 2.4f) * r);
+            p.lineTo(ix + (float) Math.cos(a - 2.4f) * r, iy + (float) Math.sin(a - 2.4f) * r);
+            p.close();
+            fill.setColor(col);
+            c.drawPath(p, fill);
+            float lx = ix - (float) Math.cos(a) * 30 * dp, ly = iy - (float) Math.sin(a) * 30 * dp;
+            tagAt(c, cv.label, Math.max(60 * dp, Math.min(w - 60 * dp, lx)), ly, col);
+        }
+    }
+
+    /** A small coloured name tag centred on (x, y). */
+    private void tagAt(Canvas c, String label, float x, float y, int col) {
+        text.setTextAlign(Paint.Align.CENTER);
+        text.setTextSize(10.5f * dp);
+        float tw = text.measureText(label);
+        tmpRect.set(x - tw / 2 - 6 * dp, y - 11 * dp, x + tw / 2 + 6 * dp, y + 4 * dp);
+        fill.setColor(0xD0141619);
+        c.drawRoundRect(tmpRect, 5 * dp, 5 * dp, fill);
+        stroke.setColor(col);
+        stroke.setStrokeWidth(1.2f * dp);
+        c.drawRoundRect(tmpRect, 5 * dp, 5 * dp, stroke);
+        text.setColor(0xFFFFFFFF);
+        c.drawText(label, x, y, text);
     }
 
     /** Stars over pinned people on screen, and arrows at the edge pointing to those off it. */

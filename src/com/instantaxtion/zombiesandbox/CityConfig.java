@@ -118,7 +118,19 @@ final class CityConfig implements OptionSet {
     };
 
     /** Current index into VALUES for each option. */
-    final int[] v = {0, MEDIUM, 4, 2, 1, 0, 2, 0};
+    final int[] v = {0, LARGE, 4, 2, 1, 0, 2, 0};
+
+    /**
+     * Choices no longer offered on the New Game screen (10.17): five of the maps (Industrial, Parkland, Old
+     * Town, Small Town and Harbour), the three smallest map sizes and seven of the countries. Cities from older
+     * saves and shared codes that use them still build as they were.
+     */
+    static boolean retired(int option, int value) {
+        if (option == OPT_PRESET) return value == 3 || value == 4 || value == 5 || value == 6 || value == 13;
+        if (option == OPT_SIZE) return value < LARGE;
+        if (option == OPT_COUNTRY) return Country.retired(value);
+        return false;
+    }
     long seed = new Random().nextInt(1000000);
     /** Start the next game on the city from {@link #code()} instead of a new random one. */
     boolean keepCity;
@@ -306,11 +318,12 @@ final class CityConfig implements OptionSet {
     /** What each Reinforcements setting means, in plain words. */
     static final String[] RESERVE_INFO = {
             "Off: nobody else comes. Only the police and soldiers already in the city fight.",
-            "Low: 1 wave of police backup (4 officers), 1 army reserve squad (4 soldiers), 1 tank and 1 helicopter sortie. "
-                    + "The National Guard comes if the army runs out and the city is losing.",
-            "Medium: 2 waves of police backup, 2 army reserve squads, 1 tank and 1 helicopter sortie, then the National Guard "
+            "Low: 2 waves of police backup (6 officers each), 2 army reserve squads, 1 tank and 1 helicopter sortie. "
+                    + "They come in from outside the city, along the highway, with spare ammo to share. The National Guard "
+                    + "comes if the army runs out and the city is losing.",
+            "Medium: 3 waves of police backup, 4 army reserve squads, 2 tanks and 2 helicopter sorties, then the National Guard "
                     + "if it's needed.",
-            "High: 3 waves of police backup, 3 army reserve squads, 2 tanks and 2 helicopter sorties, then the National Guard "
+            "High: 5 waves of police backup, 6 army reserve squads, 3 tanks and 3 helicopter sorties, then the National Guard "
                     + "if it's needed."};
     int zombies() { return ZOMBIES[v[OPT_ZOMBIES]]; }
     /** Which country the city is in (see {@link Country}). */
@@ -399,8 +412,11 @@ final class CityConfig implements OptionSet {
     int[] parkMix() { return PARK_MIX[v[OPT_PRESET]]; }
 
     void randomize(Random r) {
-        for (int i = 0; i < v.length; i++) v[i] = r.nextInt(VALUES[i].length);
-        v[OPT_SIZE] = MEDIUM;
+        for (int i = 0; i < v.length; i++) {
+            do v[i] = r.nextInt(VALUES[i].length);
+            while (retired(i, v[i]));
+        }
+        v[OPT_SIZE] = LARGE;
         normalize();
         if (v[OPT_CIVILIANS] == 0) v[OPT_CIVILIANS] = 4;
         keepCity = false;

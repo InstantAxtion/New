@@ -10,9 +10,9 @@ away from the middle of the screen as you pan, and the game plays in both portra
 ## Main menu
 
 - **New Game** opens the city setup, with a live preview of the city and these options: the map (Classic,
-  Downtown, Suburbs, Industrial, Parkland, Old Town, Small Town, Campus, Metropolis, Village, or the four
-  water maps: Seaside, River City, Lakeside and Harbour, or Islands), map size
-  (Tiny, Small, Medium, Large, Massive or Huge), the **country** (USA, Australia, Japan, France, Mexico, Switzerland, South Korea, Malaysia, Portugal, Morocco, Russia, China, Egypt, Saudi Arabia, Sweden, Norway, Denmark or Canada), how many of
+  Downtown, Suburbs, Campus, Metropolis, Village, or the water maps: Seaside, River City and Lakeside, or
+  Islands), map size (Large, Massive or Huge; Large by default), the **country** (USA, Australia, Japan, France,
+  Mexico, Switzerland, Russia, China, Sweden, Norway or Canada), how many of
   the residents are out and about (All by default), zombies at the start, and how many reinforcements can
   be called in (Off, Low, Medium or High, each spelled out: waves of police backup, army squads, tanks
   and helicopter sorties). Police and soldiers on duty are set by the size of the city (about one officer
@@ -352,6 +352,13 @@ radioing in sightings. Rescue helicopters drop their team, go back to base and r
 for pickup (up to three teams). More police and soldiers; highway patrol and sheriffs back up the town once it's
 attacked. The ranger station is on the map and always has a ranger at it. A bunched-up outbreak gets a
 perimeter round it, officers driven out to empty posts. Every kind of police can be spawned.
+
+**Scars of the fight (10.17):** footprints in sand, dirt and mud, blood trails behind the wounded, drag marks
+behind crawlers, spent cases piling up and gunsmoke drifting over firefights, all fading with time. Buildings
+show their damage in stages: shot-out windows, broken-in doors, soot after a fire, a caved-in roof.
+Reinforcements are bigger, carry spare ammo and come in from outside the city along the highway, marked on the
+map, the minimap and the edge of the screen. Large is the smallest map size; a few maps and countries were
+taken off the New Game screen (old saves and codes still load).
 
 **Countryside:** Villages, small towns and every Massive map are surrounded by open country:
 winding dirt lanes out to the edge of the map, farms and lonely cabins along them, woods, and

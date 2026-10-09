@@ -1118,6 +1118,85 @@ public final class GameTests {
                 check(lowered && standby, "the rescue team is lowered and the helicopter waits at base for their call");
             }
         });
+        test("10.17: fewer choices, reinforcements from outside, footprints, spent cases, worn buildings", new Check() {
+            public void run() throws Exception {
+                // The maps, sizes and countries taken off the New Game screen never come up at random.
+                java.util.Random r = new java.util.Random(5);
+                CityConfig pick = new CityConfig();
+                check(pick.size() == CityConfig.LARGE, "Large is the default map size");
+                for (int i = 0; i < 300; i++) {
+                    pick.randomize(r);
+                    for (int o = 0; o < 8; o++)
+                        check(!CityConfig.retired(o, pick.v[o]), "a random city never uses a retired option (" + o + " = " + pick.v[o] + ")");
+                }
+                check(CityConfig.retired(CityConfig.OPT_PRESET, 13) && CityConfig.retired(CityConfig.OPT_COUNTRY, Country.KOREA)
+                        && !CityConfig.retired(CityConfig.OPT_COUNTRY, Country.USA), "Harbour and South Korea are gone, the USA isn't");
+                // Old city codes that use them still build.
+                CityConfig old = new CityConfig();
+                check(old.applyCode("22-77@" + Country.DENMARK) && old.country() == Country.DENMARK && old.size() == CityConfig.MEDIUM,
+                        "an old Medium city in Denmark still loads from its code");
+                // Reinforcements drive in from the edge of the map, and are tracked on it.
+                CityConfig c = new CityConfig();
+                c.seed = 5;
+                c.v[CityConfig.OPT_ZOMBIES] = 0;
+                c.v[CityConfig.OPT_RESERVES] = 3;
+                World w = new World(c);
+                w.populate(c);
+                float cx = w.city.worldW() / 2f, cy = w.city.worldH() / 2f;
+                Dispatch.Incident inc = new Dispatch.Incident();
+                inc.x = cx;
+                inc.y = cy;
+                inc.place = w.city.placeName(cx, cy);
+                java.lang.reflect.Method pb = Dispatch.class.getDeclaredMethod("policeBackup", Dispatch.Incident.class);
+                pb.setAccessible(true);
+                check((Boolean) pb.invoke(w.dispatch, inc), "police backup called");
+                for (int f = 0; f < 30 * 4; f++) w.update(1 / 30f);
+                check(!w.dispatch.convoys.isEmpty(), "the backup shows on the map");
+                Dispatch.Convoy cv = w.dispatch.convoys.get(0);
+                float edge = Math.min(Math.min(cv.fromX, cv.fromY), Math.min(w.city.worldW() - cv.fromX, w.city.worldH() - cv.fromY));
+                check(edge < 120, "they come in from the edge of the map (" + (int) edge + " from it)");
+                boolean got = false;
+                for (int f = 0; f < 30 * 150 && !got; f++) {
+                    w.update(1 / 30f);
+                    for (Entity e : w.entities) if (!e.dead && e.type == Entity.COP && e.reserve > World.fullReserve(e) && Math.hypot(e.x - cx, e.y - cy) < 300) got = true;
+                }
+                check(got, "the backup gets there with spare ammo");
+                // Marks on the ground: spent cases where people fired, blood behind the wounded.
+                float[] open = w.city.findWalkable(cx, cy);
+                cx = open[0];
+                cy = open[1];
+                w.viewX0 = cx - 300;
+                w.viewY0 = cy - 300;
+                w.viewX1 = cx + 300;
+                w.viewY1 = cy + 300;
+                Entity s = w.spawnSoldier(Entity.ROLE_RIFLE, cx, cy);
+                for (int i = 0; i < 8; i++) {
+                    float[] q = w.city.findWalkable(cx + 80 + i * 6, cy);
+                    if (q != null) w.spawn(Entity.ZOMBIE, q[0], q[1]);
+                }
+                float[] hq = w.city.findWalkable(cx - 40, cy);
+                Entity hurt = w.spawn(Entity.CIVILIAN, hq != null ? hq[0] : cx, hq != null ? hq[1] : cy);
+                hurt.hp = hurt.maxHp * 0.2f;
+                for (int f = 0; f < 30 * 10; f++) w.update(1 / 30f);
+                int casings = 0, blood = 0;
+                for (int i = 0; i < w.mcount; i++) {
+                    if (w.mkind[i] == World.M_CASING) casings++;
+                    if (w.mkind[i] == World.M_DRIP) blood++;
+                }
+                check(casings > 0, "spent cases on the ground (" + casings + ")");
+                check(blood > 0 || hurt.dead, "a trail of blood behind someone badly hurt (" + blood + ")");
+                // A building that has burned is sooted up.
+                City.Building b = w.city.buildings.get(0);
+                World.Fire fire = new World.Fire();
+                fire.x = b.doorX;
+                fire.y = b.doorY;
+                fire.life = 20;
+                fire.building = b;
+                w.fires.add(fire);
+                for (int f = 0; f < 30 * 5; f++) w.update(1 / 30f);
+                check(b.scorch > 0, "a fire leaves soot on the building");
+            }
+        });
         test("every screen draws", new Check() {
             public void run() throws Exception {
                 GameView v = new GameView(new android.app.Activity());

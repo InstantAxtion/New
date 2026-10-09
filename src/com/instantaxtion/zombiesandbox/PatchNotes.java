@@ -2,11 +2,20 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.16";
-    static final int VERSION_CODE = 54;
+    static final String VERSION = "10.17";
+    static final int VERSION_CODE = 55;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.17  -  Scars of the fight",
+                    "Footprints in sand, dirt and mud (and wet ones just out of a stream), paw prints, a trail of blood behind the badly hurt and drag marks behind the crawling dead, all slowly fading.",
+                    "Spent cases pile up on the ground where people stood and fired, and gunsmoke hangs and drifts over a long firefight.",
+                    "Buildings show what they've been through, in stages: windows shot out, a door broken in by the dead (boarded up again once it's fixed), soot spreading after a fire, and at worst the roof caved in.",
+                    "Reinforcements come in from outside the city, along the highway: marked where they enter, with a line to where they're going, a tag over the column, an arrow at the edge of the screen while they're out of sight, and on the minimap.",
+                    "Reinforcements are bigger and there are more of them: 6 officers in each wave of police backup, more reserve squads, tanks and helicopter sorties. They arrive fresh, with spare ammo to hand round.",
+                    "Large is now the smallest and the default map size. Industrial, Parkland, Old Town, Small Town and Harbour are no longer on the New Game screen, nor are South Korea, Malaysia, Portugal, Morocco, Egypt, Saudi Arabia and Denmark. Saved games and city codes that use them still work.",
+            },
             {
                     "10.16  -  Holding the line",
                     "Police and soldiers watch their ammo: as they run low they keep the dead further off and head back to restock sooner, at their own station or base first.",

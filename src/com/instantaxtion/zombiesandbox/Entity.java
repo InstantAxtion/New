@@ -97,6 +97,9 @@ final class Entity {
     Fleet.Vehicle ride;
     /** Zombies: where the prey was last seen, how long they remember it, and time left searching there. */
     float lastX, lastY, memory, searchTimer, moanCd;
+    /** Where this one last left a footprint or a drop of blood, and how long their feet stay wet after wading. */
+    float markX = -1, markY, wet;
+    boolean markLeft;
     /** Civilians: their home, and the errand they are on (a place to go and how long to stay). */
     City.Building home, errand;
     /**

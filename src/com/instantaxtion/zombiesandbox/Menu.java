@@ -931,13 +931,19 @@ final class Menu {
         }
         y += 5 * dp;
         String[] values = config.values(option);
+        // (Choices that are no longer offered are left out, unless a loaded city code is using one.)
+        int shown = 0;
+        int[] index = new int[values.length];
+        for (int i = 0; i < values.length; i++)
+            if (!CityConfig.retired(option, i) || config.get(option) == i) index[shown++] = i;
         // A long list (the countries) goes over two rows rather than squeezing into one.
-        int lines = values.length > 12 ? 3 : values.length > 6 ? 2 : 1;
-        int perRow = (values.length + lines - 1) / lines;
-        int rows = (values.length + perRow - 1) / perRow;
+        int lines = shown > 12 ? 3 : shown > 6 ? 2 : 1;
+        int perRow = (shown + lines - 1) / lines;
+        int rows = (shown + perRow - 1) / perRow;
         float gap = 4 * dp, bh = 36 * dp, bw = (width - gap * (perRow - 1)) / perRow;
-        for (int i = 0; i < values.length; i++) {
-            float l = x + (i % perRow) * (bw + gap), t = y + (i / perRow) * (bh + gap);
+        for (int k = 0; k < shown; k++) {
+            int i = index[k];
+            float l = x + (k % perRow) * (bw + gap), t = y + (k / perRow) * (bh + gap);
             Seg sg = seg(option, i, l, t, l + bw, t + bh);
             boolean on = config.get(option) == i;
             fill.setColor(on ? 0xFF3F8A3A : 0xFF23262C);
@@ -1017,8 +1023,14 @@ final class Menu {
         y += 22 * dp;
         int perRow = lw > 520 * dp ? 5 : lw > 330 * dp ? 4 : 3;
         float gap = 6 * dp, cw = (lw - gap * (perRow - 1)) / perRow, ch = 40 * dp;
-        for (int i = 0; i < CityConfig.PRESETS.length; i++) {
-            float l = lx + (i % perRow) * (cw + gap), t = y + (i / perRow) * (ch + gap);
+        // (Maps no longer offered are left out, unless a loaded city code is using one.)
+        int cards = 0;
+        int[] shown = new int[CityConfig.PRESETS.length];
+        for (int i = 0; i < CityConfig.PRESETS.length; i++)
+            if (!CityConfig.retired(CityConfig.OPT_PRESET, i) || preset == i) shown[cards++] = i;
+        for (int k = 0; k < cards; k++) {
+            int i = shown[k];
+            float l = lx + (k % perRow) * (cw + gap), t = y + (k / perRow) * (ch + gap);
             Seg sg = seg(CityConfig.OPT_PRESET, i, l, t, l + cw, t + ch);
             boolean on = preset == i;
             fill.setColor(on ? 0xFF2F5E2B : 0xFF23262C);
@@ -1037,7 +1049,7 @@ final class Menu {
             text.setColor(on ? 0xFFFFFFFF : 0xFFC8CCD2);
             c.drawText(CityConfig.PRESETS[i], l + cw / 2 + 2 * dp, t + ch / 2 + text.getTextSize() * 0.36f, text);
         }
-        y += ((CityConfig.PRESETS.length + perRow - 1) / perRow) * (ch + gap) + 12 * dp;
+        y += ((cards + perRow - 1) / perRow) * (ch + gap) + 12 * dp;
         if (preset == CityConfig.ISLANDS) {
             // Islands comes in one size only.
             plain.setTextAlign(Paint.Align.LEFT);

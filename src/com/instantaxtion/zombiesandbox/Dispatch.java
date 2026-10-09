@@ -199,8 +199,26 @@ final class Dispatch {
     private float tick, zoneFieldTimer, policeZoneCd = 10, militaryZoneCd = 6, militaryCd, policeCd;
     private boolean zonesDirty = true;
 
-    private static final int[] POLICE_RESERVE = {0, 1, 2, 3}, SQUAD_RESERVE = {0, 1, 2, 3}, AIR_SORTIES = {0, 1, 1, 2},
-            TANKS = {0, 1, 1, 2};
+    private static final int[] POLICE_RESERVE = {0, 2, 3, 5}, SQUAD_RESERVE = {0, 2, 4, 6}, AIR_SORTIES = {0, 1, 2, 3},
+            TANKS = {0, 1, 2, 3};
+    /** Officers in each wave of police backup. */
+    static final int BACKUP_OFFICERS = 6;
+
+    /**
+     * Reinforcements on their way in from outside the city (10.17): where they came onto the map, where
+     * they're going, and the vehicles (or people on foot) carrying them, for the map to show.
+     */
+    static final class Convoy {
+        int type;
+        String label, place;
+        float fromX, fromY, toX, toY, age;
+        final ArrayList<Fleet.Vehicle> vehicles = new ArrayList<Fleet.Vehicle>();
+        final ArrayList<Entity> onFoot = new ArrayList<Entity>();
+        /** Where the head of the column is now (updated each frame). */
+        float x, y;
+    }
+
+    final ArrayList<Convoy> convoys = new ArrayList<Convoy>();
 
     Dispatch(World w, int reinforcementLevel) {
         this.w = w;
@@ -251,6 +269,7 @@ final class Dispatch {
         incidents.clear();
         zones.clear();
         arrivals.clear();
+        convoys.clear();
         log.clear();
         zonesDirty = true;
     }
@@ -306,6 +325,7 @@ final class Dispatch {
     void update(float dt) {
         for (int i = 0; i < log.size(); i++) log.get(i).age += dt;
         updateAir(dt);
+        updateConvoys(dt);
         for (int i = arrivals.size() - 1; i >= 0; i--) {
             Arrival a = arrivals.get(i);
             a.time -= dt;
@@ -925,30 +945,26 @@ final class Dispatch {
         a.y = y;
         a.place = place;
         arrivals.add(a);
-        City.Facility base = origin(Entity.SOLDIER, x, y);
-        say(WHO_MILITARY, null, "Military: Copy. " + (base != null ? "Deploying a reserve squad from " + base.name
-                : "Reserve squad inbound") + " to " + place + "."
+        say(WHO_MILITARY, null, "Military: Copy. Reserve squad inbound from outside the city to " + place + "."
                 + (squadReserve == 0 ? " That's our last one." : " " + squadReserve + " left in reserve."), x, y);
         return true;
     }
 
     private boolean policeBackup(Incident inc) {
         if (policeReserve <= 0 || policeCd > 0) return false;
-        policeCd = 40;
+        policeCd = 25;
         policeReserve--;
         Arrival a = new Arrival();
         a.time = 2;
         a.type = Entity.COP;
-        a.count = 4;
+        a.count = BACKUP_OFFICERS;
         a.incident = inc;
         a.x = inc.x;
         a.y = inc.y;
         a.place = inc.place;
         arrivals.add(a);
-        City.Facility station = origin(Entity.COP, inc.x, inc.y);
-        say(WHO_POLICE, null, "Dispatch: All units busy. Sending backup from " + (station != null ? station.name
-                : "the precinct") + " to " + inc.place + "." + (policeReserve == 0 ? " That's the last of our officers."
-                : ""), inc.x, inc.y);
+        say(WHO_POLICE, null, "Dispatch: All units busy. Requesting backup from the county for " + inc.place + "."
+                + (policeReserve == 0 ? " That's the last they can spare." : " " + policeReserve + " more waves available."), inc.x, inc.y);
         return true;
     }
 
@@ -978,22 +994,126 @@ final class Dispatch {
         return city.nearestFacility(type == Entity.SOLDIER ? City.FACILITY_BASE : City.FACILITY_POLICE, x, y);
     }
 
+    /**
+     * Where reinforcements from outside come onto the map, nearest the trouble first: the ends of the
+     * highway (each carriageway), then the end of the nearest road at the edge of the map.
+     */
+    private java.util.List<float[]> entries(float tx, float ty) {
+        java.util.List<float[]> out = new ArrayList<float[]>();
+        if (city.hwyAxis >= 0) {
+            int len = city.hwyAxis == 0 ? city.w : city.h;
+            for (int end = 0; end < 2; end++)
+                for (int a : new int[]{1, 5}) {
+                    int along = end == 0 ? 1 : len - 2;
+                    int x = city.hwyAxis == 0 ? along : city.hwyAt + a, y = city.hwyAxis == 0 ? city.hwyAt + a : along;
+                    out.add(new float[]{(x + 0.5f) * City.T, (y + 0.5f) * City.T});
+                }
+        }
+        float[] e = city.edgeSpawn(tx, ty);
+        if (e != null) out.add(e);
+        final float fx = tx, fy = ty;
+        // (The highway first: that's the way into town, and the one people can watch for them on.)
+        final int hw = city.hwyAxis >= 0 ? 4 : 0;
+        final java.util.List<float[]> all = out;
+        java.util.Collections.sort(out, new java.util.Comparator<float[]>() {
+            public int compare(float[] p, float[] q) {
+                return Float.compare(cost(p), cost(q));
+            }
+
+            private float cost(float[] p) {
+                return (float) Math.hypot(p[0] - fx, p[1] - fy) + (all.indexOf(p) >= hw ? 100000 : 0);
+            }
+        });
+        return out;
+    }
+
+    /** Reinforcements out of their vehicles: the column on the map follows them on foot to the end. */
+    void convoyUnloaded(Fleet.Vehicle v, Entity e) {
+        for (int i = 0; i < convoys.size(); i++) if (convoys.get(i).vehicles.contains(v)) convoys.get(i).onFoot.add(e);
+    }
+
+    /** Which side of the map a point is on, for the radio. */
+    String sideOfMap(float x, float y) {
+        float u = x / city.worldW(), v = y / city.worldH();
+        if (Math.abs(u - 0.5f) > Math.abs(v - 0.5f)) return u < 0.5f ? "the west" : "the east";
+        return v < 0.5f ? "the north" : "the south";
+    }
+
+    /** Starts showing reinforcements on the map: the vehicles fleet.send just added (from index before). */
+    Convoy trackConvoy(int type, String label, int before, float fx, float fy, float tx, float ty, String place) {
+        Convoy c = new Convoy();
+        c.type = type;
+        c.label = label;
+        c.place = place;
+        c.fromX = c.x = fx;
+        c.fromY = c.y = fy;
+        c.toX = tx;
+        c.toY = ty;
+        for (int i = before; i < w.fleet.vehicles.size(); i++) {
+            Fleet.Vehicle v = w.fleet.vehicles.get(i);
+            v.reinforcement = true;
+            c.vehicles.add(v);
+        }
+        convoys.add(c);
+        return c;
+    }
+
+    /** Follows each column in; it's dropped once they're all out of their vehicles (or there on foot). */
+    private void updateConvoys(float dt) {
+        for (int i = convoys.size() - 1; i >= 0; i--) {
+            Convoy c = convoys.get(i);
+            c.age += dt;
+            boolean moving = false;
+            for (int k = 0; k < c.vehicles.size() && !moving; k++) {
+                Fleet.Vehicle v = c.vehicles.get(k);
+                if (v.removedFromFleet || v.broken || (v.state != Fleet.WAIT && v.state != Fleet.DRIVE) || v.passengers <= 0) continue;
+                c.x = v.x;
+                c.y = v.y;
+                moving = true;
+            }
+            for (int k = 0; k < c.onFoot.size() && !moving; k++) {
+                Entity e = c.onFoot.get(k);
+                if (e.dead || Math.hypot(e.x - c.toX, e.y - c.toY) < 80) continue;
+                c.x = e.x;
+                c.y = e.y;
+                moving = true;
+            }
+            if ((!moving && c.age > 3) || c.age > 240) convoys.remove(i);
+        }
+    }
+
     private void arrive(Arrival a) {
-        City.Facility from = origin(a.type, a.x, a.y);
-        float[] p = from != null ? new float[]{from.gateX, from.gateY} : city.edgeSpawn(a.x, a.y);
-        if (p == null) return;
+        java.util.List<float[]> from = entries(a.x, a.y);
+        if (from.isEmpty()) return;
         if (a.type == Entity.SOLDIER) soldierCount = (soldierCount + 3) / 4 * 4;
-        // Drive there if the roads allow it; otherwise they go on foot.
-        if (w.fleet.send(a.type, a.count, p[0], p[1], a.x, a.y, a.incident, a.zone, a.place)) {
-            say(a.type == Entity.SOLDIER ? WHO_MILITARY : WHO_POLICE, null, (a.type == Entity.SOLDIER
-                    ? "Military: Truck rolling out of " : "Dispatch: Cruisers leaving ")
-                    + (from != null ? from.name : "the city limits") + " for " + a.place + ".", p[0], p[1]);
+        boolean army = a.type == Entity.SOLDIER;
+        String label = army ? "ARMY RESERVES" : "POLICE BACKUP";
+        // Drive in if the roads allow it (the highway if there is one); otherwise they come in on foot.
+        for (float[] p : from) {
+            int before = w.fleet.vehicles.size();
+            if (!w.fleet.send(a.type, a.count, p[0], p[1], a.x, a.y, a.incident, a.zone, a.place)) continue;
+            Convoy cv = trackConvoy(a.type, label, before, p[0], p[1], a.x, a.y, a.place);
+            // (A column already pulling in at the same spot goes first.)
+            for (int k = 0; k < convoys.size() - 1; k++) {
+                Convoy o = convoys.get(k);
+                if (o.age < 12 && Math.hypot(o.fromX - p[0], o.fromY - p[1]) < 60)
+                    for (Fleet.Vehicle v : cv.vehicles) v.timer += 6 - Math.min(5, o.age * 0.5f);
+            }
+            boolean hwy = city.onHighway(p[0], p[1]);
+            int cars = w.fleet.vehicles.size() - before;
+            say(army ? WHO_MILITARY : WHO_POLICE, null, (army ? "Military: Reserve truck" : "Dispatch: Backup, " + cars + " cruisers,")
+                    + " entering the city from " + sideOfMap(p[0], p[1]) + (hwy && city.hwyName != null ? " on " + city.hwyName : "")
+                    + ". " + a.count + (army ? " soldiers" : " officers") + " for " + a.place + ".", p[0], p[1]);
             return;
         }
+        float[] p = from.get(0);
+        Convoy cv = trackConvoy(a.type, label, w.fleet.vehicles.size(), p[0], p[1], a.x, a.y, a.place);
         Entity first = null;
         for (int i = 0; i < a.count; i++) {
             Entity e = w.spawn(a.type, p[0] + rnd.nextFloat() * 24 - 12, p[1] + rnd.nextFloat() * 24 - 12);
             if (e == null) continue;
+            cv.onFoot.add(e);
+            w.reinforce(e);
             if (first == null) first = e;
             if (a.incident != null && !a.incident.resolved) {
                 e.task = T_RESPOND;
@@ -1005,9 +1125,9 @@ final class Dispatch {
         }
         if (first == null) return;
         if (a.type == Entity.SOLDIER)
-            say(WHO_MILITARY, first, SQUADS[Math.max(0, first.squad) % SQUADS.length] + " squad "
-                    + (from != null ? "rolling out of " + from.name : "on the ground") + ". Moving to " + a.place + ".", p[0], p[1]);
-        else say(WHO_POLICE, first, (from != null ? "Leaving " + from.name : "Backup has arrived") + ". Heading to "
+            say(WHO_MILITARY, first, SQUADS[Math.max(0, first.squad) % SQUADS.length] + " squad on foot, coming in from "
+                    + sideOfMap(p[0], p[1]) + ". Moving to " + a.place + ".", p[0], p[1]);
+        else say(WHO_POLICE, first, "Backup on foot, coming in from " + sideOfMap(p[0], p[1]) + ". Heading to "
                 + a.place + ".", p[0], p[1]);
     }
 

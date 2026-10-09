@@ -141,7 +141,94 @@ final class World {
     final float[] tlife = new float[MAXT];
     private int tnext;
 
-    // Ground decals (blood, scorch marks).
+    // Marks on the ground that fade (10.17): footprints, trails of blood, drag marks and spent cases.
+    static final int MAXM = 1800;
+    static final byte M_FOOT = 0, M_DRIP = 1, M_DRAG = 2, M_CASING = 3, M_PAW = 4;
+    final float[] mx = new float[MAXM], my = new float[MAXM], mang = new float[MAXM], mborn = new float[MAXM];
+    final byte[] mkind = new byte[MAXM];
+    /** Which foot (footprints), or how dark (blood). */
+    final byte[] mside = new byte[MAXM];
+    int mcount;
+    private int mnext;
+    /** How long each kind of mark lasts, in seconds. */
+    static final float[] MARK_LIFE = {45, 150, 120, 300, 40};
+
+    // Gunsmoke hanging over a firefight (10.17): slow puffs drifting off on the breeze.
+    static final int MAXH = 260;
+    final float[] hx = new float[MAXH], hy = new float[MAXH], hborn = new float[MAXH], hsize = new float[MAXH];
+    private int hnext;
+    static final float HAZE_LIFE = 11;
+    private float marksTick;
+
+    void mark(float x, float y, float angle, byte kind, int side) {
+        int i = mnext;
+        mnext = (mnext + 1) % MAXM;
+        if (mcount < MAXM) mcount++;
+        mx[i] = x;
+        my[i] = y;
+        mang[i] = angle;
+        mkind[i] = kind;
+        mside[i] = (byte) side;
+        mborn[i] = time;
+    }
+
+    /** A puff of gunsmoke where someone fired. */
+    private void haze(float x, float y) {
+        int i = hnext;
+        hnext = (hnext + 1) % MAXH;
+        hx[i] = x + rnd.nextFloat() * 6 - 3;
+        hy[i] = y + rnd.nextFloat() * 6 - 3;
+        hsize[i] = 4 + rnd.nextFloat() * 3;
+        hborn[i] = time;
+    }
+
+    /**
+     * Footprints in sand, dirt and mud (and wet ones just out of a stream), a trail of blood behind the
+     * wounded, and drag marks behind the crawling dead. Only where the camera is, a few times a second.
+     */
+    private void updateMarks(float dt) {
+        marksTick -= dt;
+        if (marksTick > 0) return;
+        float step = 0.1f - marksTick;
+        marksTick = 0.1f;
+        if (viewX1 < 0) return;
+        float x0 = viewX0 - 60, x1 = viewX1 + 60, y0 = viewY0 - 60, y1 = viewY1 + 60;
+        for (int i = 0, n = entities.size(); i < n; i++) {
+            Entity e = entities.get(i);
+            if (e.dead || e.aloft || e.x < x0 || e.x > x1 || e.y < y0 || e.y > y1) continue;
+            if (e.wet > 0) e.wet -= step;
+            if (e.markX < 0) {
+                e.markX = e.x;
+                e.markY = e.y;
+                continue;
+            }
+            float ddx = e.x - e.markX, ddy = e.y - e.markY, d2 = ddx * ddx + ddy * ddy;
+            int ti = city.tileIndex(e.x, e.y);
+            byte t = ti >= 0 && ti < city.tiles.length ? city.tiles[ti] : 0;
+            if (t == City.WATER) {
+                if (city.isFord(ti)) e.wet = 4;
+                e.markX = e.x;
+                e.markY = e.y;
+                continue;
+            }
+            boolean dog = e.type == Entity.DOG || e.type == Entity.ZOMBIE_DOG;
+            float stride = dog ? 4 : 5.5f;
+            if (d2 < stride * stride) continue;
+            float ang = (float) Math.atan2(ddy, ddx);
+            boolean soft = t == City.SAND || t == City.DIRT || e.wet > 0;
+            boolean crawling = e.type == Entity.CRAWLER || (e.isZombie() && e.hp < e.maxHp * 0.25f);
+            if (soft) {
+                e.markLeft = !e.markLeft;
+                float side = e.markLeft ? 1.3f : -1.3f;
+                mark(e.x - (float) Math.sin(ang) * side, e.y + (float) Math.cos(ang) * side, ang, dog ? M_PAW : M_FOOT, e.markLeft ? 1 : 0);
+            }
+            if (gore && crawling) mark((e.x + e.markX) / 2, (e.y + e.markY) / 2, ang, M_DRAG, 0);
+            else if (gore && !e.isZombie() && (e.infected || e.hp < e.maxHp * 0.5f) && rnd.nextFloat() < (e.hp < e.maxHp * 0.25f ? 0.9f : 0.5f))
+                mark(e.x + rnd.nextFloat() * 2 - 1, e.y + rnd.nextFloat() * 2 - 1, rnd.nextFloat() * TAU, M_DRIP, e.hp < e.maxHp * 0.25f ? 1 : 0);
+            e.markX = e.x;
+            e.markY = e.y;
+        }
+    }
     static final int MAXD = 700;
     final float[] dx = new float[MAXD], dy = new float[MAXD], dr = new float[MAXD];
     final int[] dcol = new int[MAXD];
@@ -742,6 +829,7 @@ final class World {
                 continue;
             }
             float strength = Math.min(1, f.life / 10);
+            if (f.building != null) f.building.scorch = Math.min(1, f.building.scorch + dt / 45);
             if (rnd.nextFloat() < dt * 25 * strength)
                 particle(f.x + rnd.nextFloat() * 10 - 5, f.y + rnd.nextFloat() * 8 - 4, rnd.nextFloat() * 10 - 5,
                         -8 - rnd.nextFloat() * 10, 0.4f + rnd.nextFloat() * 0.3f, 1.5f + rnd.nextFloat() * 2,
@@ -1252,6 +1340,17 @@ final class World {
                 break;
         }
         e.ammo = e.magSize;
+    }
+
+    /**
+     * Reinforcements from outside arrive fresh, with extra magazines to hand round (the officers and soldiers
+     * already fighting can borrow from them), and patch up anyone hurt on the way.
+     */
+    void reinforce(Entity e) {
+        if (e.type == Entity.SOLDIER && e.role == Entity.ROLE_RIFLE) kitOut(e);
+        e.reserve = Math.round(fullReserve(e) * 1.6f);
+        e.ammo = e.magSize;
+        e.hp = e.maxHp;
     }
 
     /** Full spare ammo for a unit's weapon. */
@@ -5920,6 +6019,8 @@ final class World {
         }
         String[] g = Country.guard(city.country.id);
         if (fleet.vehicles.size() > before)
+            dispatch.trackConvoy(Entity.SOLDIER, Country.guard(city.country.id)[1].toUpperCase(), before, from[0], from[1], tx, ty, city.placeName(tx, ty));
+        if (fleet.vehicles.size() > before)
             dispatch.say(Dispatch.WHO_MILITARY, null, g[2] + ": " + (hall && !hallLost ? "At the Mayor's request, I" : "I")
                     + "'m calling out the " + g[1] + ". " + (muster ? "Guardsmen are mustering at " + arm.name + "; " + trucks
                     + " trucks will head for " : "With " + (arm != null ? arm.name + " overrun" : "no armory in town")
@@ -7529,6 +7630,8 @@ final class World {
         if (rnd.nextFloat() < 0.7f)
             particle(e.x, e.y, (float) Math.cos(ea) * (25 + rnd.nextFloat() * 20), (float) Math.sin(ea) * (25 + rnd.nextFloat() * 20),
                     2.5f, 0.45f, 0xFFD9B44A, P_CASING);
+        // Gunsmoke: it hangs over a long firefight.
+        if (rnd.nextFloat() < (e.role == Entity.ROLE_GUNNER ? 0.18f : 0.35f)) haze(e.x + (float) Math.cos(e.angle) * 6, e.y + (float) Math.sin(e.angle) * 6);
         float ca = (float) Math.cos(e.angle), sa = (float) Math.sin(e.angle);
         float mx = e.x + ca * e.radius * (soldier ? 2.5f : 2f) - sa * e.radius * 0.3f;
         float my = e.y + sa * e.radius * (soldier ? 2.5f : 2f) + ca * e.radius * 0.3f;
@@ -7761,6 +7864,7 @@ final class World {
         z.removed = true;
         b.lurkers++;
         b.infestKnown = true;
+        b.doorBroken = true;
         if (isShop(b)) smash(b);
         emit(Sfx.THUD, b.doorX, b.doorY);
         if (b.lurkers == 1 && !b.fighting && time - b.fightSaid > 40) {
@@ -7776,6 +7880,8 @@ final class World {
      * the survivors shore the door back up, or the building belongs to the dead.
      */
     private void fightInside(City.Building b, float dt) {
+        // (Gunfire inside takes the windows out.)
+        b.shotUp = Math.min(1, b.shotUp + dt * 0.08f);
         if (!b.fighting) {
             b.fighting = true;
             b.fightTime = 0;
@@ -8233,6 +8339,7 @@ final class World {
 
     /** Walks one tile downhill in a distance field. Returns false if there is nowhere lower to go. */
     private boolean followField(Entity e, int[] field, float speed) {
+        if (field == null) return false;
         int w = city.w;
         int tx = (int) (e.x / City.T), ty = (int) (e.y / City.T);
         int cur = field[city.tileIndex(e.x, e.y)];
@@ -9143,9 +9250,12 @@ final class World {
     }
 
     private void updateEffects(float dt) {
+        updateMarks(dt);
         for (int i = 0; i < MAXP; i++) {
             if (plife[i] <= 0) continue;
             plife[i] -= dt;
+            // A spent case comes to rest on the ground and stays there.
+            if (plife[i] <= 0 && ptype[i] == P_CASING) mark(px[i], py[i], rnd.nextFloat() * TAU, M_CASING, 0);
             px[i] += pvx[i] * dt;
             py[i] += pvy[i] * dt;
             float drag = ptype[i] == P_SMOKE ? 1.5f : ptype[i] == P_CASING ? 9f : ptype[i] == P_DEBRIS ? 2.5f : 5f;

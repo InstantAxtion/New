@@ -2,11 +2,23 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.15";
-    static final int VERSION_CODE = 53;
+    static final String VERSION = "10.16";
+    static final int VERSION_CODE = 54;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.16  -  Holding the line",
+                    "Police and soldiers watch their ammo: as they run low they keep the dead further off and head back to restock sooner, at their own station or base first.",
+                    "No ammo left anywhere on the map? They get some off a nearby officer or soldier who has plenty. Nobody to borrow from: they become scouts, circling their station or base, radioing in every sighting and keeping out of reach.",
+                    "The rescue helicopter lowers its team and flies back to base. It comes back for them when they radio in: someone hurt or down, running out of rounds, or everyone they could find waiting at the landing spot.",
+                    "Up to three rescue teams on a big map, and in town they fly to groups who are cut off too.",
+                    "More police and soldiers on every map.",
+                    "Highway patrol and the sheriffs come into town as backup once it's under attack (when no town car is nearer).",
+                    "The ranger station is labelled on the map and the minimap, and one ranger always minds it (inside or on the porch) while the rest walk the trails, until the dead come.",
+                    "Containment: while the outbreak is still bunched in one part of the map, police and soldiers throw a perimeter round it, posts all the way round facing in, with patrol cars driving officers out to the empty posts. If the dead break out or spread too far, the line is pulled back.",
+                    "Every kind of police can be spawned now: highway patrol, deputies, park rangers and search and rescue, along with the rest.",
+            },
             {
                     "10.15  -  Walled safe zones",
                     "Safe zones redesigned: police and soldiers wall in a whole city block (the precinct's, the base's, a school, a park) with concrete barriers and fencing, its buildings closing the gaps. Nobody gets in until the wall is up.",

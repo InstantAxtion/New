@@ -346,6 +346,13 @@ the rations run down and supply trucks bring more. The dead smell the people ins
 until sections give; guards cover and mend the breaches. The dead climb fire towers, go round to doors
 instead of into walls, and people who've had a close call keep running until they're clear.
 
+**Holding the line (10.16):** police and soldiers restock sooner as their rounds run low, borrow from someone
+with plenty when the map's ammo is gone, and with nothing left anywhere turn scout, circling their station and
+radioing in sightings. Rescue helicopters drop their team, go back to base and return when the team radios
+for pickup (up to three teams). More police and soldiers; highway patrol and sheriffs back up the town once it's
+attacked. The ranger station is on the map and always has a ranger at it. A bunched-up outbreak gets a
+perimeter round it, officers driven out to empty posts. Every kind of police can be spawned.
+
 **Countryside:** Villages, small towns and every Massive map are surrounded by open country:
 winding dirt lanes out to the edge of the map, farms and lonely cabins along them, woods, and
 hamlets (a short street of cottages with a lane back to town). A town out in the country is never a

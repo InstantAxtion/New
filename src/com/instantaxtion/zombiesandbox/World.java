@@ -1124,6 +1124,17 @@ final class World {
             e.mass = 1.4f;
         } else if (role == Entity.ROLE_SWAT || role == Entity.ROLE_MARKSMAN) {
             applyRole(e, role);
+        } else if (role == Entity.ROLE_SAR) {
+            applyRole(e, Entity.ROLE_SWAT);
+            e.role = Entity.ROLE_SAR;
+            e.body = 0xFFE06A20;
+        } else if (role < 0) {
+            // Highway patrol (-1), a sheriff's deputy (-2) or a park ranger (-3), on foot.
+            if (role == -3) makeRanger(e);
+            else {
+                e.agency = -role;
+                e.body = role == -1 || city.country.ruralShirt == 0 ? city.country.hpShirt : city.country.ruralShirt;
+            }
         } else if (role == Entity.ROLE_K9) {
             e.role = Entity.ROLE_K9;
             Entity dog = spawn(Entity.DOG, x + 6, y + 4);
@@ -1439,6 +1450,7 @@ final class World {
         }
         updateWildlife(dt);
         updateTowers(dt);
+        updateCordon(dt);
         updateGrenades(dt);
         cleanup();
         updateCorpses(dt);
@@ -3019,6 +3031,7 @@ final class World {
             }
         }
 
+        if (waitForLift(e, threat, threatDist)) return;
         // Volunteers on their way to sign up.
         if (e.task == Dispatch.T_ENLIST) {
             if (threat != null && threatDist < 60 || e.enlistAt == null) {
@@ -6030,9 +6043,16 @@ final class World {
             if (z != null) shove(e, z, true);
         }
         boolean dry = e.ammo <= 0 && e.reserve <= 0 && e.reload <= 0;
+        float stock = (e.ammo + e.reserve) / (float) Math.max(1, e.magSize + fullReserve(e));
+        e.lowCd -= dt;
+        if (e.scout && !dry) {
+            e.scout = false;
+            dispatch.say(soldier ? Dispatch.WHO_MILITARY : Dispatch.WHO_POLICE, e, "Got some rounds. Back in the fight.", e.x, e.y);
+        }
         // Out of ammo: head back to the precinct or base to resupply.
         if (dry && e.task != Dispatch.T_RESUPPLY) {
-            City.Facility f = supplyPoint(e);
+            City.Facility f = restockPoint(e);
+            if (f == null) f = supplyPoint(e);
             if (f != null && (f.x - e.x) * (f.x - e.x) + (f.y - e.y) * (f.y - e.y) < f.r * f.r * 2 && draw(f, e)) {
                 // Already at the armoury (guards on a post): restock on the spot.
                 e.reload = 2;
@@ -6048,20 +6068,74 @@ final class World {
                 dry = false;
             }
         }
-        if (dry && e.task != Dispatch.T_RESUPPLY) {
-            City.Facility f = supplyPoint(e);
-            if (!e.outOfAmmoSaid) {
-                e.outOfAmmoSaid = true;
-                dispatch.say(soldier ? Dispatch.WHO_MILITARY : Dispatch.WHO_POLICE, e, "I'm out of ammo!"
-                        + (f != null ? " Heading back to " + f.name + " to resupply." : " Nothing left but my hands."), e.x, e.y);
-            }
+        if (dry && e.task != Dispatch.T_RESUPPLY && e.task != Dispatch.T_BORROW && !e.scout) {
+            City.Facility f = restockPoint(e);
             if (f != null) {
+                if (!e.outOfAmmoSaid) {
+                    e.outOfAmmoSaid = true;
+                    dispatch.say(soldier ? Dispatch.WHO_MILITARY : Dispatch.WHO_POLICE, e, "I'm out of ammo! Heading back to " + f.name + " to resupply.", e.x, e.y);
+                }
+                dispatch.releaseForResupply(e);
+                e.task = Dispatch.T_RESUPPLY;
+            } else {
+                // Nothing left in any armoury: a mag off someone who has plenty, or keep watch instead.
+                Entity lender = lenderFor(e);
+                dispatch.releaseForResupply(e);
+                if (lender != null) {
+                    e.task = Dispatch.T_BORROW;
+                    e.protector = lender;
+                    dispatch.say(soldier ? Dispatch.WHO_MILITARY : Dispatch.WHO_POLICE, e, "I'm dry and the armouries are empty. "
+                            + Dispatch.name(lender) + ", can you spare a few rounds?", e.x, e.y);
+                } else {
+                    e.scout = true;
+                    City.Facility home = supplyPoint(e);
+                    dispatch.say(soldier ? Dispatch.WHO_MILITARY : Dispatch.WHO_POLICE, e, "Out of ammo, and there's none to be had. Falling back"
+                            + (home != null ? " to " + home.name : "") + " to keep watch. I'll call in what I see.", e.x, e.y);
+                }
+            }
+        }
+        // Running low: back to restock before it's too late (when there's somewhere to get it and nothing on top of them).
+        if (!dry && stock < 0.22f && e.lowCd <= 0 && (e.task == Dispatch.T_NONE || e.task == Dispatch.T_RESPOND)) {
+            e.lowCd = 25;
+            City.Facility f = restockPoint(e);
+            if (f != null && Math.hypot(f.x - e.x, f.y - e.y) < 1600 && nearest(e, 70, true, false) == null) {
+                dispatch.say(soldier ? Dispatch.WHO_MILITARY : Dispatch.WHO_POLICE, e, "Running low. Heading back to " + f.name + " to restock.", e.x, e.y);
                 dispatch.releaseForResupply(e);
                 e.task = Dispatch.T_RESUPPLY;
             }
         }
+        if (e.task == Dispatch.T_BORROW) {
+            Entity l = e.protector;
+            if (l == null || l.dead || l.ammo + l.reserve < fullReserve(l) * 0.5f) {
+                e.task = Dispatch.T_NONE;
+                e.protector = null;
+            } else {
+                float lx = l.x - e.x, ly = l.y - e.y, ld = (float) Math.sqrt(lx * lx + ly * ly) + 0.001f;
+                if (ld > 16) {
+                    Entity t = nearest(e, 50, true, false);
+                    if (t != null) flee(e, (e.x - t.x) / 50, (e.y - t.y) / 50, e.runSpeed);
+                    else walkToSpot(e, l.x, l.y, e.runSpeed);
+                    return;
+                }
+                // Shared out: half of what they can spare.
+                int spare = Math.max(e.magSize, (l.ammo + l.reserve - (int) (fullReserve(l) * 0.45f)) / 2);
+                spare = Math.min(spare, l.reserve);
+                l.reserve -= spare;
+                e.reserve += spare;
+                e.reload = 2;
+                e.talkTimer = l.talkTimer = 1.5f;
+                e.task = Dispatch.T_NONE;
+                e.protector = null;
+                e.outOfAmmoSaid = false;
+            }
+        }
+        if (e.scout && dry) {
+            scout(e, dt);
+            return;
+        }
         if (e.task == Dispatch.T_RESUPPLY) {
-            City.Facility f = supplyPoint(e);
+            City.Facility f = restockPoint(e);
+            if (f == null) f = supplyPoint(e);
             if (f == null) {
                 e.task = Dispatch.T_NONE;
             } else {
@@ -6134,11 +6208,31 @@ final class World {
             return;
         }
         if (e.hp >= e.maxHp * 0.6f) e.retreatSaid = false;
-        boolean stationary = e.task == Dispatch.T_POST || e.task == Dispatch.T_HOLD;
+        if (e.task == Dispatch.T_CORDON) {
+            if (cordonR <= 0 || Math.hypot(e.postX - cordonX, e.postY - cordonY) > cordonR + 160) {
+                e.task = Dispatch.T_NONE;
+            } else {
+                float pd = (float) Math.hypot(e.postX - e.x, e.postY - e.y);
+                if (pd > 30 && (t == null || Math.hypot(t.x - e.x, t.y - e.y) > 90)) {
+                    walkToSpot(e, e.postX, e.postY, e.runSpeed * 0.9f);
+                    return;
+                }
+                if (t == null) {
+                    // On the line: facing in, towards where the dead are.
+                    standAt(e, e.postX, e.postY, 0.6f);
+                    if (e.want < 1) e.angle = turn(e.angle, (float) Math.atan2(cordonY - e.y, cordonX - e.x), dt * 3);
+                    return;
+                }
+            }
+        }
+        boolean stationary = e.task == Dispatch.T_POST || e.task == Dispatch.T_HOLD
+                || (e.task == Dispatch.T_CORDON && Math.hypot(e.postX - e.x, e.postY - e.y) < 40);
         if (t != null && e.task != Dispatch.T_MOVE) {
             float ddx = t.x - e.x, ddy = t.y - e.y;
             float d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
             float keep = soldier ? (e.role == Entity.ROLE_COMMANDER ? 90 : e.role == Entity.ROLE_SNIPER ? 60 : 40) : 50;
+            // Low on rounds: they don't let them get close.
+            if (stock < 0.5f) keep *= 1 + (0.5f - stock) * 3;
             Dispatch.SafeZone guarding = e.task == Dispatch.T_GUARD ? e.zone : null;
             boolean swarmed = countZombiesNear(e.x, e.y, 40) >= 3;
             if (stationary) standAt(e, e.postX, e.postY, 0.5f);
@@ -6188,6 +6282,14 @@ final class World {
         if (e.task == Dispatch.T_GUARD && e.zone != null) {
             holdPost(e, e.zone, 1f);
             return;
+        }
+        if (e.task == Dispatch.T_RESPOND && e.incident != null && e.incident.cordonPost >= 0) {
+            // Dropped off on the cordon: take the post.
+            Dispatch.Incident inc = e.incident;
+            e.incident = null;
+            e.task = cordonR > 0 && !inc.resolved ? Dispatch.T_CORDON : Dispatch.T_NONE;
+            e.postX = inc.x;
+            e.postY = inc.y;
         }
         if (e.task == Dispatch.T_RESPOND && e.incident != null) {
             Dispatch.Incident inc = e.incident;
@@ -9065,6 +9167,8 @@ final class World {
     static final int RANGER_SHIRT = 0xFF8C7C54;
     /** The ranger station (null if there's no park), each fire tower's lookout on duty and the one on the way. */
     City.Building rangerStation;
+    /** The ranger who stays at the station while the others are out on the trails. */
+    Entity stationKeeper;
     Entity[] towerKeeper, towerRelief;
     float[] towerShift;
     private float rescueCd = 20, wildsTick;
@@ -9072,6 +9176,9 @@ final class World {
     /** The rangers, their truck and the lookouts up the fire towers, at the start of a game. */
     private void populateWilds(boolean rangers) {
         findWilds();
+        int stations = 0;
+        for (City.Facility f : city.facilities) if (f.kind == City.FACILITY_POLICE) stations++;
+        rescueTeams = Math.max(1, Math.min(3, 1 + (city.w >= 400 ? 1 : 0) + (stations >= 2 ? 1 : 0)));
         if (!city.cfg.wilds()) return;
         if (rangerStation != null && rangers) {
             for (int i = 0; i < 2; i++) {
@@ -9375,6 +9482,20 @@ final class World {
             else standAt(e, px, py, 0.8f);
             return true;
         }
+        // One ranger always minds the station: at the desk inside or on the porch out front.
+        if (rangerStation != null && !rangerStation.collapsed) {
+            if (stationKeeper == null || stationKeeper.dead || stationKeeper.agency != 3 || stationKeeper.rig != null
+                    || stationKeeper.task != Dispatch.T_NONE)
+                stationKeeper = e;
+            if (stationKeeper == e) {
+                e.hike = null;
+                float a = ((int) (time / 40) % 2 == 0) ? 0 : 1;
+                float px = rangerStation.doorX + (a == 0 ? 0 : 14), py = rangerStation.doorY + (a == 0 ? -6 : 10);
+                if (Math.hypot(px - e.x, py - e.y) > 300) walkToSpot(e, px, py, e.speed);
+                else standAt(e, px, py, 0.6f);
+                return true;
+            }
+        }
         if (city.hikes.isEmpty()) return false;
         if (e.hike == null && !pickHike(e)) return false;
         if (followHike(e, e.speed * 0.8f, dt)) return true;
@@ -9382,18 +9503,200 @@ final class World {
         return true;
     }
 
+    // ------------------------------------------------------------------ containment (10.16)
+
+    /** The cordon round the outbreak: its centre and radius (0 = none), and how many hold each post. */
+    float cordonX, cordonY, cordonR;
+    static final int CORDON_POSTS = 12;
+    final float[] cordonPost = new float[CORDON_POSTS * 2];
+    private final int[] cordonManned = new int[CORDON_POSTS];
+    private final Dispatch.Incident[] cordonCall = new Dispatch.Incident[CORDON_POSTS];
+    private float cordonTick = 3;
+    private float[] cordonScratch = new float[256];
+
+    /**
+     * While the dead are still bunched in one part of the map, the police and the army throw a ring round it
+     * to keep them there, instead of everyone chasing every sighting. When it spreads too wide, the line is
+     * pulled back and they go back to fighting it street by street.
+     */
+    private void updateCordon(float dt) {
+        cordonTick -= dt;
+        if (cordonTick > 0) return;
+        cordonTick = 4;
+        float sx = 0, sy = 0;
+        int n = 0;
+        for (int i = 0, m = entities.size(); i < m; i++) {
+            Entity z = entities.get(i);
+            if (z.dead || !z.isZombie()) continue;
+            sx += z.x;
+            sy += z.y;
+            n++;
+        }
+        float was = cordonR;
+        if (alert < 1 || n < 6 || n > 220) {
+            if (was > 0 && n > 220) dispatch.say(Dispatch.WHO_POLICE, null, "Dispatch: It's spread too far to hold a perimeter. All units, engage at will.", cordonX, cordonY);
+            liftCordon();
+            return;
+        }
+        float cx = sx / n, cy = sy / n;
+        if (cordonScratch.length < n) cordonScratch = new float[n * 2];
+        int k = 0;
+        for (int i = 0, m = entities.size(); i < m; i++) {
+            Entity z = entities.get(i);
+            if (z.dead || !z.isZombie()) continue;
+            cordonScratch[k++] = (float) Math.hypot(z.x - cx, z.y - cy);
+        }
+        java.util.Arrays.sort(cordonScratch, 0, k);
+        // Strays aside, how far the bulk of them has got.
+        float spread = cordonScratch[Math.min(k - 1, (int) (k * 0.8f))];
+        if (spread > 520) {
+            if (was > 0) dispatch.say(Dispatch.WHO_POLICE, null, "Dispatch: They've broken out of the perimeter. Fall back and engage.", cordonX, cordonY);
+            liftCordon();
+            return;
+        }
+        float r = Math.max(140, spread + 110);
+        // (The ring only grows or drifts gradually, so the line isn't forever being redrawn.)
+        if (was > 0 && Math.hypot(cx - cordonX, cy - cordonY) < 150 && r < was + 90) {
+            cx = cordonX;
+            cy = cordonY;
+            r = was;
+        } else {
+            for (int p = 0; p < CORDON_POSTS; p++) {
+                float a = TAU * p / CORDON_POSTS, px = 0, py = 0;
+                boolean ok = false;
+                // Each post on open ground, as near the ring as it can be.
+                for (int tr = 0; tr < 6 && !ok; tr++) {
+                    float rr = r + (tr % 2 == 0 ? tr : -tr) * 12, aa = a + (tr % 3 - 1) * 0.06f;
+                    px = cx + (float) Math.cos(aa) * rr;
+                    py = cy + (float) Math.sin(aa) * rr;
+                    ok = px > 20 && py > 20 && px < city.worldW() - 20 && py < city.worldH() - 20 && !city.solidAt(px, py);
+                }
+                cordonPost[p * 2] = ok ? px : -1;
+                cordonPost[p * 2 + 1] = ok ? py : -1;
+                if (cordonCall[p] != null) cordonCall[p].resolved = true;
+                cordonCall[p] = null;
+            }
+            if (was <= 0) dispatch.say(Dispatch.WHO_POLICE, null, "Dispatch: Setting up a perimeter round " + city.placeName(cx, cy)
+                    + ". Keep them inside it. Nobody in or out.", cx, cy);
+        }
+        cordonX = cx;
+        cordonY = cy;
+        cordonR = r;
+        java.util.Arrays.fill(cordonManned, 0);
+        int free = 0;
+        for (int i = 0, m = entities.size(); i < m; i++) {
+            Entity e = entities.get(i);
+            if (e.dead || controlled == e) continue;
+            if (e.task == Dispatch.T_CORDON) {
+                int best = cordonPostFor(e.postX, e.postY);
+                if (best < 0) e.task = Dispatch.T_NONE;
+                else {
+                    cordonManned[best]++;
+                    e.postX = cordonPost[best * 2];
+                    e.postY = cordonPost[best * 2 + 1];
+                }
+            } else if (cordonCandidate(e)) free++;
+        }
+        // Half of the free units go on the line; the rest stay free for 911 calls.
+        int budget = free / 2;
+        for (int i = 0, m = entities.size(); i < m && budget > 0; i++) {
+            Entity e = entities.get(i);
+            if (e.dead || controlled == e || !cordonCandidate(e)) continue;
+            if (Math.hypot(e.x - cx, e.y - cy) > r + 1400) continue;
+            int best = -1;
+            float bd = Float.MAX_VALUE;
+            for (int p = 0; p < CORDON_POSTS; p++) {
+                if (cordonPost[p * 2] < 0 || cordonManned[p] >= 2) continue;
+                float d = (float) Math.hypot(cordonPost[p * 2] - e.x, cordonPost[p * 2 + 1] - e.y) + cordonManned[p] * 300;
+                if (d < bd) {
+                    bd = d;
+                    best = p;
+                }
+            }
+            if (best < 0) break;
+            e.task = Dispatch.T_CORDON;
+            e.postX = cordonPost[best * 2];
+            e.postY = cordonPost[best * 2 + 1];
+            cordonManned[best]++;
+            budget--;
+        }
+        // Posts nobody on foot can reach: a patrol car drives a crew out to each.
+        int cars = 0;
+        for (int p = 0; p < CORDON_POSTS && cars < 3; p++) {
+            if (cordonPost[p * 2] < 0 || cordonManned[p] > 0 || (cordonCall[p] != null && !cordonCall[p].resolved)) continue;
+            Dispatch.Incident inc = new Dispatch.Incident();
+            inc.x = cordonPost[p * 2];
+            inc.y = cordonPost[p * 2 + 1];
+            inc.place = "the perimeter on " + city.placeName(inc.x, inc.y);
+            inc.cordonPost = p;
+            Fleet.Vehicle v = null;
+            float bd = Float.MAX_VALUE;
+            for (int i = 0, m = fleet.vehicles.size(); i < m; i++) {
+                Fleet.Vehicle c = fleet.vehicles.get(i);
+                if (!c.patrol || c.agency != 0 || c.state != Fleet.PATROL || c.broken || c.parked || c.crew.isEmpty()) continue;
+                float d = (c.x - inc.x) * (c.x - inc.x) + (c.y - inc.y) * (c.y - inc.y);
+                if (d < bd) {
+                    bd = d;
+                    v = c;
+                }
+            }
+            if (v == null) break;
+            if (fleet.respond(v, inc)) {
+                cordonCall[p] = inc;
+                cars++;
+            }
+        }
+    }
+
+    private void liftCordon() {
+        cordonR = 0;
+        for (int p = 0; p < CORDON_POSTS; p++) {
+            if (cordonCall[p] != null) cordonCall[p].resolved = true;
+            cordonCall[p] = null;
+        }
+    }
+
+    private int cordonPostFor(float x, float y) {
+        int best = -1;
+        float bd = 200;
+        for (int p = 0; p < CORDON_POSTS; p++) {
+            if (cordonPost[p * 2] < 0) continue;
+            float d = (float) Math.hypot(cordonPost[p * 2] - x, cordonPost[p * 2 + 1] - y);
+            if (d < bd) {
+                bd = d;
+                best = p;
+            }
+        }
+        return best;
+    }
+
+    /** Police and soldiers with nothing to do and rounds to shoot (not the specialists). */
+    private boolean cordonCandidate(Entity e) {
+        if (e.task != Dispatch.T_NONE || e.scout || e.aloft || e.ammo + e.reserve <= 0) return false;
+        if (e.type == Entity.COP) return e.agency == 0 && e.role != Entity.ROLE_SAR && e.role != Entity.ROLE_SWAT;
+        return e.type == Entity.SOLDIER && (e.role == Entity.ROLE_RIFLE || e.role == Entity.ROLE_GUNNER);
+    }
+
     /** Someone cut off by the dead out in the wilds (or up a tower), with no help nearby, for the rescue helicopter. */
     private void callRescue() {
-        if (!city.cfg.wilds() || alert < 1 || fleet.rescueHeliBusy()) return;
+        if (!city.cfg.wilds() || alert < 1 || fleet.rescueHelis() >= rescueTeams) return;
         City.Facility from = city.nearestFacility(City.FACILITY_POLICE, city.worldW() / 2, city.worldH() / 2);
         if (from == null) return;
         Entity best = null;
         for (int i = 0, n = entities.size(); i < n; i++) {
             Entity e = entities.get(i);
-            if (e.dead || e.type != Entity.CIVILIAN || e.leader != null || city.inTown(e.x, e.y)) continue;
+            if (e.dead || e.type != Entity.CIVILIAN || e.leader != null || e.task == Dispatch.T_RESCUE) continue;
             int near = countZombiesNear(e.x, e.y, 170);
             if (near == 0 || (!e.aloft && near > 12)) continue;
             if (nearestArmed(e.x, e.y, 260) != null) continue;
+            // (In town, only a group cut off together is worth a helicopter.)
+            if (city.inTown(e.x, e.y) && !e.aloft && countCiviliansNear(e.x, e.y, 60) < 3) continue;
+            boolean covered = false;
+            for (int k = 0; k < fleet.vehicles.size() && !covered; k++) {
+                Fleet.Vehicle v = fleet.vehicles.get(k);
+                if (v.kind == Fleet.K_RESCUE_HELI && Math.hypot(v.tx - e.x, v.ty - e.y) < 300) covered = true;
+            }
+            if (covered) continue;
             best = e;
             if (e.aloft) break;
         }
@@ -9403,12 +9706,24 @@ final class World {
         // (Hovering beside the tower, not on top of it.)
         float tx = best.x + (best.aloft ? 30 : 0), ty = best.y + (best.aloft ? 20 : 0);
         fleet.sendRescueHeli(from.x, from.y, tx, ty, place);
-        dispatch.say(Dispatch.WHO_POLICE, null, "Dispatch: Rescue 1, people cut off at " + place + ". Lift them out.", tx, ty);
-        rescueCd = 90;
+        dispatch.say(Dispatch.WHO_POLICE, null, "Dispatch: Rescue team to " + place + ", people cut off there. Get them out.", tx, ty);
+        rescueCd = 20;
     }
 
     Entity nearestArmedFor(float x, float y, float r) {
         return nearestArmed(x, y, r);
+    }
+
+    /** How many rescue teams the police have (their helicopters): more on the bigger maps and with more precincts. */
+    int rescueTeams = 1;
+
+    private int countCiviliansNear(float x, float y, float r) {
+        int n = 0;
+        for (int i = 0, m = entities.size(); i < m; i++) {
+            Entity o = entities.get(i);
+            if (!o.dead && o.type == Entity.CIVILIAN && Math.abs(o.x - x) < r && Math.abs(o.y - y) < r) n++;
+        }
+        return n;
     }
 
     private Entity nearestArmed(float x, float y, float r) {
@@ -9421,62 +9736,115 @@ final class World {
     }
 
     /**
-     * The rescue helicopter in the hover: lowers its team, winches up whoever they bring in under it (and a
-     * lookout straight off the tower), then the team. True once it's ready to go.
+     * The rescue helicopter in the hover. Dropping off: lowers its team (1 once they're all down, and it can go).
+     * Picking up: winches up everyone waiting at the landing spot (a lookout straight off the tower too), then the
+     * team (2 once they're all aboard).
      */
-    boolean rescueStep(Fleet.Vehicle v, float dt) {
+    int rescueStep(Fleet.Vehicle v, float dt) {
         v.timer += dt;
-        if (v.team == null) {
-            if (Math.hypot(v.x - v.tx, v.y - v.ty) > 16) return false;
-            v.team = new ArrayList<Entity>();
-            for (int i = 0; i < 2; i++) {
-                Entity s = spawn(Entity.COP, v.tx + (i == 0 ? -5 : 5), v.ty);
-                if (s == null) continue;
-                applyRole(s, Entity.ROLE_SWAT);
-                s.role = Entity.ROLE_SAR;
-                s.body = 0xFFE06A20;
-                s.rig = v;
-                s.task = Dispatch.T_RESCUE;
-                s.roping = 2.5f + i;
-                s.member = i;
-                s.callsign = 1;
-                v.team.add(s);
+        if (!v.pickup) {
+            if (v.team == null) {
+                if (Math.hypot(v.x - v.tx, v.y - v.ty) > 16) return 0;
+                v.team = new ArrayList<Entity>();
+                for (int i = 0; i < 3; i++) {
+                    Entity s = spawn(Entity.COP, v.tx + (i - 1) * 6, v.ty);
+                    if (s == null) continue;
+                    applyRole(s, Entity.ROLE_SWAT);
+                    s.role = Entity.ROLE_SAR;
+                    s.body = 0xFFE06A20;
+                    s.rig = v;
+                    s.task = Dispatch.T_RESCUE;
+                    s.roping = 2.5f + i * 1.2f;
+                    s.member = i;
+                    s.callsign = v.number;
+                    v.team.add(s);
+                }
+                return 0;
             }
-            return false;
+            // (Anyone stranded up a tower goes straight up on the winch while the team ropes down.)
+            hoistFromTower(v);
+            for (int i = 0; i < v.team.size(); i++) if (!v.team.get(i).dead && v.team.get(i).roping > 0) return 0;
+            v.timer = 0;
+            return 1;
         }
-        // Anyone the team has brought in under it goes up on the winch (a lookout too, straight off the tower).
+        // Picking up: whoever is waiting at the landing spot goes up on the winch.
         for (int i = 0, n = entities.size(); i < n; i++) {
             Entity e = entities.get(i);
             if (e.dead || e.type != Entity.CIVILIAN) continue;
-            boolean brought = e.leader != null && e.leader.role == Entity.ROLE_SAR && Math.hypot(e.x - v.tx, e.y - v.ty) < 26;
-            boolean tower = e.aloft && Math.hypot(e.x - v.x, e.y - v.y) < 60 && v.timer > 6;
-            if (!brought && !tower) continue;
-            if (e.aloft) {
-                e.aloft = false;
-                if (e.jobStep >= 0 && towerKeeper != null && e.jobStep < towerKeeper.length && towerKeeper[e.jobStep] == e) towerKeeper[e.jobStep] = null;
-            }
+            boolean waiting = (e.task == Dispatch.T_RESCUE || (e.leader != null && e.leader.role == Entity.ROLE_SAR)) && Math.hypot(e.x - v.tx, e.y - v.ty) < 40;
+            if (!waiting) continue;
             e.dead = true;
             e.removed = true;
             v.passengers++;
         }
-        boolean left = false;
-        for (int i = 0, n = entities.size(); i < n && !left; i++) {
-            Entity e = entities.get(i);
-            if (!e.dead && e.type == Entity.CIVILIAN && Math.hypot(e.x - v.tx, e.y - v.ty) < 200) left = true;
-        }
-        if ((!left && v.timer > 14) || v.timer > 75) v.recall = true;
-        if (!v.recall) return false;
-        // The team back up.
+        if (v.timer > 4) hoistFromTower(v);
+        v.recall = true;
+        if (v.team == null) return 2;
         boolean anyLeft = false;
         for (int i = 0; i < v.team.size(); i++) {
             Entity s = v.team.get(i);
             if (s.dead) continue;
-            if (Math.hypot(s.x - v.tx, s.y - v.ty) < 18 || v.timer > 110) {
+            if (Math.hypot(s.x - v.tx, s.y - v.ty) < 20 || v.timer > 50) {
                 s.dead = true;
                 s.removed = true;
             } else anyLeft = true;
         }
-        return !anyLeft;
+        return anyLeft ? 0 : 2;
+    }
+
+    private void hoistFromTower(Fleet.Vehicle v) {
+        for (int i = 0, n = entities.size(); i < n; i++) {
+            Entity e = entities.get(i);
+            if (e.dead || e.type != Entity.CIVILIAN || !e.aloft || Math.hypot(e.x - v.x, e.y - v.y) > 60) continue;
+            e.aloft = false;
+            if (e.jobStep >= 0 && towerKeeper != null && e.jobStep < towerKeeper.length && towerKeeper[e.jobStep] == e) towerKeeper[e.jobStep] = null;
+            e.dead = true;
+            e.removed = true;
+            v.passengers++;
+        }
+    }
+
+    /**
+     * The team on the ground calls the helicopter back: they're hurt, low on rounds, someone's down, or
+     * everyone they could find is at the landing spot.
+     */
+    boolean rescueCalled(Fleet.Vehicle v) {
+        v.timer += 1 / 30f;
+        if (v.team == null) return true;
+        int alive = 0, waiting = 0;
+        String why = null;
+        for (int i = 0; i < v.team.size(); i++) {
+            Entity s = v.team.get(i);
+            if (s.dead) {
+                if (why == null) why = "we've lost one of ours";
+                continue;
+            }
+            alive++;
+            if (s.hp < s.maxHp * 0.5f && why == null) why = "we've got wounded";
+            if (s.ammo + s.reserve < fullReserve(s) * 0.25f && why == null) why = "we're low on ammo";
+        }
+        for (int i = 0, n = entities.size(); i < n; i++) {
+            Entity e = entities.get(i);
+            if (!e.dead && e.task == Dispatch.T_RESCUE && e.type == Entity.CIVILIAN) waiting++;
+        }
+        if (alive == 0) why = "the team's gone quiet";
+        if (why == null && v.timer > 25) {
+            // Anyone left out there to fetch?
+            boolean more = false;
+            for (int i = 0, n = entities.size(); i < n && !more; i++) {
+                Entity e = entities.get(i);
+                if (e.dead || e.type != Entity.CIVILIAN || e.task == Dispatch.T_RESCUE || e.aloft) continue;
+                if (Math.hypot(e.x - v.tx, e.y - v.ty) < 220 && (e.leader == null || e.leader.role == Entity.ROLE_SAR)) more = true;
+            }
+            if (!more) why = "everyone's at the landing spot";
+        }
+        if (why == null && v.timer > 120) why = "we've done what we can";
+        if (why == null) return false;
+        Entity speaker = null;
+        for (int i = 0; i < v.team.size() && speaker == null; i++) if (!v.team.get(i).dead) speaker = v.team.get(i);
+        dispatch.say(Dispatch.WHO_POLICE, speaker, "Rescue " + v.number + ", " + why + ". " + (waiting > 0 ? waiting + " civilian" + (waiting == 1 ? "" : "s") + " to lift. " : "")
+                + "Requesting pickup at " + (v.place != null ? v.place : "the landing spot") + ".", v.tx, v.ty);
+        return true;
     }
 
     /** A search and rescue specialist on the ground. False to fight like any officer. */
@@ -9491,28 +9859,27 @@ final class World {
         if (e.roping > 0) {
             // Coming down the line.
             e.roping -= dt;
-            e.x = v.tx + (e.member % 2 == 0 ? -5 : 5);
+            e.x = v.tx + (e.member - 1) * 6;
             e.y = v.ty;
             steer(e, 0, 0, 0);
             return true;
         }
         float hx = v.tx, hy = v.ty;
-        if (v.recall) {
-            float dx = hx - e.x, dy = hy - e.y, d = (float) Math.sqrt(dx * dx + dy * dy) + 0.001f;
-            if (d > 6) steer(e, dx / d, dy / d, e.runSpeed);
-            else steer(e, 0, 0, 0);
+        if (v.recall && v.state != 20) {
+            // The helicopter's here: back to the line.
+            walkToSpot(e, hx, hy, e.runSpeed);
             return true;
         }
         // Anything close: deal with it first.
-        Entity z = nearest(e, 70, true, true);
+        Entity z = nearest(e, 80, true, true);
         if (z != null) return false;
         Entity c = e.escort;
-        if (c == null || c.dead || (c.leader != null && c.leader != e)) {
+        if (c == null || c.dead || c.task == Dispatch.T_RESCUE || (c.leader != null && c.leader != e)) {
             c = null;
-            float bd = 200 * 200;
+            float bd = 230 * 230;
             for (int i = 0, n = entities.size(); i < n; i++) {
                 Entity o = entities.get(i);
-                if (o.dead || o.type != Entity.CIVILIAN || o.aloft || (o.leader != null && o.leader.role == Entity.ROLE_SAR)) continue;
+                if (o.dead || o.type != Entity.CIVILIAN || o.aloft || o.task == Dispatch.T_RESCUE || (o.leader != null && o.leader.role == Entity.ROLE_SAR)) continue;
                 float d = (o.x - hx) * (o.x - hx) + (o.y - hy) * (o.y - hy);
                 if (d < bd) {
                     bd = d;
@@ -9522,7 +9889,10 @@ final class World {
             e.escort = c;
         }
         if (c == null) {
-            standAt(e, hx + (e.member % 2 == 0 ? -12 : 12), hy + 6, 1);
+            // Holding the landing spot, facing out.
+            float a = e.member * TAU / 3;
+            standAt(e, hx + (float) Math.cos(a) * 18, hy + (float) Math.sin(a) * 18, 1);
+            if (e.want < 1) e.angle = turn(e.angle, a, dt * 3);
             return true;
         }
         if (c.leader != e) {
@@ -9537,8 +9907,33 @@ final class World {
             return true;
         }
         float dx = hx - e.x, dy = hy - e.y, d = (float) Math.sqrt(dx * dx + dy * dy) + 0.001f;
-        if (d > 10) walkToSpot(e, hx, hy, e.speed * 1.1f);
-        else steer(e, 0, 0, 0);
+        if (d > 16) walkToSpot(e, hx, hy, e.speed * 1.1f);
+        else {
+            // Here: wait for the helicopter.
+            c.leader = null;
+            c.task = Dispatch.T_RESCUE;
+            c.postX = hx;
+            c.postY = hy;
+            e.escort = null;
+        }
+        return true;
+    }
+
+    /** Someone brought to a rescue team's landing spot: stays close, ducking away from the dead. */
+    private boolean waitForLift(Entity e, Entity threat, float threatDist) {
+        if (e.task != Dispatch.T_RESCUE) return false;
+        boolean team = false;
+        for (int i = 0; i < fleet.vehicles.size() && !team; i++) {
+            Fleet.Vehicle v = fleet.vehicles.get(i);
+            if (v.kind == Fleet.K_RESCUE_HELI && Math.abs(v.tx - e.postX) < 1 && Math.abs(v.ty - e.postY) < 1) team = true;
+        }
+        if (!team) {
+            e.task = Dispatch.T_NONE;
+            return false;
+        }
+        if (threat != null && threatDist < 45) return false;
+        float a = (e.nameSeed & 0xFF) / 256f * TAU;
+        standAt(e, e.postX + (float) Math.cos(a) * 9, e.postY + (float) Math.sin(a) * 9, 0.6f);
         return true;
     }
 
@@ -9653,5 +10048,90 @@ final class World {
         dispatch.damageWall(zone, seg, (z.type == Entity.BRUTE ? 22 : z.type == Entity.CRAWLER ? 1.5f : 4) * dt);
         if (rnd.nextFloat() < dt * 0.8f) emit(Sfx.THUD, z.x, z.y);
         return true;
+    }
+
+    // ------------------------------------------------------------------ ammunition running out (10.16)
+
+    /** The nearest armoury with rounds left that this one can draw from (their own service's first), or null. */
+    private City.Facility restockPoint(Entity e) {
+        boolean soldier = e.type == Entity.SOLDIER;
+        City.Facility best = null;
+        float bd = Float.MAX_VALUE;
+        for (City.Facility f : city.facilities) {
+            if (f.ammo <= 0) continue;
+            boolean own = f.kind == (soldier ? City.FACILITY_BASE : City.FACILITY_POLICE);
+            if (!own && f.kind != (soldier ? City.FACILITY_POLICE : City.FACILITY_BASE)) continue;
+            float d = (float) Math.hypot(f.x - e.x, f.y - e.y) + (own ? 0 : 500);
+            if (d < bd) {
+                bd = d;
+                best = f;
+            }
+        }
+        City.Facility c = courtArmoury;
+        if (!soldier && c != null && c.ammo > 0 && city.courthouse != null && !city.courthouse.collapsed
+                && Math.hypot(c.x - e.x, c.y - e.y) < bd) best = c;
+        return best;
+    }
+
+    /** Someone on the same side nearby with plenty of rounds to share. */
+    private Entity lenderFor(Entity e) {
+        Entity best = null;
+        float bd = 500 * 500;
+        for (int i = 0, n = entities.size(); i < n; i++) {
+            Entity o = entities.get(i);
+            if (o == e || o.dead || !o.isArmed() || o.scout) continue;
+            if (o.ammo + o.reserve < fullReserve(o) * 0.7f + o.magSize) continue;
+            float d = (o.x - e.x) * (o.x - e.x) + (o.y - e.y) * (o.y - e.y);
+            if (d < bd) {
+                bd = d;
+                best = o;
+            }
+        }
+        return best;
+    }
+
+    /**
+     * No rounds and none to be had: they keep watch round their station or base, out of reach of the dead,
+     * and radio in every group of them they see so the others know where they are.
+     */
+    private void scout(Entity e, float dt) {
+        e.aiming = false;
+        Entity z = nearest(e, 220, true, true);
+        if (z != null) {
+            float dx = e.x - z.x, dy = e.y - z.y, d = (float) Math.sqrt(dx * dx + dy * dy) + 0.001f;
+            e.threatX = z.x;
+            e.threatY = z.y;
+            if (e.shareCd <= 0) {
+                e.shareCd = 20;
+                shareSighting(e, z.x, z.y);
+                int n = countZombiesNear(z.x, z.y, 120);
+                dispatch.say(e.type == Entity.SOLDIER ? Dispatch.WHO_MILITARY : Dispatch.WHO_POLICE, e, "Eyes on " + n + " of them by "
+                        + city.placeName(z.x, z.y) + ". I'm dry, can't engage.", z.x, z.y);
+                dispatch.call(e, z);
+            }
+            if (d < 110) {
+                flee(e, dx / d, dy / d, e.runSpeed);
+                return;
+            }
+            // Watching from a safe distance.
+            steer(e, 0, 0, 0);
+            e.angle = turn(e.angle, (float) Math.atan2(-dy, -dx), dt * 4);
+            return;
+        }
+        // A slow round of the streets near the station or base.
+        City.Facility home = supplyPoint(e);
+        if (home == null) {
+            wander(e, e.speed * 0.6f);
+            return;
+        }
+        float a = time * 0.05f + e.callsign * 1.7f + e.member;
+        float r = home.r + 120 + (e.callsign % 3) * 40;
+        float px = home.x + (float) Math.cos(a) * r, py = home.y + (float) Math.sin(a) * r;
+        float[] p = city.solidAt(px, py) ? city.findWalkable(px, py) : new float[]{px, py};
+        if (p == null) {
+            wander(e, e.speed * 0.6f);
+            return;
+        }
+        walkToSpot(e, p[0], p[1], e.speed);
     }
 }

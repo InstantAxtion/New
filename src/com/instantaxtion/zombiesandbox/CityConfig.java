@@ -294,13 +294,13 @@ final class CityConfig implements OptionSet {
      */
     int cops(int residents) {
         // About one officer for every 45 residents the game simulates, plus a few for each station.
-        return Math.max(6, Math.min(160, Math.round(residents / 45f) + policeStations() * 4));
+        return Math.max(8, Math.min(220, Math.round(residents / 32f) + policeStations() * 5));
     }
 
     /** Soldiers at the base (if the map has one): a garrison that grows with the city. */
     int soldiers(int residents) {
         if (!militaryBase()) return 0;
-        return Math.max(8, Math.min(48, Math.round(residents / 110f) + 4));
+        return Math.max(12, Math.min(72, Math.round(residents / 75f) + 6));
     }
 
     /** What each Reinforcements setting means, in plain words. */

@@ -35,8 +35,11 @@ final class GameView extends View implements Menu.Host {
     private static final String[] EVENT_NAMES = {"Horde", "Panic", "Outbreak", "Supply drop", "Raiders", "Airstrike",
             "City alarm", "Infect"};
     private static final int TOOL_COP = 3;
-    private static final int[] COP_ROLES = {0, Entity.ROLE_RIOT, Entity.ROLE_K9, Entity.ROLE_SWAT, Entity.ROLE_MARKSMAN};
-    private static final String[] COP_NAMES = {"Cop", "Riot cop", "K9 unit", "SWAT", "Marksman"};
+    // (Negative roles are the other agencies: World.spawnCop.)
+    private static final int[] COP_ROLES = {0, Entity.ROLE_RIOT, Entity.ROLE_K9, Entity.ROLE_SWAT, Entity.ROLE_MARKSMAN,
+            -1, -2, -3, Entity.ROLE_SAR};
+    private static final String[] COP_NAMES = {"Cop", "Riot cop", "K9 unit", "SWAT", "Marksman", "Highway patrol", "Sheriff's deputy",
+            "Park ranger", "Search & rescue"};
     private static final String[] CLEAR_NAMES = {"Everyone", "Zombies only", "Bodies & blood", "Wrecks & fires",
             "Barricades"};
     private static final int[] ZOMBIE_VARIANTS = {Entity.ZOMBIE, Entity.RUNNER, Entity.BRUTE, Entity.CRAWLER,
@@ -52,7 +55,9 @@ final class GameView extends View implements Menu.Host {
             "Follows its owner and fights zombies", "Armed gang member: robs, loots and shoots"};
     private static final String[] COP_INFO = {"Pistol, answers 911 calls", "Shield blocks bites from the front",
             "Officer with a police dog", "Body armour and a carbine; sent to the worst trouble",
-            "Scoped rifle: picks off the dead from a long way off"};
+            "Scoped rifle: picks off the dead from a long way off", "State trooper: works the highways, backs up the town",
+            "County deputy: patrols the back roads", "Patrols the trails and dirt roads, guards the ranger station",
+            "Rescue specialist: finds the cut-off and gets them out"};
     private static final String[] MIL_INFO = {"Rifle in bursts, grenades for crowds", "Boosts soldiers nearby, calls in support",
             "Long-range scoped rifle", "Belt-fed machine gun", "Guardsmen who protect civilians and safe zones",
             "Carbine and a medic's bag: patches up the wounded", "Grenade launcher for packs of the dead"};
@@ -129,6 +134,16 @@ final class GameView extends View implements Menu.Host {
     private long lastFrame;
     private int speedIdx, brushIdx;
     private int tool = TOOL_PAN;
+    private int iconCopBody;
+
+    /** The police picker's names, with this country's highway and rural police. */
+    private String[] copNames() {
+        String[] n = COP_NAMES.clone();
+        Country land = world.city.country;
+        if (land.hpName != null) n[5] = land.hpName;
+        n[6] = land.ruralName != null ? land.ruralName : "Rural police";
+        return n;
+    }
     private int zombieVariant, civVariant, milVariant, placeVariant, eventVariant, copVariant, buildVariant;
     /** The map changed under the Build tool: redraw it when the finger lifts. */
     private boolean buildDirty;
@@ -982,6 +997,14 @@ final class GameView extends View implements Menu.Host {
                 Dispatch.SafeZone z = world.dispatch.zones.get(i);
                 fill.setColor(z.military ? 0x886FBF3F : 0x884F8FE0);
                 c.drawCircle(miniRect.left + z.x * sx, miniRect.top + z.y * sy, Math.max(2.5f * dp, z.r * sx), fill);
+            }
+            if (world.rangerStation != null) {
+                // The ranger station: a green square.
+                float rx = miniRect.left + world.rangerStation.doorX * sx, ry = miniRect.top + world.rangerStation.doorY * sy;
+                fill.setColor(0xFF3E8A3A);
+                c.drawRect(rx - 2.5f * dp, ry - 2.5f * dp, rx + 2.5f * dp, ry + 2.5f * dp, fill);
+                fill.setColor(0xFFE6E6E6);
+                c.drawRect(rx - 1f * dp, ry - 1f * dp, rx + 1f * dp, ry + 1f * dp, fill);
             }
             float dot = Math.max(1.2f, dp * 0.9f);
             for (int i = 0, n = world.fleet.vehicles.size(); i < n; i++) {
@@ -3899,6 +3922,22 @@ final class GameView extends View implements Menu.Host {
             text.setColor(0xFFE6E6E6);
             c.drawText(label, sx, sy, text);
         }
+        // The ranger station, labelled like the stations in town.
+        City.Building rs = world.rangerStation;
+        if (rs != null && !rs.collapsed) {
+            float sx = screenX(rs.doorX), sy = screenY(rs.doorY) + 26 * dp;
+            if (sx > -100 * dp && sx < getWidth() + 100 * dp && sy > 0 && sy < barTop) {
+                String label = rs.name.split(",")[0].toUpperCase();
+                float tw = text.measureText(label);
+                oval.set(sx - tw / 2 - 7 * dp, sy - 13 * dp, sx + tw / 2 + 7 * dp, sy + 5 * dp);
+                if (claim(oval)) {
+                    fill.setColor(0xB02E4A24);
+                    c.drawRoundRect(oval, 7 * dp, 7 * dp, fill);
+                    text.setColor(0xFFE6E6E6);
+                    c.drawText(label, sx, sy, text);
+                }
+            }
+        }
         // Names over people when zoomed right in, and the outbreak's first victim.
         if (settings.nameTags() && scale / dp > 3f) {
             text.setTextSize(9.5f * dp);
@@ -4840,7 +4879,7 @@ final class GameView extends View implements Menu.Host {
             text.setTextSize(12 * dp);
             text.setColor(0xFFC8CCD2);
             String name = tool == TOOL_ZOMBIE ? Entity.NAMES[ZOMBIE_VARIANTS[zombieVariant]] : tool == TOOL_CIV ? Entity.NAMES[CIV_VARIANTS[civVariant]]
-                    : tool == TOOL_MIL ? MIL_NAMES[milVariant] : tool == TOOL_COP ? COP_NAMES[copVariant] : TOOL_NAMES[tool];
+                    : tool == TOOL_MIL ? MIL_NAMES[milVariant] : tool == TOOL_COP ? copNames()[copVariant] : TOOL_NAMES[tool];
             c.drawText("\u25B2  Tools  -  " + name, w / 2f, barTop + 19 * dp, text);
         } else {
             fill.setColor(0xD80E0F12);
@@ -4869,7 +4908,7 @@ final class GameView extends View implements Menu.Host {
             String name = i == TOOL_ZOMBIE ? Entity.NAMES[ZOMBIE_VARIANTS[zombieVariant]]
                     : i == TOOL_CIV ? Entity.NAMES[CIV_VARIANTS[civVariant]]
                     : i == TOOL_MIL ? MIL_NAMES[milVariant]
-                    : i == TOOL_COP ? COP_NAMES[copVariant]
+                    : i == TOOL_COP ? copNames()[copVariant]
                     : i == TOOL_PLACE ? PLACE_NAMES[placeVariant] : i == TOOL_EVENT ? EVENT_NAMES[eventVariant]
                     : i == TOOL_BUILD ? BUILD_NAMES[buildVariant] : TOOL_NAMES[i];
             float fit = text.measureText(name);
@@ -5366,6 +5405,8 @@ final class GameView extends View implements Menu.Host {
             case Dispatch.T_SEEK: return "Heading for a safe zone";
             case Dispatch.T_SHELTER: return "Sheltering in a safe zone";
             case Dispatch.T_POST: return "On guard duty";
+            case Dispatch.T_CORDON: return "Holding the perimeter";
+            case Dispatch.T_BORROW: return "Borrowing ammo";
             case Dispatch.T_MOVE: return "Following orders";
             case Dispatch.T_HOLD: return "Holding position";
             case Dispatch.T_HIDE: return "Running to hide indoors";
@@ -5419,7 +5460,7 @@ final class GameView extends View implements Menu.Host {
 
     /** The tool whose option picker is open, or -1. */
     private int picker = -1;
-    private final RectF[] pickerRects = new RectF[8];
+    private final RectF[] pickerRects = new RectF[12];
     private final RectF pickerPanel = new RectF();
     private int pickerCount;
 
@@ -5434,7 +5475,7 @@ final class GameView extends View implements Menu.Host {
                 for (int k = 0; k < n.length; k++) n[k] = Entity.NAMES[CIV_VARIANTS[k]];
                 return n;
             }
-            case TOOL_COP: return COP_NAMES;
+            case TOOL_COP: return copNames();
             case TOOL_MIL: return MIL_NAMES;
             case TOOL_ZOMBIE: {
                 String[] n = new String[ZOMBIE_VARIANTS.length];
@@ -5491,7 +5532,7 @@ final class GameView extends View implements Menu.Host {
         String[] names = optionNames(picker), info = optionInfo(picker);
         int n = names.length, cur = variant(picker);
         pickerCount = n;
-        int cols = portrait ? Math.min(4, n) : n;
+        int cols = portrait ? Math.min(4, n) : n > 8 ? (n + 1) / 2 : n;
         int rowsN = (n + cols - 1) / cols;
         float gap = 6 * dp, bh = 74 * dp;
         float maxW = Math.min(getWidth() - 20 * dp, cols * 118 * dp + gap * (cols - 1) + 20 * dp);
@@ -5548,7 +5589,14 @@ final class GameView extends View implements Menu.Host {
         int type = t == TOOL_ZOMBIE ? ZOMBIE_VARIANTS[zombieVariant] : t == TOOL_CIV ? CIV_VARIANTS[civVariant] : TOOL_TYPE[t];
         if (type >= 0) {
             Entity e = icons[type];
-            if (type == Entity.COP) e.role = t == TOOL_COP ? COP_ROLES[copVariant] : 0;
+            if (type == Entity.COP) {
+                int r = t == TOOL_COP ? COP_ROLES[copVariant] : 0;
+                if (iconCopBody == 0) iconCopBody = e.body;
+                Country land = world.city.country;
+                e.role = r < 0 ? 0 : r;
+                e.body = r == -1 ? land.hpShirt : r == -2 ? (land.ruralShirt != 0 ? land.ruralShirt : land.hpShirt) : r == -3 ? World.RANGER_SHIRT
+                        : r == Entity.ROLE_SAR ? 0xFFE06A20 : iconCopBody;
+            }
             if (type == Entity.SOLDIER) {
                 // Show the chosen kind of soldier.
                 e.role = t == TOOL_MIL ? MIL_ROLES[milVariant] : 0;

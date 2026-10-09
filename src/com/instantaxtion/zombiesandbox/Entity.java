@@ -135,6 +135,12 @@ final class Entity {
     /** Rescue team: seconds left coming down the winch line, and the person they're bringing back. */
     float roping;
     Entity escort;
+    /**
+     * Police and soldiers with no ammunition left anywhere to get: they keep watch near their station and
+     * call in what they see. And how long before they next think about restocking while running low.
+     */
+    boolean scout;
+    float lowCd;
     /** A zombie: how long it has been climbing the stairs of a fire tower. */
     float climb;
     float errandTimer;

@@ -1025,6 +1025,99 @@ public final class GameTests {
                 }
             }
         });
+        test("10.16: ammo, rescue teams, backup, rangers, containment, spawning", new Check() {
+            public void run() throws Exception {
+                CityConfig c = new CityConfig();
+                c.seed = 4;
+                c.v[CityConfig.OPT_COUNTRY] = Country.SWEDEN;
+                c.v[CityConfig.OPT_SIZE] = CityConfig.LARGE;
+                c.v[CityConfig.OPT_ZOMBIES] = 0;
+                World w = new World(c);
+                w.populate(c);
+                for (int f = 0; f < 30 * 10; f++) w.update(1 / 30f);
+                float cx = w.city.worldW() / 2f, cy = w.city.worldH() / 2f;
+                // Every kind of officer can be spawned.
+                check(w.spawnCop(-1, cx, cy).agency == 1 && w.spawnCop(-2, cx, cy).agency == 2 && w.spawnCop(-3, cx, cy).agency == 3
+                        && w.spawnCop(Entity.ROLE_SAR, cx, cy).role == Entity.ROLE_SAR, "highway patrol, deputies, rangers and rescuers spawn");
+                // Highway patrol only comes into town as backup once it's under attack.
+                for (Fleet.Vehicle v : w.fleet.vehicles) if (v.patrol && v.agency == 0) v.broken = true;
+                w.alert = 0;
+                Fleet.Vehicle q = w.fleet.patrolFor(cx, cy);
+                check(q == null || q.agency == 0, "highway patrol keeps to the highway while it's quiet");
+                w.alert = 2;
+                q = w.fleet.patrolFor(cx, cy);
+                check(q != null && q.agency > 0 && q.agency < 3, "highway patrol comes in as backup when the town is attacked");
+                for (Fleet.Vehicle v : w.fleet.vehicles) if (v.patrol && v.agency == 0) v.broken = false;
+                // Out of rounds with no ammo left anywhere: borrow from someone with plenty, or scout.
+                for (City.Facility f : w.city.facilities) f.ammo = 0;
+                if (w.courtArmoury != null) w.courtArmoury.ammo = 0;
+                w.alert = 0;
+                Entity dry = w.spawnCop(0, cx + 300, cy), rich = w.spawnCop(0, cx + 340, cy);
+                dry.ammo = 0;
+                dry.reserve = 0;
+                rich.reserve = 400;
+                for (int f = 0; f < 30 * 20; f++) w.update(1 / 30f);
+                check(dry.ammo + dry.reserve > 0, "a dry officer borrows rounds from one with plenty (" + (dry.ammo + dry.reserve) + ")");
+                for (Entity e : w.entities) if (e.isArmed()) {
+                    e.ammo = 0;
+                    e.reserve = 0;
+                }
+                for (int f = 0; f < 30 * 4; f++) w.update(1 / 30f);
+                int scouts = 0, armed = 0;
+                for (Entity e : w.entities) if (!e.dead && e.isArmed()) {
+                    armed++;
+                    if (e.scout) scouts++;
+                }
+                check(scouts * 2 >= armed, "with no rounds anywhere they scout instead (" + scouts + " of " + armed + ")");
+                // An outbreak bunched in one place gets a cordon round it.
+                World o = new World(c);
+                o.populate(c);
+                for (int f = 0; f < 30 * 10; f++) o.update(1 / 30f);
+                int sp = 0;
+                for (int i = 0; i < 1600 && sp < 90; i++) {
+                    float x = cx + (i % 40) * 6 - 120, y = cy + (i / 40) * 6 - 120;
+                    if (!o.city.solidAt(x, y) && o.spawn(Entity.ZOMBIE, x, y) != null) sp++;
+                }
+                o.alert = 2;
+                int most = 0;
+                for (int f = 0; f < 30 * 40; f++) {
+                    o.update(1 / 30f);
+                    if (f % 30 == 0) {
+                        int n = 0;
+                        for (Entity e : o.entities) if (!e.dead && e.task == Dispatch.T_CORDON) n++;
+                        most = Math.max(most, n);
+                    }
+                }
+                check(most >= 4, "police and soldiers hold a perimeter round the outbreak (" + most + ")");
+                // In the wilds: one ranger minds the station; the rescue team is dropped off and the helicopter goes back.
+                CityConfig t = new CityConfig();
+                t.seed = 9;
+                t.v[CityConfig.OPT_COUNTRY] = Country.SWEDEN;
+                t.v[CityConfig.OPT_PRESET] = 6;
+                t.v[CityConfig.OPT_SIZE] = CityConfig.LARGE;
+                t.v[CityConfig.OPT_ZOMBIES] = 0;
+                World tw = new World(t);
+                tw.populate(t);
+                for (int f = 0; f < 30 * 40; f++) tw.update(1 / 30f);
+                City.Building rs = tw.rangerStation;
+                boolean minded = false;
+                for (Entity e : tw.entities) if (!e.dead && e.agency == 3 && rs != null && Math.hypot(e.x - rs.doorX, e.y - rs.doorY) < 40) minded = true;
+                check(minded, "a ranger is at the ranger station");
+                float[] tower = tw.city.fireTowers.get(0);
+                tw.spawn(Entity.ZOMBIE, tower[0] - 70, tower[1] - 50);
+                tw.spawn(Entity.ZOMBIE, tower[0] - 62, tower[1] - 50);
+                tw.alert = Math.max(1, tw.alert);
+                boolean lowered = false, standby = false;
+                for (int f = 0; f < 30 * 150 && !standby; f++) {
+                    tw.update(1 / 30f);
+                    for (Fleet.Vehicle v : tw.fleet.vehicles) if (v.kind == Fleet.K_RESCUE_HELI) {
+                        if (v.team != null) lowered = true;
+                        if (v.state == Fleet.STANDBY) standby = true;
+                    }
+                }
+                check(lowered && standby, "the rescue team is lowered and the helicopter waits at base for their call");
+            }
+        });
         test("every screen draws", new Check() {
             public void run() throws Exception {
                 GameView v = new GameView(new android.app.Activity());

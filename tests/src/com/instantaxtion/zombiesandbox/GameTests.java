@@ -768,7 +768,9 @@ public final class GameTests {
                 gw.populate(g);
                 gw.outbreak = true;
                 gw.outbreakTime = 120;
-                for (int i = 0; i < 80; i++) gw.spawn(Entity.ZOMBIE, gw.city.worldW() / 2 + i, gw.city.worldH() / 2);
+                // (A big one for the size of the place: busier outskirts since 10.20 mean more people.)
+                int big = Math.max(80, gw.humanCount() / 8 + 20);
+                for (int i = 0; i < big; i++) gw.spawn(Entity.ZOMBIE, gw.city.worldW() / 2 + i % 120, gw.city.worldH() / 2 + i / 120 * 4);
                 gw.callNationalGuard();
                 check(gw.guardCalled, "the governor calls out the Guard for a big outbreak, with army reserves still to come");
             }
@@ -822,6 +824,8 @@ public final class GameTests {
                 c.v[CityConfig.OPT_PRESET] = 6;
                 c.v[CityConfig.OPT_SIZE] = CityConfig.LARGE;
                 c.v[CityConfig.OPT_ZOMBIES] = 0;
+                // (The map these checks were written for: as built before 10.20's busier outskirts.)
+                c.civic = 6;
                 World w = new World(c);
                 w.populate(c);
                 City city = w.city;
@@ -1165,7 +1169,8 @@ public final class GameTests {
                 // (Not a city that rolled "unprepared", with no backup to call.)
                 w.dispatch.policeReserve = Math.max(2, w.dispatch.policeReserve);
                 check((Boolean) pb.invoke(w.dispatch, inc), "police backup called");
-                for (int f = 0; f < 30 * 4; f++) w.update(1 / 30f);
+                // (Since 10.20 they come from the towns around: well under a minute away.)
+                for (int f = 0; f < 30 * 30 && w.dispatch.convoys.isEmpty(); f++) w.update(1 / 30f);
                 check(!w.dispatch.convoys.isEmpty(), "the backup shows on the map");
                 Dispatch.Convoy cv = w.dispatch.convoys.get(0);
                 float edge = Math.min(Math.min(cv.fromX, cv.fromY), Math.min(w.city.worldW() - cv.fromX, w.city.worldH() - cv.fromY));
@@ -1435,6 +1440,150 @@ public final class GameTests {
                 for (int k = 0; k < 8; k++) big.renderRegion(big.worldW() / 2 + (k % 4) * 192, big.worldH() / 2 + (k / 4) * 192, 192, 2);
                 long ms = (System.nanoTime() - t0) / 8000000;
                 check(ms < 60, "a close-up takes " + ms + " ms");
+            }
+        });
+        test("10.20: aim, helicopters on their pads, help from outside, backup calls, the outskirts", new Check() {
+            public void run() throws Exception {
+                // Everyone with a gun shoots as well as before, or up to 15% better.
+                float lo = 1, hi = 0;
+                for (int i = 0; i < 400; i++) {
+                    Entity e = new Entity();
+                    e.nameSeed = i * 7919 + 13;
+                    float b = World.aimBonus(e);
+                    lo = Math.min(lo, b);
+                    hi = Math.max(hi, b);
+                }
+                check(lo >= 0 && hi <= 0.15f && hi - lo > 0.12f, "aim varies from +0 to +15% (" + lo + ".." + hi + ")");
+                check(Fleet.DRIVE_SCALE > 1.5f, "cars drive faster");
+                // Every helicopter starts parked on a helipad, with its crew beside it.
+                CityConfig c = new CityConfig();
+                c.v[CityConfig.OPT_PRESET] = 8;
+                c.seed = 3;
+                c.normalize();
+                c.seed = 3;
+                World w = new World(c);
+                w.populate(c);
+                int[] kinds = new int[3];
+                for (float[] p : w.city.helipads()) kinds[City.padKind(p)]++;
+                check(kinds[City.PAD_POLICE] >= 1 && kinds[City.PAD_RESCUE] >= 1, "helipads for the police and the rescue service");
+                int helis = 0;
+                for (Fleet.Vehicle v : w.fleet.vehicles)
+                    if (v.type == Fleet.HELI) {
+                        helis++;
+                        check(v.padAt != null && v.state == Fleet.IDLE && v.alt == 0, "a helicopter waiting on its pad");
+                        Entity pilot = w.fleet.livePilot(v);
+                        check(pilot != null && !pilot.dead && pilot.task == Dispatch.T_POST, "its pilot standing by");
+                    }
+                check(helis == w.city.helipads().size(), "one helicopter to each pad (" + helis + ")");
+                // Air support: the crew boards, it spins up, flies out and holds a steady hover (no tight circles).
+                for (int f = 0; f < 60; f++) w.update(1 / 30f);
+                float[] q = w.city.findWalkable(w.city.worldW() / 2, w.city.worldH() / 2);
+                for (int i = 0; i < 20; i++) w.spawn(Entity.ZOMBIE, q[0] + (i % 5) * 8, q[1] + (i / 5) * 8);
+                Fleet.Vehicle air = w.fleet.readyHeli(0, q[0], q[1]);
+                check(air != null && w.fleet.launchHeli(air, q[0], q[1], "the test", null, 4), "army helicopter launched");
+                check(air.state == Fleet.MUSTER && air.crew.isEmpty(), "nobody aboard until they walk out to it");
+                boolean boarded = false, onStation = false, hovered = false;
+                for (int f = 0; f < 30 * 120 && !hovered; f++) {
+                    w.update(1 / 30f);
+                    if (air.state == Fleet.SPOOL && air.crew.size() >= 2) boarded = true;
+                    if (air.state == Fleet.CIRCLE) onStation = true;
+                    if (onStation && air.state == Fleet.CIRCLE && air.speed < 3 && Math.hypot(air.x - air.tx, air.y - air.ty) > 80) hovered = true;
+                }
+                check(boarded, "the crew climbed aboard before take-off");
+                check(onStation && hovered, "on station it hovers off to one side of the fighting");
+                int before = 0;
+                for (Fleet.Vehicle v : w.fleet.vehicles) if (v.type == Fleet.HELI) before++;
+                java.lang.reflect.Method ra = Dispatch.class.getDeclaredMethod("requestAir", float.class, float.class, String.class);
+                ra.setAccessible(true);
+                for (int k = 0; k < 3; k++) ra.invoke(w.dispatch, q[0], q[1], "again");
+                for (int f = 0; f < 30 * 30; f++) w.update(1 / 30f);
+                int after = 0;
+                for (Fleet.Vehicle v : w.fleet.vehicles) if (v.type == Fleet.HELI) after++;
+                check(after == before, "no helicopters from outside the map");
+                // Help from outside: on or off; police first in waves from different forces; the army all at once, later.
+                check(CityConfig.retired(CityConfig.OPT_RESERVES, 1) && CityConfig.retired(CityConfig.OPT_RESERVES, 2)
+                        && new CityConfig().reinforcements() == 3, "reinforcements are just off or on (on by default)");
+                CityConfig hc = new CityConfig();
+                hc.v[CityConfig.OPT_PRESET] = 8;
+                hc.seed = 5;
+                hc.normalize();
+                hc.seed = 5;
+                World hw = new World(hc);
+                hw.populate(hc);
+                hw.dispatch.policeReserve = Dispatch.OUTSIDE_POLICE;
+                hw.dispatch.squadReserve = Dispatch.OUTSIDE_SOLDIERS;
+                check(Dispatch.OUTSIDE_POLICE >= 200 && Dispatch.OUTSIDE_SOLDIERS >= 100, "200+ police and 100+ soldiers can come");
+                hw.alert = 2;
+                Dispatch.Incident inc = new Dispatch.Incident();
+                float[] iq = hw.city.findWalkable(hw.city.worldW() / 2, hw.city.worldH() / 2);
+                inc.x = iq[0];
+                inc.y = iq[1];
+                inc.place = "the test";
+                inc.field = new int[hw.city.w * hw.city.h];
+                hw.city.walkFieldFromPoints(inc.field, new float[]{inc.x}, new float[]{inc.y}, 1);
+                hw.dispatch.incidents.add(inc);
+                java.lang.reflect.Method pb = Dispatch.class.getDeclaredMethod("policeBackup", Dispatch.Incident.class);
+                pb.setAccessible(true);
+                java.lang.reflect.Field cd = Dispatch.class.getDeclaredField("policeCd");
+                cd.setAccessible(true);
+                for (int k = 0; k < 6; k++) {
+                    cd.setFloat(hw.dispatch, 0);
+                    check((Boolean) pb.invoke(hw.dispatch, inc), "outside police wave " + k);
+                }
+                java.lang.reflect.Method sr = Dispatch.class.getDeclaredMethod("sendReserveSquad", float.class, float.class, String.class, Dispatch.Incident.class, Dispatch.SafeZone.class);
+                sr.setAccessible(true);
+                check((Boolean) sr.invoke(hw.dispatch, inc.x, inc.y, "the test", inc, null) && hw.dispatch.armyCalled && hw.dispatch.armyEta >= 150,
+                        "the army is coming, but not for a few minutes (" + hw.dispatch.armyEta + "s)");
+                java.util.Set<String> forces = new java.util.HashSet<String>();
+                int maxConvoy = 0;
+                hw.dispatch.armyEta = 5;
+                for (int f = 0; f < 30 * 60; f++) {
+                    hw.update(1 / 30f);
+                    for (Dispatch.Convoy cv : hw.dispatch.convoys) {
+                        forces.add(cv.label);
+                        if (cv.label.startsWith("ARMY")) maxConvoy = Math.max(maxConvoy, cv.vehicles.size() + cv.pending);
+                    }
+                }
+                boolean fbi = false, hp = false, swat = false;
+                for (String f : forces) {
+                    if (f.contains("FBI")) fbi = true;
+                    if (f.contains("HIGHWAY")) hp = true;
+                    if (f.contains("SWAT")) swat = true;
+                }
+                check(fbi && hp && swat, "police, highway patrol, SWAT and the FBI come from outside: " + forces);
+                check(maxConvoy >= 12 && hw.dispatch.squadReserve == 0, "the army comes in one big convoy (" + maxConvoy + " vehicles)");
+                Entity agent = hw.spawn(Entity.COP, iq[0], iq[1]);
+                hw.makeAgency(agent, 4);
+                check(agent.agency == 4 && Dispatch.name(agent).startsWith("FBI"), "federal agents: " + Dispatch.name(agent));
+                // An officer in over their head calls for backup, and it shows on the map.
+                Entity cop = null;
+                for (Entity e : hw.entities) if (!e.dead && e.type == Entity.COP && e.task == Dispatch.T_NONE) cop = e;
+                int calls = hw.dispatch.callouts.size();
+                hw.dispatch.unitBackup(cop, 14);
+                boolean asked = false;
+                for (Dispatch.Incident o : hw.dispatch.incidents) if (o.backupNeed > 0 && Math.hypot(o.x - cop.x, o.y - cop.y) < 230) asked = true;
+                check(asked && hw.dispatch.callouts.size() > calls, "a call for backup: an incident wanting more units, and a callout on the map");
+                // The outskirts: little nature, and small towns of their own.
+                CityConfig a0 = new CityConfig();
+                a0.v[CityConfig.OPT_PRESET] = 8;
+                a0.v[CityConfig.OPT_SIZE] = CityConfig.HUGE;
+                a0.seed = 5;
+                a0.normalize();
+                a0.seed = 5;
+                CityConfig a1 = new CityConfig();
+                check(a1.applyCode(a0.code() + "!") && a1.outskirts == 1 && a1.code().endsWith("!"), "little nature is in the city code");
+                City c0 = new City(a0, 0.05f), c1 = new City(a1, 0.05f);
+                int t0 = 0, t1 = 0;
+                for (byte t : c0.tiles) if (t == City.TREE) t0++;
+                for (byte t : c1.tiles) if (t == City.TREE) t1++;
+                check(t1 * 2 < t0, "little nature: far fewer trees (" + t1 + " against " + t0 + ")");
+                int satPolice = 0, satFire = 0;
+                for (City.Facility f : c0.facilities)
+                    if (f.satellite) {
+                        if (f.kind == City.FACILITY_POLICE) satPolice++;
+                        if (f.kind == City.FACILITY_FIRE) satFire++;
+                    }
+                check(satPolice >= 1 && satFire >= 1, "small towns out in the country with their own police (" + satPolice + ") and fire stations (" + satFire + ")");
             }
         });
         test("every screen draws", new Check() {

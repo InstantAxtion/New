@@ -331,7 +331,7 @@ final class World {
     boolean readinessKnown;
     static final String[] READINESS = {"Normal", "Unprepared", "Panicking", "Gun town", "Well prepared"};
     private static final String[] READINESS_NEWS = {"",
-            "Police: we weren't ready for this. Ammunition is short and there are no reserves coming.",
+            "Police: we weren't ready for this. Ammunition is short, and the towns around can spare only half the help.",
             "News: panic is sweeping the city. People are running instead of hiding.",
             "News: half the town owns a gun, and they're using them.",
             "Military: we've been preparing for this. Extra units are standing by."};
@@ -341,14 +341,15 @@ final class World {
         float r = rnd.nextFloat();
         readiness = r < 0.2f ? 1 : r < 0.35f ? 2 : r < 0.5f ? 3 : r < 0.62f ? 4 : 0;
         if (readiness == 1) {
-            dispatch.policeReserve = 0;
-            dispatch.squadReserve = 0;
+            // (Caught unprepared: the towns around can spare only half as many, and the army is short too.)
+            dispatch.policeReserve /= 2;
+            dispatch.squadReserve = dispatch.squadReserve * 3 / 4;
             for (Entity e : entities) if (e.isArmed()) e.reserve /= 2;
         } else if (readiness == 3) {
             for (Entity e : entities) if (e.type == Entity.CIVILIAN && !e.hasGun && rnd.nextFloat() < 0.2f) armCivilian(e, 12 + rnd.nextInt(3) * 6);
         } else if (readiness == 4) {
-            dispatch.policeReserve += 1;
-            dispatch.squadReserve += 1;
+            if (dispatch.policeReserve > 0) dispatch.policeReserve += 40;
+            if (dispatch.squadReserve > 0) dispatch.squadReserve += 24;
         }
     }
 
@@ -531,6 +532,8 @@ final class World {
         int stations = 0;
         for (City.Facility f : city.facilities) if (f.kind == City.FACILITY_POLICE) stations++;
         int cops = cfg.cops(city.totalResidents), soldiers = cfg.soldiers(city.totalResidents);
+        // (A small town's own police station out in the country has its own officers, on top of the city's.)
+        for (City.Facility f : city.facilities) if (f.kind == City.FACILITY_POLICE && f.satellite) cops += 6;
         // Most officers are out in patrol cars, two to a car; the rest are at their precinct.
         int cars = stations > 0 ? Math.max(1, (int) (cops * 0.6f / 2)) : 0;
         fleet.patrolTarget = cars;
@@ -555,6 +558,7 @@ final class World {
         dispatch.policeAir = cfg.nature() && stations > 0 ? 2 : 0;
         fleet.stationEngines();
         populateWilds(cops > 0);
+        fleet.stationHelis();
         // Out of town: highway patrol on the highway, and (in the USA) sheriff's deputies on the country roads.
         // (About one patrol car to every fifty tiles of highway, four at the least.)
         if (city.hwyAxis >= 0) for (int i = 0, n = Math.max(4, (city.hwyAxis == 0 ? city.w : city.h) / 50); i < n; i++) fleet.startAgencyPatrol(1);
@@ -1404,6 +1408,16 @@ final class World {
      * Reinforcements from outside arrive fresh, with extra magazines to hand round (the officers and soldiers
      * already fighting can borrow from them), and patch up anyone hurt on the way.
      */
+    /** An officer from another force (10.20): highway patrol (1), the sheriff's (2), federal agents (4). */
+    void makeAgency(Entity e, int agency) {
+        e.agency = agency;
+        if (agency == 4) {
+            // Dark blue windbreakers.
+            e.body = 0xFF1C2638;
+            e.hp = e.maxHp = Math.max(e.maxHp, 70);
+        } else e.body = agency == 1 || city.country.ruralShirt == 0 ? city.country.hpShirt : city.country.ruralShirt;
+    }
+
     void reinforce(Entity e) {
         if (e.type == Entity.SOLDIER && e.role == Entity.ROLE_RIFLE) kitOut(e);
         e.reserve = Math.round(fullReserve(e) * 1.6f);
@@ -1465,6 +1479,7 @@ final class World {
         spawnWildlife();
         fleet.trafficTarget = Fleet.trafficFor(city);
         fleet.stationEngines();
+        fleet.stationHelis();
         int cops = 0;
         for (Entity e : entities) if (!e.dead && e.type == Entity.COP) cops++;
         fleet.patrolTarget = Math.max(1, (int) (cops * 0.6f / 2));
@@ -1964,6 +1979,13 @@ final class World {
                         if (ddx * ddx + ddy * ddy < radius * radius * 0.6f) o.aware = true;
                     }
             }
+    }
+
+    /** How much better than the standard this one shoots: 0 to 0.15, fixed for the person (from their name). */
+    static float aimBonus(Entity e) {
+        int h = e.nameSeed * 0x9E3779B1;
+        h ^= h >>> 15;
+        return ((h & 0x7FFFFFFF) % 1000) / 1000f * 0.15f;
     }
 
     /**
@@ -2910,7 +2932,7 @@ final class World {
         switch (base.baseType) {
             case City.BT_AIR: if (dispatch.airSorties > 0) dispatch.airSorties++; break;
             case City.BT_ARMOUR: if (dispatch.tankReserve > 0) dispatch.tankReserve++; break;
-            case City.BT_TRAINING: if (dispatch.squadReserve > 0) dispatch.squadReserve++; break;
+            case City.BT_TRAINING: if (dispatch.squadReserve > 0) dispatch.squadReserve += 16; break;
             case City.BT_SPECIAL: base.ammo += base.ammo / 3; break;
             case City.BT_SUPPLY: base.ammo *= 2; break;
             case City.BT_RADAR: if (dispatch.airSorties > 0) dispatch.airSorties++; break;
@@ -5045,6 +5067,7 @@ final class World {
     /** Once a second: the infection evolves, and after it's over the city slowly recovers. */
     private void cityLife() {
         keyBuildings();
+        if (((int) time) % 5 == 0) fleet.stationHelis();
         government();
         updateAlert();
         callNationalGuard();
@@ -6380,7 +6403,7 @@ final class World {
         // The combat medic sees to the wounded nearby whenever the dead give them a moment.
         if (soldier && e.role == Entity.ROLE_CORPSMAN && e.task != Dispatch.T_BOARD && fieldMedic(e, dt)) return;
         // The rescue team brings people in to the helicopter.
-        if (e.role == Entity.ROLE_SAR && rescuer(e, dt)) return;
+        if (e.role == Entity.ROLE_SAR && e.task == Dispatch.T_RESCUE && rescuer(e, dt)) return;
         if (e.meleeCd <= 0) {
             Entity z = nearestInReach(e);
             if (z != null) shove(e, z, true);
@@ -6521,6 +6544,15 @@ final class World {
 
         Entity t = e.ammo > 0 || e.reserve > 0 ? pickTarget(e, range) : null;
         e.shareCd -= dt;
+        // In over their heads: radio for backup (once in a while, not every second of the fight).
+        if (t != null && t.isZombie() && e.callCd <= 0 && e.role != Entity.ROLE_PILOT && e.task != Dispatch.T_BOARD) {
+            e.callCd = 4;
+            int near = countZombiesNear(e.x, e.y, 110);
+            if (near >= 6 && armedNear(e.x, e.y, 130) * 3 < near) {
+                e.callCd = 40;
+                dispatch.unitBackup(e, near);
+            }
+        }
         if (t != null && t.isZombie()) {
             // Remember where it was, to go and look if it slips out of sight.
             e.threatX = t.x;
@@ -6771,6 +6803,23 @@ final class World {
     }
 
     /** Radios a sighting: other police and soldiers nearby with nothing in view come to look. */
+    /** Police and soldiers on their feet within r of (x, y). */
+    int armedNear(float x, float y, float r) {
+        int n = 0;
+        int cx0 = Math.max(0, (int) ((x - r) / CELL)), cx1 = Math.min(gw - 1, (int) ((x + r) / CELL));
+        int cy0 = Math.max(0, (int) ((y - r) / CELL)), cy1 = Math.min(gh - 1, (int) ((y + r) / CELL));
+        for (int cy = cy0; cy <= cy1; cy++)
+            for (int cx = cx0; cx <= cx1; cx++) {
+                int c = cy * gw + cx;
+                for (int k = cellStart[c] + zCount[c], end = cellStart[c] + cellCount[c]; k < end; k++) {
+                    Entity o = sorted[k];
+                    if (o.dead || !o.isArmed()) continue;
+                    if ((o.x - x) * (o.x - x) + (o.y - y) * (o.y - y) <= r * r) n++;
+                }
+            }
+        return n;
+    }
+
     private void shareSighting(Entity e, float x, float y) {
         float r = 180;
         int cx0 = Math.max(0, (int) ((e.x - r) / CELL)), cx1 = Math.min(gw - 1, (int) ((e.x + r) / CELL));
@@ -7865,6 +7914,8 @@ final class World {
         if (e.weapon == Entity.W_SHOTGUN && d < 60) pellets(e, t, dmg);
         // Soldiers near their commander fight better.
         if (soldier && e.role != Entity.ROLE_COMMANDER && !commanders.isEmpty() && commanded(e)) accuracy += 0.12f;
+        // (10.20) Some shoot better than others: each one anywhere from as before to 15% better, for good.
+        accuracy = Math.min(0.99f, accuracy * (1 + aimBonus(e)));
         if (e.ammo <= 0 && e.reserve > 0) e.reload = soldier ? (e.role == Entity.ROLE_GUNNER ? 4f : 2.2f) : 1.6f;
         if (rnd.nextFloat() < (e.role == Entity.ROLE_GUNNER ? 0.08f : 0.25f)) noise(e.x, e.y, e.role == Entity.ROLE_SNIPER ? 300 : 220);
         if (e.alertCd <= 0) {
@@ -9535,7 +9586,7 @@ final class World {
     Entity stationKeeper;
     Entity[] towerKeeper, towerRelief;
     float[] towerShift;
-    private float rescueCd = 20, wildsTick;
+    private float rescueCd = 5, wildsTick;
 
     /** The rangers, their truck and the lookouts up the fire towers, at the start of a game. */
     private void populateWilds(boolean rangers) {
@@ -10195,16 +10246,19 @@ final class World {
 
     /** Someone cut off by the dead out in the wilds (or up a tower), with no help nearby, for the rescue helicopter. */
     private void callRescue() {
-        if (!city.cfg.wilds() || alert < 1 || fleet.rescueHelis() >= rescueTeams) return;
-        City.Facility from = city.nearestFacility(City.FACILITY_POLICE, city.worldW() / 2, city.worldH() / 2);
-        if (from == null) return;
+        if (!city.cfg.wilds() || alert < 1) return;
+        // (A rescue helicopter on its pad, with its pilot and team: none ready, no rescue.)
+        Fleet.Vehicle ready = fleet.readyHeli(Fleet.K_RESCUE_HELI, city.worldW() / 2, city.worldH() / 2);
+        if (ready == null) return;
         Entity best = null;
         for (int i = 0, n = entities.size(); i < n; i++) {
             Entity e = entities.get(i);
             if (e.dead || e.type != Entity.CIVILIAN || e.leader != null || e.task == Dispatch.T_RESCUE) continue;
             int near = countZombiesNear(e.x, e.y, 170);
             if (near == 0 || (!e.aloft && near > 12)) continue;
-            if (nearestArmed(e.x, e.y, 260) != null) continue;
+            Entity help = nearestArmed(e.x, e.y, 260);
+            // (A helicopter crew standing by its pad isn't help on the ground: they're the ones who'd come.)
+            if (help != null && !(help.task == Dispatch.T_POST && (help.role == Entity.ROLE_SAR || help.role == Entity.ROLE_PILOT))) continue;
             // (In town, only a group cut off together is worth a helicopter.)
             if (city.inTown(e.x, e.y) && !e.aloft && countCiviliansNear(e.x, e.y, 60) < 3) continue;
             boolean covered = false;
@@ -10221,8 +10275,10 @@ final class World {
                 : city.placeName(best.x, best.y);
         // (Hovering beside the tower, not on top of it.)
         float tx = best.x + (best.aloft ? 30 : 0), ty = best.y + (best.aloft ? 20 : 0);
-        fleet.sendRescueHeli(from.x, from.y, tx, ty, place);
-        dispatch.say(Dispatch.WHO_POLICE, null, "Dispatch: Rescue team to " + place + ", people cut off there. Get them out.", tx, ty);
+        ready = fleet.readyHeli(Fleet.K_RESCUE_HELI, tx, ty);
+        if (!fleet.launchHeli(ready, tx, ty, place, null, 0)) return;
+        dispatch.say(Dispatch.WHO_POLICE, null, "Dispatch: Rescue " + ready.number + ", people cut off at " + place
+                + ". Crew to the helicopter, get them out.", tx, ty);
         rescueCd = 20;
     }
 
@@ -10262,12 +10318,22 @@ final class World {
             if (v.team == null) {
                 if (Math.hypot(v.x - v.tx, v.y - v.ty) > 16) return 0;
                 v.team = new ArrayList<Entity>();
-                for (int i = 0; i < 3; i++) {
-                    Entity s = spawn(Entity.COP, v.tx + (i - 1) * 6, v.ty);
-                    if (s == null) continue;
-                    applyRole(s, Entity.ROLE_SWAT);
-                    s.role = Entity.ROLE_SAR;
-                    s.body = 0xFFE06A20;
+                // (Since 10.20 the team is the one that boarded at the pad: out of the door and down the line.)
+                ArrayList<Entity> aboard = new ArrayList<Entity>();
+                for (Entity c : v.crew) if (c.role == Entity.ROLE_SAR) aboard.add(c);
+                for (int i = 0; i < (v.padAt != null ? aboard.size() : 3); i++) {
+                    Entity s;
+                    if (v.padAt != null) {
+                        s = aboard.get(i);
+                        v.crew.remove(s);
+                        if (!release(s, v.tx + (i - 1) * 6, v.ty)) continue;
+                    } else {
+                        s = spawn(Entity.COP, v.tx + (i - 1) * 6, v.ty);
+                        if (s == null) continue;
+                        applyRole(s, Entity.ROLE_SWAT);
+                        s.role = Entity.ROLE_SAR;
+                        s.body = 0xFFE06A20;
+                    }
                     s.rig = v;
                     s.task = Dispatch.T_RESCUE;
                     s.roping = 2.5f + i * 1.2f;
@@ -10301,8 +10367,11 @@ final class World {
             Entity s = v.team.get(i);
             if (s.dead) continue;
             if (Math.hypot(s.x - v.tx, s.y - v.ty) < 20 || v.timer > 50) {
-                s.dead = true;
-                s.removed = true;
+                if (v.padAt != null) fleet.board(v, s);
+                else {
+                    s.dead = true;
+                    s.removed = true;
+                }
             } else anyLeft = true;
         }
         return anyLeft ? 0 : 2;

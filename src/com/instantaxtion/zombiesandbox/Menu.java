@@ -1088,6 +1088,16 @@ final class Menu {
             y += 16 * dp;
         }
         y += 12 * dp;
+        y = segRow(c, CityConfig.OPT_OUTSKIRTS, "Outskirts: the country round the town", lx, y, lw);
+        plain.setTextSize(12.5f * dp);
+        plain.setColor(0xFF9AA0A8);
+        y -= 6 * dp;
+        for (String line : wrap(config.outskirts == 1 ? "Little nature: open fields and farmland round the town, a few copses, no mountains."
+                : "Default: woods, hills and mountains, lakes and a nature park, small towns and farms along the lanes.", lw - 4 * dp, plain)) {
+            c.drawText(line, lx + 2 * dp, y + 10 * dp, plain);
+            y += 16 * dp;
+        }
+        y += 12 * dp;
         }
         int homes = previewResidents;
         boolean known = homes > 0 && config.code().equals(previewKey);
@@ -1282,7 +1292,7 @@ final class Menu {
                 if (config.get(sg.option) != sg.value) {
                     config.set(sg.option, sg.value);
                     // A different map or size is a different city.
-                    if (sg.option == CityConfig.OPT_PRESET || sg.option == CityConfig.OPT_SIZE) config.keepCity = false;
+                    if (sg.option == CityConfig.OPT_PRESET || sg.option == CityConfig.OPT_SIZE || sg.option == CityConfig.OPT_OUTSKIRTS) config.keepCity = false;
                 }
                 host.click();
                 return;

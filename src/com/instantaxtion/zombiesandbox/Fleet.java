@@ -18,7 +18,7 @@ final class Fleet {
     static final float TRAIN_LENGTH = 136;
     static final int WAIT = 0, DRIVE = 1, RETURN = 2, FLY_IN = 3, CIRCLE = 4, FLY_OUT = 5, CRUISE = 6,
             ABANDONED = 7, SPRAY = 8, SPOOL = 9, LAND = 10, ENGAGE = 11, LOAD = 12, BLOCK = 13,
-            PATROL = 14, SCENE = 15, RECALL = 16, IDLE = 17, MUSTER = 18, HOVER = 19, STANDBY = 20;
+            PATROL = 14, SCENE = 15, RECALL = 16, IDLE = 17, MUSTER = 18, HOVER = 19, STANDBY = 20, DROP = 21;
     private static final int[] CAR_COLORS = {0xFFB03A2E, 0xFF2E5FB0, 0xFFE0E0E0, 0xFF222428, 0xFFD4A21C, 0xFF3C8A4E,
             0xFF8A8F96, 0xFF6B2E8A, 0xFFE07A2E};
     private static final float[] MAX_HP = {160, 260, 1, 100, 240, 700, 160, 1, 1};
@@ -135,9 +135,21 @@ final class Fleet {
         /** The rescue helicopter: back at base waiting for its team's call, or on its way to pick them up. */
         boolean standby, pickup;
         float baseX, baseY;
+        /**
+         * A helicopter's own helipad (10.20): every aircraft is parked on one from the start, its crew standing by
+         * it, and comes back to it. Its flight crew (the pilot, and the rescue team), whether it's in the air
+         * yet, its velocity (it can move any way it likes, not just nose first), and time to refuel.
+         */
+        float[] padAt;
+        final ArrayList<Entity> flight = new ArrayList<Entity>();
+        float hvx, hvy, refuel, spoolTime = 1;
+        /** Air-assault troops still aboard to put down, and the incident they're for. */
+        int troops;
+        /** Flying cover for a convoy coming in. */
+        Dispatch.Convoy escort;
         /** The station it belongs to (fire engines and patrol cars), and how many it waits to take aboard. */
         City.Facility station;
-        int crewWanted;
+        int crewWanted, crewSpawns;
         float checkCd, quiet;
 
         /**
@@ -208,7 +220,7 @@ final class Fleet {
                 if (v.kind == K_HUMVEE) return (v.guardUnit ? Country.guard(city.country.id)[1] + " " : "") + "Humvee" + (v.loop ? "  -  base patrol" : "");
                 if (v.kind == K_RIOT_VAN) return "Riot police van";
                 return v.swat ? Country.swat(city.country.id)[0] + " van" : v.guardUnit ? Country.guard(city.country.id)[1] + " truck" : v.supply > 0 ? "Army supply truck" : "Army truck";
-            case HELI: return v.kind == K_RESCUE_HELI ? "Rescue helicopter" : v.kind == K_POLICE_HELI ? "Police helicopter" : "Air 1  -  helicopter";
+            case HELI: return v.kind == K_RESCUE_HELI ? "Rescue helicopter" : v.kind == K_POLICE_HELI ? "Police helicopter" : "Air " + Math.max(1, v.number) + "  -  army helicopter";
             case FIRE_ENGINE: return "Fire engine " + v.number;
             case TANK: return "Tank";
             case AMBULANCE: return "Ambulance";
@@ -224,6 +236,12 @@ final class Fleet {
         String where = v.place != null ? v.place : null;
         switch (v.type) {
             case HELI:
+                if (v.state == IDLE) {
+                    String who = v.kind == K_RESCUE_HELI ? "Rescue helicopter" : v.kind == K_POLICE_HELI ? "Police helicopter" : "Air " + v.number;
+                    return who + ": " + (v.refuel > 0 ? "Refuelling on the pad (" + (int) v.refuel + "s)" : livePilot(v) == null ? "Grounded, no pilot" : "On the pad, ready");
+                }
+                if (v.state == MUSTER) return (v.kind == K_RESCUE_HELI ? "Rescue helicopter" : v.kind == K_POLICE_HELI ? "Police helicopter" : "Air " + v.number)
+                        + ": Crew boarding (" + v.crew.size() + "/" + v.crewWanted + ")";
                 if (v.kind == K_RESCUE_HELI) {
                     switch (v.state) {
                         case FLY_IN: return "Rescue helicopter: En route" + (where != null ? " to " + where : "");
@@ -240,12 +258,14 @@ final class Fleet {
                         default: return "Police helicopter: Returning";
                     }
                 }
+                String air = "Air " + Math.max(1, v.number);
                 switch (v.state) {
-                    case SPOOL: return "Air 1: Starting up";
-                    case FLY_IN: return v.alt < 0.9f ? "Air 1: Taking off" : "Air 1: En route" + (where != null ? " to " + where : "");
-                    case CIRCLE: return "Air 1: Door gunner engaging (" + (int) v.timer + "s)";
-                    case LAND: return "Air 1: Landing";
-                    default: return "Air 1: Returning to base";
+                    case SPOOL: return air + ": Starting up";
+                    case FLY_IN: return v.alt < 0.9f ? air + ": Taking off" : air + ": En route" + (where != null ? " to " + where : "");
+                    case DROP: return air + ": Putting troops down";
+                    case CIRCLE: return v.escort != null ? air + ": Flying cover for the convoy" : air + ": Door gunners engaging (" + (int) v.timer + "s)";
+                    case LAND: return air + ": Landing";
+                    default: return air + ": Returning to base";
                 }
             case TRAIN:
                 if (v.state == WAIT) return "Train: At the platform (" + (int) v.timer + "s)";
@@ -649,7 +669,10 @@ final class Fleet {
 
     boolean heliBusy() {
         // (The police helicopter doesn't count: it's a different service.)
-        for (int i = 0; i < vehicles.size(); i++) if (vehicles.get(i).type == HELI && vehicles.get(i).kind != K_POLICE_HELI) return true;
+        for (int i = 0; i < vehicles.size(); i++) {
+            Vehicle v = vehicles.get(i);
+            if (v.type == HELI && v.kind != K_POLICE_HELI && v.kind != K_RESCUE_HELI && v.state != IDLE) return true;
+        }
         return false;
     }
 
@@ -708,6 +731,15 @@ final class Fleet {
             vehicles.add(v);
         }
         return true;
+    }
+
+    /** Whether there's a way to drive from one point to another. */
+    boolean canDrive(float fx, float fy, float tx, float ty) {
+        float[] start = city.nearestDrivable(fx, fy);
+        if (start == null) return false;
+        int[] full = scratchField();
+        int si = city.tileIndex(start[0], start[1]);
+        return city.driveField(full, tx, ty, false, si) && full[si] < City.FAR;
     }
 
     /** Trucks sent out take one of the army trucks parked nearby (not the SWAT van, which has its own). */
@@ -782,7 +814,7 @@ final class Fleet {
     /** Rescue helicopters out (on a job, or waiting at base for their team). */
     int rescueHelis() {
         int n = 0;
-        for (int i = 0; i < vehicles.size(); i++) if (vehicles.get(i).kind == K_RESCUE_HELI) n++;
+        for (int i = 0; i < vehicles.size(); i++) if (vehicles.get(i).kind == K_RESCUE_HELI && vehicles.get(i).state != IDLE) n++;
         return n;
     }
 
@@ -811,7 +843,7 @@ final class Fleet {
 
     /** The police helicopter is up. */
     boolean policeHeliBusy() {
-        for (int i = 0; i < vehicles.size(); i++) if (vehicles.get(i).kind == K_POLICE_HELI) return true;
+        for (int i = 0; i < vehicles.size(); i++) if (vehicles.get(i).kind == K_POLICE_HELI && vehicles.get(i).state != IDLE) return true;
         return false;
     }
 
@@ -1116,6 +1148,210 @@ final class Fleet {
         }
         vehicles.add(v);
         return v;
+    }
+
+    // ------------------------------------------------------------------ helicopters on their pads (10.20)
+
+    private int airNumber;
+
+    /**
+     * Every helipad has its helicopter, parked there from the start, with its flight crew standing by it: the
+     * army's (a pilot), the police's (a pilot) and the rescue service's (a pilot and a three-strong rescue team).
+     * Run now and then: a helicopter lost is not replaced, but a pilot who's been killed is (from whoever's
+     * nearby, while there are any).
+     */
+    void stationHelis() {
+        java.util.List<float[]> pads = city.helipads();
+        for (int k = 0; k < pads.size(); k++) {
+            float[] p = pads.get(k);
+            Vehicle v = null;
+            for (int i = 0; i < vehicles.size() && v == null; i++) if (vehicles.get(i).padAt == p) v = vehicles.get(i);
+            if (v == null) {
+                if (padLost.contains(p)) continue;
+                v = make(HELI);
+                v.padAt = p;
+                v.pad = true;
+                v.x = v.homeX = v.baseX = p[0];
+                v.y = v.homeY = v.baseY = p[1];
+                v.angle = -(float) Math.PI / 2;
+                v.alt = 0;
+                v.state = IDLE;
+                int kind = City.padKind(p);
+                if (kind == City.PAD_POLICE) setKind(v, K_POLICE_HELI);
+                else if (kind == City.PAD_RESCUE) {
+                    setKind(v, K_RESCUE_HELI);
+                    v.number = ++rescueNumber;
+                } else v.number = ++airNumber;
+                vehicles.add(v);
+            }
+            if (v.state != IDLE) continue;
+            // The flight crew, standing by on the pad.
+            for (int i = v.flight.size() - 1; i >= 0; i--) if (v.flight.get(i).dead && !v.crew.contains(v.flight.get(i))) v.flight.remove(i);
+            boolean army = v.kind != K_POLICE_HELI && v.kind != K_RESCUE_HELI;
+            int want = v.kind == K_RESCUE_HELI ? 4 : 1;
+            // (After loading a saved game the crew are already standing about: they're taken back on, not doubled.)
+            while (v.flight.size() < want) {
+                boolean pilot = livePilot(v) == null;
+                Entity found = null;
+                float fd = Float.MAX_VALUE;
+                for (int i = 0, n = w.entities.size(); i < n; i++) {
+                    Entity e = w.entities.get(i);
+                    if (e.dead || (pilot ? e.role != Entity.ROLE_PILOT : e.role != Entity.ROLE_SAR) || e.type != (army ? Entity.SOLDIER : Entity.COP)) continue;
+                    float d = (float) Math.hypot(e.x - p[0], e.y - p[1]);
+                    if (d >= fd || inFlight(e)) continue;
+                    fd = d;
+                    found = e;
+                }
+                if (found == null) break;
+                v.flight.add(found);
+            }
+            while (v.flight.size() < want && v.crewSpawns < 8) {
+                v.crewSpawns++;
+                boolean pilot = livePilot(v) == null;
+                Entity e = pilot ? w.spawn(army ? Entity.SOLDIER : Entity.COP, p[0] + 30, p[1] + 10)
+                        : w.spawnCop(Entity.ROLE_SAR, p[0] + 30, p[1] + 10);
+                if (e == null) break;
+                if (pilot) {
+                    e.role = Entity.ROLE_PILOT;
+                    e.callsign = v.number;
+                } else {
+                    e.callsign = v.number;
+                    e.member = v.flight.size() - 1;
+                }
+                v.flight.add(e);
+            }
+            for (int i = 0; i < v.flight.size(); i++) {
+                Entity e = v.flight.get(i);
+                if (e.dead || e.task == Dispatch.T_POST || e.task == Dispatch.T_BOARD) continue;
+                if (e.task != Dispatch.T_NONE && e.task != Dispatch.T_RESCUE) continue;
+                standBy(v, e, i);
+            }
+        }
+    }
+
+    private boolean inFlight(Entity e) {
+        for (int i = 0; i < vehicles.size(); i++) if (vehicles.get(i).flight.contains(e)) return true;
+        return false;
+    }
+
+    /** Helipads whose helicopter has been lost for good. */
+    private final java.util.HashSet<float[]> padLost = new java.util.HashSet<float[]>();
+
+    /** A member of the flight crew waits at the side of the pad. */
+    private void standBy(Vehicle v, Entity e, int i) {
+        e.task = Dispatch.T_POST;
+        e.rig = null;
+        e.postX = v.padAt[0] + 30 + (i % 2) * 8;
+        e.postY = v.padAt[1] - 8 + i * 9;
+    }
+
+    /** Helicopters of a kind (0 the army's) the city has. */
+    int helisOfKind(int kind) {
+        int n = 0;
+        for (int i = 0; i < vehicles.size(); i++) if (vehicles.get(i).type == HELI && vehicles.get(i).kind == kind) n++;
+        return n;
+    }
+
+    /** The helicopter's pilot, alive (on foot or aboard), or null: no pilot, no flight. */
+    Entity livePilot(Vehicle v) {
+        for (int i = 0; i < v.flight.size(); i++) {
+            Entity e = v.flight.get(i);
+            if (e.role == Entity.ROLE_PILOT && (!e.dead || v.crew.contains(e))) return e;
+        }
+        return null;
+    }
+
+    /** The nearest helicopter of a kind (0 the army's) sitting on its pad ready to go, or null. */
+    Vehicle readyHeli(int kind, float x, float y) {
+        Vehicle best = null;
+        float bd = Float.MAX_VALUE;
+        for (int i = 0; i < vehicles.size(); i++) {
+            Vehicle v = vehicles.get(i);
+            if (v.type != HELI || v.kind != kind || v.state != IDLE || v.refuel > 0 || v.padAt == null || livePilot(v) == null) continue;
+            if (kind == K_RESCUE_HELI && sarOnFoot(v) == 0) continue;
+            float d = (v.x - x) * (v.x - x) + (v.y - y) * (v.y - y);
+            if (d < bd) {
+                bd = d;
+                best = v;
+            }
+        }
+        return best;
+    }
+
+    private int sarOnFoot(Vehicle v) {
+        int n = 0;
+        for (Entity e : v.flight) if (!e.dead && e.role == Entity.ROLE_SAR) n++;
+        return n;
+    }
+
+    /**
+     * Sends a helicopter off its pad: the pilot (and the rescue team, door gunners from the base or a police
+     * marksman) walk out to it and climb aboard, it spins up, and only then does it take off. extra: how many
+     * more to take from the free units nearby (door gunners, troops).
+     */
+    boolean launchHeli(Vehicle v, float tx, float ty, String place, Dispatch.Incident inc, int extra) {
+        if (v == null || v.state != IDLE) return false;
+        Entity pilot = livePilot(v);
+        if (pilot == null) return false;
+        v.tx = tx;
+        v.ty = ty;
+        v.place = place;
+        v.incident = inc;
+        v.team = null;
+        v.pickup = false;
+        v.recall = false;
+        v.standby = false;
+        v.passengers = 0;
+        v.troops = 0;
+        v.state = MUSTER;
+        v.timer = 0;
+        int n = 0;
+        for (Entity e : v.flight) {
+            if (e.dead) continue;
+            e.task = Dispatch.T_BOARD;
+            e.rig = v;
+            n++;
+        }
+        int type = v.kind == K_POLICE_HELI || v.kind == K_RESCUE_HELI ? Entity.COP : Entity.SOLDIER;
+        for (int k = 0; k < extra; k++) {
+            Entity best = null;
+            float bd = 600 * 600;
+            for (int i = 0, m = w.entities.size(); i < m; i++) {
+                Entity e = w.entities.get(i);
+                if (e.dead || e.type != type || e.task != Dispatch.T_NONE || e.rig != null || e.agency != 0 || e.scout) continue;
+                if (e.role == Entity.ROLE_COMMANDER || e.role == Entity.ROLE_GUARD || e.ammo + e.reserve <= 0) continue;
+                float d = (e.x - v.x) * (e.x - v.x) + (e.y - v.y) * (e.y - v.y);
+                if (d < bd) {
+                    bd = d;
+                    best = e;
+                }
+            }
+            if (best == null) break;
+            best.task = Dispatch.T_BOARD;
+            best.rig = v;
+            n++;
+        }
+        v.crewWanted = n;
+        return true;
+    }
+
+    /** Lands it back on its pad: everyone climbs out, the flight crew stand by, the rest go back to their duties. */
+    private void landed(Vehicle v) {
+        v.alt = 0;
+        v.hvx = v.hvy = v.speed = 0;
+        v.x = v.padAt[0];
+        v.y = v.padAt[1];
+        v.state = IDLE;
+        v.refuel = 40;
+        v.escort = null;
+        v.team = null;
+        v.incident = null;
+        ArrayList<Entity> out = new ArrayList<Entity>(v.crew);
+        crewOut(v, true);
+        for (Entity e : out) {
+            int i = v.flight.indexOf(e);
+            if (i >= 0 && !e.dead) standBy(v, e, i);
+        }
     }
 
     /** The helicopter: flies from the helipad (or the map edge) and circles the target with a door gunner. */
@@ -1536,9 +1772,10 @@ final class Fleet {
                 b.x += nx * pb;
                 b.y += ny * pb;
                 // (A nudge in a queue is just a nudge: it takes a real impact to make a crash.)
-                if (closing > 45 && a.crashCd <= 0 && b.crashCd <= 0) {
+                // (A crash is the same real closing speed as before 10.20, now that everything drives faster.)
+                if (closing > 45 * DRIVE_SCALE && a.crashCd <= 0 && b.crashCd <= 0) {
                     a.crashCd = b.crashCd = 0.6f;
-                    float dmg = closing * 0.35f;
+                    float dmg = closing * 0.35f / DRIVE_SCALE;
                     damage(a, dmg, false);
                     damage(b, dmg, false);
                     w.skid(a.x, a.y, a.angle, Math.min(14, a.speed * 0.2f + 4));
@@ -1737,6 +1974,9 @@ final class Fleet {
      * The fastest a vehicle may go and still stop behind whatever is ahead of it in its lane: room to stop at
      * its own speed (a two-second gap, less in town), and never faster than the one in front once close.
      */
+    /** How much quicker than the old open-road speeds vehicles drive (10.20). */
+    static final float DRIVE_SCALE = 1.8f;
+
     private float followLimit(Vehicle v) {
         float fx = (float) Math.cos(v.angle), fy = (float) Math.sin(v.angle);
         float look = 30 + Math.abs(v.speed) * 1.6f, limit = Float.MAX_VALUE;
@@ -2047,6 +2287,9 @@ final class Fleet {
      */
     private boolean driveStep(Vehicle v, float dt, float max, float throttle) {
         if (v.field == null) return false;
+        // (10.20) Open-road speeds are nearly twice what they were, next to people on foot (who walk briskly in
+        // this world): a car in town now covers ground like a car. Crawls, turns and queues are as before.
+        if (max > 40) max = 40 + (max - 40) * DRIVE_SCALE;
         // Keep a safe distance behind whatever is ahead in the lane.
         max = Math.min(max, followLimit(v));
         int W = city.w;
@@ -2187,7 +2430,7 @@ final class Fleet {
         // A badly damaged car limps along.
         if (v.hp < v.maxHp * 0.3f) target *= 0.6f;
         // Brake harder than you accelerate.
-        v.speed += (target - v.speed) * Math.min(1, dt * (target < v.speed ? 4.5f : 2.5f));
+        v.speed += (target - v.speed) * Math.min(1, dt * (target < v.speed ? 5f : 3.2f));
         v.x += (float) Math.cos(v.angle) * v.speed * dt;
         v.y += (float) Math.sin(v.angle) * v.speed * dt;
         if (cur < v.lastDist - 1) {
@@ -2541,6 +2784,7 @@ final class Fleet {
             // (Each SWAT team has a marksman with it.)
             if (v.swat) w.applyRole(e, i == v.passengers - 1 && city.cfg.nature() ? Entity.ROLE_MARKSMAN : Entity.ROLE_SWAT);
             else if (v.passengerType == Entity.SOLDIER && !v.guardUnit && city.cfg.nature()) w.kitOut(e);
+            else if (v.passengerType == Entity.COP && v.agency > 0) w.makeAgency(e, v.agency);
             if (v.reinforcement) {
                 w.reinforce(e);
                 w.dispatch.convoyUnloaded(v, e);
@@ -2652,7 +2896,7 @@ final class Fleet {
     String callsign(Vehicle v) {
         Country c = city.country;
         return v.agency == 1 ? c.hpName + " " + v.number : v.agency == 2 ? c.ruralName + " " + v.number : v.agency == 3 ? "Ranger " + v.number
-                : (v.kind == K_BIKE ? "Motor " : "Car ") + v.number;
+                : v.agency == 4 ? Dispatch.federal(c) + " " + v.number : (v.kind == K_BIKE ? "Motor " : "Car ") + v.number;
     }
 
     /**
@@ -3232,12 +3476,44 @@ final class Fleet {
     // ------------------------------------------------------------------ helicopter
 
     private boolean updateHeli(Vehicle v, float dt) {
+        if (v.state == IDLE) {
+            // On the pad: rotor still, refuelling after a flight.
+            v.refuel = Math.max(0, v.refuel - dt);
+            v.speed = v.hvx = v.hvy = 0;
+            v.alt = 0;
+            return false;
+        }
+        if (v.state == MUSTER) {
+            // On the pad with the rotor still, waiting for the crew to walk out and climb aboard.
+            v.timer += dt;
+            Entity pilot = livePilot(v);
+            boolean pilotIn = pilot != null && v.crew.contains(pilot);
+            if (pilot == null || (!pilotIn && v.timer > 60)) {
+                landed(v);
+                v.refuel = 5;
+                return false;
+            }
+            if (pilotIn && (v.crew.size() >= v.crewWanted || v.timer > 25)) {
+                // Anyone who didn't make it in time stays behind.
+                for (int i = 0, n = w.entities.size(); i < n; i++) {
+                    Entity e = w.entities.get(i);
+                    if (!e.dead && e.rig == v && e.task == Dispatch.T_BOARD) {
+                        e.task = Dispatch.T_NONE;
+                        e.rig = null;
+                    }
+                }
+                if (v.kind != K_POLICE_HELI && v.kind != K_RESCUE_HELI) v.troops = Math.max(0, v.crew.size() - 3);
+                v.state = SPOOL;
+                v.spoolTime = v.timer = 7;
+            }
+            return false;
+        }
         if (v.soundCd <= 0) {
             v.soundCd = v.state == SPOOL ? 0.9f : 0.6f;
             w.emit(Sfx.ROTOR, v.x, v.y);
         }
         // Rotor wash kicks up dust when it's low.
-        if (v.alt < 0.6f && v.state != SPOOL || (v.state == SPOOL && v.timer < 1.5f)) {
+        if ((v.alt < 0.6f && v.state != SPOOL) || (v.state == SPOOL && v.timer < 3)) {
             if (w.rnd.nextFloat() < dt * 25) {
                 float a = w.rnd.nextFloat() * (float) Math.PI * 2;
                 w.particle(v.x + (float) Math.cos(a) * 10, v.y + (float) Math.sin(a) * 10, (float) Math.cos(a) * 45,
@@ -3245,50 +3521,81 @@ final class Fleet {
             }
         }
         if (v.state == SPOOL) {
-            // Spinning up on the pad.
+            // Spinning up on the pad (or wherever it set down).
             v.timer -= dt;
             if (v.timer <= 0) v.state = FLY_IN;
             return false;
         }
-        float gx, gy, speed = 115;
+        float gx = v.x, gy = v.y, speed = 110, face = Float.NaN;
+        // (Escorting a convoy: wherever its head is now.)
+        if (v.escort != null) {
+            if (w.dispatch.convoys.contains(v.escort)) {
+                v.tx = v.escort.x;
+                v.ty = v.escort.y;
+            } else if (v.state == CIRCLE) {
+                v.escort = null;
+                v.timer = Math.min(v.timer, 40);
+            }
+        }
         if (v.state == FLY_IN) {
-            // A slow, careful climb out, then cruise, slowing down on the approach.
-            v.alt = Math.min(1, v.alt + dt * 0.12f);
+            // A careful climb off the pad, then cruise, slowing for the approach.
+            v.alt = Math.min(1, v.alt + dt * 0.15f);
             gx = v.tx;
             gy = v.ty;
             float d = (float) Math.hypot(gx - v.x, gy - v.y);
-            speed = Math.min(8 + 107 * v.alt * v.alt, 35 + d * 0.35f);
-            if (v.kind == K_RESCUE_HELI && d < 140) {
+            speed = 15 + 95 * v.alt * v.alt;
+            if (v.alt < 0.35f) {
+                // (Straight up first: no skimming across the rooftops.)
+                gx = v.x;
+                gy = v.y;
+            }
+            if (v.kind == K_RESCUE_HELI && d < 150) {
                 v.state = HOVER;
                 v.timer = 0;
                 w.dispatch.say(Dispatch.WHO_POLICE, null, "Rescue " + v.number + ": Over " + (v.place != null ? v.place : "the scene")
                         + (v.pickup ? ". Coming in for the pickup, winch going down." : ". Coming into the hover, team going down on the winch."), v.x, v.y);
-            } else if (d < 140) {
+            } else if (v.kind != K_POLICE_HELI && v.kind != K_RESCUE_HELI && v.troops > 0 && d < 220) {
+                // Air assault: put the troops down first, clear of the dead.
+                v.state = DROP;
+                float[] lz = landingZone(v.tx, v.ty);
+                v.homeX = lz[0];
+                v.homeY = lz[1];
+            } else if (d < 170 && v.kind != K_RESCUE_HELI) {
                 v.state = CIRCLE;
                 v.circle = (float) Math.atan2(v.y - v.ty, v.x - v.tx);
+                v.hold = 0;
                 if (v.kind == K_POLICE_HELI) {
-                    v.timer = 80;
+                    v.timer = 90;
                     w.dispatch.say(Dispatch.WHO_POLICE, null, "Police helicopter: Over " + (v.place != null ? v.place : "the scene")
                             + ". Marksman at the door, spotlight on. We'll call them out for you.", v.x, v.y);
                 } else {
-                    v.timer = 45;
-                    w.dispatch.say(Dispatch.WHO_MILITARY, null, "Air 1: On station over " + (v.place != null ? v.place : "the target")
-                            + ". Door gunner is clear to engage.", v.x, v.y);
+                    v.timer = v.escort != null ? 600 : 60;
+                    w.dispatch.say(Dispatch.WHO_MILITARY, null, "Air " + v.number + ": " + (v.escort != null ? "With the convoy, flying cover."
+                            : "On station over " + (v.place != null ? v.place : "the target") + ". Door gunners clear to engage."), v.x, v.y);
                 }
+            }
+        } else if (v.state == DROP) {
+            // Down low over the landing zone, steady, while the troops jump out.
+            gx = v.homeX;
+            gy = v.homeY;
+            speed = 45;
+            float d = (float) Math.hypot(gx - v.x, gy - v.y);
+            if (d < 25) v.alt += (0.12f - v.alt) * Math.min(1, dt * 0.9f);
+            if (d < 6 && v.alt < 0.2f && v.speed < 8) {
+                unloadTroops(v);
+                v.state = CIRCLE;
+                v.circle = (float) Math.atan2(v.y - v.ty, v.x - v.tx);
+                v.hold = 0;
+                v.timer = 60;
             }
         } else if (v.state == HOVER) {
             // Right over them, low, holding steady while the team works.
             gx = v.tx;
             gy = v.ty;
-            float d = (float) Math.hypot(gx - v.x, gy - v.y);
-            speed = Math.min(40, d * 0.8f);
+            speed = 40;
+            face = v.angle;
             v.alt += (0.5f - v.alt) * Math.min(1, dt * 0.8f);
-            if (d < 3) {
-                speed = 0;
-                gx = v.x + (float) Math.cos(v.angle);
-                gy = v.y + (float) Math.sin(v.angle);
-            }
-            int step = w.rescueStep(v, dt);
+            int step = Math.hypot(gx - v.x, gy - v.y) < 8 && v.speed < 10 ? w.rescueStep(v, dt) : 0;
             if (step == 1) {
                 // The team's down: back to base to wait for their call.
                 v.state = FLY_OUT;
@@ -3316,11 +3623,11 @@ final class Fleet {
                         v.x, v.y);
             }
         } else if (v.state == STANDBY) {
-            // Waiting at base for the team to call.
-            gx = v.x + (float) Math.cos(v.angle);
-            gy = v.y + (float) Math.sin(v.angle);
-            speed = 0;
-            v.speed = 0;
+            // Waiting on the pad, rotor turning slowly, for the team to call.
+            gx = v.homeX;
+            gy = v.homeY;
+            speed = 12;
+            v.alt = Math.max(0, v.alt - dt * 0.2f);
             if (w.rescueCalled(v)) {
                 v.state = FLY_IN;
                 v.pickup = true;
@@ -3328,14 +3635,23 @@ final class Fleet {
             }
         } else if (v.state == CIRCLE) {
             v.timer -= dt;
-            // A wide left-hand orbit, so the door gunner on that side faces the target.
-            v.circle += dt * 0.42f;
-            gx = v.tx + (float) Math.cos(v.circle) * 125;
-            gy = v.ty + (float) Math.sin(v.circle) * 125;
-            speed = 55;
-            // Drops a little lower to give the gunner a better shot.
+            // Not a tight circle: it holds a hover off to one side with the door towards the fighting, then
+            // shifts a sixth of the way round and holds again.
+            v.hold -= dt;
+            if (v.hold <= 0) {
+                v.hold = 7 + w.rnd.nextFloat() * 4;
+                v.circle += v.escort != null ? 0 : 1.05f;
+            }
+            float r = v.escort != null ? 70 : v.kind == K_POLICE_HELI ? 110 : 140;
+            gx = v.tx + (float) Math.cos(v.circle) * r;
+            gy = v.ty + (float) Math.sin(v.circle) * r;
+            speed = v.escort != null ? 75 : 45;
+            float d = (float) Math.hypot(gx - v.x, gy - v.y);
+            // Side-on to the target (the door gunner's side), sliding sideways from one hover to the next
+            // rather than swinging the nose round each time.
+            if (v.escort == null && d < 200) face = (float) Math.atan2(v.ty - v.y, v.tx - v.x) + (float) Math.PI / 2;
             v.alt += (0.75f - v.alt) * Math.min(1, dt);
-            // Door gunner (the police helicopter's marksman takes careful single shots).
+            // Door gunners (the police helicopter's marksman takes careful single shots).
             v.gunCd -= dt;
             if (v.kind == K_POLICE_HELI) {
                 if (v.gunCd <= 0) {
@@ -3344,9 +3660,8 @@ final class Fleet {
                     if (z != null) w.marksmanShot(v.x, v.y, z);
                 }
             } else if (v.gunCd <= 0) {
-                Entity z = w.nearestZombie(v.x, v.y, 200);
+                Entity z = w.nearestZombie(v.x, v.y, 210);
                 if (z != null) {
-                    // Short bursts, with a pause to re-aim.
                     v.burst++;
                     v.gunCd = v.burst % 6 == 0 ? 1.4f : 0.13f;
                     w.airShot(v.x, v.y, z);
@@ -3356,17 +3671,20 @@ final class Fleet {
             }
             if (v.timer <= 0) {
                 v.state = FLY_OUT;
+                v.escort = null;
+                v.homeX = v.baseX;
+                v.homeY = v.baseY;
                 if (v.kind == K_POLICE_HELI)
-                    w.dispatch.say(Dispatch.WHO_POLICE, null, "Police helicopter: Low on fuel, heading back.", v.x, v.y);
-                else w.dispatch.say(Dispatch.WHO_MILITARY, null, "Military: Air support is Winchester, returning to base.", v.x, v.y);
+                    w.dispatch.say(Dispatch.WHO_POLICE, null, "Police helicopter: Low on fuel, heading back to the pad.", v.x, v.y);
+                else w.dispatch.say(Dispatch.WHO_MILITARY, null, "Air " + v.number + ": Winchester, returning to base to rearm.", v.x, v.y);
             }
         } else if (v.state == FLY_OUT) {
             v.alt += (1 - v.alt) * Math.min(1, dt);
             gx = v.homeX;
             gy = v.homeY;
+            speed = 110;
             float d = (float) Math.hypot(gx - v.x, gy - v.y);
-            speed = Math.min(115, 20 + d * 0.5f);
-            if (d < 30) {
+            if (d < 6 && v.speed < 12) {
                 if (v.kind == K_RESCUE_HELI && v.passengers > 0) {
                     // Set them down at the hospital, then home.
                     w.dropRescued(v);
@@ -3374,32 +3692,108 @@ final class Fleet {
                     v.homeY = v.baseY;
                     return false;
                 }
-                if (v.kind == K_RESCUE_HELI && v.standby) {
-                    v.state = STANDBY;
-                    return false;
-                }
-                if (!v.pad) return true;
+                if (v.padAt == null) return true;
                 v.state = LAND;
             }
         } else {
-            // Settle onto the pad, then shut down.
+            // Settle onto the pad.
             gx = v.homeX;
             gy = v.homeY;
-            speed = 6;
-            v.alt -= dt * 0.18f;
-            if (v.alt <= 0) return true;
+            speed = 8;
+            face = v.angle;
+            v.alt -= dt * 0.2f;
+            if (v.alt <= 0) {
+                if (v.padAt == null) return true;
+                if (v.kind == K_RESCUE_HELI && v.standby) {
+                    v.alt = 0;
+                    v.state = STANDBY;
+                    return false;
+                }
+                landed(v);
+                return false;
+            }
         }
-        float want = (float) Math.atan2(gy - v.y, gx - v.x);
-        float diff = want - v.angle;
+        flyTo(v, gx, gy, speed, face, dt);
+        return false;
+    }
+
+    /**
+     * A helicopter moves any way it likes, not just nose first: it accelerates towards where it wants to be,
+     * slows to arrive there, and can hang still over a spot. The nose follows the way it's going (or points
+     * where it's told to while it hovers), and it banks into each change of course.
+     */
+    private void flyTo(Vehicle v, float gx, float gy, float speed, float face, float dt) {
+        float dx = gx - v.x, dy = gy - v.y, d = (float) Math.sqrt(dx * dx + dy * dy);
+        float acc = 32;
+        float want = d < 0.5f ? 0 : Math.min(speed, (float) Math.sqrt(2 * acc * 0.8f * d));
+        float wvx = d < 0.5f ? 0 : dx / d * want, wvy = d < 0.5f ? 0 : dy / d * want;
+        float ax = wvx - v.hvx, ay = wvy - v.hvy, al = (float) Math.sqrt(ax * ax + ay * ay), max = acc * dt;
+        if (al > max) {
+            ax *= max / al;
+            ay *= max / al;
+        }
+        v.hvx += ax;
+        v.hvy += ay;
+        v.x += v.hvx * dt;
+        v.y += v.hvy * dt;
+        v.speed = (float) Math.sqrt(v.hvx * v.hvx + v.hvy * v.hvy);
+        float heading = !Float.isNaN(face) ? face : v.speed > 12 ? (float) Math.atan2(v.hvy, v.hvx) : v.angle;
+        float diff = heading - v.angle;
         while (diff > Math.PI) diff -= Math.PI * 2;
         while (diff < -Math.PI) diff += Math.PI * 2;
-        float turn = Math.max(-dt * 1.2f, Math.min(dt * 1.2f, diff));
-        v.angle += turn;
-        v.bank += (turn / Math.max(dt, 0.001f) * 0.25f - v.bank) * Math.min(1, dt * 3);
-        v.speed += (speed - v.speed) * Math.min(1, dt * 0.6f);
-        v.x += (float) Math.cos(v.angle) * v.speed * dt;
-        v.y += (float) Math.sin(v.angle) * v.speed * dt;
-        return false;
+        v.angle += Math.max(-dt * 0.9f, Math.min(dt * 0.9f, diff));
+        // Bank with the sideways push.
+        float side = (-ax * (float) Math.sin(v.angle) + ay * (float) Math.cos(v.angle)) / Math.max(dt, 0.001f);
+        v.bank += (Math.max(-1.2f, Math.min(1.2f, side * 0.03f)) - v.bank) * Math.min(1, dt * 3);
+    }
+
+    /** Somewhere open to put troops down near (x, y), a little way back from the nearest of the dead. */
+    private float[] landingZone(float x, float y) {
+        Entity z = w.nearestZombie(x, y, 300);
+        float ax = 0, ay = 1;
+        if (z != null) {
+            float d = (float) Math.hypot(x - z.x, y - z.y) + 0.01f;
+            ax = (x - z.x) / d;
+            ay = (y - z.y) / d;
+        }
+        for (float back = 90; back < 260; back += 30) {
+            float[] p = city.findWalkable(x + ax * back, y + ay * back);
+            if (p != null && w.countZombiesNear(p[0], p[1], 50) == 0) return p;
+        }
+        float[] p = city.findWalkable(x, y);
+        return p != null ? p : new float[]{x, y};
+    }
+
+    /** The troops jump down: everyone aboard but the pilot and two door gunners, off to the fighting. */
+    private void unloadTroops(Vehicle v) {
+        Entity pilot = livePilot(v);
+        int keep = 2;
+        Entity first = null;
+        for (int i = v.crew.size() - 1; i >= 0; i--) {
+            Entity e = v.crew.get(i);
+            if (e == pilot) continue;
+            if (keep > 0) {
+                keep--;
+                continue;
+            }
+            v.crew.remove(i);
+            float a = v.angle + (i % 2 == 0 ? 1.57f : -1.57f);
+            if (!w.release(e, v.x + (float) Math.cos(a) * 12, v.y + (float) Math.sin(a) * 12)) continue;
+            e.rig = null;
+            if (v.incident != null && !v.incident.resolved) {
+                e.task = Dispatch.T_RESPOND;
+                e.incident = v.incident;
+                e.onScene = false;
+            } else {
+                e.fear = 15;
+                e.threatX = v.tx;
+                e.threatY = v.ty;
+            }
+            if (first == null) first = e;
+        }
+        v.troops = 0;
+        if (first != null)
+            w.dispatch.say(Dispatch.WHO_MILITARY, first, "Boots on the ground at " + (v.place != null ? v.place : "the LZ") + ". Moving up.", v.x, v.y);
     }
 
     // ------------------------------------------------------------------ tanks and ambulances
@@ -3436,7 +3830,8 @@ final class Fleet {
             v.stuckTimer += dt;
             boolean moving = driveStep(v, dt, 45, 1);
             if (moving) w.runOver(v.x, v.y, 10, Math.max(v.speed, 25), v.angle);
-            if (!moving || v.stuckTimer > 5) {
+            // (A tank coming in from outside waits out a jam on the way in.)
+            if (!moving || v.stuckTimer > (v.reinforcement ? 20 : 5)) {
                 v.state = ENGAGE;
                 v.timer = 70;
                 v.speed = 0;

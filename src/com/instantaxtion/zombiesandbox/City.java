@@ -51,6 +51,8 @@ final class City {
         /** Bases: the alarm is sounding (the dead are at the wire), and time until the next patrol goes out. */
         boolean alarm;
         float patrolCd = 30, quietFor;
+        /** A small town's own police or fire station out in the country (10.20). */
+        boolean satellite;
 
         Facility(int kind, float x, float y, float r, float gateX, float gateY, String name) {
             this.kind = kind;
@@ -493,6 +495,7 @@ final class City {
             computeSolid();
             for (int i = 0; i < generated; i++) createBuilding(buildingLots.get(i));
             driveways();
+            if (cfg.servicePads()) servicePads();
             for (int[] e : cfg.edits) applyEdit(e[0], e[1], e[2], false);
             computeSolid();
             for (int i = generated; i < buildingLots.size(); i++) createBuilding(buildingLots.get(i));
@@ -500,6 +503,13 @@ final class City {
             for (int[] e : cfg.edits) applyEdit(e[0], e[1], e[2], false);
             computeSolid();
             for (int[] l : buildingLots) createBuilding(l);
+        }
+        // (A city built before 10.20 gets its police and rescue helipads too, on open ground as it is,
+        // without touching a tile, so it still rebuilds exactly as it was.)
+        if (!cfg.servicePads()) {
+            padsOnly = true;
+            servicePads();
+            padsOnly = false;
         }
         clearDoorways();
         Arrays.fill(humanDist, FAR);
@@ -1404,6 +1414,8 @@ final class City {
         if (m >= 16) highway(bx0, by0, bx1, by1);
         if (m > 0) {
             int n = w >= 400 ? 3 + rnd.nextInt(3) : w >= 300 ? 1 + rnd.nextInt(2) : rnd.nextInt(2);
+            // (Since 10.20 the country is busier: more hamlets, the bigger ones small towns of their own.)
+            if (cfg.servicePads()) n = w >= 600 ? 7 + rnd.nextInt(3) : w >= 400 ? 5 + rnd.nextInt(2) : w >= 300 ? 3 + rnd.nextInt(2) : 1 + rnd.nextInt(2);
             hamlets(n);
         }
         if (m > 0) countryside(townX0, townY0, townX1, townY1);
@@ -4451,11 +4463,12 @@ final class City {
             if (c[2] == 1) dirtRoad(c[0], c[1], s, 0, lane);
             else dirtRoad(c[0], c[1], 0, s, lane);
         }
-        // Farms and cabins along the lanes, set back a little with a track to the road.
-        for (int k = 0; k < lane.size(); k += 3) {
+        // Farms and cabins along the lanes, set back a little with a track to the road (more of them since 10.20).
+        boolean busy = cfg.servicePads();
+        for (int k = 0; k < lane.size(); k += busy ? 2 : 3) {
             int[] c = lane.get(k);
-            if (rnd.nextFloat() > 0.35f) continue;
-            boolean farmhouse = rnd.nextFloat() < 0.55f;
+            if (rnd.nextFloat() > (busy ? 0.55f : 0.35f)) continue;
+            boolean farmhouse = rnd.nextFloat() < (busy ? 0.35f : 0.55f);
             int fw = farmhouse ? 18 : 6, fh = farmhouse ? 16 : 6;
             int side = rnd.nextBoolean() ? 1 : -1;
             boolean vert = c[2] == 1;
@@ -4471,8 +4484,11 @@ final class City {
                 if (ax >= 0 && ay >= 0 && ax < w && ay < h && tiles[ay * w + ax] == GRASS) tiles[ay * w + ax] = DIRT;
             }
         }
+        if (busy) outskirtHouses(bx0, by0, bx1, by1);
         // Woods: clumps of trees out in the fields.
         int woods = (w * h - (bx1 - bx0) * (by1 - by0)) / 500;
+        // (Little nature: open farmland, a copse here and there.)
+        if (cfg.littleNature()) woods /= 6;
         for (int k = 0; k < woods; k++) {
             int cx = rnd.nextInt(w), cy = rnd.nextInt(h);
             if (cx >= bx0 - 2 && cx < bx1 + 2 && cy >= by0 - 2 && cy < by1 + 2) continue;
@@ -4487,7 +4503,7 @@ final class City {
         }
         // A few lone trees along the lanes.
         for (int[] c : lane)
-            if (rnd.nextFloat() < 0.06f) {
+            if (rnd.nextFloat() < (cfg.littleNature() ? 0.015f : 0.06f)) {
                 int x = c[0] + (c[2] == 0 ? 2 : 0) * (rnd.nextBoolean() ? 1 : -1), y = c[1] + (c[2] == 0 ? 0 : 2) * (rnd.nextBoolean() ? 1 : -1);
                 if (x > 0 && y > 0 && x < w - 1 && y < h - 1 && tiles[y * w + x] == GRASS && !hasNeighbor(x, y, DIRT)) tiles[y * w + x] = TREE;
             }
@@ -5635,10 +5651,26 @@ final class City {
                 for (float[] o : made) if (Math.hypot(o[0] - cx, o[1] - cy) < 90) far = false;
                 if (!far) continue;
                 boolean vertical = rnd.nextBoolean();
-                int len = 30 + rnd.nextInt(20);
+                // (The first two or three, on a big map since 10.20, are small towns: a longer main street with a
+                // cross street, their own police and fire stations, and houses all along.)
+                boolean town = cfg.servicePads() && k < (w >= 600 ? 3 : w >= 300 ? 2 : 1);
+                int len = town ? 46 + rnd.nextInt(10) : 30 + rnd.nextInt(20);
                 Street st = vertical ? new Street(cx - 1, cy - len / 2, cx + 2, cy + len / 2, true, false)
                         : new Street(cx - len / 2, cy - 1, cx + len / 2, cy + 2, false, false);
                 carve(st);
+                int firstFacility = facilities.size();
+                if (town) {
+                    Street cross = vertical ? new Street(cx - 14, cy + 6, cx + 15, cy + 9, false, false)
+                            : new Street(cx + 6, cy - 14, cx + 9, cy + 15, true, false);
+                    carve(cross);
+                    // Police and fire stations facing the main street, on the side away from the cross street.
+                    int px = vertical ? cx + 3 : cx - 13, py = vertical ? cy - 13 : cy + 3;
+                    int fx = vertical ? cx - 13 : cx - 13, fy = vertical ? cy - 13 : cy - 12;
+                    if (allOpen(px - 1, py - 1, 12, 11)) serviceBuilding(px, py, 10, 9, STATION, facilities.size() + 1);
+                    if (allOpen(fx - 1, fy - 1, 12, 11)) serviceBuilding(fx, fy, 10, 9, FIRE_STATION, 0);
+                    plotsAlong(cross, cx - 32, cy - 32, cx + 32, cy + 32, 2);
+                    plotsAlong(st, cx - 32, cy - 32, cx + 32, cy + 32, 2);
+                }
                 plotsAlong(st, cx - 25, cy - 25, cx + 25, cy + 25, 2);
                 made.add(new float[]{cx, cy});
                 settlements.add(new float[]{(cx + 0.5f) * T, (cy + 0.5f) * T});
@@ -5652,8 +5684,61 @@ final class City {
                     ey = cy;
                 }
                 laneTo(ex, ey, (int) tcx, (int) tcy);
+                int named = districts.size();
                 nameHamlet(cx, cy);
+                // Its stations go by its name.
+                String place = districts.size() > named ? districts.get(named).name : null;
+                for (int f = firstFacility; f < facilities.size(); f++) {
+                    Facility fa = facilities.get(f);
+                    fa.satellite = true;
+                    if (place != null) fa.name = place + (fa.kind == FACILITY_POLICE ? " Police" : " Fire Dept");
+                }
                 break;
+            }
+        }
+    }
+
+    /**
+     * The edge of town (10.20): houses in their gardens strung along the outside of the road round the town,
+     * a second row here and there behind them, instead of open fields right up to the last street.
+     */
+    private void outskirtHouses(int bx0, int by0, int bx1, int by1) {
+        for (int side = 0; side < 4; side++) {
+            boolean horiz = side < 2;
+            int dx = side == 2 ? -1 : side == 3 ? 1 : 0, dy = side == 0 ? -1 : side == 1 ? 1 : 0;
+            int from = horiz ? bx0 : by0, to = horiz ? bx1 : by1;
+            for (int p = from + 2 + rnd.nextInt(4); p < to - 6; p += 8 + rnd.nextInt(4)) {
+                // Out from the edge of town, past the last road (or lane) to the first open ground.
+                int sx = horiz ? p + 3 : side == 2 ? bx0 : bx1 - 1, sy = !horiz ? p + 3 : side == 0 ? by0 : by1 - 1;
+                // (From a little inside the town's bounds, as its edge is ragged: the first open ground past a road
+                // with fields beyond it.)
+                int edge = Integer.MIN_VALUE;
+                boolean road = false;
+                for (int k = -24; k < 30 && edge == Integer.MIN_VALUE; k++) {
+                    int qx = sx + dx * k, qy = sy + dy * k;
+                    if (qx < 1 || qy < 1 || qx >= w - 1 || qy >= h - 1) break;
+                    byte t = tiles[qy * w + qx];
+                    if (t == ROAD || t == SIDEWALK || t == DIRT) road = true;
+                    else if (road && t == GRASS) {
+                        boolean open = true;
+                        for (int j = 1; j <= 8 && open; j++) {
+                            int ox = qx + dx * j, oy = qy + dy * j;
+                            if (ox < 1 || oy < 1 || ox >= w - 1 || oy >= h - 1 || tiles[oy * w + ox] != GRASS) open = false;
+                        }
+                        if (open) edge = k;
+                        else road = false;
+                    } else road = false;
+                }
+                if (edge == Integer.MIN_VALUE) continue;
+                for (int row = 0; row < 2; row++) {
+                    if (row == 1 && rnd.nextFloat() > 0.45f) break;
+                    int out = edge + 1 + row * 8;
+                    // (The 6x6 garden, its near edge `out` tiles from the edge of town.)
+                    int x = horiz ? p : side == 2 ? sx - out - 5 : sx + out;
+                    int y = !horiz ? p : side == 0 ? sy - out - 5 : sy + out;
+                    if (!allGrass(x, y, 6, 6)) break;
+                    addLot(x + 1, y + 1, 4, 4, HOUSE);
+                }
             }
         }
     }
@@ -5867,11 +5952,76 @@ final class City {
         }
     }
 
-    /** The helipad nearest a point, or null if the city has none. */
+    /** Helipads by who uses them (the third value, when there is one): the army's, the police's, the rescue service's. */
+    static final int PAD_ARMY = 0, PAD_POLICE = 1, PAD_RESCUE = 2;
+
+    static int padKind(float[] p) {
+        return p.length > 2 ? (int) p[2] : PAD_ARMY;
+    }
+
+    /** Every helipad on the map (each one has its aircraft from the start, since 10.20). */
+    List<float[]> helipads() {
+        return helipads;
+    }
+
+    /**
+     * Helipads for the police and the rescue service (10.20): the police helicopter beside the main police
+     * station, the rescue helicopter beside the hospital (and another at the ranger station out in the wilds),
+     * each on a clear patch of ground near the building.
+     */
+    private void servicePads() {
+        Facility hq = null, hospital = null;
+        for (Facility f : facilities) {
+            if (f.kind == FACILITY_POLICE && (hq == null || Math.hypot(f.x - worldW() / 2, f.y - worldH() / 2)
+                    < Math.hypot(hq.x - worldW() / 2, hq.y - worldH() / 2))) hq = f;
+            if (f.kind == FACILITY_HOSPITAL && hospital == null) hospital = f;
+        }
+        if (hq != null) addServicePad(hq.x, hq.y, PAD_POLICE);
+        if (hospital != null) addServicePad(hospital.x, hospital.y, PAD_RESCUE);
+        else if (hq != null) addServicePad(hq.x, hq.y, PAD_RESCUE);
+        if (rangerLot != null) addServicePad(rangerLot[0], rangerLot[1], PAD_RESCUE);
+    }
+
+    /** A pad on the nearest clear 4x4 tiles of open ground (car park, square or grass) to (x, y). */
+    private void addServicePad(float x, float y, int kind) {
+        int cx = (int) (x / T), cy = (int) (y / T);
+        for (int r = 2; r < 30; r++)
+            for (int dy = -r; dy <= r; dy++)
+                for (int dx = -r; dx <= r; dx++) {
+                    if (Math.max(Math.abs(dx), Math.abs(dy)) != r) continue;
+                    int x0 = cx + dx - 2, y0 = cy + dy - 2;
+                    if (!padFits(x0, y0)) continue;
+                    for (int j = y0; j < y0 + 4 && !padsOnly; j++)
+                        for (int i = x0; i < x0 + 4; i++) {
+                            byte t = tiles[j * w + i];
+                            if (t == CAR || t == TREE) tiles[j * w + i] = t == CAR ? LOT : GRASS;
+                            solid[j * w + i] = false;
+                        }
+                    helipads.add(new float[]{(x0 + 2) * T, (y0 + 2) * T, kind});
+                    return;
+                }
+    }
+
+    private boolean padsOnly;
+
+    private boolean padFits(int x0, int y0) {
+        if (x0 < 1 || y0 < 1 || x0 + 4 >= w || y0 + 4 >= h) return false;
+        for (int j = y0; j < y0 + 4; j++)
+            for (int i = x0; i < x0 + 4; i++) {
+                byte t = tiles[j * w + i];
+                if (t != LOT && t != PLAZA && t != GRASS && ((t != CAR && t != TREE) || padsOnly)) return false;
+                if (buildingAt[j * w + i] >= 0) return false;
+            }
+        for (float[] p : helipads) if (Math.hypot(p[0] - (x0 + 2) * T, p[1] - (y0 + 2) * T) < 70) return false;
+        return true;
+    }
+
+    /** The army helipad nearest a point, or null if the city has none. */
     float[] nearestHelipad(float x, float y) {
         float[] best = null;
         float bd = Float.MAX_VALUE;
         for (float[] p : helipads) {
+            if (padKind(p) != PAD_ARMY) continue;
             float d = (p[0] - x) * (p[0] - x) + (p[1] - y) * (p[1] - y);
             if (d < bd) {
                 bd = d;
@@ -6634,7 +6784,9 @@ final class City {
             c.drawCircle(hp[0], hp[1], 22, p);
             p.setStyle(Paint.Style.STROKE);
             p.setStrokeWidth(1.8f);
-            p.setColor(0xFFE8D24A);
+            // (Yellow for the army, blue for the police, red for the rescue service.)
+            int kind = padKind(hp);
+            p.setColor(kind == PAD_POLICE ? 0xFF4A8AE8 : kind == PAD_RESCUE ? 0xFFE0453A : 0xFFE8D24A);
             c.drawCircle(hp[0], hp[1], 18, p);
             p.setStyle(Paint.Style.FILL);
             p.setColor(0xFFEEEEEE);

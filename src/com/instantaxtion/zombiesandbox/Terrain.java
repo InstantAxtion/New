@@ -34,9 +34,12 @@ final class Terrain {
 
     /** The country's land: its hills, mountains, woods, lakes, snow and trees (see Country.landscape). */
     private final Country land;
+    /** How much of the usual woodland grows (10.20: little nature out of town). */
+    private final float nature;
 
     Terrain(City c, Random rnd) {
         this.land = c.country;
+        this.nature = c.cfg.littleNature() ? 0.2f : 1f;
         this.c = c;
         this.w = c.w;
         this.h = c.h;
@@ -97,7 +100,8 @@ final class Terrain {
                 float hills = fbm(x / 52f, y / 52f, 0), rough = fbm(x / 17f + 100, y / 17f + 100, 10);
                 e[y * w + x] = amp * (hills * 0.8f + rough * 0.2f);
             }
-        if (country) mountains();
+        // (Little nature: no mountains, far fewer trees.)
+        if (country && !c.cfg.littleNature()) mountains();
         // Shores slope down to the sea, the river or the lake; islands rise to hills in the middle.
         for (int i = 0; i < w * h; i++) {
             float dw = waterDist[i];
@@ -327,7 +331,7 @@ final class Terrain {
             }
             // (Desert mountains are bare; elsewhere woods climb the slopes, mostly pines where the country has them.)
             if (!land.desert && m > 0.1f && m < 0.6f && wild[i] >= 2
-                    && rnd.nextFloat() < 0.5f * Math.min(1.3f, land.forest) * smooth((0.62f - m) / 0.2f)) t[i] = City.TREE;
+                    && rnd.nextFloat() < 0.5f * Math.min(1.3f, land.forest) * smooth((0.62f - m) / 0.2f) * nature) t[i] = City.TREE;
             if (t[i] == City.TREE) c.setTreeKind(i, rnd.nextFloat() < Math.max(land.pineShare, 0.2f) + m ? Country.TK_PINE : land.lowTree);
         }
     }
@@ -357,7 +361,7 @@ final class Terrain {
             if (land.desert && !inTown && c.townX0 > 0) {
                 if (t[i] == City.GRASS && wet[i] > 3) t[i] = City.SAND;
                 // Palms round the oasis.
-                else if (t[i] == City.GRASS && wet[i] >= 1 && wild[i] >= 2 && rnd.nextFloat() < 0.35f) t[i] = City.TREE;
+                else if (t[i] == City.GRASS && wet[i] >= 1 && wild[i] >= 2 && rnd.nextFloat() < 0.35f * nature) t[i] = City.TREE;
                 else if (t[i] == City.TREE && wet[i] > 4 && rnd.nextFloat() < 0.85f) {
                     t[i] = City.SAND;
                     c.setTreeKind(i, Country.TK_BROAD);

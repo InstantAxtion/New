@@ -2,11 +2,24 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.19";
-    static final int VERSION_CODE = 57;
+    static final String VERSION = "10.20";
+    static final int VERSION_CODE = 58;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.20  -  Help is on the way",
+                    "Help from outside the city is simply on or off. On: police come first, within a minute of being asked, in waves from the towns around: their police, the highway patrol, SWAT teams, sheriff's deputies and FBI agents (about 220 officers in all), each in their own cars. The army is the slowest to come, several minutes, but then arrives all at once: about 120 soldiers in one long convoy of Humvees, trucks, APCs and tanks, with the city's own army helicopters flying cover over it.",
+                    "No helicopters come from outside any more. Every helicopter starts parked on a helipad: the army's at the base, the police helicopter beside the main police station, the rescue helicopters beside the hospital and the ranger station. Its pilot (and the rescue team) stand by it, and have to walk out and climb aboard, with door gunners and troops, before it can spin up and take off. When the job's done it lands back on its pad to refuel.",
+                    "Helicopters fly like helicopters: they can move any way, slow down to arrive, and hang in a steady hover. Gunships hold a hover off to one side of the fighting with the door towards it, then slide round to a new spot, instead of flying tiny circles. Army helicopters can put troops down near the fighting first.",
+                    "Police and soldiers in a fight too big for them radio for backup. The call shows on the map (rings going out and a tag, on the minimap too), the call is marked BACKUP, and a faint line runs from each unit on its way to it until enough have got there.",
+                    "Everyone with a gun now shoots anywhere from as well as before to 15% better, for good: it's on their card as Aim.",
+                    "Cars drive at proper speeds: nearly twice as fast on open roads (turns, junctions and queues are as careful as before), and the speed on a car's card is in real km/h.",
+                    "The outskirts are busier: houses along the outside of the road round the town, more farms and cottages along the lanes, more hamlets, and on bigger maps small towns of their own out in the country, each with its own police station and fire station.",
+                    "New option for the country round the town: Default (woods, hills and mountains) or Little nature (open fields and farmland, a few copses, no mountains).",
+                    "The lettering on buildings (shop names, POLICE, FIRE and the rest) shows again with 3D buildings off.",
+                    "Reinforcement markers on the map are much smaller: a thin dashed line, a small ring where they're going and a small tag.",
+            },
             {
                     "10.19  -  Shots fired",
                     "Everyone reacts to gunfire now, not just the dead: people nearby run from whatever is being shot at, police and soldiers with nothing on go to see what the shooting is, raiders come looking, and medics and firefighters keep their heads down.",

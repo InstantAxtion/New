@@ -22,6 +22,8 @@ final class Entity {
     static final int ROLE_MARKSMAN = 10;
     /** Police special operations: search and rescue, lowered from the rescue helicopter on the winch. */
     static final int ROLE_SAR = 11;
+    /** A helicopter pilot (10.20): stands by the pad until their aircraft is needed. */
+    static final int ROLE_PILOT = 12;
     static final String[] ROLE_NAMES = {"Soldier", "Commander", "Sniper", "Gunner", "Riot officer", "K9 handler",
             "National Guard", "SWAT officer", "Combat medic", "Grenadier", "Police marksman", "Rescue specialist"};
 

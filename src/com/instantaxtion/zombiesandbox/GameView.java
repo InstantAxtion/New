@@ -1019,6 +1019,13 @@ final class GameView extends View implements Menu.Host {
                 fill.setColor(col);
                 c.drawCircle(hx, hy, (2.5f + 1.2f * (float) Math.abs(Math.sin(world.time * 5))) * dp, fill);
             }
+            // Calls for backup: a ring going out on the minimap too.
+            for (int i = 0; i < world.dispatch.callouts.size(); i++) {
+                Dispatch.Callout co = world.dispatch.callouts.get(i);
+                stroke.setColor(alpha(co.color, Math.max(0, 1 - co.age / 6f)));
+                stroke.setStrokeWidth(1.2f * dp);
+                c.drawCircle(miniRect.left + co.x * sx, miniRect.top + co.y * sy, (2 + (co.age * 6) % 6) * dp, stroke);
+            }
             float dot = Math.max(1.2f, dp * 0.9f);
             for (int i = 0, n = world.fleet.vehicles.size(); i < n; i++) {
                 Fleet.Vehicle v = world.fleet.vehicles.get(i);
@@ -1864,6 +1871,30 @@ final class GameView extends View implements Menu.Host {
             stroke.setColor(0xCCFF4A3A);
             c.drawCircle(inc.x, inc.y, 5, stroke);
         }
+        // Who's on their way to a call: a faint line from each responder to it (10.20), so a call for backup
+        // can be seen being answered.
+        {
+            float lx0 = camX - 40, ly0 = camY - 40, lx1 = camX + getWidth() / scale + 40, ly1 = camY + getHeight() / scale + 40;
+            stroke.setStrokeWidth(1.1f / Math.max(0.5f, scale) + 0.3f);
+            for (int i = 0, n = world.entities.size(); i < n; i++) {
+                Entity e = world.entities.get(i);
+                if (e.dead || e.task != Dispatch.T_RESPOND || e.incident == null || e.onScene) continue;
+                Dispatch.Incident inc = e.incident;
+                if (Math.max(e.x, inc.x) < lx0 || Math.min(e.x, inc.x) > lx1 || Math.max(e.y, inc.y) < ly0 || Math.min(e.y, inc.y) > ly1) continue;
+                stroke.setColor(e.type == Entity.SOLDIER ? 0x5590C060 : 0x5560A0FF);
+                c.drawLine(e.x, e.y, inc.x, inc.y, stroke);
+            }
+        }
+        // Calls for help on the radio: rings going out from where the call was made.
+        for (int i = 0, n = world.dispatch.callouts.size(); i < n; i++) {
+            Dispatch.Callout co = world.dispatch.callouts.get(i);
+            for (int k = 0; k < 3; k++) {
+                float ring = (co.age * 0.9f + k / 3f) % 1f;
+                stroke.setStrokeWidth(1.6f / Math.max(0.5f, scale) + 0.4f);
+                stroke.setColor(alpha(co.color, (1 - ring) * Math.max(0, 1 - co.age / 6f)));
+                c.drawCircle(co.x, co.y, 6 + ring * 34, stroke);
+            }
+        }
 
         if (follow != null) {
             stroke.setColor(0xCCFFFFFF);
@@ -2006,6 +2037,8 @@ final class GameView extends View implements Menu.Host {
                 drawDamage(c, b, b.x0, b.y0, b.x1, b.y1, 1);
                 if (b.flash > 0) drawGunGlow(c, b, b.x0, b.y0, b.x1, b.y1);
                 if (see > 0) drawInterior(c, b, see);
+                // (The lettering isn't in the ground bitmap any more: it's drawn here, sharp at any zoom.)
+                drawRoofLabels(c, b, cx, cy, 1, 1 - 0.82f * see);
             }
             drawStructures(c, vx0, vy0, vx1, vy1, false, cx, cy, camH);
             return;
@@ -3390,7 +3423,7 @@ final class GameView extends View implements Menu.Host {
         Country land0 = world.city.country;
         int body = civ ? v.color : v.kind == Fleet.K_RIOT_VAN ? land0.cruiserBody
                 : truck ? (v.restock ? 0xFFE6E3DA : v.swat ? 0xFF1C2026 : v.guardUnit ? 0xFF8C8260 : v.kind == Fleet.K_APC ? 0xFF46512E : 0xFF4F5A33) : engine ? 0xFFC8302A : amb ? 0xFFF2F2F2
-                : v.agency == 1 ? land0.hpBody : v.agency == 2 ? land0.ruralBody : v.agency == 3 ? 0xFF3E5634 : land0.cruiserBody;
+                : v.agency == 1 ? land0.hpBody : v.agency == 2 ? land0.ruralBody : v.agency == 3 ? 0xFF3E5634 : v.agency == 4 ? 0xFF15171A : land0.cruiserBody;
         if (v.burnt) body = 0xFF2B2623;
         else if (v.broken) body = City.darken(body, 0.65f);
         fill.setColor(body);
@@ -3517,7 +3550,7 @@ final class GameView extends View implements Menu.Host {
             boolean city = v.agency == 0;
             if (!city) {
                 // Highway patrol and sheriff's cars: their own colours, a stripe down each side.
-                fill.setColor(v.broken ? 0xFF9A9A9A : v.agency == 1 ? land.hpDoor : v.agency == 3 ? 0xFFD8C898 : land.ruralDoor);
+                fill.setColor(v.broken ? 0xFF9A9A9A : v.agency == 1 ? land.hpDoor : v.agency == 3 ? 0xFFD8C898 : v.agency == 4 ? 0xFF15171A : land.ruralDoor);
                 c.drawRect(-hl + 1, -hw, hl - 1, -hw + 1f, fill);
                 c.drawRect(-hl + 1, hw - 1f, hl - 1, hw, fill);
             }
@@ -3536,7 +3569,7 @@ final class GameView extends View implements Menu.Host {
                     c.drawRect(x0, hw - 1.3f, x1, hw, fill);
                 }
             }
-            fill.setColor(v.broken ? 0xFFA0A0A0 : v.agency == 1 ? land.hpDoor : v.agency == 2 ? land.ruralDoor : v.agency == 3 ? 0xFFD8C898 : land.cruiserDoor);
+            fill.setColor(v.broken ? 0xFFA0A0A0 : v.agency == 1 ? land.hpDoor : v.agency == 2 ? land.ruralDoor : v.agency == 3 ? 0xFFD8C898 : v.agency == 4 ? 0xFF15171A : land.cruiserDoor);
             c.drawRect(-3f, -hw, 2f, -hw + 1.3f, fill);
             c.drawRect(-3f, hw - 1.3f, 2f, hw, fill);
             fill.setColor(0xFF1E2A33);
@@ -4049,7 +4082,9 @@ final class GameView extends View implements Menu.Host {
         fill.setColor(blink ? 0xFFFF3A30 : 0xFF3AFF6A);
         c.drawCircle(-19, 0, 0.9f, fill);
         // Rotor: a blurred disc when spinning fast, separate blades while spooling up or landing.
-        float spin = v.state == 9 ? 6 + (2.5f - v.timer) * 10 : 30;
+        // (Still on the pad, idling while the team's out, or spinning up before take-off.)
+        float spin = v.state == Fleet.IDLE || v.state == Fleet.MUSTER ? 0 : v.state == Fleet.STANDBY && v.alt <= 0 ? 10
+                : v.state == Fleet.SPOOL ? 2 + 28 * Math.max(0, 1 - v.timer / Math.max(1, v.spoolTime)) : 30;
         fill.setColor(alpha(0x30000000, Math.min(1, spin / 30)));
         c.drawCircle(0, 0, 17, fill);
         stroke.setColor(0xB0202020);
@@ -4404,13 +4439,14 @@ final class GameView extends View implements Menu.Host {
             float sx = screenX(inc.x), sy = screenY(inc.y) - 14 * dp;
             if (sx < -40 * dp || sx > getWidth() + 40 * dp || sy < 0 || sy > barTop) continue;
             int coming = inc.cops + inc.soldiers + world.fleet.inbound(inc);
-            String label = "911 " + inc.zombiesNear;
+            boolean backup = inc.backupNeed > 0;
+            String label = (backup ? "BACKUP " : "911 ") + inc.zombiesNear;
             String units = coming > 0 ? String.valueOf(coming) : null;
             float tw = text.measureText(label), uw = units == null ? 0 : Math.max(12 * dp, text.measureText(units) + 7 * dp);
             float w = tw + 10 * dp + (units == null ? 0 : uw + 3 * dp);
             oval.set(sx - w / 2, sy - 10 * dp, sx + w / 2, sy + 3.5f * dp);
             if (!claim(oval)) continue;
-            fill.setColor(units == null ? 0xE0C0281E : 0xD08A1E16);
+            fill.setColor(backup ? 0xE02A58C0 : units == null ? 0xE0C0281E : 0xD08A1E16);
             c.drawRoundRect(oval, 6 * dp, 6 * dp, fill);
             text.setColor(0xFFFFFFFF);
             text.setTextAlign(Paint.Align.LEFT);
@@ -5047,7 +5083,11 @@ final class GameView extends View implements Menu.Host {
         if (scale > 2.5f && (e.type == Entity.CIVILIAN || e.type == Entity.MEDIC || e.type == Entity.ZOMBIE
                 || e.type == Entity.RUNNER || e.type == Entity.SCREAMER)) drawHair(c, e, r);
         if (e.type == Entity.COP) {
-            if (e.agency > 0) {
+            if (e.agency == 4) {
+                // Federal agents: bareheaded, a dark cap of hair.
+                fill.setColor(0xFF2A2420);
+                c.drawCircle(r * 0.08f, 0, r * 0.4f, fill);
+            } else if (e.agency > 0) {
                 // Troopers, deputies and park rangers: a wide-brimmed hat.
                 fill.setColor(e.agency == 2 ? 0xFF5A4630 : e.agency == 3 ? 0xFF6E5A36 : 0xFF8A7650);
                 c.drawCircle(r * 0.08f, 0, r * 0.62f, fill);
@@ -5388,7 +5428,8 @@ final class GameView extends View implements Menu.Host {
             c.drawText("Sheltered " + d.sheltered + "   Hiding " + world.hiding + "   In cars " + world.riding,
                     pad + 12 * dp, y, text);
             y += lh;
-            c.drawText("Reserves: " + d.policeReserve + " police, " + d.squadReserve + " army, " + d.airSorties + " air",
+            c.drawText("Outside help: " + d.policeReserve + " police, " + d.squadReserve + " army"
+                    + (d.armyCalled && !d.armyArrived ? " (convoy in " + Math.max(0, (int) d.armyEta) + "s)" : ""),
                     pad + 12 * dp, y, text);
             y += lh;
             int secs = (int) world.time;
@@ -5617,7 +5658,7 @@ final class GameView extends View implements Menu.Host {
             title = Country.swat(world.city.country.id)[1] + " " + Names.person(e.nameSeed) + "  -  " + Dispatch.name(e);
         else if (e.type == Entity.COP && e.role == Entity.ROLE_SAR) title = "Rescue specialist " + Names.person(e.nameSeed) + "  -  " + Dispatch.name(e);
         else if (e.type == Entity.COP) title = (e.agency == 1 ? world.city.country.hpName + " " : e.agency == 2 ? world.city.country.ruralName + "'s deputy "
-                : e.agency == 3 ? "Park ranger " : "Officer ")
+                : e.agency == 3 ? "Park ranger " : e.agency == 4 ? Dispatch.federal(world.city.country) + " agent " : e.role == Entity.ROLE_PILOT ? "Pilot " : "Officer ")
                 + Names.person(e.nameSeed) + "  -  " + Dispatch.name(e);
         else if (e.type == Entity.SOLDIER) title = Names.person(e.nameSeed) + "  -  " + Entity.ROLE_NAMES[e.role] + ", " + Dispatch.name(e);
         else if (homeless(e)) title = Names.person(e.nameSeed) + "  -  Homeless";
@@ -5632,7 +5673,7 @@ final class GameView extends View implements Menu.Host {
         if (e.fresh > 0) health += "   Freshly turned";
         lines.add(health);
         if (e.canShoot()) lines.add("Ammo " + e.ammo + " + " + e.reserve + (e.grenades > 0 ? "   Grenades " + e.grenades : "")
-                + (e.kills > 0 ? "   Kills " + e.kills : ""));
+                + "   Aim +" + Math.round(World.aimBonus(e) * 100) + "%" + (e.kills > 0 ? "   Kills " + e.kills : ""));
         if (e.leader != null && !e.isZombie()) {
             String who = e.leader.type == Entity.DOG ? Names.dog(e.leader.nameSeed) : Names.person(e.leader.nameSeed);
             lines.add(e.type == Entity.DOG ? "Owner: " + who : e.type == Entity.SOLDIER ? "Sticking with " + who : "With " + who);
@@ -5689,7 +5730,8 @@ final class GameView extends View implements Menu.Host {
         String st = world.fleet.status(v);
         if (st != null && st.indexOf(": ") > 0) st = st.substring(st.indexOf(": ") + 2);
         lines.add(st != null ? st : v.parked ? "Parked" : Math.abs(v.speed) < 3 ? "Waiting" : "Driving");
-        int kmh = Math.round(Math.abs(v.speed) * 0.95f);
+        // (Against the size of a car: about 0.15 m a unit at the pace things move here.)
+        int kmh = Math.round(Math.abs(v.speed) * 0.55f);
         int aboard = v.crew.size() + v.riders.size() + v.passengers;
         String people = aboard == 0 ? (v.player != null ? "you're driving" : v.occupied() ? "driver only" : "nobody aboard")
                 : aboard + " aboard";
@@ -5757,17 +5799,25 @@ final class GameView extends View implements Menu.Host {
     private void drawConvoys(Canvas c) {
         int w = getWidth();
         float top = topRects[0].bottom + (portrait ? 150 : 115) * dp, bottom = barTop - 60 * dp;
+        // The radio calls for help, tagged where they were made (for their first few seconds).
+        for (int i = 0; i < world.dispatch.callouts.size(); i++) {
+            Dispatch.Callout co = world.dispatch.callouts.get(i);
+            if (co.age > 4) continue;
+            float sx = screenX(co.x), sy = screenY(co.y);
+            if (sx < 0 || sx > w || sy < top || sy > bottom) continue;
+            smallTag(c, co.label, sx, sy - 18 * dp, co.color);
+        }
         float pulse = (float) Math.abs(Math.sin(world.time * 4));
         for (int i = 0; i < world.dispatch.convoys.size(); i++) {
             Dispatch.Convoy cv = world.dispatch.convoys.get(i);
-            int col = convoyColor(cv), faint = (col & 0x00FFFFFF) | 0x90000000;
+            int col = convoyColor(cv);
             float hx = screenX(cv.x), hy = screenY(cv.y), tx = screenX(cv.toX), ty = screenY(cv.toY);
             // The route: dashes from the column to the destination, marching along.
             float dx = tx - hx, dy = ty - hy, len = (float) Math.sqrt(dx * dx + dy * dy);
             if (len > 1) {
-                stroke.setColor(faint);
-                stroke.setStrokeWidth(2.5f * dp);
-                float dash = 10 * dp, off = (world.time * 30 * dp) % (dash * 2);
+                stroke.setColor((col & 0x00FFFFFF) | 0x70000000);
+                stroke.setStrokeWidth(1.4f * dp);
+                float dash = 6 * dp, off = (world.time * 24 * dp) % (dash * 2);
                 for (float d = off; d < len; d += dash * 2) {
                     float e = Math.min(len, d + dash);
                     c.drawLine(hx + dx * d / len, hy + dy * d / len, hx + dx * e / len, hy + dy * e / len, stroke);
@@ -5775,18 +5825,17 @@ final class GameView extends View implements Menu.Host {
             }
             // Where they're going.
             stroke.setColor(col);
-            stroke.setStrokeWidth(2 * dp);
-            c.drawCircle(tx, ty, (12 + 6 * pulse) * dp, stroke);
-            // Where they came in (for the first half minute).
-            if (cv.age < 30) {
+            stroke.setStrokeWidth(1.3f * dp);
+            c.drawCircle(tx, ty, (5 + 2.5f * pulse) * dp, stroke);
+            // Where they came in (for the first quarter minute): just a dot.
+            if (cv.age < 15) {
                 float ex = screenX(cv.fromX), ey = screenY(cv.fromY);
-                fill.setColor((col & 0x00FFFFFF) | ((int) (0x60 + 0x60 * pulse) << 24));
-                c.drawCircle(ex, ey, (16 + 10 * pulse) * dp, fill);
-                tagAt(c, "ENTERING: " + cv.label, ex, ey - 26 * dp, col);
+                fill.setColor((col & 0x00FFFFFF) | ((int) (0x70 + 0x50 * pulse) << 24));
+                c.drawCircle(ex, ey, (5 + 3 * pulse) * dp, fill);
             }
             boolean on = hx > 0 && hx < w && hy > top && hy < bottom;
             if (on) {
-                tagAt(c, cv.label + " ▸ " + (cv.place != null ? cv.place : ""), hx, hy - 22 * dp, col);
+                smallTag(c, cv.label, hx, hy - 13 * dp, col);
                 continue;
             }
             // Off screen: an arrow at the edge pointing to them.
@@ -5795,16 +5844,31 @@ final class GameView extends View implements Menu.Host {
             float ix = cx + ddx * k, iy = cy + ddy * k;
             float a = (float) Math.atan2(ddy, ddx);
             android.graphics.Path p = new android.graphics.Path();
-            float r = 15 * dp;
+            float r = 8 * dp;
             p.moveTo(ix + (float) Math.cos(a) * r, iy + (float) Math.sin(a) * r);
             p.lineTo(ix + (float) Math.cos(a + 2.4f) * r, iy + (float) Math.sin(a + 2.4f) * r);
             p.lineTo(ix + (float) Math.cos(a - 2.4f) * r, iy + (float) Math.sin(a - 2.4f) * r);
             p.close();
             fill.setColor(col);
             c.drawPath(p, fill);
-            float lx = ix - (float) Math.cos(a) * 30 * dp, ly = iy - (float) Math.sin(a) * 30 * dp;
-            tagAt(c, cv.label, Math.max(60 * dp, Math.min(w - 60 * dp, lx)), ly, col);
+            float lx = ix - (float) Math.cos(a) * 18 * dp, ly = iy - (float) Math.sin(a) * 18 * dp;
+            smallTag(c, cv.label, Math.max(40 * dp, Math.min(w - 40 * dp, lx)), ly, col);
         }
+    }
+
+    /** A compact tag: small text on a dark pill, the colour as a thin edge. */
+    private void smallTag(Canvas c, String label, float x, float y, int col) {
+        text.setTextAlign(Paint.Align.CENTER);
+        text.setTextSize(8.5f * dp);
+        float tw = text.measureText(label);
+        tmpRect.set(x - tw / 2 - 3.5f * dp, y - 8.5f * dp, x + tw / 2 + 3.5f * dp, y + 2.5f * dp);
+        fill.setColor(0xB0141619);
+        c.drawRoundRect(tmpRect, 3.5f * dp, 3.5f * dp, fill);
+        stroke.setColor(col);
+        stroke.setStrokeWidth(0.8f * dp);
+        c.drawRoundRect(tmpRect, 3.5f * dp, 3.5f * dp, stroke);
+        text.setColor(0xFFFFFFFF);
+        c.drawText(label, x, y, text);
     }
 
     /** A small coloured name tag centred on (x, y). */

@@ -17,7 +17,7 @@ import java.util.ArrayList;
  * damaged or collapsed buildings.
  */
 final class SaveGame {
-    private static final int VERSION = 25;
+    private static final int VERSION = 26;
 
     private SaveGame() {
     }
@@ -34,6 +34,7 @@ final class SaveGame {
             for (int v : cfg.v) out.writeInt(v);
             out.writeLong(cfg.seed);
             out.writeUTF(cfg.editString());
+            out.writeInt(cfg.outskirts);
 
             out.writeFloat(w.time);
             out.writeInt(w.turned);
@@ -371,8 +372,9 @@ final class SaveGame {
             cfg.seed = in.readLong();
             cfg.normalize();
             if (version >= 15) cfg.setEdits(in.readUTF());
+            if (version >= 26) cfg.outskirts = in.readInt();
             // (Cities saved before 10.4 were built without their government quarter.)
-            cfg.civic = version >= 25 ? 6 : version >= 24 ? 5 : version >= 23 ? 4 : version >= 22 ? 3 : version >= 20 ? 2 : version >= 19 ? 1 : 0;
+            cfg.civic = version >= 26 ? 7 : version >= 25 ? 6 : version >= 24 ? 5 : version >= 23 ? 4 : version >= 22 ? 3 : version >= 20 ? 2 : version >= 19 ? 1 : 0;
             // (Version 20 and later all build the same city.)
             World w = new World(cfg);
 

@@ -36,6 +36,9 @@ final class CityConfig implements OptionSet {
 
     static final int OPT_PRESET = 0, OPT_SIZE = 1, OPT_CIVILIANS = 2, OPT_COPS = 3, OPT_MILITARY = 4,
             OPT_ZOMBIES = 5, OPT_RESERVES = 6, OPT_COUNTRY = 7;
+    /** The country round the town (10.20): not one of the eight in v (it's kept in outskirts). */
+    static final int OPT_OUTSKIRTS = 8;
+    private static final String[] OUTSKIRTS = {"Default", "Little nature"};
     private static final String[] LABELS = {"Map", "Map size", "Civilians", "Cops", "Military", "Zombies",
             "Reinforcements", "Country"};
     private static final String[][] VALUES = {
@@ -46,7 +49,8 @@ final class CityConfig implements OptionSet {
             {"0", "5", "10", "20", "40", "60"},
             {"0", "5", "10", "20", "40"},
             {"0", "1", "5", "20", "50", "100", "200"},
-            {"Off", "Low", "Medium", "High"},
+            // (Since 10.20 help from outside is just on or off: the old Low and Medium count as On.)
+            {"Off", "On (Low)", "On (Medium)", "On"},
             Country.NAMES,
     };
     /** Tiles across for each size; cities built before 10.10 (no Tiny or Huge then) were a quarter smaller. */
@@ -135,7 +139,7 @@ final class CityConfig implements OptionSet {
     };
 
     /** Current index into VALUES for each option. */
-    final int[] v = {METROPOLIS, LARGE, 4, 2, 1, 0, 2, 0};
+    final int[] v = {METROPOLIS, LARGE, 4, 2, 1, 0, 3, 0};
     /** The map a new game starts on (since Classic went in 10.18). */
     static final int METROPOLIS = 8;
 
@@ -150,19 +154,27 @@ final class CityConfig implements OptionSet {
         if (option == OPT_ZOMBIES) return value != 0;
         if (option == OPT_SIZE) return value < LARGE;
         if (option == OPT_COUNTRY) return Country.retired(value);
+        if (option == OPT_RESERVES) return value == 1 || value == 2;
         return false;
     }
     long seed = new Random().nextInt(1000000);
     /** Start the next game on the city from {@link #code()} instead of a new random one. */
     boolean keepCity;
     /**
+     * The country round the town (10.20): 0 as it comes (woods, hills, mountains), 1 little nature (open fields
+     * and farmland, few trees, no mountains). Part of the city code ("!" at the end).
+     */
+    int outskirts;
+
+    boolean littleNature() { return outskirts == 1 && civic >= 7; }
+    /**
      * Which public buildings the city was laid out with: 0 as before 10.4, 1 the government quarter (10.4),
      * 2 and the National Guard armory (10.5), 3 the bigger maps of 10.10 with hills, mountains, lakes, streams
      * and nature parks out in the country, 4 the wilds of 10.14 (streams you can wade, trails that cross the
      * lanes, a ranger station and fire lookout towers), 5 the lanes of 10.18 (no stretch of tarmac in the
-     * middle of a dirt lane) and the real cities, 6 the driveways of 10.19. Saved games rebuild with what they had.
+     * middle of a dirt lane) and the real cities, 6 the driveways of 10.19, 7 the helipads and busier outskirts of 10.20. Saved games rebuild with what they had.
      */
-    int civic = 6;
+    int civic = 7;
 
     /** Hills, mountains, streams, lakes, parks and campsites (cities built since 10.10). */
     boolean nature() { return civic >= 3; }
@@ -175,6 +187,9 @@ final class CityConfig implements OptionSet {
 
     /** Driveways out to the road from houses and farms that open onto nothing but grass (since 10.19). */
     boolean driveways() { return civic >= 6; }
+
+    /** Helipads for the police and rescue helicopters, livelier outskirts with their own small towns (since 10.20). */
+    boolean servicePads() { return civic >= 7; }
 
     int preset() {
         return v[OPT_PRESET];
@@ -221,7 +236,7 @@ final class CityConfig implements OptionSet {
      */
     String code() {
         return CODE_MAPS.charAt(v[OPT_PRESET]) + "" + v[OPT_SIZE] + "-" + seed
-                + (v[OPT_COUNTRY] == 0 ? "" : "@" + v[OPT_COUNTRY]) + (edits.isEmpty() ? "" : "~" + editString());
+                + (v[OPT_COUNTRY] == 0 ? "" : "@" + v[OPT_COUNTRY]) + (outskirts == 1 ? "!" : "") + (edits.isEmpty() ? "" : "~" + editString());
     }
 
     /** Changes made with the Build tool: {tile x, tile y, what}. They're part of the city code. */
@@ -265,6 +280,12 @@ final class CityConfig implements OptionSet {
             ed = t.substring(tilde + 1);
             t = t.substring(0, tilde);
         }
+        // Little nature out of town: a "!" (since 10.20).
+        int out = 0;
+        if (t.endsWith("!")) {
+            out = 1;
+            t = t.substring(0, t.length() - 1);
+        }
         // The country, after an "@" (codes without one are American cities).
         int country = 0;
         int at = t.indexOf('@');
@@ -297,6 +318,7 @@ final class CityConfig implements OptionSet {
         v[OPT_SIZE] = size;
         seed = s;
         v[OPT_COUNTRY] = country;
+        outskirts = out;
         normalize();
         setEdits(ed);
         keepCity = true;
@@ -361,14 +383,13 @@ final class CityConfig implements OptionSet {
 
     /** What each Reinforcements setting means, in plain words. */
     static final String[] RESERVE_INFO = {
-            "Off: nobody else comes. Only the police and soldiers already in the city fight.",
-            "Low: 2 waves of police backup (6 officers each), 2 army reserve squads, 1 tank and 1 helicopter sortie. "
-                    + "They come in from outside the city, along the highway, with spare ammo to share. The National Guard "
-                    + "comes if the army runs out and the city is losing.",
-            "Medium: 3 waves of police backup, 4 army reserve squads, 2 tanks and 2 helicopter sorties, then the National Guard "
-                    + "if it's needed.",
-            "High: 5 waves of police backup, 6 army reserve squads, 3 tanks and 3 helicopter sorties, then the National Guard "
-                    + "if it's needed."};
+            "Off: nobody else comes. Only the police, soldiers and helicopters already in the city fight.",
+            "On: help comes from outside the city.",
+            "On: help comes from outside the city.",
+            "On: police come first, within a minute of being asked: some 220 officers in waves from the towns around "
+                    + "(their police, highway patrol, SWAT teams, sheriff's deputies and federal agents). The army is the "
+                    + "slowest to come, several minutes, but then arrives all at once: some 120 soldiers in one big convoy "
+                    + "with armour, the helicopters on the map flying cover."};
     int zombies() { return ZOMBIES[v[OPT_ZOMBIES]]; }
     /** Which country the city is in (see {@link Country}). */
     int country() { return v[OPT_COUNTRY]; }
@@ -473,9 +494,13 @@ final class CityConfig implements OptionSet {
 
     @Override public int count() { return LABELS.length; }
     @Override public String label(int i) { return LABELS[i]; }
-    @Override public String[] values(int i) { return VALUES[i]; }
-    @Override public int get(int i) { return v[i]; }
+    @Override public String[] values(int i) { return i == OPT_OUTSKIRTS ? OUTSKIRTS : VALUES[i]; }
+    @Override public int get(int i) { return i == OPT_OUTSKIRTS ? outskirts : v[i]; }
     @Override public void set(int i, int value) {
+        if (i == OPT_OUTSKIRTS) {
+            outskirts = value;
+            return;
+        }
         v[i] = value;
         normalize();
     }

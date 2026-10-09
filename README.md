@@ -374,6 +374,13 @@ hiding soon after the street goes quiet. Once it's over, supply trucks come in t
 stores and food shops. Rescue teams search the streets round their landing spot and knock on doors. Country
 houses and farms have driveways out to the road. Zoomed-in graphics load about ten times faster.
 
+**Help is on the way (10.20):** help from outside is on or off. On: about 220 police in waves from the towns
+around (their police, highway patrol, SWAT, sheriff's deputies, the FBI), then, slower, about 120 soldiers in
+one big convoy with the city's own helicopters flying cover. Every helicopter starts on a helipad with its crew,
+who board before it takes off; none come from outside. Helicopters hover and slide between spots instead of
+circling. Units in trouble radio for backup, shown on the map. Aim varies up to +15%. Cars drive faster. Busier
+outskirts with small towns that have their own police and fire stations, and a Little nature option.
+
 **Countryside:** Villages, small towns and every Massive map are surrounded by open country:
 winding dirt lanes out to the edge of the map, farms and lonely cabins along them, woods, and
 hamlets (a short street of cottages with a lane back to town). A town out in the country is never a

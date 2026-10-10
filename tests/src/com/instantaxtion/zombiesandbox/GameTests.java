@@ -1068,7 +1068,10 @@ public final class GameTests {
                 for (City.Facility f : w.city.facilities) f.ammo = 0;
                 if (w.courtArmoury != null) w.courtArmoury.ammo = 0;
                 w.alert = 0;
-                Entity dry = w.spawnCop(0, cx + 300, cy), rich = w.spawnCop(0, cx + 340, cy);
+                float[] dp1 = null;
+                for (int k = 0; k < 40 && dp1 == null; k++) dp1 = w.city.findWalkable(cx + 300 + k * 20, cy + (k % 5) * 30);
+                Entity dry = w.spawnCop(0, dp1[0], dp1[1]), rich = w.spawnCop(0, dp1[0] + 40, dp1[1]);
+                if (rich == null) rich = w.spawnCop(0, dp1[0], dp1[1] + 30);
                 dry.ammo = 0;
                 dry.reserve = 0;
                 rich.reserve = 400;
@@ -1960,6 +1963,48 @@ public final class GameTests {
                 check(!(Boolean) fil.invoke(w, shooter, zed, 90f), "fires past the soldier right in front");
                 front.x = shooter.x + 45;
                 check((Boolean) fil.invoke(w, shooter, zed, 90f) || true, "someone square in the path further out");
+            }
+        });
+        test("10.28: no real cities or bloaters, tougher zombies, ring road, stations on the roads, a slower start", new Check() {
+            public void run() throws Exception {
+                for (int p = RealCities.FIRST; p < RealCities.FIRST + RealCities.NAMES.length; p++)
+                    check(CityConfig.retired(CityConfig.OPT_PRESET, p), "real city map " + p + " is gone");
+                CityConfig c = new CityConfig();
+                c.v[CityConfig.OPT_PRESET] = 2;
+                c.v[CityConfig.OPT_ZOMBIES] = 0;
+                c.seed = 4;
+                c.normalize();
+                c.seed = 4;
+                World w = new World(c);
+                w.populate(c);
+                for (int k = 0; k < 4000; k++) check(w.turnType(Entity.CIVILIAN) != Entity.BLOATER, "nobody comes back a bloater");
+                float[] q = w.city.findWalkable(w.city.worldW() / 2, w.city.worldH() / 2);
+                Entity z = w.spawn(Entity.ZOMBIE, q[0], q[1]);
+                check(z.hp >= 90, "an ordinary zombie takes more stopping (" + z.hp + ")");
+                // The ring road round town, and every station on the road network.
+                java.lang.reflect.Field rs = City.class.getDeclaredField("ringStreets");
+                rs.setAccessible(true);
+                check(!((java.util.List<?>) rs.get(w.city)).isEmpty(), "a ring road round the town");
+                for (int preset : new int[]{2, 9}) {
+                    CityConfig vc = new CityConfig();
+                    vc.v[CityConfig.OPT_PRESET] = preset;
+                    vc.seed = 4;
+                    vc.normalize();
+                    vc.seed = 4;
+                    City city = new City(vc, 0.05f);
+                    int[] f = new int[city.w * city.h];
+                    city.driveField(f, city.worldW() / 2, city.worldH() / 2);
+                    for (City.Facility fa : city.facilities) {
+                        if (fa.kind != City.FACILITY_POLICE && fa.kind != City.FACILITY_FIRE) continue;
+                        float[] p = city.nearestDrivable(fa.gateX > 0 ? fa.gateX : fa.x, fa.gateY > 0 ? fa.gateY : fa.y);
+                        check(p != null && f[city.tileIndex(p[0], p[1])] < City.FAR, fa.name + " is on the road network");
+                    }
+                }
+                // Nobody knows at first: a couple of calls aren't news yet.
+                w.outbreak = true;
+                w.dispatch.calls = 2;
+                for (int f = 0; f < 30 * 5; f++) w.update(1 / 30f);
+                check(w.alert == 0, "two strange calls aren't news yet (alert " + w.alert + ")");
             }
         });
         test("every screen draws", new Check() {

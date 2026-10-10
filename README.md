@@ -407,6 +407,10 @@ zoomed in; fields, playgrounds and park paths no longer overlap roads, streams, 
 **Going home (10.27):** helicopters leave dead calls; outside help goes home when it's quiet and comes back for a
 new outbreak; four-wheel drives go off-road on emergencies; shooters fire past each other.
 
+**Ring road (10.28):** a ring road with slip roads to the highway, more two-lane avenues, every station on the
+road network, smoother junction turns; no real-city maps or bloaters; tougher zombies; a slow start; police
+perimeters while the army goes in; police cars wait at the scene; no crowds at the police station.
+
 **Countryside:** Villages, small towns and every Massive map are surrounded by open country:
 winding dirt lanes out to the edge of the map, farms and lonely cabins along them, woods, and
 hamlets (a short street of cottages with a lane back to town). A town out in the country is never a

@@ -2,11 +2,25 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.27";
-    static final int VERSION_CODE = 65;
+    static final String VERSION = "10.28";
+    static final int VERSION_CODE = 66;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.28  -  Ring road",
+                    "A ring road round the town in new cities: two lanes each way, a little way out from the edge of town, joined to the streets that reach it, and to the highway by curving slip roads on and off. It's left open on the side facing the wild country, so it wraps most of the town.",
+                    "More of the bigger streets are avenues with two lanes each way.",
+                    "Every police and fire station is on the road network: the small towns out in the country get a lane laid to the nearest road if they had none.",
+                    "Road lines are only painted where the road is still there, not out on the grass.",
+                    "Cars keep to one lane through a junction instead of swinging from side to side as they turn.",
+                    "The real-city maps have been taken out, and so have bloaters.",
+                    "Ordinary zombies are tougher: more of them take a few hits (or one to the head), they bite harder and move a little quicker.",
+                    "A slow start: nobody knows what's happening at first. It takes several strange calls before it's on the news, and minutes and a real outbreak before the emergency broadcast sends everyone indoors. The army isn't asked for until then (unless officers are going down).",
+                    "Police contain an outbreak with a perimeter round it, out beyond the infected ground, facing in, and shoot whatever comes out; SWAT and the riot squad still go in. The military goes in after the dead.",
+                    "Police cars wait at the scene while their officers deal with the call, then pick them up and drive back together.",
+                    "People with nowhere to shelter don't all crowd outside the police station: each goes to a spot of their own round it, and they look further for a building to hide in.",
+            },
             {
                     "10.27  -  Going home",
                     "Helicopters check their call is still live: once it's over, or there's nothing left to shoot near it, they move on to the nearest call that still has the dead at it, or stand down and head back to the pad.",

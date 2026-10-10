@@ -1218,10 +1218,11 @@ final class World {
                 e.skin = 0xFFC8D0B4;
                 break;
             case Entity.ZOMBIE:
-                e.hp = 60;
+                // (Tougher since 10.28: it takes a few hits, or one to the head.)
+                e.hp = 95;
                 e.radius = 3.8f;
-                e.speed = 15 + rnd.nextFloat() * 6;
-                e.runSpeed = 27 + rnd.nextFloat() * 6;
+                e.speed = 16 + rnd.nextFloat() * 6;
+                e.runSpeed = 29 + rnd.nextFloat() * 6;
                 e.skin = rnd.nextBoolean() ? 0xFF7C9A5E : 0xFF8FA173;
                 break;
             case Entity.RUNNER:
@@ -2730,7 +2731,7 @@ final class World {
             }
         }
         float dmg = z.type == Entity.BRUTE ? 30 : z.type == Entity.RUNNER ? 8 : z.type == Entity.CRAWLER ? 10
-                : z.type == Entity.ZOMBIE_DOG ? 7 : 12;
+                : z.type == Entity.ZOMBIE_DOG ? 7 : 17;
         z.biteCd = z.type == Entity.RUNNER || z.type == Entity.ZOMBIE_DOG ? 0.55f : 0.9f;
         z.biteAt = time;
         t.hp -= dmg;
@@ -3557,11 +3558,13 @@ final class World {
         int was = alert;
         // (Nobody reports what nobody has seen: one of them alone out in the woods, chasing deer, is news to no one.)
         boolean seen = dispatch.calls > 0 || bites > 0;
-        if (alert < 1 && (dispatch.calls >= 2 || bites >= 3 || (outbreakTime > 15 && seen))) alert = 1;
+        // (10.28) Slow to dawn on anyone: a few strange calls first, then the news, and only well into it the
+        // emergency broadcast that sends everyone indoors.
+        if (alert < 1 && (dispatch.calls >= 4 || bites >= 6 || (outbreakTime > 60 && seen))) alert = 1;
         // (City Hall puts out the emergency broadcast sooner; with City Hall lost it's left to the news.)
         boolean hall = city.cityHall != null, hallUp = hall && !hallLost;
-        float t2 = hallUp ? 35 : hall ? 80 : 50;
-        int z2 = hallUp ? 6 : hall ? 14 : 8, c2 = hallUp ? 6 : hall ? 12 : 8;
+        float t2 = hallUp ? 150 : hall ? 240 : 190;
+        int z2 = hallUp ? 20 : hall ? 35 : 26, c2 = hallUp ? 14 : hall ? 24 : 18;
         if (alert < 2 && seen && (outbreakTime > t2 || zombies >= z2 || dispatch.calls >= c2)) alert = 2;
         if (alert == was) return;
         String where = outbreakPlace != null ? outbreakPlace : "the city";
@@ -3601,7 +3604,7 @@ final class World {
         }
         if (e.taskTimer <= 0) {
             e.taskTimer = 2;
-            City.Building b = shelterNear(e, 260);
+            City.Building b = shelterNear(e, 450);
             if (b != null) {
                 e.task = Dispatch.T_HIDE;
                 e.building = b;
@@ -3610,8 +3613,20 @@ final class World {
         }
         // Nowhere to hide yet: hurry to the police station, and keep moving.
         City.Facility police = city.nearestFacility(City.FACILITY_POLICE, e.x, e.y);
-        if (police != null && police.field != null && Math.hypot(police.x - e.x, police.y - e.y) > police.r * 0.8f
-                && followField(e, police.field, e.speed * 1.6f)) return true;
+        if (police != null && police.field != null) {
+            float pd = (float) Math.hypot(police.x - e.x, police.y - e.y);
+            // (10.28) Each to a spot of their own round the station, not all in a crowd at its door.
+            float a = (e.nameSeed & 255) / 256f * TAU, rr = police.r * (1.3f + ((e.nameSeed >> 8) & 7) * 0.25f);
+            float sx = police.x + (float) Math.cos(a) * rr, sy = police.y + (float) Math.sin(a) * rr;
+            if (pd > rr + 60 && followField(e, police.field, e.speed * 1.6f)) return true;
+            if (!city.solidAt(sx, sy) && Math.hypot(sx - e.x, sy - e.y) > 6) {
+                walkToSpot(e, sx, sy, e.speed * 1.2f);
+                return true;
+            }
+            steer(e, 0, 0, 0);
+            personalSpace(e);
+            return true;
+        }
         wander(e, e.speed * 1.5f);
         return true;
     }
@@ -6624,6 +6639,9 @@ final class World {
             float ddx = t.x - e.x, ddy = t.y - e.y;
             float d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
             float keep = soldier ? (e.role == Entity.ROLE_COMMANDER ? 90 : e.role == Entity.ROLE_SNIPER ? 60 : 40) : 50;
+            // (10.28) Soldiers sent in close right up; police on a perimeter keep their distance.
+            if (soldier && e.task == Dispatch.T_RESPOND && e.role != Entity.ROLE_COMMANDER && e.role != Entity.ROLE_SNIPER) keep = 26;
+            else if (!soldier && e.task == Dispatch.T_RESPOND && e.incident != null && e.incident.zombiesNear >= 4) keep = 70;
             // Low on rounds: they don't let them get close.
             if (stock < 0.5f) keep *= 1 + (0.5f - stock) * 3;
             Dispatch.SafeZone guarding = e.task == Dispatch.T_GUARD ? e.zone : null;
@@ -6688,6 +6706,31 @@ final class World {
             Dispatch.Incident inc = e.incident;
             float ddx = inc.x - e.x, ddy = inc.y - e.y;
             float d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
+            // (10.28) Police contain a real outbreak: a perimeter round it, outside the infected ground, facing in,
+            // shooting whatever comes out. (SWAT and the riot squad still go in.) The military goes in after them.
+            if (!soldier && inc.zombiesNear >= 4 && e.role != Entity.ROLE_SWAT && e.role != Entity.ROLE_RIOT) {
+                float pr = 100 + Math.min(90, inc.zombiesNear * 3);
+                float ang = (float) Math.atan2(e.y - inc.y, e.x - inc.x) + ((e.member % 3) - 1) * 0.35f;
+                float px = inc.x + (float) Math.cos(ang) * pr, py = inc.y + (float) Math.sin(ang) * pr;
+                if (d > pr + 80) {
+                    if (!followField(e, inc.field, e.runSpeed * 0.95f)) steer(e, ddx / d, ddy / d, e.runSpeed * 0.95f);
+                    return;
+                }
+                if (!e.onScene) {
+                    e.onScene = true;
+                    dispatch.onScene(e, inc);
+                }
+                if (!city.solidAt(px, py) && Math.hypot(px - e.x, py - e.y) > 6) {
+                    walkToSpot(e, px, py, e.speed * 1.4f);
+                    return;
+                }
+                steer(e, 0, 0, 0);
+                personalSpace(e);
+                if (e.want < 1) e.angle = turn(e.angle, (float) Math.atan2(inc.y - e.y, inc.x - e.x), dt * 3);
+                return;
+            }
+            if (soldier && e.onScene && city.fieldAt(city.zombieDist, e.x, e.y) < 30
+                    && followField(e, city.zombieDist, e.runSpeed * 0.8f)) return;
             if (d > 40) {
                 if (!followField(e, inc.field, e.runSpeed * 0.95f)) steer(e, ddx / d, ddy / d, e.runSpeed * 0.95f);
                 return;
@@ -9114,8 +9157,7 @@ final class World {
         roll -= 0.03f;
         if (roll < 0.03f) return Entity.SPITTER;
         roll -= 0.03f;
-        if (roll < 0.025f) return Entity.BLOATER;
-        roll -= 0.025f;
+        // (No more bloaters since 10.28.)
         if (roll < brute) return Entity.BRUTE;
         return Entity.ZOMBIE;
     }

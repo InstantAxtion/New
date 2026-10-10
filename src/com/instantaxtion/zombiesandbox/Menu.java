@@ -1056,14 +1056,11 @@ final class Menu {
         for (int i = 0; i < CityConfig.PRESETS.length; i++)
             if ((!CityConfig.retired(CityConfig.OPT_PRESET, i) || preset == i) && !RealCities.isReal(i)) shown[cards++] = i;
         y = mapCards(c, shown, cards, preset, lx, y, cw, ch, gap, perRow);
-        plain.setTextAlign(Paint.Align.LEFT);
-        plain.setTextSize(13 * dp);
-        plain.setColor(0xFFB8BDC4);
-        c.drawText("Real cities: premade, always Massive", lx + 2 * dp, y + 14 * dp, plain);
-        y += 22 * dp;
-        cards = 0;
-        for (int i = 0; i < RealCities.NAMES.length; i++) shown[cards++] = RealCities.FIRST + i;
-        y = mapCards(c, shown, cards, preset, lx, y, cw, ch, gap, perRow);
+        // (The real cities were taken out in 10.28; a loaded code using one still shows it above.)
+        if (RealCities.isReal(preset)) {
+            shown[0] = preset;
+            y = mapCards(c, shown, 1, preset, lx, y, cw, ch, gap, perRow);
+        }
         boolean real = RealCities.isReal(preset);
         if (preset == CityConfig.ISLANDS || real) {
             // Islands comes in one size only; a real city is always the same city.

@@ -523,6 +523,7 @@ final class City {
             if (cfg.servicePads()) servicePads();
             // Again now the drives are in: a lane they made into a bit of paved street carries on as dirt.
             if (cfg.civic >= 8) unpaveLaneStubs();
+            if (cfg.civic >= 12) connectStations();
             for (int[] e : cfg.edits) applyEdit(e[0], e[1], e[2], false);
             computeSolid();
             for (int i = generated; i < buildingLots.size(); i++) createBuilding(buildingLots.get(i));
@@ -1288,6 +1289,8 @@ final class City {
             return -1;
         }
         boolean big = Math.max(bw, bh) > (w > 220 ? 84 : 68) && depth < 3 && !rural;
+        // (Since 10.28 more of the bigger streets are avenues: two lanes each way.)
+        if (cfg.civic >= 12 && !rural && depth < 4 && Math.max(bw, bh) > (w > 220 ? 60 : 52)) big = true;
         int roadW = big ? 5 : 3, minSide = 16;
         boolean vertical;
         if (bw > bh * 1.3f) vertical = true;
@@ -1450,6 +1453,7 @@ final class City {
 
         // Out in the country, a highway runs past the town.
         if (m >= 16) highway(bx0, by0, bx1, by1);
+        if (m >= 16 && cfg.civic >= 12) ringRoad(bx0, by0, bx1, by1);
         if (m > 0) {
             int n = w >= 400 ? 3 + rnd.nextInt(3) : w >= 300 ? 1 + rnd.nextInt(2) : rnd.nextInt(2);
             // (Since 10.20 the country is busier: more hamlets, the bigger ones small towns of their own.)
@@ -1750,6 +1754,7 @@ final class City {
             else st.name = country.streetName(base, st.main || len > 40, rnd);
         }
         if (real != null) realStreetNames();
+        for (Street st : ringStreets) st.name = country.ringRoad;
         for (Facility f : facilities)
             if (f.kind == FACILITY_POLICE) {
                 String street = placeName(f.x, f.y);
@@ -4594,7 +4599,7 @@ final class City {
                     // A level crossing.
                     tiles[ay * w + ax] = ROAD;
                     roadDir[ay * w + ax] = 1;
-                } else if (step > 2 && old != DIRT) joined = true;
+                } else if (step > 2 && old != DIRT && !(ringTile != null && ringTile[ay * w + ax])) joined = true;
                 // A bend: fill the corner so the road stays connected.
                 if (vertical && ay > 0 && tiles[(ay - 1) * w + ax] != DIRT && tiles[(ay - 1) * w + ax] == GRASS) tiles[(ay - 1) * w + ax] = DIRT;
                 if (!vertical && ax > 0 && tiles[ay * w + ax - 1] != DIRT && tiles[ay * w + ax - 1] == GRASS) tiles[ay * w + ax - 1] = DIRT;
@@ -4735,6 +4740,203 @@ final class City {
                     tiles[gy * w + gx] = ROAD;
                     roadDir[gy * w + gx] = (byte) (ew ? 1 : 2);
                 }
+            }
+        }
+    }
+
+    /** The ring road's streets (named after the rest), and its tiles (country lanes carry on across it). */
+    private final List<Street> ringStreets = new ArrayList<Street>();
+    private boolean[] ringTile;
+
+    /**
+     * (10.28) A ring road round the town out in the country: two lanes each way, a little way out from the edge
+     * of town, joined to every street that reaches the edge, crossing the railway on the level, and joined to
+     * the highway by curving slip roads on and off. A side that would run into the highway or off the map is
+     * left out, so it wraps most of the town.
+     */
+    private void ringRoad(int bx0, int by0, int bx1, int by1) {
+        if (waterKind != CityConfig.W_NONE || real != null) return;
+        // (A village is too small for one.)
+        if (cfg.density() == 0 && cfg.style() == CityConfig.STYLE_HOUSES) return;
+        int o = 5, rw = 5;
+        int x0 = bx0 - o - rw, y0 = by0 - o - rw, x1 = bx1 + o, y1 = by1 + o;
+        // The highway's band, to keep clear of (and which side of town it runs).
+        int h0 = hwyAxis >= 0 ? hwyAt - 2 : -100, h1 = hwyAxis >= 0 ? hwyAt + 9 : -100;
+        int[] at = {y0, y1, x0, x1};
+        boolean[] ok = new boolean[4];
+        for (int s = 0; s < 4; s++) {
+            boolean horiz = s < 2;
+            int a = at[s], lim = horiz ? h : w;
+            ok[s] = a >= 3 && a + rw <= lim - 3;
+            // (Open on the side facing the wild country, the hills and the park.)
+            int[] wildOf = {2, 3, 0, 1};
+            if (wildSide >= 0 && wildOf[s] == wildSide) ok[s] = false;
+            if (ok[s] && hwyAxis == (horiz ? 0 : 1) && a + rw > h0 && a < h1) ok[s] = false;
+        }
+        // Where each side runs from and to: corner to corner, or up to the highway where a side is left out.
+        int[] from = new int[4], to = new int[4];
+        for (int s = 0; s < 4; s++) {
+            boolean horiz = s < 2;
+            int lo = horiz ? x0 : y0, hi = horiz ? x1 + rw : y1 + rw;
+            int startSide = horiz ? 2 : 0, endSide = horiz ? 3 : 1;
+            if (!ok[startSide]) lo = hwyAxis == (horiz ? 1 : 0) && h1 > 0 && h1 <= at[s == 0 || s == 1 ? 2 : 0] + rw + 2 ? h1 : Math.max(3, horiz ? x0 + rw : y0 + rw);
+            if (!ok[endSide]) hi = hwyAxis == (horiz ? 1 : 0) && h0 >= at[s == 0 || s == 1 ? 3 : 1] - 2 ? h0 + 1 : Math.min((horiz ? w : h) - 3, horiz ? x1 : y1);
+            from[s] = Math.max(3, lo);
+            to[s] = Math.min((horiz ? w : h) - 3, hi);
+            // Nothing in the way: no buildings, water, fences or a base.
+            for (int k = from[s]; k < to[s] && ok[s]; k++)
+                for (int q = 0; q < rw && ok[s]; q++) {
+                    int x = horiz ? k : at[s] + q, y = horiz ? at[s] + q : k;
+                    byte t = tiles[y * w + x];
+                    if (t == BUILDING || t == WATER || t == BASE || t == LOT || t == PLAZA || t == SIDEWALK
+                            || (t == FENCE && !(hwyAxis >= 0 && (horiz ? y : x) >= hwyAt && (horiz ? y : x) <= hwyAt + 6))) ok[s] = false;
+                }
+        }
+        int sides = 0;
+        for (boolean b : ok) if (b) sides++;
+        if (sides < 2) return;
+        for (int s = 0; s < 4; s++) {
+            if (!ok[s] || to[s] - from[s] < 20) continue;
+            boolean horiz = s < 2;
+            Street st = horiz ? new Street(from[s], at[s], to[s], at[s] + rw, false, true) : new Street(at[s], from[s], at[s] + rw, to[s], true, true);
+            carve(st);
+            ringStreets.add(st);
+            if (ringTile == null) ringTile = new boolean[w * h];
+            for (int yy = st.y0; yy < st.y1; yy++)
+                for (int xx = st.x0; xx < st.x1; xx++) ringTile[yy * w + xx] = true;
+            // Where it meets the highway (a side that runs up to it): a gap in the barrier to turn either way.
+            if (hwyAxis == (horiz ? 1 : 0))
+                for (int k = 0; k < rw; k++) {
+                    int c = horiz ? at[s] + k : at[s] + k;
+                    int bx = horiz ? hwyAt + 3 : c, by = horiz ? c : hwyAt + 3;
+                    if (horiz) { bx = hwyAt + 3; by = at[s] + k; } else { bx = at[s] + k; by = hwyAt + 3; }
+                    if (bx >= 0 && by >= 0 && bx < w && by < h && tiles[by * w + bx] == FENCE
+                            && (from[s] <= hwyAt + 7 && to[s] >= hwyAt - 1)) {
+                        tiles[by * w + bx] = ROAD;
+                        roadDir[by * w + bx] = 3;
+                    }
+                }
+            // Joined to the streets of town that reach the edge facing it.
+            int in = s == 0 || s == 2 ? 1 : -1, edge = s == 0 || s == 2 ? at[s] + rw : at[s] - 1;
+            int last = -100;
+            for (int k = from[s] + 4; k < to[s] - 4; k++) {
+                int d = 0, x = horiz ? k : edge, y = horiz ? edge : k;
+                while (d < o + 4 && x >= 0 && y >= 0 && x < w && y < h
+                        && (tiles[y * w + x] == GRASS || tiles[y * w + x] == TREE || tiles[y * w + x] == DIRT)) {
+                    d++;
+                    if (horiz) y += in;
+                    else x += in;
+                }
+                if (d == 0 || d >= o + 4 || k - last < 22) continue;
+                boolean road = true;
+                for (int j = 0; j < 6 && road; j++) {
+                    int ax = horiz ? x : x + in * j, ay = horiz ? y + in * j : y;
+                    int bx = horiz ? x + 2 : x + in * j, by = horiz ? y + in * j : y + 2;
+                    if (!isRoad(ax, ay) || !isRoad(bx, by)) road = false;
+                }
+                if (!road) continue;
+                last = k;
+                int r0 = Math.min(edge, edge + in * (d - 1)), r1 = Math.max(edge, edge + in * (d - 1)) + 1;
+                carve(horiz ? new Street(k, r0, k + 3, r1, true, false) : new Street(r0, k, r1, k + 3, false, false));
+            }
+        }
+        // On and off the highway: two curving slip roads from the side of the ring that faces it.
+        if (hwyAxis < 0) return;
+        int face = hwyAxis == 0 ? (hwyAt < y0 ? 0 : 1) : (hwyAt < x0 ? 2 : 3);
+        if (!ok[face]) return;
+        boolean horiz = face < 2;
+        float ringEdge = face == 0 || face == 2 ? at[face] : at[face] + rw;
+        boolean nearIsHigh = hwyAt < at[face];
+        float lane = hwyAt + (nearIsHigh ? 5.5f : 1.5f);
+        float span = to[face] - from[face];
+        for (int r = 0; r < 2; r++) {
+            float k = from[face] + span * (r == 0 ? 0.3f : 0.7f), dir = r == 0 ? -1 : 1;
+            float k2 = k + dir * 16;
+            float mid = (ringEdge + lane) / 2;
+            float[] pts = horiz ? bezier(k, ringEdge, k, mid, k2, mid, k2, lane, 30) : bezier(ringEdge, k, mid, k, mid, k2, lane, k2, 30);
+            curveRoad(pts, false);
+            // And a gap in the barrier there, to reach the far carriageway.
+            for (int q = -1; q <= 1; q++) {
+                int bx = horiz ? Math.round(k2) + q : hwyAt + 3, by = horiz ? hwyAt + 3 : Math.round(k2) + q;
+                if (bx >= 0 && by >= 0 && bx < w && by < h && tiles[by * w + bx] == FENCE) {
+                    tiles[by * w + bx] = ROAD;
+                    roadDir[by * w + bx] = 3;
+                }
+            }
+        }
+    }
+
+    /**
+     * (10.28) Every police and fire station (the small towns' out in the country too) on the road network: one
+     * that can't be reached from town gets a lane laid from it to the nearest road that can, round buildings,
+     * water and fences.
+     */
+    private void connectStations() {
+        int n = w * h;
+        int[] field = new int[n];
+        float[] c0 = nearestDrivable((townX0 + townX1) / 2f * T, (townY0 + townY1) / 2f * T);
+        if (c0 == null) {
+            c0 = null;
+            for (int i = 0; i < n && c0 == null; i++) if (tiles[i] == ROAD) c0 = new float[]{(i % w + 0.5f) * T, (i / w + 0.5f) * T};
+            if (c0 == null) return;
+        }
+        int[] prev = new int[n], queue = new int[n];
+        for (Facility f : facilities) {
+            if (f.kind != FACILITY_POLICE && f.kind != FACILITY_FIRE) continue;
+            // (Plain flood over the drivable tiles: the route tables aren't built yet.)
+            Arrays.fill(field, FAR);
+            int st0 = tileIndex(c0[0], c0[1]), qh = 0, qt = 0;
+            field[st0] = 0;
+            queue[qt++] = st0;
+            while (qh < qt) {
+                int c = queue[qh++], x = c % w, y = c / w;
+                for (int k = 0; k < 4; k++) {
+                    int nx = x + (k == 0 ? 1 : k == 1 ? -1 : 0), ny = y + (k == 2 ? 1 : k == 3 ? -1 : 0);
+                    if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+                    int j = ny * w + nx;
+                    if (field[j] < FAR || driveCost(j) < 0) continue;
+                    field[j] = field[c] + 1;
+                    queue[qt++] = j;
+                }
+            }
+            float[] p = nearestDrivable(f.gateX > 0 ? f.gateX : f.x, f.gateY > 0 ? f.gateY : f.y);
+            if (p == null) p = new float[]{f.x, f.y};
+            int s0 = tileIndex(p[0], p[1]);
+            if (s0 < 0 || field[s0] < FAR) continue;
+            Arrays.fill(prev, -2);
+            int head = 0, tail = 0, goal = -1;
+            queue[tail++] = s0;
+            prev[s0] = -1;
+            while (head < tail && goal < 0) {
+                int c = queue[head++], x = c % w, y = c / w;
+                for (int k = 0; k < 4; k++) {
+                    int nx = x + (k == 0 ? 1 : k == 1 ? -1 : 0), ny = y + (k == 2 ? 1 : k == 3 ? -1 : 0);
+                    if (nx < 1 || ny < 1 || nx >= w - 1 || ny >= h - 1) continue;
+                    int j = ny * w + nx;
+                    if (prev[j] != -2) continue;
+                    byte t = tiles[j];
+                    if (t == BUILDING || t == WATER || t == FENCE || t == BASE || t == RAIL || t == ROCK || t == PIER || solid[j] && t != TREE) continue;
+                    prev[j] = c;
+                    if (field[j] < FAR) {
+                        goal = j;
+                        break;
+                    }
+                    queue[tail++] = j;
+                }
+            }
+            if (goal < 0) continue;
+            for (int c = prev[goal]; c >= 0; c = prev[c]) {
+                int x = c % w, y = c / w;
+                for (int dy = 0; dy <= 1; dy++)
+                    for (int dx = 0; dx <= 1; dx++) {
+                        int j = (y + dy) * w + x + dx;
+                        if (x + dx >= w || y + dy >= h) continue;
+                        byte t = tiles[j];
+                        if (t == GRASS || t == TREE || t == SAND || t == TRAIL) {
+                            tiles[j] = DIRT;
+                            solid[j] = false;
+                        }
+                    }
             }
         }
     }
@@ -8607,6 +8809,14 @@ final class City {
                 // Only between junctions.
                 int mx = st.vertical ? st.x0 + st.width / 2 : x, my = st.vertical ? y : st.y0 + st.width / 2;
                 if (mx >= w || my >= h || roadDir[my * w + mx] != dir || !paved(mx, my)) continue;
+                // (10.28) Only where the street is still road all the way across: a stretch that went back to
+                // grass, or was cut short, gets no lines painted on the grass.
+                boolean whole = true;
+                for (int q = 0; q < st.width && whole; q++) {
+                    int qx = st.vertical ? st.x0 + q : x, qy = st.vertical ? y : st.y0 + q;
+                    if (qx < 0 || qy < 0 || qx >= w || qy >= h || (tiles[qy * w + qx] != ROAD && tiles[qy * w + qx] != CAR)) whole = false;
+                }
+                if (!whole) continue;
                 float base = (st.vertical ? st.x0 : st.y0) * T, span = st.width * T;
                 // Wear: darker tracks where the wheels run, two to each lane.
                 int lanes = st.width >= 5 ? 4 : 2;

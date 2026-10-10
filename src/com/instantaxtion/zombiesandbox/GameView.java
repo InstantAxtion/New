@@ -43,7 +43,7 @@ final class GameView extends View implements Menu.Host {
     private static final String[] CLEAR_NAMES = {"Everyone", "Zombies only", "Bodies & blood", "Wrecks & fires",
             "Barricades"};
     private static final int[] ZOMBIE_VARIANTS = {Entity.ZOMBIE, Entity.RUNNER, Entity.BRUTE, Entity.CRAWLER,
-            Entity.SCREAMER, Entity.SPITTER, Entity.BLOATER};
+            Entity.SCREAMER, Entity.SPITTER};
     private static final int[] CIV_VARIANTS = {Entity.CIVILIAN, Entity.MEDIC, Entity.FIREFIGHTER, Entity.RAIDER};
     private static final int[] MIL_ROLES = {Entity.ROLE_RIFLE, Entity.ROLE_COMMANDER, Entity.ROLE_SNIPER, Entity.ROLE_GUNNER,
             Entity.ROLE_GUARD, Entity.ROLE_CORPSMAN, Entity.ROLE_GRENADIER};

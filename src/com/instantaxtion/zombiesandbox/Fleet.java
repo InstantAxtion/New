@@ -314,6 +314,7 @@ final class Fleet {
                 if (v.state == PICKUP) return who + ": Picking up its " + (v.passengerType == Entity.SOLDIER ? "squad" : "officers");
                 if (v.pickup && v.state == DRIVE) return who + ": Going to pick up its " + (v.passengerType == Entity.SOLDIER ? "squad" : "officers");
                 if (v.parkHome && v.state == RETURN) return who + ": Back to " + (v.depot != null ? v.depot.name : "base") + (v.crew.isEmpty() ? "" : " with " + v.crew.size() + " aboard");
+                if (v.type == CRUISER && v.state == SCENE && !v.patrol) return who + ": At the scene" + (where != null ? " on " + where : "");
                 if (v.type == TRUCK && v.state == SCENE) return who + ": Fire support" + (where != null ? " at " + where : "");
                 if (v.loop && v.state == DRIVE) return who + ": Patrolling" + (where != null ? " to " + where : "");
                 if (v.broken) return who + ": Wrecked";
@@ -2209,6 +2210,19 @@ final class Fleet {
     private boolean updateCar(Vehicle v, float dt) {
         if (v.type == TRUCK) turret(v, dt);
         if (v.state == PICKUP) return pickupStep(v, dt);
+        if (v.state == SCENE && v.type == CRUISER) {
+            // Parked up at the call, lights going, until it's over (or there's been nothing for a while).
+            v.speed = Math.max(0, v.speed - dt * 200);
+            v.timer += dt;
+            Dispatch.Incident inc = v.incident;
+            v.quiet = inc != null && w.countZombiesNear(inc.x, inc.y, 220) > 0 ? 0 : v.quiet + dt;
+            if (inc == null || inc.resolved || v.quiet > 25 || v.timer > 420) {
+                v.state = PICKUP;
+                v.timer = 0;
+                v.pickup = true;
+            }
+            return false;
+        }
         if (v.state == DRIVE && v.pickup && v.stuckTimer > 12) {
             v.state = PICKUP;
             v.timer = 0;
@@ -2415,6 +2429,14 @@ final class Fleet {
                     // The APC stays to give its squad covering fire.
                     v.state = SCENE;
                     v.timer = 90;
+                    v.quiet = 0;
+                    v.speed = 0;
+                    return false;
+                }
+                // (10.28) A police car waits at the scene while its officers deal with the call, then takes them home.
+                if (v.type == CRUISER && v.incident != null && !v.incident.resolved && !v.squad.isEmpty()) {
+                    v.state = SCENE;
+                    v.timer = 0;
                     v.quiet = 0;
                     v.speed = 0;
                     return false;
@@ -2759,6 +2781,24 @@ final class Fleet {
                 int sx = n % W - t % W, sy = n / W - t / W;
                 if (sx != ddx || sy != ddy) {
                     max = Math.min(max, round + steps * City.T * 0.75f);
+                    break;
+                }
+                t = n;
+            }
+        }
+        // (10.28) Through a junction the route steps across tile by tile, and the side of the lane flipped with
+        // every step: the car swung from side to side. Inside one, keep to the lane for the way out instead.
+        if (v.careful <= 0 && v.passing <= 0 && !v.pulled && city.junctionIdAt(v.x, v.y) >= 0
+                && city.junctionIdAt((bx + 0.5f) * City.T, (by + 0.5f) * City.T) >= 0) {
+            int t = nt;
+            for (int s = 0; s < 10; s++) {
+                int n = downhill(v.field, t);
+                if (n == t) break;
+                int sx = n % W - t % W, sy = n / W - t / W;
+                if (city.junctionIdAt((n % W + 0.5f) * City.T, (n / W + 0.5f) * City.T) < 0) {
+                    float o2 = city.laneOffset(bx, by, sx, sy);
+                    gx = bx * City.T + City.T / 2f - sy * o2;
+                    gy = by * City.T + City.T / 2f + sx * o2;
                     break;
                 }
                 t = n;

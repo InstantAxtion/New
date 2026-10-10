@@ -978,11 +978,13 @@ final class Dispatch {
                     say(WHO_POLICE, null, "Dispatch: Police helicopter, " + inc.place + ". Pilot and marksman to the pad.", inc.x, inc.y);
                 }
             }
-            if (!inc.airRequested && inc.zombiesNear >= 12) {
+            // (10.28) The army only once everyone knows what this is (or officers are going down).
+            boolean known = w.alert >= 2 || inc.officersDown > 0;
+            if (!inc.airRequested && inc.zombiesNear >= 12 && known) {
                 inc.airRequested = true;
                 requestAir(inc.x, inc.y, inc.place);
             }
-            if (!inc.militaryRequested && (inc.zombiesNear >= 8 || (inc.officersDown > 0 && inc.zombiesNear >= 3)
+            if (!inc.militaryRequested && known && (inc.zombiesNear >= 8 || (inc.officersDown > 0 && inc.zombiesNear >= 3)
                     || (open >= 4 && inc.zombiesNear >= 4))) {
                 requestMilitary(inc.x, inc.y, inc.place, inc, null);
             }

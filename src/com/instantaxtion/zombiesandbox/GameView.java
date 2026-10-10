@@ -156,7 +156,8 @@ final class GameView extends View implements Menu.Host {
     /** Director cam: the camera goes wherever the action is. */
     private boolean director;
     private final RectF[] clearRects = new RectF[CLEAR_NAMES.length];
-    private boolean statsCollapsed, autoCollapsed;
+    /** (Since 10.24 the stats start as one short line: tap it for the full breakdown.) */
+    private boolean statsCollapsed = true, autoCollapsed;
     /** Units picked with the Orders tool. */
     private final java.util.ArrayList<Entity> selection = new java.util.ArrayList<Entity>();
     private float orderX, orderY, orderMarker;
@@ -509,6 +510,7 @@ final class GameView extends View implements Menu.Host {
         if (getWidth() > 0) centerCamera();
         records.gameStarted();
         autoCollapsed = false;
+        statsCollapsed = true;
         applySettings();
         hasGame = true;
         selection.clear();
@@ -1517,10 +1519,15 @@ final class GameView extends View implements Menu.Host {
                 c.drawLine(p.x - 4, p.y + 2, p.x + 3, p.y - 2, stroke);
                 fill.setColor(0xFFC8302A);
                 c.drawRect(p.x + 2, p.y - 4, p.x + 4.5f, p.y, fill);
-            } else if (p.weapon == Entity.W_SHOTGUN || p.weapon == Entity.W_RIFLE) {
+            } else if (p.melee == Entity.M_MACHETE || p.melee == Entity.M_CROWBAR) {
+                stroke.setColor(p.melee == Entity.M_MACHETE ? 0xFFC8CCD0 : 0xFF7A1E1A);
+                stroke.setStrokeWidth(1.6f);
+                c.drawLine(p.x - 4, p.y + 2, p.x + 4, p.y - 2, stroke);
+                if (p.melee == Entity.M_CROWBAR) c.drawLine(p.x + 4, p.y - 2, p.x + 5, p.y + 0.5f, stroke);
+            } else if (p.weapon == Entity.W_SHOTGUN || p.weapon == Entity.W_RIFLE || p.weapon == Entity.W_HUNTING) {
                 stroke.setColor(0xFF1A1A1A);
                 c.drawLine(p.x - 4.5f, p.y + 1, p.x + 5, p.y - 1, stroke);
-                stroke.setColor(p.weapon == Entity.W_SHOTGUN ? 0xFF8A5A30 : 0xFF3A4430);
+                stroke.setColor(p.weapon == Entity.W_SHOTGUN || p.weapon == Entity.W_HUNTING ? 0xFF8A5A30 : 0xFF3A4430);
                 stroke.setStrokeWidth(2f);
                 c.drawLine(p.x - 4.5f, p.y + 1, p.x - 2, p.y + 0.5f, stroke);
             } else {
@@ -1885,8 +1892,30 @@ final class GameView extends View implements Menu.Host {
                 if (e.dead || e.task != Dispatch.T_RESPOND || e.incident == null || e.onScene) continue;
                 Dispatch.Incident inc = e.incident;
                 if (Math.max(e.x, inc.x) < lx0 || Math.min(e.x, inc.x) > lx1 || Math.max(e.y, inc.y) < ly0 || Math.min(e.y, inc.y) > ly1) continue;
-                stroke.setColor(e.type == Entity.SOLDIER ? 0x5590C060 : 0x5560A0FF);
+                stroke.setColor(e.type == Entity.SOLDIER ? 0x9990C060 : 0x9960A0FF);
                 c.drawLine(e.x, e.y, inc.x, inc.y, stroke);
+            }
+            // (10.24) Police cars and army trucks on their way to a call: a bold marching line from the vehicle to
+            // the call, and a ring in their colour round the call itself, so a response is plain to see.
+            stroke.setStrokeWidth(2.2f / Math.max(0.5f, scale) + 0.6f);
+            float march = (world.time * 40) % 18;
+            for (int i = 0, n = world.fleet.vehicles.size(); i < n; i++) {
+                Fleet.Vehicle v = world.fleet.vehicles.get(i);
+                Dispatch.Incident inc = v.incident;
+                if (inc == null || v.state != Fleet.DRIVE || v.broken || inc.resolved) continue;
+                if (Math.max(v.x, inc.x) < lx0 || Math.min(v.x, inc.x) > lx1 || Math.max(v.y, inc.y) < ly0 || Math.min(v.y, inc.y) > ly1) continue;
+                boolean army = v.type == Fleet.TRUCK || v.type == Fleet.TANK;
+                int col = army ? 0xE0A8E070 : 0xE070B0FF;
+                stroke.setColor(col);
+                float dx = inc.x - v.x, dy = inc.y - v.y, len = (float) Math.sqrt(dx * dx + dy * dy);
+                if (len < 1) continue;
+                float ux = dx / len, uy = dy / len;
+                for (float t = march; t < len; t += 18) {
+                    float t1 = Math.min(len, t + 10);
+                    c.drawLine(v.x + ux * t, v.y + uy * t, v.x + ux * t1, v.y + uy * t1, stroke);
+                }
+                stroke.setColor(alpha(col, 0.5f + 0.5f * (float) Math.sin(world.time * 5)));
+                c.drawCircle(inc.x, inc.y, 30, stroke);
             }
         }
         // Calls for help on the radio: rings going out from where the call was made.
@@ -4420,7 +4449,7 @@ final class GameView extends View implements Menu.Host {
         }
         // 911 calls: a small tag, "911 12" (the dead there), and a blue dot with how many units are coming.
         // Zoomed out, only the big ones.
-        text.setTextSize(9.5f * dp);
+        text.setTextSize(10.5f * dp);
         // Survivor groups: their name, how many, and how well dug in.
         text.setTextSize(10.5f * dp);
         for (int i = 0, n = world.holdouts.size(); i < n; i++) {
@@ -4445,7 +4474,10 @@ final class GameView extends View implements Menu.Host {
             int coming = inc.cops + inc.soldiers + world.fleet.inbound(inc);
             boolean backup = inc.backupNeed > 0;
             String label = (backup ? "BACKUP " : "911 ") + inc.zombiesNear;
-            String units = coming > 0 ? String.valueOf(coming) : null;
+            // (10.24) Who's coming, spelled out: police, the army, or both.
+            String units = coming <= 0 ? null : inc.soldiers > 0 && inc.cops + world.fleet.inbound(inc) > 0
+                    ? "POLICE " + (inc.cops + world.fleet.inbound(inc)) + " + ARMY " + inc.soldiers
+                    : inc.soldiers > 0 ? "ARMY " + inc.soldiers : "POLICE " + coming;
             float tw = text.measureText(label), uw = units == null ? 0 : Math.max(12 * dp, text.measureText(units) + 7 * dp);
             float w = tw + 10 * dp + (units == null ? 0 : uw + 3 * dp);
             oval.set(sx - w / 2, sy - 10 * dp, sx + w / 2, sy + 3.5f * dp);
@@ -4459,7 +4491,7 @@ final class GameView extends View implements Menu.Host {
                 float ux = oval.right - 2 * dp - uw;
                 RectF u = oval2;
                 u.set(ux, oval.top + 2 * dp, oval.right - 2 * dp, oval.bottom - 2 * dp);
-                fill.setColor(0xFF2E6AD0);
+                fill.setColor(inc.soldiers > 0 && inc.cops == 0 ? 0xFF4A7A2A : 0xFF2E6AD0);
                 c.drawRoundRect(u, 5 * dp, 5 * dp, fill);
                 text.setTextAlign(Paint.Align.CENTER);
                 c.drawText(units, u.centerX(), sy, text);
@@ -4669,7 +4701,7 @@ final class GameView extends View implements Menu.Host {
         feedCount = 0;
         feedBottom = 0;
         if (!settings.radio()) return;
-        int maxLines = portrait ? 2 : 3;
+        int maxLines = 2;
         paceFeed(frameDt, maxLines);
         int shown = feedOn.size();
         float lineH = 22 * dp, gap = 3 * dp, y = feedRect.top;
@@ -4946,7 +4978,7 @@ final class GameView extends View implements Menu.Host {
                 c.drawLine(r * 0.1f, -r * 0.72f, r * 1.55f + sw, -r * 0.55f, stroke);
                 c.drawLine(r * 0.1f, r * 0.72f, r * 1.55f - sw, r * 0.55f, stroke);
             }
-        } else if (e.isArmed() || (e.hasGun && e.aiming)) {
+        } else if ((e.isArmed() && world.weaponsOut(e)) || (e.hasGun && e.aiming)) {
             boolean soldier = e.type == Entity.SOLDIER;
             stroke.setColor(e.skin);
             stroke.setStrokeWidth(r * 0.36f);
@@ -5000,7 +5032,8 @@ final class GameView extends View implements Menu.Host {
             stroke.setColor(e.skin);
             stroke.setStrokeWidth(r * 0.34f);
             c.drawLine(0, r * 0.5f, hx * 0.6f, hy * 0.6f + r * 0.2f, stroke);
-            stroke.setColor(e.melee == Entity.M_AXE || e.type == Entity.FIREFIGHTER ? 0xFF8A2A1E : e.melee == Entity.M_BAT ? 0xFF9A7448 : 0xFF2A2A2A);
+            stroke.setColor(e.melee == Entity.M_AXE || e.type == Entity.FIREFIGHTER ? 0xFF8A2A1E : e.melee == Entity.M_BAT ? 0xFF9A7448
+                    : e.melee == Entity.M_MACHETE ? 0xFFC8CCD0 : e.melee == Entity.M_CROWBAR ? 0xFF7A1E1A : 0xFF2A2A2A);
             stroke.setStrokeWidth(r * 0.28f);
             c.drawLine(hx * 0.55f, hy * 0.55f + r * 0.2f, hx * 1.2f, hy * 1.2f + r * 0.2f, stroke);
             stroke.setColor(0x55FFFFFF);
@@ -5027,6 +5060,15 @@ final class GameView extends View implements Menu.Host {
             fill.setColor(0xFFD83A3A);
             c.drawRect(-r * 0.45f, -r * 0.13f, r * 0.05f, r * 0.13f, fill);
             c.drawRect(-r * 0.33f, -r * 0.35f, -r * 0.07f, r * 0.35f, fill);
+        }
+        if (e.isArmed() && !world.weaponsOut(e) && !e.isZombie()) {
+            // (10.24) No emergency: the rifle slung across the back, the pistol in its holster.
+            fill.setColor(0xFF161616);
+            if (e.type == Entity.SOLDIER) {
+                stroke.setColor(0xFF161616);
+                stroke.setStrokeWidth(r * 0.3f);
+                c.drawLine(-r * 0.7f, -r * 0.9f, -r * 0.3f, r * 1.0f, stroke);
+            } else c.drawRect(-r * 0.15f, r * 0.6f, r * 0.35f, r * 0.85f, fill);
         }
         if (e.hasGun && !e.aiming) {
             // A gun tucked in a belt.
@@ -5382,11 +5424,13 @@ final class GameView extends View implements Menu.Host {
             int at = (int) world.afterTime;
             String phase = world.aftermath == World.AFTER_RECOVERY ? "   Recovery " + at / 60 + ":" + (at % 60 < 10 ? "0" : "") + at % 60
                     : world.aftermath == World.AFTER_FALLEN ? "   City fallen" : "";
+            int secs0 = (int) world.time;
             String line = "People " + (world.humanCount() + world.hiding + world.riding + world.visiting) + "   Zombies " + world.zombieCount()
-                    + phase + "   (tap for more)";
+                    + phase + String.format("   %d:%02d", secs0 / 60, secs0 % 60);
             // (Short of the buttons along the top in landscape.)
             float room = (portrait ? getWidth() - 10 * dp : topRects[0].left - 8 * dp) - statsRect.left - 24 * dp;
-            if (text.measureText(line) > room) line = line.substring(0, line.indexOf("   (tap"));
+            String clock = String.format("   %d:%02d", secs0 / 60, secs0 % 60);
+            if (text.measureText(line) > room) line = line.substring(0, line.length() - clock.length());
             if (text.measureText(line) > room && !phase.isEmpty()) line = line.substring(0, line.length() - phase.length());
             float tw = Math.min(text.measureText(line), room);
             oval.set(statsRect.left, statsRect.top, statsRect.left + tw + 24 * dp, statsRect.top + 28 * dp);

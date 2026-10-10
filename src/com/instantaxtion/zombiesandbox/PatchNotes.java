@@ -2,11 +2,25 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.23";
-    static final int VERSION_CODE = 61;
+    static final String VERSION = "10.24";
+    static final int VERSION_CODE = 62;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.24  -  Back to base",
+                    "Police cars and army trucks that drop people off now drive back to the nearest police station or base and park there. The next call takes one of the parked ones, and when their people are done somewhere far off, a car or truck drives out to pick them up and bring them home.",
+                    "Streets line up: in new cities a street carries straight on across a junction instead of jogging sideways, which tidies up the real-city maps most of all.",
+                    "More kinds of road: cobbled streets in the old town, concrete in the industrial district and rough chip-seal out in the country, alongside the tarmac.",
+                    "Towns have hills of their own now, not just the countryside: whole neighbourhoods up on a rise, with light and shade on the slopes.",
+                    "Police and soldiers keep their guns holstered or slung on an ordinary day, and only draw them on a call, on guard, when they're shooting, or once the whole city knows about the outbreak.",
+                    "People in safe zones spread out: each has their own spot round their tent and wanders off to other parts of the compound, and anyone standing on top of someone else steps aside.",
+                    "Responses are easier to see: marching lines from every police car and army truck to the call it's heading for, a pulsing ring round the call, and labels that say POLICE or ARMY and how many are coming.",
+                    "A calmer screen: the stats start as one short line (tap it for everything), and the radio feed shows two lines.",
+                    "New weapons: gun stores now have hunting rifles (slow, long range, hard-hitting) and revolvers as well as shotguns, and machetes and crowbars turn up in houses and sheds.",
+                    "New sounds: shotgun blasts with the pump racking, revolvers, the crack of a hunting rifle, breaking glass when shop windows go in, and fists pounding on doors.",
+                    "Faster updates: the tests now run in parallel across the processor's cores, so each release takes far less time to check.",
+            },
             {
                     "10.23  -  Staying put",
                     "Police cars and army trucks no longer drive off once their people are out. They stay on as a staging point with the spare ammunition they brought: anyone on their side who runs low heads back to the nearest one to restock, instead of trekking to the precinct or the base. When the fight moves on, the car or truck moves up behind its people, and only goes back out for more once it has handed out everything it carried.",

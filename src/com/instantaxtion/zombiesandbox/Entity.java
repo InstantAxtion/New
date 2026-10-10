@@ -60,6 +60,8 @@ final class Entity {
     Dispatch.SafeZone zone;
     int slot, callsign, squad, member;
     boolean onScene, outOfAmmoSaid;
+    /** A spot of their own picked for a while (a stroll inside a safe zone's wall). */
+    float spotX, spotY;
     float phoneTimer, talkTimer, callCd, taskTimer;
     /** A spot to stand at: guard posts and player orders. */
     float postX, postY;
@@ -168,10 +170,10 @@ final class Entity {
     boolean homeward;
     /** The gun they carry if it isn't their standard issue (pistol, shotgun or rifle), and a bat or axe. */
     int weapon, melee;
-    static final int W_STD = 0, W_PISTOL = 1, W_SHOTGUN = 2, W_RIFLE = 3;
-    static final int M_NONE = 0, M_BAT = 1, M_AXE = 2;
-    static final String[] WEAPON_NAMES = {"", "Pistol", "Shotgun", "Rifle"};
-    static final String[] MELEE_NAMES = {"", "Bat", "Axe"};
+    static final int W_STD = 0, W_PISTOL = 1, W_SHOTGUN = 2, W_RIFLE = 3, W_HUNTING = 4, W_REVOLVER = 5;
+    static final int M_NONE = 0, M_BAT = 1, M_AXE = 2, M_MACHETE = 3, M_CROWBAR = 4;
+    static final String[] WEAPON_NAMES = {"", "Pistol", "Shotgun", "Rifle", "Hunting rifle", "Revolver"};
+    static final String[] MELEE_NAMES = {"", "Bat", "Axe", "Machete", "Crowbar"};
 
     /** The kind of gun in their hands. */
     int gunKind() {

@@ -391,6 +391,25 @@ final class City {
         return districts.get(districtAt[ty * w + tx]).type;
     }
 
+    static final int SURF_ASPHALT = 0, SURF_COBBLE = 1, SURF_CONCRETE = 2, SURF_CHIPSEAL = 3;
+
+    /**
+     * What a street is surfaced with (cities since 10.24): cobblestones in the old town, concrete slabs in the
+     * industrial district, rough chip-seal on the roads out in the country, tarmac everywhere else (and on every
+     * main road and bridge).
+     */
+    int roadSurface(int x, int y) {
+        if (cfg.civic < 9 || real != null) return SURF_ASPHALT;
+        int i = y * w + x;
+        if (mainRoad[i] || (bridge != null && bridge[i])) return SURF_ASPHALT;
+        boolean inTown = x >= townX0 && x < townX1 && y >= townY0 && y < townY1;
+        if (!inTown) return SURF_CHIPSEAL;
+        int dt = districtType(x, y);
+        if (dt == DT_OLDTOWN) return SURF_COBBLE;
+        if (dt == DT_INDUSTRIAL) return SURF_CONCRETE;
+        return SURF_ASPHALT;
+    }
+
     /** A street: a band of road tiles {x0, y0, x1, y1} (x1/y1 exclusive) running one way, with its name. */
     static final class Street {
         final int x0, y0, x1, y1, width;
@@ -1288,14 +1307,25 @@ final class City {
         else if (dt == DT_DOWNTOWN) align = Math.max(align, 0.95f);
         // Big-map suburbs grew a bit at a time: more T-junctions, fewer streets running dead straight.
         if (w >= 400 && (dt == DT_SUBURB || dt == DT_PARKSIDE)) align = Math.min(align, 0.55f);
+        // (Since 10.24 streets line up across the junctions nearly everywhere; only the old town still wanders.)
+        boolean lineUp = cfg.civic >= 9;
+        if (lineUp) align = dt == DT_OLDTOWN ? 0.8f : 1f;
         // Lines are kept as street centres (doubled, so odd widths stay exact): a narrow street lines up
         // with the middle of a wide one, not with its edge.
         int hint = vertical ? hintX : hintY;
-        int wideLo = (vertical ? x0 : y0) + minSide, wideHi = (vertical ? x1 : y1) - roadW - minSide;
+        int snapSide = lineUp ? 11 : minSide;
+        int wideLo = (vertical ? x0 : y0) + snapSide, wideHi = (vertical ? x1 : y1) - roadW - snapSide;
+        boolean hinted = false, tryLines;
         if (hint >= 0 && rnd.nextFloat() < align) {
             int h0 = (hint - roadW) / 2;
-            if (h0 >= wideLo && h0 <= wideHi) at = h0;
-        } else if (rnd.nextFloat() < align) {
+            if (h0 >= wideLo && h0 <= wideHi) {
+                at = h0;
+                hinted = true;
+            }
+            // (Before 10.24 a hint that didn't fit was simply dropped; now the street looks for another line.)
+            tryLines = lineUp && !hinted && rnd.nextFloat() < align;
+        } else tryLines = rnd.nextFloat() < align;
+        if (tryLines) {
             // Line up with a street already laid out elsewhere in town, so streets run straight across
             // the map instead of jogging at every junction.
             List<Integer> lines = vertical ? vLines : hLines;
@@ -6208,6 +6238,12 @@ final class City {
                 if (t == TREE && isPlazaTree(x, y)) col = 0xFFB3A487;
                 if (t == CAR && isLotCar(x, y)) col = 0xFF48494D;
                 if (t == CAR && carKind[y * w + x] == 2) col = 0xFF6A6E5E;
+                if (t == ROAD || (t == CAR && col != 0xFF48494D && col != 0xFF6A6E5E)) {
+                    int sf = roadSurface(x, y);
+                    if (sf == SURF_COBBLE) col = 0xFF5F5A55;
+                    else if (sf == SURF_CONCRETE) col = 0xFF77777A;
+                    else if (sf == SURF_CHIPSEAL) col = 0xFF4A4946;
+                }
                 p.setColor(col);
                 // (A hair over each edge, so no seams show between tiles when the map is drawn smaller.)
                 c.drawRect(x * T, y * T, x * T + T + 0.75f, y * T + T + 0.75f, p);
@@ -6283,6 +6319,35 @@ final class City {
                     p.setColor(0xFFA29376);
                     c.drawLine(fx, fy, fx + T, fy, p);
                     c.drawLine(fx, fy, fx, fy + T, p);
+                } else if ((t == ROAD || t == CAR) && roadSurface(x, y) != SURF_ASPHALT) {
+                    int sf = roadSurface(x, y);
+                    if (sf == SURF_COBBLE) {
+                        // Setts in courses, each row offset by half a stone.
+                        p.setColor(0xFF4A4642);
+                        for (int r = 0; r < 4; r++) {
+                            float ry = fy + r * T / 4f;
+                            c.drawLine(fx, ry, fx + T, ry, p);
+                            float off = (r + y * 4) % 2 == 0 ? 0 : T / 6f;
+                            for (float sx = fx + off; sx < fx + T; sx += T / 3f) c.drawLine(sx, ry, sx, ry + T / 4f, p);
+                        }
+                        p.setColor(0x18FFFFFF);
+                        for (int k = 0; k < 3; k++) c.drawCircle(fx + prnd.nextFloat() * T, fy + prnd.nextFloat() * T, 1.2f, p);
+                    } else if (sf == SURF_CONCRETE) {
+                        // Slabs with tar-filled joints and the odd stain.
+                        p.setColor(0xFF5C5C60);
+                        if (x % 2 == 0) c.drawLine(fx, fy, fx, fy + T, p);
+                        if (y % 2 == 0) c.drawLine(fx, fy, fx + T, fy, p);
+                        if (prnd.nextFloat() < 0.15f) {
+                            p.setColor(0x22000000);
+                            c.drawCircle(fx + prnd.nextFloat() * T, fy + prnd.nextFloat() * T, 2 + prnd.nextFloat() * 3, p);
+                        }
+                    } else {
+                        // Chip-seal: loose grey and brown stone chips, a worn edge.
+                        for (int k = 0; k < 7; k++) {
+                            p.setColor(prnd.nextBoolean() ? 0xFF65625C : 0xFF3A3936);
+                            c.drawCircle(fx + prnd.nextFloat() * T, fy + prnd.nextFloat() * T, 0.7f, p);
+                        }
+                    }
                 } else if (t == ROAD || t == CAR) {
                     if (prnd.nextFloat() < 0.25f) {
                         p.setColor(0x22000000);
@@ -6531,7 +6596,7 @@ final class City {
                 r.setSeed(tileSeed(x, y, 11));
                 byte t = tiles[y * w + x];
                 float fx = x * T, fy = y * T;
-                if (t == ROAD || t == CAR) {
+                if ((t == ROAD || t == CAR) && roadSurface(x, y) == SURF_ASPHALT) {
                     for (int k = 0; k < 5; k++) {
                         p.setColor(r.nextBoolean() ? 0x14FFFFFF : 0x1A000000);
                         float gx = fx + r.nextFloat() * T, gy = fy + r.nextFloat() * T;
@@ -7685,7 +7750,7 @@ final class City {
                 float gx = (elev[y * w + Math.min(w - 1, x + 1)] - elev[y * w + Math.max(0, x - 1)]) / 2;
                 float gy = (elev[Math.min(h - 1, y + 1) * w + x] - elev[Math.max(0, y - 1) * w + x]) / 2;
                 // Lit from the north-west, like the buildings' shadows.
-                float lit = (gx + gy) * 0.707f * 0.075f;
+                float lit = (gx + gy) * 0.707f * (cfg.civic >= 9 ? 0.11f : 0.075f);
                 float white = Math.min(0.32f, Math.max(0, lit)), black = Math.min(0.5f, Math.max(0, -lit));
                 if (elev[i] > snow) white = Math.max(white, Math.min(1, (elev[i] - snow) / (top - snow) * 2.5f) * 0.7f);
                 float a = Math.min(0.75f, white + black);

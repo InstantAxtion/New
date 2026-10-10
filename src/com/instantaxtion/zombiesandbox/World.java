@@ -2280,7 +2280,7 @@ final class World {
                 target.barricade -= dps * dt;
                 target.calmTimer = 0;
                 if (target.barricade < 70 && isShop(target)) smash(target);
-                if (rnd.nextFloat() < dt * 1.2f) emit(Sfx.THUD, target.doorX, target.doorY);
+                if (rnd.nextFloat() < dt * 1.2f) emit(rnd.nextFloat() < 0.5f ? Sfx.POUND : Sfx.THUD, target.doorX, target.doorY);
                 return;
             }
             // Find the way round to the door (not straight into the wall): every zombie at this building
@@ -2825,7 +2825,7 @@ final class World {
     // ------------------------------------------------------------------ weapons
 
     static int magFor(int kind) {
-        return kind == Entity.W_SHOTGUN ? 6 : kind == Entity.W_RIFLE ? 30 : 12;
+        return kind == Entity.W_SHOTGUN ? 6 : kind == Entity.W_RIFLE ? 30 : kind == Entity.W_HUNTING ? 5 : kind == Entity.W_REVOLVER ? 6 : 12;
     }
 
     /** Puts a particular gun in someone's hands. */
@@ -2840,7 +2840,9 @@ final class World {
 
     /** A bat or an axe: a hard blow that stuns, and sometimes splits a skull. */
     private void swing(Entity e, Entity z) {
-        boolean axe = e.melee == Entity.M_AXE || (e.melee == Entity.M_NONE && e.type == Entity.FIREFIGHTER);
+        // (A machete cuts like an axe; a crowbar hits like a bat, only harder.)
+        boolean axe = e.melee == Entity.M_AXE || e.melee == Entity.M_MACHETE || (e.melee == Entity.M_NONE && e.type == Entity.FIREFIGHTER);
+        if (e.melee == Entity.M_CROWBAR) z.hp -= 8;
         e.meleeCd = axe ? 0.8f : 0.6f;
         e.swingAt = time;
         float ddx = z.x - e.x, ddy = z.y - e.y, d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
@@ -2907,7 +2909,7 @@ final class World {
         if (p.melee > 0) {
             if (e.melee > 0) dropMelee(e, e.melee);
             e.melee = p.melee;
-            say("Picked up " + (p.melee == Entity.M_AXE ? "an axe" : "a bat"));
+            say("Picked up " + (p.melee == Entity.M_AXE ? "an axe" : "a " + Entity.MELEE_NAMES[p.melee].toLowerCase()));
             return;
         }
         int kind = p.weapon == Entity.W_STD ? Entity.W_PISTOL : p.weapon;
@@ -2965,7 +2967,9 @@ final class World {
                 Pickup p = new Pickup();
                 p.x = q[0];
                 p.y = q[1];
-                p.melee = fire ? Entity.M_AXE : Entity.M_BAT;
+                // (A crowbar or a machete in some sheds and garages since 10.24.)
+                int pick = ((int) b.doorX * 31 + (int) b.doorY) & 7;
+                p.melee = fire ? Entity.M_AXE : pick == 0 ? Entity.M_MACHETE : pick < 3 ? Entity.M_CROWBAR : Entity.M_BAT;
                 pickups.add(p);
             }
             if (++n > 80) break;
@@ -3160,8 +3164,9 @@ final class World {
             e.hp = Math.min(e.maxHp, e.hp + 25);
             e.stamina = 1;
             if (b.kind == City.HOUSE && e.melee == 0 && rnd.nextFloat() < 0.4f) {
-                e.melee = rnd.nextFloat() < 0.3f ? Entity.M_AXE : Entity.M_BAT;
-                say("Ate something, and found " + (e.melee == Entity.M_AXE ? "an axe" : "a bat"));
+                float m = rnd.nextFloat();
+                e.melee = m < 0.25f ? Entity.M_AXE : m < 0.45f ? Entity.M_MACHETE : m < 0.65f ? Entity.M_CROWBAR : Entity.M_BAT;
+                say("Ate something, and found " + (e.melee == Entity.M_AXE ? "an axe" : "a " + Entity.MELEE_NAMES[e.melee].toLowerCase()));
             } else if (b.kind == City.HOUSE && !e.canShoot() && rnd.nextFloat() < 0.15f) {
                 setGun(e, Entity.W_PISTOL, 18);
                 say("Ate something, and found a pistol in a drawer");
@@ -5796,10 +5801,15 @@ final class World {
                 dispatch.say(Dispatch.WHO_INFO, null, "People have broken into " + b.name + " and are arming themselves: "
                         + b.stock + " rounds left on the shelves.", b.doorX, b.doorY);
             }
+            if (b.kind == City.SHOP && b.shopType == 1 && !e.hasGun) emit(Sfx.GLASS, b.doorX, b.doorY);
             if (e.hasGun) e.reserve += take;
             else {
                 armCivilian(e, take);
-                if (rnd.nextFloat() < 0.4f) setGun(e, Entity.W_SHOTGUN, take);
+                // (10.24) Whatever's on the rack: shotguns most of all, hunting rifles, revolvers, or a pistol.
+                float g = rnd.nextFloat();
+                if (g < 0.4f) setGun(e, Entity.W_SHOTGUN, take);
+                else if (g < 0.58f) setGun(e, Entity.W_HUNTING, Math.min(take, 20));
+                else if (g < 0.72f) setGun(e, Entity.W_REVOLVER, take);
                 armedAtStores++;
             }
             if (b.stock <= 0 && b.kind == City.SHOP && !b.looted) {
@@ -6419,25 +6429,6 @@ final class World {
         boolean dry = e.ammo <= 0 && e.reserve <= 0 && e.reload <= 0;
         float stock = (e.ammo + e.reserve) / (float) Math.max(1, e.magSize + fullReserve(e));
         e.lowCd -= dt;
-        // Dry or running low with a staging truck or car of their own side close by (10.23): back to it for
-        // rounds, rather than all the way to the precinct or the base.
-        if ((dry || stock < 0.22f && nearest(e, 70, true, false) == null) && e.task != Dispatch.T_BOARD
-                && e.task != Dispatch.T_RESCUE && fleet.vehicles.size() > 0) {
-            Fleet.Vehicle av = fleet.ammoPoint(e, dry ? 900 : 450);
-            if (av != null) {
-                float ax = av.x - e.x, ay = av.y - e.y;
-                if (ax * ax + ay * ay < 26 * 26) {
-                    av.stock -= topUp(e, av.stock);
-                    dry = false;
-                    stock = 1;
-                } else {
-                    Entity t = nearest(e, 50, true, false);
-                    if (t != null) flee(e, (e.x - t.x) / 50, (e.y - t.y) / 50, e.runSpeed);
-                    else walkToSpot(e, av.x, av.y, e.runSpeed);
-                    return;
-                }
-            }
-        }
         if (e.scout && !dry) {
             e.scout = false;
             dispatch.say(soldier ? Dispatch.WHO_MILITARY : Dispatch.WHO_POLICE, e, "Got some rounds. Back in the fight.", e.x, e.y);
@@ -6832,37 +6823,14 @@ final class World {
     /** Radios a sighting: other police and soldiers nearby with nothing in view come to look. */
     /** Police and soldiers on their feet within r of (x, y). */
     /**
-     * A staging vehicle hands out its spare rounds (10.23) to anyone of this type within r who is short;
-     * returns how many it gave.
+     * Whether police and soldiers have their guns out (10.24): only in an emergency, when they're on a call,
+     * aiming, guarding, or once the whole city knows about the outbreak (until it is over). On an ordinary day the rifle stays slung and the pistol
+     * holstered.
      */
-    int issueAmmo(float x, float y, float r, int type, int stock) {
-        int given = 0;
-        int cx0 = Math.max(0, (int) ((x - r) / CELL)), cx1 = Math.min(gw - 1, (int) ((x + r) / CELL));
-        int cy0 = Math.max(0, (int) ((y - r) / CELL)), cy1 = Math.min(gh - 1, (int) ((y + r) / CELL));
-        for (int cy = cy0; cy <= cy1 && given < stock; cy++)
-            for (int cx = cx0; cx <= cx1 && given < stock; cx++) {
-                int c = cy * gw + cx;
-                for (int k = cellStart[c] + zCount[c], end = cellStart[c] + cellCount[c]; k < end && given < stock; k++) {
-                    Entity o = sorted[k];
-                    if (o.dead || o.type != type || (o.x - x) * (o.x - x) + (o.y - y) * (o.y - y) > r * r) continue;
-                    given += topUp(o, stock - given);
-                }
-            }
-        return given;
-    }
-
-    /** Gives a unit up to {@code most} rounds towards full spare ammo; returns how many it took. */
-    private int topUp(Entity o, int most) {
-        int want = Math.min(most, fullReserve(o) - o.reserve);
-        if (want <= 0) return 0;
-        o.reserve += want;
-        if (o.ammo <= 0) o.reload = 2;
-        o.outOfAmmoSaid = false;
-        if (o.task == Dispatch.T_RESUPPLY || o.task == Dispatch.T_BORROW) {
-            o.task = Dispatch.T_NONE;
-            o.protector = null;
-        }
-        return want;
+    boolean weaponsOut(Entity e) {
+        if (e.aiming || e.reload > 0 || (alert >= 2 && !recovering)) return true;
+        int t = e.task;
+        return t == Dispatch.T_RESPOND || t == Dispatch.T_GUARD || e.onScene;
     }
 
     int armedNear(float x, float y, float r) {
@@ -7134,7 +7102,7 @@ final class World {
             }
         }
         e.fear = 5;
-        Entity t = pickTarget(e, 150);
+        Entity t = pickTarget(e, e.weapon == Entity.W_HUNTING ? 260 : 150);
         if (t != null) {
             float d = (float) Math.hypot(t.x - e.x, t.y - e.y);
             if (d < 14) {
@@ -7971,6 +7939,15 @@ final class World {
             e.cooldown = 0.55f;
             dmg = 10;
             accuracy = 0.7f;
+        } else if (e.weapon == Entity.W_HUNTING) {
+            // A bolt-action deer rifle: slow, but it hits hard and true a long way off.
+            e.cooldown = 1.5f;
+            dmg = 55;
+            accuracy = 0.85f;
+        } else if (e.weapon == Entity.W_REVOLVER) {
+            e.cooldown = 0.7f;
+            dmg = 18;
+            accuracy = 0.68f;
         }
         if (e.weapon == Entity.W_SHOTGUN && d < 60) pellets(e, t, dmg);
         // Soldiers near their commander fight better.
@@ -8044,7 +8021,9 @@ final class World {
             tracer(mx, my, ex, ey);
         }
         particle(mx, my, 0, 0, 0.06f, soldier ? 3.2f : 2.6f, 0xFFFFE9A0, P_FLASH);
-        emit(e.role == Entity.ROLE_MARKSMAN ? Sfx.SNIPER : !soldier || e.role == Entity.ROLE_COMMANDER ? Sfx.PISTOL : e.role == Entity.ROLE_SNIPER ? Sfx.SNIPER
+        int gunSound = e.weapon == Entity.W_SHOTGUN ? Sfx.SHOTGUN : e.weapon == Entity.W_HUNTING ? Sfx.HUNTING : e.weapon == Entity.W_REVOLVER ? Sfx.REVOLVER : -1;
+        if (gunSound >= 0) emit(gunSound, e.x, e.y);
+        else emit(e.role == Entity.ROLE_MARKSMAN ? Sfx.SNIPER : !soldier || e.role == Entity.ROLE_COMMANDER ? Sfx.PISTOL : e.role == Entity.ROLE_SNIPER ? Sfx.SNIPER
                 : e.role == Entity.ROLE_GUNNER ? Sfx.MG : Sfx.RIFLE, e.x, e.y);
     }
 
@@ -8377,6 +8356,7 @@ final class World {
     void smash(City.Building b) {
         if (b.smashed) return;
         b.smashed = true;
+        emit(Sfx.GLASS, b.doorX, b.doorY);
         for (int k = 0; k < 10; k++) {
             float gx = b.doorX + rnd.nextFloat() * 20 - 10, gy = b.doorY + rnd.nextFloat() * 8 - 4;
             decal(gx, gy, 0.8f + rnd.nextFloat() * 1.2f, 0xCCCFE8F2, D_GLASS, rnd.nextFloat() * TAU);
@@ -8581,11 +8561,21 @@ final class World {
             int q = (e.nameSeed >> 3) & 15;
             tx = z.foodX - 18 + (q % 8) * 5;
             ty = z.foodY + 13 + (q / 8) * 6;
+        } else if ((phase == 2 || phase == 4) && strollSpot(e, z, (int) ((e.jobTimer + (e.nameSeed & 0xFF)) / 30))) {
+            // (10.24) Out and about inside the wall: somewhere of their own, not all in one huddle.
+            tx = e.spotX;
+            ty = e.spotY;
         } else if (!z.tents.isEmpty()) {
             float[] t = z.tents.get((e.nameSeed & 0x7FFF) % z.tents.size());
-            int side = (e.nameSeed >> 4) & 3;
-            tx = t[0] + (side % 2 == 0 ? -7 : 7);
-            ty = t[1] + (side < 2 ? 10 : -10);
+            // Round their tent, each at their own spot.
+            float a = ((e.nameSeed >> 4) & 63) / 64f * TAU, rr = 9 + ((e.nameSeed >> 10) & 15);
+            tx = t[0] + (float) Math.cos(a) * rr;
+            ty = t[1] + (float) Math.sin(a) * rr;
+            if (city.solidAt(tx, ty)) {
+                int side = (e.nameSeed >> 4) & 3;
+                tx = t[0] + (side % 2 == 0 ? -7 : 7);
+                ty = t[1] + (side < 2 ? 10 : -10);
+            }
         } else {
             tx = z.x;
             ty = z.y;
@@ -8594,9 +8584,50 @@ final class World {
         if (d > 8) walkToSpot(e, tx, ty, e.speed);
         else {
             steer(e, 0, 0, 0);
+            personalSpace(e);
             // Patched up at the medical tent.
             if (hurt) e.hp = Math.min(e.maxHp, e.hp + 4 * dt);
         }
+    }
+
+    /** A spot of their own somewhere inside the zone for this stretch of the day (in goalX/goalY), or false. */
+    private boolean strollSpot(Entity e, Dispatch.SafeZone z, int cycle) {
+        int hsh = e.nameSeed * 31 + cycle * 7919;
+        hsh ^= hsh >>> 13;
+        hsh *= 0x5bd1e995;
+        hsh ^= hsh >>> 15;
+        float m = 24, x0 = z.left() + m, x1 = z.right() - m, y0 = z.top() + m, y1 = z.bottom() - m;
+        if (x1 <= x0 || y1 <= y0) return false;
+        float x = x0 + ((hsh & 0xFFFF) / 65535f) * (x1 - x0), y = y0 + (((hsh >>> 16) & 0x7FFF) / 32767f) * (y1 - y0);
+        if (city.solidAt(x, y) || !z.inside(x, y)) return false;
+        e.spotX = x;
+        e.spotY = y;
+        return true;
+    }
+
+    /** Someone standing about steps away from anyone right on top of them (people keep a little apart). */
+    private void personalSpace(Entity e) {
+        float r = 7, ax = 0, ay = 0;
+        int cx0 = Math.max(0, (int) ((e.x - r) / CELL)), cx1 = Math.min(gw - 1, (int) ((e.x + r) / CELL));
+        int cy0 = Math.max(0, (int) ((e.y - r) / CELL)), cy1 = Math.min(gh - 1, (int) ((e.y + r) / CELL));
+        int n = 0;
+        for (int cy = cy0; cy <= cy1; cy++)
+            for (int cx = cx0; cx <= cx1; cx++) {
+                int c = cy * gw + cx;
+                for (int k = cellStart[c] + zCount[c], end = cellStart[c] + cellCount[c]; k < end; k++) {
+                    Entity o = sorted[k];
+                    if (o == e || o.dead) continue;
+                    float dx = e.x - o.x, dy = e.y - o.y, d2 = dx * dx + dy * dy;
+                    if (d2 >= r * r || d2 < 0.0001f) continue;
+                    float d = (float) Math.sqrt(d2);
+                    ax += dx / d * (r - d);
+                    ay += dy / d * (r - d);
+                    n++;
+                }
+            }
+        if (n == 0) return;
+        float l = (float) Math.sqrt(ax * ax + ay * ay) + 0.001f;
+        steer(e, ax / l, ay / l, e.speed * 0.5f);
     }
 
     private void throwGrenade(Entity e, float x, float y) {

@@ -18,7 +18,7 @@ final class Fleet {
     static final float TRAIN_LENGTH = 136;
     static final int WAIT = 0, DRIVE = 1, RETURN = 2, FLY_IN = 3, CIRCLE = 4, FLY_OUT = 5, CRUISE = 6,
             ABANDONED = 7, SPRAY = 8, SPOOL = 9, LAND = 10, ENGAGE = 11, LOAD = 12, BLOCK = 13,
-            PATROL = 14, SCENE = 15, RECALL = 16, IDLE = 17, MUSTER = 18, HOVER = 19, STANDBY = 20, DROP = 21;
+            PATROL = 14, SCENE = 15, RECALL = 16, IDLE = 17, MUSTER = 18, HOVER = 19, STANDBY = 20, DROP = 21, PICKUP = 22;
     private static final int[] CAR_COLORS = {0xFFB03A2E, 0xFF2E5FB0, 0xFFE0E0E0, 0xFF222428, 0xFFD4A21C, 0xFF3C8A4E,
             0xFF8A8F96, 0xFF6B2E8A, 0xFFE07A2E};
     private static final float[] MAX_HP = {160, 260, 1, 100, 240, 700, 160, 1, 1};
@@ -120,13 +120,14 @@ final class Fleet {
         /** Bringing reinforcements in from outside the city (10.17): tagged on the map. */
         boolean reinforcement;
         /**
-         * A car or truck that has dropped its people off (10.23): it stays as their staging point with the spare
-         * ammunition it brought, hands it round to anyone on its side who comes by, and moves up behind them when
-         * the fight moves on. Only once it's run out does it go back for more.
+         * A police car or army truck that has dropped its people off (10.24): it drives back to the nearest police
+         * station or base and parks there (standby) until it's needed for the next call, or until its people are
+         * done and need picking up (pickup: it drives out, waits for them to climb in, and brings them back).
          */
-        boolean staging;
-        int stock;
+        boolean parkHome;
         float stageCd;
+        /** The station or base it parks at. */
+        City.Facility depot;
         /** The people it dropped off. */
         final ArrayList<Entity> squad = new ArrayList<Entity>();
         /** A fire engine's crew is already off fighting the fire. */
@@ -307,8 +308,10 @@ final class Fleet {
                         : v.kind == K_BIKE ? "Police motorcycle" : v.type == CRUISER ? "Police car" : "Army truck";
                 if (v.restock) return v.state == RETURN ? "Supply truck: Heading out of town"
                         : "Supply truck: Delivering" + (where != null ? " to " + where : "");
-                if (v.staging && !v.broken) return who + (v.state == SCENE ? ": Staging point" + (v.stock > 0 ? ", " + v.stock + " spare rounds" : "")
-                        : v.state == RETURN ? ": Out of ammo, going for more" : ": Moving up behind its " + (v.passengerType == Entity.SOLDIER ? "squad" : "officers"));
+                if (v.standby) return who + ": Parked at " + (v.depot != null ? v.depot.name : "base") + ", ready";
+                if (v.state == PICKUP) return who + ": Picking up its " + (v.passengerType == Entity.SOLDIER ? "squad" : "officers");
+                if (v.pickup && v.state == DRIVE) return who + ": Going to pick up its " + (v.passengerType == Entity.SOLDIER ? "squad" : "officers");
+                if (v.parkHome && v.state == RETURN) return who + ": Back to " + (v.depot != null ? v.depot.name : "base") + (v.crew.isEmpty() ? "" : " with " + v.crew.size() + " aboard");
                 if (v.type == TRUCK && v.state == SCENE) return who + ": Fire support" + (where != null ? " at " + where : "");
                 if (v.loop && v.state == DRIVE) return who + ": Patrolling" + (where != null ? " to " + where : "");
                 if (v.broken) return who + ": Wrecked";
@@ -713,7 +716,9 @@ final class Fleet {
                  Dispatch.SafeZone zone, String place) {
         float[] start = null;
         // An army truck from a base or the armory: one of the trucks parked there drives out.
-        if (unitType == Entity.SOLDIER && fromParked) start = city.takeParkedTruck(fromX, fromY, 260);
+        // (10.24) First one of the cars or trucks parked back at the station or base after an earlier call.
+        if (fromParked) start = takeStandby(unitType == Entity.COP ? CRUISER : TRUCK, fromX, fromY, 300);
+        if (start == null && unitType == Entity.SOLDIER && fromParked) start = city.takeParkedTruck(fromX, fromY, 260);
         if (start == null) start = city.nearestDrivable(fromX, fromY);
         if (start == null) return false;
         int[] full = scratchField();
@@ -2066,6 +2071,18 @@ final class Fleet {
 
     private boolean updateWreck(Vehicle v, float dt) {
         v.speed = 0;
+        if (v.standby && !v.broken) {
+            if (v.pulling) {
+                float dx = v.pullX - v.x, dy = v.pullY - v.y, d = (float) Math.sqrt(dx * dx + dy * dy);
+                if (d < 0.5f) v.pulling = false;
+                else {
+                    float step = Math.min(d, 20 * dt);
+                    v.x += dx / d * step;
+                    v.y += dy / d * step;
+                }
+            }
+            return standbyStep(v, dt);
+        }
         if (v.block != null && !v.broken && v.block.removed) {
             // The zone has closed: the officer gets back in, the cones come in and the car drives off.
             v.block = null;
@@ -2115,7 +2132,13 @@ final class Fleet {
 
     private boolean updateCar(Vehicle v, float dt) {
         if (v.type == TRUCK) turret(v, dt);
-        if (v.staging && v.state == SCENE) return stage(v, dt);
+        if (v.state == PICKUP) return pickupStep(v, dt);
+        if (v.state == DRIVE && v.pickup && v.stuckTimer > 12) {
+            v.state = PICKUP;
+            v.timer = 0;
+            v.speed = 0;
+            return false;
+        }
         if (v.state == SCENE && v.type == TRUCK) {
             // An APC that dropped its squad stays a while to cover them with its gun, then heads home.
             v.speed = Math.max(0, v.speed - dt * 200);
@@ -2237,6 +2260,19 @@ final class Fleet {
                 }
                 v.supply = 0;
             }
+            if (v.state == DRIVE && v.pickup) {
+                // Out where its people are: wait for them to climb in.
+                v.state = PICKUP;
+                v.timer = 0;
+                v.speed = 0;
+                return false;
+            }
+            if (v.state == RETURN && v.parkHome) {
+                // Home: anyone aboard gets out (off duty), and it parks up ready for the next call.
+                if (!v.crew.isEmpty()) crewOut(v, true);
+                parkUp(v);
+                return false;
+            }
             if (v.state == DRIVE && v.restock) {
                 if (Math.hypot(v.x - v.tx, v.y - v.ty) < 120) w.restocked(v);
                 v.state = RETURN;
@@ -2284,7 +2320,7 @@ final class Fleet {
                     v.speed = 0;
                     return false;
                 }
-                if (startStaging(v)) return false;
+                if (headHome(v)) return false;
                 v.state = RETURN;
                 v.speed = 0;
                 return !route(v, v.homeX, v.homeY);
@@ -2303,95 +2339,153 @@ final class Fleet {
         return false;
     }
 
+    /** How many cars and trucks a station or base keeps parked before the rest go back where they came from. */
+    private static final int DEPOT_ROOM = 14;
+
     /**
-     * Once its people are out (10.23), a police car or army truck stays as their staging point instead of
-     * driving off: parked up behind them with the spare ammo it brought. Not for a supply run, a roadblock car
-     * or one delivering to a safe zone.
+     * Once its people are out (10.24), a police car or army truck heads back to the nearest police station or
+     * base to park, ready for the next call. Not a supply run, a roadblock car or one delivering to a safe zone.
      */
-    private boolean startStaging(Vehicle v) {
+    private boolean headHome(Vehicle v) {
         if (v.type != CRUISER && v.type != TRUCK) return false;
-        if (v.restock || v.zone != null || v.block != null || v.loop || v.broken) return false;
-        if (!v.staging) {
-            if (v.squad.isEmpty()) return false;
-            v.staging = true;
-            v.passengerType = v.squad.get(0).type;
-            v.stock = v.type == TRUCK ? 900 : 240;
-            if (v.type == TRUCK)
-                w.dispatch.say(Dispatch.WHO_MILITARY, v.squad.get(0), "Truck's staying put on " + city.placeName(v.x, v.y)
-                        + " with spare ammo. Come back to it when you're low.", v.x, v.y);
-        }
+        if (v.restock || v.zone != null || v.block != null || v.loop || v.broken || v.kind == K_APC) return false;
+        if (v.squad.isEmpty() && !v.pickup) return false;
+        if (!v.squad.isEmpty()) v.passengerType = v.squad.get(0).type;
+        City.Facility f = city.nearestFacility(v.passengerType == Entity.SOLDIER ? City.FACILITY_BASE : City.FACILITY_POLICE, v.x, v.y);
+        if (f == null) return false;
+        int there = 0;
+        for (int i = 0; i < vehicles.size(); i++) if (vehicles.get(i).depot == f && vehicles.get(i) != v) there++;
+        if (there >= DEPOT_ROOM) return false;
+        if (!route(v, f.gateX, f.gateY)) return false;
+        v.depot = f;
+        v.parkHome = true;
+        v.pickup = false;
         v.incident = null;
-        v.state = SCENE;
+        v.state = RETURN;
         v.speed = 0;
-        v.quiet = 0;
-        v.stageCd = 1;
+        v.stuckTimer = 0;
         return true;
     }
 
-    /** A staging point: hands out ammo, moves up behind its people when it's quiet, and goes for more once it's empty. */
-    private boolean stage(Vehicle v, float dt) {
-        v.speed = Math.max(0, v.speed - dt * 200);
+    /** Parked at its station or base, off the road on the lot or the yard, clear of the others. */
+    private void parkUp(Vehicle v) {
+        v.state = IDLE;
+        v.speed = 0;
+        v.parked = true;
+        v.standby = true;
+        v.parkHome = false;
+        v.stageCd = 4;
+        int tx = (int) (v.x / City.T), ty = (int) (v.y / City.T);
+        for (int r = 1; r <= 7; r++)
+            for (int dy = -r; dy <= r; dy++)
+                for (int dx = -r; dx <= r; dx++) {
+                    if (Math.max(Math.abs(dx), Math.abs(dy)) != r) continue;
+                    int x = tx + dx, y = ty + dy;
+                    if (x < 0 || y < 0 || x >= city.w || y >= city.h) continue;
+                    byte t = city.tiles[y * city.w + x];
+                    if (t != City.LOT && t != City.BASE && t != City.SIDEWALK && t != City.PLAZA) continue;
+                    float px = (x + 0.5f) * City.T, py = (y + 0.5f) * City.T;
+                    if (city.solidAt(px, py)) continue;
+                    boolean taken = false;
+                    for (int i = 0; i < vehicles.size() && !taken; i++) {
+                        Vehicle o = vehicles.get(i);
+                        if (o != v && !airborne(o) && Math.abs(o.x - px) < 12 && Math.abs(o.y - py) < 12) taken = true;
+                        if (o != v && o.standby && o.pulling && Math.abs(o.pullX - px) < 12 && Math.abs(o.pullY - py) < 12) taken = true;
+                    }
+                    if (taken) continue;
+                    v.pullX = px;
+                    v.pullY = py;
+                    v.pulling = true;
+                    return;
+                }
+    }
+
+    /** Parked and waiting: drives out to fetch its people once they're done and a long way off. */
+    private boolean standbyStep(Vehicle v, float dt) {
         v.stageCd -= dt;
         if (v.stageCd > 0) return false;
-        v.stageCd = 1;
-        if (v.stock > 0) v.stock -= w.issueAmmo(v.x, v.y, 60, v.passengerType, v.stock);
-        v.quiet = w.countZombiesNear(v.x, v.y, 220) > 0 ? 0 : v.quiet + 1;
+        v.stageCd = 4;
+        float sx = 0, sy = 0;
+        int n = 0;
         for (int i = v.squad.size() - 1; i >= 0; i--) {
             Entity e = v.squad.get(i);
-            if (e.dead || e.removed || e.type != v.passengerType) v.squad.remove(i);
-        }
-        if (v.quiet < 20) return false;
-        if (v.stock <= 0) {
-            // Empty: back out for more.
-            v.state = RETURN;
-            v.quiet = 0;
-            return !route(v, v.homeX, v.homeY);
-        }
-        // Its people have moved on: follow them up (or, if they're gone, whoever on its side has no truck near).
-        Entity lead = null;
-        float best = Float.MAX_VALUE;
-        for (Entity e : v.squad) {
-            float d = (e.x - v.x) * (e.x - v.x) + (e.y - v.y) * (e.y - v.y);
-            if (d > 300 * 300 && d < best) {
-                best = d;
-                lead = e;
+            if (e.dead || e.removed || e.isZombie()) {
+                v.squad.remove(i);
+                continue;
             }
+            if (e.task != Dispatch.T_NONE || e.aiming || e.rig != null) continue;
+            if (Math.hypot(e.x - v.x, e.y - v.y) < 600 || w.countZombiesNear(e.x, e.y, 160) > 0) continue;
+            sx += e.x;
+            sy += e.y;
+            n++;
         }
-        if (lead == null && v.squad.isEmpty() && v.quiet >= 40) {
-            for (int i = 0, n = w.entities.size(); i < n; i++) {
-                Entity e = w.entities.get(i);
-                if (e.dead || e.type != v.passengerType || e.rig != null) continue;
-                float d = (e.x - v.x) * (e.x - v.x) + (e.y - v.y) * (e.y - v.y);
-                if (d > 300 * 300 && d < best && ammoPoint(e, 400) == null) {
-                    best = d;
-                    lead = e;
-                }
-            }
-            if (lead != null) v.squad.add(lead);
+        // (Wait until most of them are free, so it isn't back and forth for each one.)
+        if (n == 0 || n * 2 < v.squad.size()) return false;
+        float[] spot = city.nearestDrivable(sx / n, sy / n);
+        if (spot == null) return false;
+        v.parked = false;
+        v.pulling = false;
+        v.standby = false;
+        v.pickup = true;
+        if (!route(v, spot[0], spot[1])) {
+            v.parked = true;
+            v.standby = true;
+            v.pickup = false;
+            return false;
         }
-        if (lead == null) return false;
-        v.quiet = 0;
-        if (!route(v, lead.x, lead.y)) return false;
         v.state = DRIVE;
         v.stuckTimer = 0;
-        v.place = city.placeName(lead.x, lead.y);
+        v.place = city.placeName(spot[0], spot[1]);
+        if (v.squad.size() > 0)
+            w.dispatch.say(v.passengerType == Entity.SOLDIER ? Dispatch.WHO_MILITARY : Dispatch.WHO_POLICE, v.squad.get(0),
+                    (v.type == TRUCK ? "Truck" : "Car") + " coming out to " + v.place + " to pick us up.", v.x, v.y);
         return false;
     }
 
-    /** The nearest staging vehicle with spare rounds for this person, within {@code reach}. */
-    Vehicle ammoPoint(Entity e, float reach) {
+    /** Out where its people are, waiting while they climb in; then back to the station or base. */
+    private boolean pickupStep(Vehicle v, float dt) {
+        v.speed = Math.max(0, v.speed - dt * 200);
+        v.timer += dt;
+        int walking = 0;
+        for (Entity e : v.squad) {
+            if (e.dead || e.removed || e.isZombie()) continue;
+            if (Math.hypot(e.x - v.x, e.y - v.y) > 500 || (e.task != Dispatch.T_NONE && e.task != Dispatch.T_BOARD)) continue;
+            walking++;
+            if (e.task != Dispatch.T_BOARD) {
+                e.rig = v;
+                e.task = Dispatch.T_BOARD;
+            }
+        }
+        if ((walking > 0 && v.timer < 45) || v.timer < 2) return false;
+        v.pickup = false;
+        for (Entity e : v.squad)
+            if (!e.dead && e.task == Dispatch.T_BOARD && e.rig == v) {
+                e.task = Dispatch.T_NONE;
+                e.rig = null;
+            }
+        if (headHome(v)) return false;
+        if (!v.crew.isEmpty()) crewOut(v, true);
+        v.state = RETURN;
+        return !route(v, v.homeX, v.homeY);
+    }
+
+    /** A car or truck parked at a station or base near (x, y), taken for a new call (removed; its spot returned). */
+    float[] takeStandby(int type, float x, float y, float radius) {
         Vehicle best = null;
-        float bd = reach * reach;
-        for (int i = 0, n = vehicles.size(); i < n; i++) {
+        float bd = radius * radius;
+        for (int i = 0; i < vehicles.size(); i++) {
             Vehicle v = vehicles.get(i);
-            if (!v.staging || v.stock <= 0 || v.state != SCENE || v.broken || v.passengerType != e.type) continue;
-            float d = (v.x - e.x) * (v.x - e.x) + (v.y - e.y) * (v.y - e.y);
+            if (!v.standby || v.type != type || v.broken) continue;
+            float d = (v.x - x) * (v.x - x) + (v.y - y) * (v.y - y);
             if (d < bd) {
                 bd = d;
                 best = v;
             }
         }
-        return best;
+        if (best == null) return null;
+        best.removedFromFleet = true;
+        vehicles.remove(best);
+        return new float[]{best.x, best.y};
     }
 
     /** Running zombies over dents the car. */

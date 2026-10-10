@@ -55,7 +55,7 @@ public final class GameTests {
                 world[0] = w;
             }
         });
-        test("saves load back the same", new Check() {
+        testAfter("saves load back the same", new Check() {
             public void run() throws Exception {
                 World w = world[0];
                 File f = File.createTempFile("zcs", ".dat");
@@ -381,7 +381,7 @@ public final class GameTests {
                         && Math.hypot(e.x - city.cityHall.doorX, e.y - city.cityHall.doorY) < 600) near = e;
                 if (near == null) for (Entity e : w.entities) if (e.type == Entity.CIVILIAN && !e.hidden && !e.dead) near = e;
                 int teams = w.dispatch.swatTeams;
-                for (int k = 0; k < 10; k++) w.spawn(Entity.ZOMBIE, near.x + 40 + k * 3, near.y);
+                for (int k = 0; k < 14; k++) w.spawn(Entity.ZOMBIE, near.x + 40 + (k % 7) * 3, near.y + (k / 7) * 4);
                 boolean sent = false;
                 for (int f = 0; f < 30 * 60 && !sent; f++) {
                     w.update(1 / 30f);
@@ -1646,8 +1646,8 @@ public final class GameTests {
                     }
                     check(stray == 0, "map " + ps[0] + "/" + ps[1] + ": no paved bits in the dirt lanes (" + stray + ")");
                 }
-                check(new CityConfig().civic == 8, "new cities are built the 10.23 way");
-                // The army column gets in off the highway, and its trucks stay as staging points once the squads are out.
+                check(new CityConfig().civic >= 8, "new cities are built the 10.23 way");
+                // The army column gets in off the highway.
                 CityConfig c = new CityConfig();
                 c.v[CityConfig.OPT_PRESET] = 0;
                 c.seed = 1;
@@ -1683,22 +1683,99 @@ public final class GameTests {
                             fy = cv.fromY;
                         }
                 }
-                int stuck = 0, staging = 0;
-                for (Fleet.Vehicle v : army) {
+                int stuck = 0;
+                for (Fleet.Vehicle v : army)
                     if (!v.removedFromFleet && !v.broken && Math.hypot(v.x - fx, v.y - fy) < 200) stuck++;
-                    if (!v.removedFromFleet && v.staging) staging++;
-                }
                 check(army.size() >= 10 && stuck <= 2, "the army convoy gets clear of the highway (" + stuck + " of " + army.size() + " still at the entry)");
-                check(staging >= 3, "the trucks stay on as staging points (" + staging + ")");
-                Fleet.Vehicle post = null;
-                for (Fleet.Vehicle v : w.fleet.vehicles) if (v.staging && v.state == Fleet.SCENE && v.stock > 0 && v.passengerType == Entity.SOLDIER) post = v;
-                check(post != null && w.fleet.status(post).contains("Staging point"), "a staging point with spare rounds: " + (post == null ? null : w.fleet.status(post)));
-                Entity dry = w.spawn(Entity.SOLDIER, post.x + 120, post.y);
-                dry.ammo = 0;
-                dry.reserve = 0;
-                int stock = post.stock;
-                for (int f = 0; f < 30 * 30 && dry.reserve == 0 && !dry.dead; f++) w.update(1 / 30f);
-                check(dry.reserve > 0 && post.stock < stock, "a soldier out of ammo restocks from the truck");
+                // (10.24) Once the squads are out the trucks go back to a base and park there, ready for the next call.
+                for (int f = 0; f < 30 * 150; f++) {
+                    w.update(1 / 30f);
+                    w.evCount = 0;
+                }
+                int parked = 0;
+                Fleet.Vehicle one = null;
+                for (Fleet.Vehicle v : w.fleet.vehicles)
+                    if (v.standby && v.type == Fleet.TRUCK && v.depot != null && Math.hypot(v.x - v.depot.x, v.y - v.depot.y) < v.depot.r + 250) {
+                        parked++;
+                        one = v;
+                    }
+                check(parked >= 3, "drop-off trucks parked back at a base (" + parked + ")");
+                check(w.fleet.status(one).contains("Parked"), "shown as parked: " + w.fleet.status(one));
+                int before = w.fleet.vehicles.size();
+                check(w.fleet.send(Entity.SOLDIER, 6, one.x, one.y, q[0], q[1], null, null, "the test") && one.removedFromFleet
+                        && w.fleet.vehicles.size() == before, "the next call takes a parked truck");
+            }
+        });
+        test("10.24: streets line up, road surfaces, hills in town, holstered guns, new weapons and sounds", new Check() {
+            public void run() throws Exception {
+                // Streets carry straight on across junctions far more often than before.
+                int[] jogs = new int[2];
+                for (int k = 0; k < 2; k++)
+                    for (int preset : new int[]{0, 15}) {
+                        CityConfig c = new CityConfig();
+                        c.v[CityConfig.OPT_PRESET] = preset;
+                        c.seed = 7;
+                        c.normalize();
+                        c.seed = 7;
+                        c.civic = k == 0 ? 8 : 9;
+                        City city = new City(c, 0.05f);
+                        for (City.Street a : city.streets)
+                            for (City.Street b : city.streets) {
+                                if (a == b || a.vertical != b.vertical) continue;
+                                int gap = a.vertical ? b.y0 - a.y1 : b.x0 - a.x1;
+                                float off = a.vertical ? Math.abs((a.x0 + a.x1) - (b.x0 + b.x1)) / 2f : Math.abs((a.y0 + a.y1) - (b.y0 + b.y1)) / 2f;
+                                if (gap >= 1 && gap <= 6 && off >= 1 && off <= 10) jogs[k]++;
+                            }
+                    }
+                check(jogs[1] * 10 < jogs[0] * 7, "fewer streets jog at a junction (" + jogs[0] + " before, " + jogs[1] + " now)");
+                // Cobbles in the old town, concrete in the industrial district, chip-seal out in the country.
+                CityConfig oc = new CityConfig();
+                oc.v[CityConfig.OPT_PRESET] = 5;
+                oc.seed = 3;
+                oc.normalize();
+                oc.seed = 3;
+                City old = new City(oc, 0.05f);
+                int[] surf = new int[4];
+                for (int y = 0; y < old.h; y++)
+                    for (int x = 0; x < old.w; x++)
+                        if (old.tiles[y * old.w + x] == City.ROAD) surf[old.roadSurface(x, y)]++;
+                check(surf[City.SURF_COBBLE] > 50 && surf[City.SURF_ASPHALT] > 50, "cobbled streets in the old town (" + java.util.Arrays.toString(surf) + ")");
+                // Hills in town, not just out in the country.
+                float[] spread = new float[2];
+                for (int k = 0; k < 2; k++) {
+                    CityConfig c = new CityConfig();
+                    c.v[CityConfig.OPT_PRESET] = 0;
+                    c.seed = 11;
+                    c.normalize();
+                    c.seed = 11;
+                    c.civic = k == 0 ? 8 : 9;
+                    City city = new City(c, 0.05f);
+                    float lo = Float.MAX_VALUE, hi = -Float.MAX_VALUE;
+                    for (int y = city.townY0 + 4; y < city.townY1 - 4; y += 3)
+                        for (int x = city.townX0 + 4; x < city.townX1 - 4; x += 3) {
+                            float e = city.elevation((x + 0.5f) * City.T, (y + 0.5f) * City.T);
+                            lo = Math.min(lo, e);
+                            hi = Math.max(hi, e);
+                        }
+                    spread[k] = hi - lo;
+                }
+                check(spread[1] > spread[0] * 1.5f && spread[1] > 8, "the town has hills of its own (" + spread[0] + " before, " + spread[1] + " now)");
+                // Guns away on an ordinary day.
+                CityConfig c = new CityConfig();
+                c.v[CityConfig.OPT_ZOMBIES] = 0;
+                c.seed = 2;
+                World w = new World(c);
+                w.populate(c);
+                Entity cop = null;
+                for (Entity e : w.entities) if (e.type == Entity.COP && e.task == Dispatch.T_NONE && !e.aiming) cop = e;
+                check(cop != null && !w.weaponsOut(cop), "a police officer on a quiet day has the pistol holstered");
+                w.alert = 2;
+                check(w.weaponsOut(cop), "guns out once everyone knows about the outbreak");
+                // New guns and tools, and sounds to go with them.
+                check(World.magFor(Entity.W_HUNTING) == 5 && World.magFor(Entity.W_REVOLVER) == 6, "hunting rifle and revolver magazines");
+                check("Machete".equals(Entity.MELEE_NAMES[Entity.M_MACHETE]) && "Crowbar".equals(Entity.MELEE_NAMES[Entity.M_CROWBAR]), "machetes and crowbars");
+                for (int id : new int[]{Sfx.SHOTGUN, Sfx.REVOLVER, Sfx.GLASS, Sfx.POUND, Sfx.HUNTING})
+                    check(Synth.effect(id).length > 1000 && Sfx.MIN_GAP.length == Sfx.COUNT, "new sound " + id);
             }
         });
         test("every screen draws", new Check() {
@@ -1769,7 +1846,31 @@ public final class GameTests {
         void run() throws Exception;
     }
 
+    /**
+     * test.sh runs the tests in several JVMs at once: SHARD of SHARDS takes every SHARDS-th test (ONLY, if set,
+     * picks tests by the start of their name instead).
+     */
+    private static int index = -1, slot;
+
+    private static boolean mine(String name) {
+        String only = System.getenv("ONLY");
+        if (only != null) return name.startsWith(only);
+        String shards = System.getenv("SHARDS");
+        return shards == null || slot % Integer.parseInt(shards) == Integer.parseInt(System.getenv("SHARD"));
+    }
+
+    /** A test that carries on from the one before (it runs in the same JVM as it). */
+    private static void testAfter(String name, Check c) {
+        run(name, c);
+    }
+
     private static void test(String name, Check c) {
+        slot = ++index;
+        run(name, c);
+    }
+
+    private static void run(String name, Check c) {
+        if (!mine(name)) return;
         long t = System.currentTimeMillis();
         try {
             c.run();

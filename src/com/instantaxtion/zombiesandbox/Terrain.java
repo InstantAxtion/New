@@ -99,6 +99,9 @@ final class Terrain {
                 float amp = (5 + 22 * smooth(out / 18f)) * land.hills;
                 float hills = fbm(x / 52f, y / 52f, 0), rough = fbm(x / 17f + 100, y / 17f + 100, 10);
                 e[y * w + x] = amp * (hills * 0.8f + rough * 0.2f);
+                // (Since 10.24 the town has its own hills: whole neighbourhoods up on a rise, streets climbing
+                // between them, rather than flat ground with all the hills out in the country.)
+                if (c.cfg.civic >= 9) e[y * w + x] += 34 * Math.max(0.35f, land.hills) * smooth(1 - out / 24f) * fbm(x / 70f + 300, y / 70f + 300, 20);
             }
         // (Little nature: no mountains, far fewer trees.)
         if (country && !c.cfg.littleNature()) mountains();

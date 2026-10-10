@@ -17,7 +17,7 @@ import java.util.Random;
  */
 final class Sound {
     /** Bump when the synthesized audio changes so old cached files are regenerated. */
-    private static final int AUDIO_VERSION = 1;
+    private static final int AUDIO_VERSION = 2;
 
     private final Context ctx;
     private final Handler main = new Handler(Looper.getMainLooper());

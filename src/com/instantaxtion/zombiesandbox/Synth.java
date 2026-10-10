@@ -54,6 +54,11 @@ final class Synth {
             case Sfx.BURST: out = burst(r); break;
             case Sfx.ALARM: out = alarm(); break;
             case Sfx.SHIELD: out = shield(r); break;
+            case Sfx.SHOTGUN: out = shotgun(r); break;
+            case Sfx.REVOLVER: out = gunshot(r, 0.3f, 18, 0.42f, 105); break;
+            case Sfx.GLASS: out = glass(r); break;
+            case Sfx.POUND: out = pound(r); break;
+            case Sfx.HUNTING: out = hunting(r); break;
             default: out = click(); break;
         }
         return toPcm(out, id == Sfx.CLICK ? 0.5f : 0.92f);
@@ -70,6 +75,80 @@ final class Synth {
             o[i] = lp * (float) Math.exp(-t * decay) * 1.2f
                     + (float) Math.sin(TAU * thump * t * (1 - t * 2)) * (float) Math.exp(-t * 20) * 0.8f
                     + crack * 0.6f;
+        }
+        return o;
+    }
+
+    /** A pump shotgun: a big wide boom, then the pump racking back and forward. */
+    private static float[] shotgun(Random r) {
+        int n = (int) (0.75f * RATE);
+        float[] o = new float[n];
+        float lp = 0;
+        for (int i = 0; i < n; i++) {
+            float t = i / (float) RATE;
+            float white = r.nextFloat() * 2 - 1;
+            lp += (white - lp) * 0.22f;
+            float boom = lp * 1.6f * (float) Math.exp(-t * 14) + (float) Math.sin(TAU * 70 * t) * (float) Math.exp(-t * 12) * 0.9f
+                    + (i < 60 ? white * (1 - i / 60f) * 0.7f : 0);
+            float rack = 0;
+            for (float at : new float[]{0.42f, 0.55f})
+                if (t > at && t < at + 0.03f) rack += white * (float) Math.exp(-(t - at) * 160) * 0.5f
+                        + (float) Math.sin(TAU * 1900 * t) * (float) Math.exp(-(t - at) * 120) * 0.25f;
+            o[i] = boom + rack;
+        }
+        return o;
+    }
+
+    /** A hunting rifle: a sharp crack that rolls away into the distance. */
+    private static float[] hunting(Random r) {
+        int n = (int) (1.2f * RATE);
+        float[] o = new float[n];
+        float lp = 0;
+        for (int i = 0; i < n; i++) {
+            float t = i / (float) RATE;
+            float white = r.nextFloat() * 2 - 1;
+            lp += (white - lp) * 0.12f;
+            float roll = (float) Math.exp(-t * 3.5f) * (0.6f + 0.4f * (float) Math.sin(TAU * 7 * t));
+            o[i] = white * (float) Math.exp(-t * 120) * 1.1f + lp * (float) Math.exp(-t * 30) * 1.3f + lp * roll * 0.5f;
+        }
+        return o;
+    }
+
+    /** Glass going in: a crack, then shards tinkling down. */
+    private static float[] glass(Random r) {
+        int n = (int) (0.9f * RATE);
+        float[] o = new float[n];
+        float[] pings = new float[14], freqs = new float[14];
+        for (int k = 0; k < pings.length; k++) {
+            pings[k] = 0.02f + r.nextFloat() * 0.6f;
+            freqs[k] = 2400 + r.nextFloat() * 3600;
+        }
+        for (int i = 0; i < n; i++) {
+            float t = i / (float) RATE;
+            float v = (r.nextFloat() * 2 - 1) * (float) Math.exp(-t * 40) * 0.9f;
+            for (int k = 0; k < pings.length; k++)
+                if (t > pings[k]) v += (float) Math.sin(TAU * freqs[k] * (t - pings[k])) * (float) Math.exp(-(t - pings[k]) * 35) * 0.18f;
+            o[i] = v;
+        }
+        return o;
+    }
+
+    /** Fists on a door: three heavy thumps with a wooden rattle. */
+    private static float[] pound(Random r) {
+        int n = (int) (0.8f * RATE);
+        float[] o = new float[n];
+        float lp = 0;
+        float[] hits = {0f, 0.22f, 0.47f};
+        for (int i = 0; i < n; i++) {
+            float t = i / (float) RATE;
+            lp += (r.nextFloat() * 2 - 1 - lp) * 0.05f;
+            float v = 0;
+            for (float h : hits)
+                if (t >= h) {
+                    float u = t - h;
+                    v += ((float) Math.sin(TAU * (120 - 90 * u) * u) * 0.9f + lp * 3 + (float) Math.sin(TAU * 340 * u) * 0.15f) * (float) Math.exp(-u * 26);
+                }
+            o[i] = v;
         }
         return o;
     }

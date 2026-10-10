@@ -9490,7 +9490,16 @@ final class City {
         if (t == DIRT) return 4;
         if (t == LOT || t == BASE) return 3;
         if (t == SIDEWALK || t == PLAZA) return 8;
+        if (offroad && (t == GRASS || t == SAND || t == TRAIL) && !solid[i] && !steepAt(i)) return 6;
         return -1;
+    }
+
+    /** Open ground (not a road, lot or pavement): an off-road vehicle takes it slower. */
+    boolean rough(float x, float y) {
+        int i = tileIndex(x, y);
+        if (i < 0) return false;
+        byte t = tiles[i];
+        return t == GRASS || t == SAND || t == TRAIL;
     }
 
     boolean drivable(float x, float y) {
@@ -9526,6 +9535,43 @@ final class City {
      * lanes either side of its way): a trip across town needn't cost a search of the whole map. Tiles further
      * out are left FAR.
      */
+    /**
+     * (10.27) A route for an all-wheel-drive vehicle in an emergency: as driveField, but open ground (grass,
+     * sand, a trail) can be crossed too where it isn't steep, at a cost, so it only cuts across country when
+     * that's really quicker. Never through trees, water, buildings, fences or rock.
+     */
+    boolean offroadField(int[] dist, float x, float y, int from) {
+        offroad = true;
+        try {
+            return driveField(dist, x, y, false, from);
+        } finally {
+            offroad = false;
+        }
+    }
+
+    private boolean offroad;
+    private boolean[] steep;
+
+    /** Too steep to drive across: the ground rises or falls sharply to a neighbouring tile. */
+    private boolean steepAt(int i) {
+        if (elev == null) return false;
+        if (steep == null) {
+            boolean[] s = new boolean[w * h];
+            for (int y = 0; y < h; y++)
+                for (int x = 0; x < w; x++) {
+                    int k = y * w + x;
+                    float e = elev[k], m = 0;
+                    if (x > 0) m = Math.max(m, Math.abs(e - elev[k - 1]));
+                    if (x < w - 1) m = Math.max(m, Math.abs(e - elev[k + 1]));
+                    if (y > 0) m = Math.max(m, Math.abs(e - elev[k - w]));
+                    if (y < h - 1) m = Math.max(m, Math.abs(e - elev[k + w]));
+                    s[k] = m > 2.2f;
+                }
+            steep = s;
+        }
+        return steep[i];
+    }
+
     boolean driveField(int[] dist, float x, float y, boolean strict, int from) {
         Arrays.fill(dist, FAR);
         int fx = from < 0 ? -9 : from % w, fy = from < 0 ? -9 : from / w, stopAt = Integer.MAX_VALUE;

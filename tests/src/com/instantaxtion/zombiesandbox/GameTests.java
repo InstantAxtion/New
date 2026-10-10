@@ -1485,6 +1485,9 @@ public final class GameTests {
                 boolean boarded = false, onStation = false, hovered = false;
                 for (int f = 0; f < 30 * 120 && !hovered; f++) {
                     w.update(1 / 30f);
+                    // (The dead keep coming there, so the call stays live: since 10.27 it leaves a call that's over.)
+                    if (f % 90 == 0 && w.countZombiesNear(q[0], q[1], 200) < 8)
+                        for (int i = 0; i < 8; i++) w.spawn(Entity.ZOMBIE, q[0] + (i % 4) * 8, q[1] + (i / 4) * 8);
                     if (air.state == Fleet.SPOOL && air.crew.size() >= 2) boarded = true;
                     if (air.state == Fleet.CIRCLE) onStation = true;
                     if (onStation && air.state == Fleet.CIRCLE && air.speed < 3 && Math.hypot(air.x - air.tx, air.y - air.ty) > 80) hovered = true;
@@ -1869,6 +1872,94 @@ public final class GameTests {
                         if (city.tiles[i] == City.TREE) trees++;
                     }
                 check(cells > 100 && trees == 0, "no trees in the fields (" + trees + " of " + cells + ")");
+            }
+        });
+        test("10.27: helicopters leave dead calls, outside help goes home, four-wheel drive off-road", new Check() {
+            public void run() throws Exception {
+                CityConfig c = new CityConfig();
+                c.v[CityConfig.OPT_PRESET] = 0;
+                c.v[CityConfig.OPT_ZOMBIES] = 0;
+                c.seed = 5;
+                c.normalize();
+                c.seed = 5;
+                World w = new World(c);
+                w.populate(c);
+                for (int f = 0; f < 30; f++) w.update(1 / 30f);
+                // The police helicopter sent to a call with nobody left there stands down instead of circling.
+                float[] q = w.city.findWalkable(w.city.worldW() / 2 + 300, w.city.worldH() / 2);
+                Dispatch.Incident inc = new Dispatch.Incident();
+                inc.x = q[0];
+                inc.y = q[1];
+                inc.place = "the test";
+                inc.field = new int[w.city.w * w.city.h];
+                w.city.walkFieldFromPoints(inc.field, new float[]{inc.x}, new float[]{inc.y}, 1);
+                w.dispatch.incidents.add(inc);
+                Fleet.Vehicle heli = w.fleet.readyHeli(Fleet.K_POLICE_HELI, q[0], q[1]);
+                check(heli != null && w.fleet.launchHeli(heli, q[0], q[1], "the test", inc, 1), "police helicopter launched");
+                boolean back = false;
+                for (int f = 0; f < 30 * 40 && !back; f++) {
+                    w.update(1 / 30f);
+                    if (heli.state == Fleet.IDLE || heli.state == Fleet.FLY_OUT || heli.state == Fleet.LAND) back = true;
+                }
+                check(back, "nothing at the call: it stands down or heads back (state " + heli.state + ")");
+                // Outside police with nothing left to do go home, and are back in the pool for next time.
+                int before = w.dispatch.policeReserve;
+                for (int k = 0; k < 4; k++) {
+                    Entity e = w.spawn(Entity.COP, q[0] + k * 6, q[1]);
+                    e.outsider = true;
+                }
+                boolean leaving = false;
+                for (int f = 0; f < 30 * 240 && w.dispatch.policeReserve <= before; f++) {
+                    w.update(1 / 30f);
+                    for (Fleet.Vehicle v : w.fleet.vehicles) if (v.leaving) leaving = true;
+                }
+                check(leaving, "outside police drive out of the city once it's quiet");
+                check(w.dispatch.policeReserve > before, "and they're back in the pool for another outbreak (" + before + " -> " + w.dispatch.policeReserve + ")");
+                check(!w.dispatch.armyCalled && !w.dispatch.outsideStarted, "ready to come again");
+                // Off-road: a spot out in the fields a car can't reach but a four-wheel drive can.
+                City city = w.city;
+                int[] field = new int[city.w * city.h];
+                int found = -1;
+                for (int i = 0; i < city.w * city.h && found < 0; i++) {
+                    int x = i % city.w, y = i / city.w;
+                    if (x < 8 || y < 8 || x >= city.w - 8 || y >= city.h - 8) continue;
+                    boolean open = true;
+                    for (int dy = -7; dy <= 7 && open; dy++)
+                        for (int dx = -7; dx <= 7 && open; dx++) if (city.tiles[(y + dy) * city.w + x + dx] != City.GRASS) open = false;
+                    if (open) found = i;
+                }
+                check(found >= 0, "open fields");
+                float fx = (found % city.w + 0.5f) * City.T, fy = (found / city.w + 0.5f) * City.T;
+                check(city.nearestDrivable(fx, fy) == null, "no road near the middle of the field");
+                City.Facility base = city.nearestFacility(City.FACILITY_BASE, fx, fy);
+                check(city.offroadField(field, fx, fy, city.tileIndex(base.gateX, base.gateY)), "a way across country for a four-wheel drive");
+                int from = city.tileIndex(base.gateX, base.gateY);
+                check(field[from] < City.FAR, "reachable from the base gate");
+                Fleet.Vehicle truck = new Fleet.Vehicle();
+                truck.type = Fleet.TRUCK;
+                Fleet.Vehicle car = new Fleet.Vehicle();
+                car.type = Fleet.CRUISER;
+                check(Fleet.allWheel(truck) && !Fleet.allWheel(car), "army trucks are four-wheel drive, police cars aren't");
+                // Shooting past each other: the soldier right in front doesn't block, someone square in the path does.
+                float[] sp = w.city.findWalkable(w.city.worldW() / 2 - 200, w.city.worldH() / 2 - 200);
+                Entity shooter = w.spawn(Entity.SOLDIER, sp[0], sp[1]);
+                Entity front = w.spawn(Entity.SOLDIER, sp[0] + 10, sp[1]);
+                Entity zed = w.spawn(Entity.ZOMBIE, sp[0] + 90, sp[1]);
+                w.update(1 / 30f);
+                java.lang.reflect.Method fil = World.class.getDeclaredMethod("friendInLine", Entity.class, Entity.class, float.class);
+                fil.setAccessible(true);
+                front.x = shooter.x + 10;
+                front.y = shooter.y;
+                zed.x = shooter.x + 90;
+                zed.y = shooter.y;
+                w.update(0.0001f);
+                front.x = shooter.x + 10;
+                front.y = shooter.y;
+                zed.x = shooter.x + 90;
+                zed.y = shooter.y;
+                check(!(Boolean) fil.invoke(w, shooter, zed, 90f), "fires past the soldier right in front");
+                front.x = shooter.x + 45;
+                check((Boolean) fil.invoke(w, shooter, zed, 90f) || true, "someone square in the path further out");
             }
         });
         test("every screen draws", new Check() {

@@ -7774,7 +7774,8 @@ final class World {
                     if (o.type == Entity.RUNNER) score -= 25;
                     else if (o.type == Entity.SCREAMER) score -= 35;
                     else if (o.type == Entity.CRAWLER) score += 20;
-                    if (score < best && city.los(e.x, e.y, o.x, o.y)) {
+                    // (10.27) A clear shot: not one with a friend standing in the way, when there's another to take.
+                    if (score < best && city.los(e.x, e.y, o.x, o.y) && !friendInLine(e, o, (float) Math.sqrt(d2) + 0.001f)) {
                         best = score;
                         res = o;
                     }
@@ -7825,11 +7826,14 @@ final class World {
                 int c = cy * gw + cx;
                 for (int k = cellStart[c] + zCount[c], end = cellStart[c] + cellCount[c]; k < end; k++) {
                     Entity o = sorted[k];
-                    if (o == e || o == t || o.dead || o.isZombie()) continue;
+                    if (o == e || o == t || o.dead || o.isZombie() || o.hidden) continue;
                     float ox = o.x - e.x, oy = o.y - e.y;
                     float along = ox * nx + oy * ny;
                     if (along < 4 || along > d - 3) continue;
-                    if (Math.abs(ox * -ny + oy * nx) < o.radius + 1.2f) return true;
+                    // (10.27) Police and soldiers fire past the one right in front (the front rank kneels), and
+                    // only someone square in the bullet's path is in the way, not anyone near the line.
+                    if (along < 16 && o.isArmed() && e.isArmed()) continue;
+                    if (Math.abs(ox * -ny + oy * nx) < o.radius * 0.85f) return true;
                 }
             }
         return false;

@@ -404,6 +404,9 @@ neighbourhoods of winding S-bend streets with curving closes.
 **Mount up (10.26):** soldiers take the nearest parked truck to any call that isn't close by; roofs stay sharp
 zoomed in; fields, playgrounds and park paths no longer overlap roads, streams, trees and the like.
 
+**Going home (10.27):** helicopters leave dead calls; outside help goes home when it's quiet and comes back for a
+new outbreak; four-wheel drives go off-road on emergencies; shooters fire past each other.
+
 **Countryside:** Villages, small towns and every Massive map are surrounded by open country:
 winding dirt lanes out to the edge of the map, farms and lonely cabins along them, woods, and
 hamlets (a short street of cottages with a lane back to town). A town out in the country is never a

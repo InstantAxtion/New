@@ -125,6 +125,8 @@ final class Fleet {
          * done and need picking up (pickup: it drives out, waits for them to climb in, and brings them back).
          */
         boolean parkHome;
+        /** Taking outside help home again (10.27). */
+        boolean leaving;
         float stageCd;
         /** The station or base it parks at. */
         City.Facility depot;
@@ -663,6 +665,16 @@ final class Fleet {
         // (Everyday traffic and patrol cars keep to the roads; emergencies cut across whatever's paved.)
         boolean strict = v.type == CAR || (v.patrol && v.state != DRIVE);
         int from = city.tileIndex(v.x, v.y);
+        // (10.27) Four-wheel drive on an emergency: across open country where that's quicker.
+        if (!strict && emergency(v) && allWheel(v) && city.offroadField(field, x, y, from) && nearField(field, v.x, v.y) < City.FAR) {
+            v.field = corridor(field, v.x, v.y);
+            v.tx = x;
+            v.ty = y;
+            v.lastDist = Float.MAX_VALUE;
+            v.spin = 0;
+            v.stuckTimer = 0;
+            return true;
+        }
         if (!city.driveField(field, x, y, strict, from) || nearField(field, v.x, v.y) >= City.FAR) {
             // Off the road (shoved onto the pavement, or parked on a lot): find the way back over whatever's paved.
             if (!strict || !city.driveField(field, x, y, false, from) || nearField(field, v.x, v.y) >= City.FAR) return false;
@@ -674,6 +686,20 @@ final class Fleet {
         v.spin = 0;
         v.stuckTimer = 0;
         return true;
+    }
+
+    /** Four-wheel drive: army trucks, Humvees, APCs and tanks, and the sheriff's, rangers' and federal agents' SUVs. */
+    static boolean allWheel(Vehicle v) {
+        if (v.type == TRUCK) return !v.restock;
+        if (v.type == TANK) return true;
+        return v.type == CRUISER && (v.agency == 2 || v.agency == 3 || v.agency == 4);
+    }
+
+    /** On an emergency: to a call, picking up its people, or heading out on one, once the city knows. */
+    private boolean emergency(Vehicle v) {
+        if (v.incident != null && !v.incident.resolved) return true;
+        if (v.pickup || v.block != null) return true;
+        return w.alert >= 2 && v.state != RETURN && !v.parkHome && (v.passengers > 0 || !v.crew.isEmpty()) && !v.leaving;
     }
 
     int movingTraffic() {
@@ -1381,6 +1407,56 @@ final class Fleet {
             int i = v.flight.indexOf(e);
             if (i >= 0 && !e.dead) standBy(v, e, i);
         }
+    }
+
+    /**
+     * (10.27) A police or army helicopter checks its call is still live: once the call's over, or there's been
+     * nothing to shoot near it for a few seconds, it goes on to the nearest call that still has the dead at it,
+     * or (with none) stands down on its pad or flies home. True if it has just been sent home from the pad.
+     */
+    private boolean staleCall(Vehicle v, float dt) {
+        if (v.kind == K_RESCUE_HELI || v.escort != null) return false;
+        if (v.state != MUSTER && v.state != SPOOL && v.state != FLY_IN && v.state != CIRCLE) return false;
+        v.quiet = w.countZombiesNear(v.tx, v.ty, 260) > 0 ? 0 : v.quiet + dt;
+        boolean over = v.incident != null && v.incident.resolved;
+        if (!over && v.quiet < (v.state == CIRCLE ? 12 : 6)) return false;
+        v.quiet = 0;
+        String was = v.place != null ? v.place : "the scene";
+        boolean police = v.kind == K_POLICE_HELI;
+        int who = police ? Dispatch.WHO_POLICE : Dispatch.WHO_MILITARY;
+        String name = police ? "Police helicopter" : "Air " + Math.max(1, v.number);
+        Dispatch.Incident next = w.dispatch.liveCallNear(v.x, v.y, 1800, v.incident);
+        if (next != null) {
+            v.incident = next;
+            v.tx = next.x;
+            v.ty = next.y;
+            v.place = next.place;
+            if (v.state == CIRCLE) v.state = FLY_IN;
+            w.dispatch.say(who, null, name + ": Nothing left at " + was + ". Moving on to " + next.place + ".", v.x, v.y);
+            return false;
+        }
+        if (v.state == MUSTER || v.state == SPOOL) {
+            // Still on the pad: stand down.
+            for (int i = 0, n = w.entities.size(); i < n; i++) {
+                Entity e = w.entities.get(i);
+                if (!e.dead && e.rig == v && e.task == Dispatch.T_BOARD) {
+                    e.task = Dispatch.T_NONE;
+                    e.rig = null;
+                }
+            }
+            if (v.padAt != null) {
+                landed(v);
+                v.refuel = 5;
+                w.dispatch.say(who, null, name + ": Call's over at " + was + ". Standing down.", v.x, v.y);
+                return true;
+            }
+        }
+        v.state = FLY_OUT;
+        v.incident = null;
+        v.homeX = v.baseX;
+        v.homeY = v.baseY;
+        w.dispatch.say(who, null, name + ": All quiet at " + was + ". Heading back.", v.x, v.y);
+        return false;
     }
 
     /** The helicopter: flies from the helipad (or the map edge) and circles the target with a door gunner. */
@@ -2165,6 +2241,19 @@ final class Fleet {
             }
             dropCrew(v);
             Dispatch.Incident inc = v.incident;
+            if (v.leaving) {
+                // Outside help going home: out of the city the way they came.
+                if (!route(v, v.tx, v.ty)) {
+                    for (Entity e : new ArrayList<Entity>(v.crew)) e.rig = null;
+                    crewOut(v, true);
+                    return true;
+                }
+                v.state = RETURN;
+                v.homeX = v.tx;
+                v.homeY = v.ty;
+                v.stuckTimer = 0;
+                return false;
+            }
             if (v.loop) {
                 // A patrol: off round the roads near the base.
                 if (!route(v, v.tx, v.ty)) {
@@ -2267,6 +2356,16 @@ final class Fleet {
                 v.speed = 0;
                 return false;
             }
+            if (v.state == RETURN && v.leaving) {
+                // Off the map: they're home, and back in the pool if they're needed again.
+                if (Math.hypot(v.x - v.homeX, v.y - v.homeY) > 120) {
+                    if (!v.crew.isEmpty()) crewOut(v, true);
+                    return true;
+                }
+                w.dispatch.wentHome(v.passengerType, v.crew.size());
+                v.crew.clear();
+                return true;
+            }
             if (v.state == RETURN && v.parkHome) {
                 // Home: anyone aboard gets out (off duty), and it parks up ready for the next call.
                 if (!v.crew.isEmpty()) crewOut(v, true);
@@ -2356,7 +2455,13 @@ final class Fleet {
         int there = 0;
         for (int i = 0; i < vehicles.size(); i++) if (vehicles.get(i).depot == f && vehicles.get(i) != v) there++;
         if (there >= DEPOT_ROOM) return false;
-        if (!route(v, f.gateX, f.gateY)) return false;
+        // (Not an emergency any more: home by road.)
+        v.incident = null;
+        v.parkHome = true;
+        if (!route(v, f.gateX, f.gateY)) {
+            v.parkHome = false;
+            return false;
+        }
         v.depot = f;
         v.parkHome = true;
         v.pickup = false;
@@ -2469,6 +2574,43 @@ final class Fleet {
         return !route(v, v.homeX, v.homeY);
     }
 
+    /**
+     * (10.27) Outside police or soldiers going home: one of the cars or trucks parked in town (or one that comes
+     * round for them) picks them up and drives out at (ex, ey). False if there's nothing to take them.
+     */
+    boolean sendHome(java.util.List<Entity> group, float ex, float ey) {
+        if (group.isEmpty()) return false;
+        boolean cops = group.get(0).type == Entity.COP;
+        float sx = 0, sy = 0;
+        for (Entity e : group) {
+            sx += e.x;
+            sy += e.y;
+        }
+        sx /= group.size();
+        sy /= group.size();
+        float[] p = takeStandby(cops ? CRUISER : TRUCK, sx, sy, 700);
+        if (p == null) p = city.nearestDrivable(sx, sy);
+        if (p == null) return false;
+        Vehicle v = make(cops ? CRUISER : TRUCK);
+        v.x = p[0];
+        v.y = p[1];
+        v.state = MUSTER;
+        v.leaving = true;
+        v.reinforcement = true;
+        v.crewWanted = group.size();
+        v.tx = ex;
+        v.ty = ey;
+        v.place = "home";
+        v.passengerType = cops ? Entity.COP : Entity.SOLDIER;
+        v.angle = (float) Math.atan2(ey - p[1], ex - p[0]);
+        for (Entity e : group) {
+            e.rig = v;
+            e.task = Dispatch.T_BOARD;
+        }
+        vehicles.add(v);
+        return true;
+    }
+
     /** A car or truck parked at a station or base near (x, y), taken for a new call (removed; its spot returned). */
     float[] takeStandby(int type, float x, float y, float radius) {
         Vehicle best = null;
@@ -2502,6 +2644,8 @@ final class Fleet {
         // (10.20) Open-road speeds are nearly twice what they were, next to people on foot (who walk briskly in
         // this world): a car in town now covers ground like a car. Crawls, turns and queues are as before.
         if (max > 40) max = 40 + (max - 40) * DRIVE_SCALE;
+        // (Off the road, across the grass: slower going.)
+        if (city.rough(v.x, v.y)) max *= 0.65f;
         // Keep a safe distance behind whatever is ahead in the lane.
         max = Math.min(max, followLimit(v));
         int W = city.w;
@@ -3008,6 +3152,7 @@ final class Fleet {
             else if (v.passengerType == Entity.SOLDIER && !v.guardUnit && city.cfg.nature()) w.kitOut(e);
             else if (v.passengerType == Entity.COP && v.agency > 0) w.makeAgency(e, v.agency);
             if (v.reinforcement) {
+                if (!v.guardUnit && !v.restock) e.outsider = true;
                 w.reinforce(e);
                 w.dispatch.convoyUnloaded(v, e);
             }
@@ -3727,6 +3872,7 @@ final class Fleet {
     // ------------------------------------------------------------------ helicopter
 
     private boolean updateHeli(Vehicle v, float dt) {
+        if (staleCall(v, dt)) return false;
         if (v.state == IDLE) {
             // On the pad: rotor still, refuelling after a flight.
             v.refuel = Math.max(0, v.refuel - dt);

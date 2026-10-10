@@ -62,6 +62,8 @@ final class Entity {
     boolean onScene, outOfAmmoSaid;
     /** A spot of their own picked for a while (a stroll inside a safe zone's wall). */
     float spotX, spotY;
+    /** Police or soldiers who came in from outside the city (10.27): they go home again once it's over. */
+    boolean outsider;
     float phoneTimer, talkTimer, callCd, taskTimer;
     /** A spot to stand at: guard posts and player orders. */
     float postX, postY;

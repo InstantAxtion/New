@@ -17,7 +17,7 @@ import java.util.ArrayList;
  * damaged or collapsed buildings.
  */
 final class SaveGame {
-    private static final int VERSION = 30;
+    private static final int VERSION = 31;
 
     private SaveGame() {
     }
@@ -350,6 +350,8 @@ final class SaveGame {
         out.writeBoolean(e.homeChecked);
         // Version 23: which fire tower a lookout keeps (or is on the way to).
         out.writeByte(e.job == Entity.J_LOOKOUT || e.job == Entity.J_RELIEF ? e.jobStep : -1);
+        // Version 31: came in from outside the city.
+        out.writeBoolean(e.outsider);
     }
 
     /** Each building's place in the city's list, while saving. */
@@ -374,7 +376,7 @@ final class SaveGame {
             if (version >= 15) cfg.setEdits(in.readUTF());
             if (version >= 26) cfg.outskirts = in.readInt();
             // (Cities saved before 10.4 were built without their government quarter.)
-            cfg.civic = version >= 30 ? 11 : version >= 29 ? 10 : version >= 28 ? 9 : version >= 27 ? 8 : version >= 26 ? 7 : version >= 25 ? 6 : version >= 24 ? 5 : version >= 23 ? 4 : version >= 22 ? 3 : version >= 20 ? 2 : version >= 19 ? 1 : 0;
+            cfg.civic = version >= 31 ? 11 : version >= 30 ? 11 : version >= 29 ? 10 : version >= 28 ? 9 : version >= 27 ? 8 : version >= 26 ? 7 : version >= 25 ? 6 : version >= 24 ? 5 : version >= 23 ? 4 : version >= 22 ? 3 : version >= 20 ? 2 : version >= 19 ? 1 : 0;
             // (Version 20 and later all build the same city.)
             World w = new World(cfg);
 
@@ -685,6 +687,7 @@ final class SaveGame {
             if (tower >= 0) e.jobStep = tower;
             else if (e.job == Entity.J_LOOKOUT || e.job == Entity.J_RELIEF) e.job = Entity.J_HOMEBODY;
         }
+        if (version >= 31) e.outsider = in.readBoolean();
         if (zone >= 0 && zone < d.zones.size()) e.zone = d.zones.get(zone);
         return e;
     }

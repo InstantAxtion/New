@@ -2,11 +2,18 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.26";
-    static final int VERSION_CODE = 64;
+    static final String VERSION = "10.27";
+    static final int VERSION_CODE = 65;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.27  -  Going home",
+                    "Helicopters check their call is still live: once it's over, or there's nothing left to shoot near it, they move on to the nearest call that still has the dead at it, or stand down and head back to the pad.",
+                    "Police and soldiers who came in from outside the city go home once it has been quiet for a while, a few at a time in their own cars and trucks. They go back into the pool, so if the dead come back, so does the help.",
+                    "Four-wheel drives on an emergency (army trucks, Humvees, APCs, tanks, and the sheriff's, rangers' and federal agents' SUVs) cut across open country when that's quicker, slower on the grass, never through woods, water, fences, rock or up steep slopes.",
+                    "People with guns can shoot past each other: police and soldiers fire past the one right in front of them, only someone square in the bullet's path blocks a shot, and a shooter picks a target they have a clear shot at.",
+            },
             {
                     "10.26  -  Mount up",
                     "Soldiers drive wherever they can: a squad sent to a call more than a short walk away climbs into the nearest parked army truck (at a base, or one parked there after an earlier run) and drives, instead of walking across town.",

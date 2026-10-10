@@ -511,6 +511,7 @@ final class Dispatch {
         sweep(step);
         updateIncidents(step);
         outsideFlow();
+        sendOutsidersHome(step);
         mobilise(step);
         baseLife(step);
         updateZones(step);
@@ -1076,6 +1077,22 @@ final class Dispatch {
         }
     }
 
+    /** The nearest call (other than skip) within reach that still has the dead at it, or null. */
+    Incident liveCallNear(float x, float y, float reach, Incident skip) {
+        Incident best = null;
+        float bd = reach * reach;
+        for (int i = 0; i < incidents.size(); i++) {
+            Incident inc = incidents.get(i);
+            if (inc == skip || inc.resolved || inc.cordonPost >= 0 || w.countZombiesNear(inc.x, inc.y, 200) < 3) continue;
+            float d = (inc.x - x) * (inc.x - x) + (inc.y - y) * (inc.y - y);
+            if (d < bd) {
+                bd = d;
+                best = inc;
+            }
+        }
+        return best;
+    }
+
     /** Police ask the military for help; the military sends a free squad or calls in reinforcements. */
     private void requestMilitary(float x, float y, String place, Incident inc, SafeZone zone) {
         if (militaryCd > 0) return;
@@ -1229,6 +1246,68 @@ final class Dispatch {
      * so) to wherever it's worst, for as long as the outbreak is serious and they have officers to send; and
      * the army is called in by itself when it gets bad enough, even if nobody asks.
      */
+    /** How long the city has been quiet, and when the next group of outside help heads home. */
+    private float calmFor, homeCd;
+    private boolean homeSaid;
+
+    /**
+     * (10.27) Once the city has been quiet for a while (the dead all but gone, no calls left), the police and
+     * soldiers who came in from outside go back where they came from a few at a time, in their cars and trucks.
+     * Everything is reset for another outbreak: if the dead come back, so does the help.
+     */
+    private void sendOutsidersHome(float dt) {
+        boolean quiet = w.zombies <= 2;
+        for (int i = 0; i < incidents.size() && quiet; i++) {
+            Incident inc = incidents.get(i);
+            if (!inc.resolved && inc.cordonPost < 0 && inc.zombiesNear > 0) quiet = false;
+        }
+        calmFor = quiet ? calmFor + dt : 0;
+        if (calmFor < 90) {
+            homeSaid = false;
+            return;
+        }
+        homeCd -= dt;
+        if (homeCd > 0) return;
+        homeCd = 3;
+        Entity first = null;
+        for (int i = 0, n = w.entities.size(); i < n && first == null; i++) {
+            Entity e = w.entities.get(i);
+            if (e.outsider && !e.dead && e.isArmed() && e.task == T_NONE && e.rig == null && !e.aiming) first = e;
+        }
+        if (first == null) return;
+        ArrayList<Entity> group = new ArrayList<Entity>();
+        for (int i = 0, n = w.entities.size(); i < n && group.size() < (first.type == Entity.COP ? 2 : 8); i++) {
+            Entity e = w.entities.get(i);
+            if (e.outsider && !e.dead && e.type == first.type && e.task == T_NONE && e.rig == null && !e.aiming
+                    && Math.hypot(e.x - first.x, e.y - first.y) < 250) group.add(e);
+        }
+        java.util.List<float[]> out = entries(first.x, first.y);
+        float[] exit = null;
+        for (float[] q : out)
+            if (w.fleet.canDrive(first.x, first.y, q[0], q[1])) {
+                exit = q;
+                break;
+            }
+        if (exit == null) return;
+        if (!w.fleet.sendHome(group, exit[0], exit[1])) return;
+        if (!homeSaid) {
+            homeSaid = true;
+            say(WHO_INFO, null, "The city is quiet. Police and soldiers from outside are heading home; they'll be back if the dead return.",
+                    city.worldW() / 2, city.worldH() / 2);
+        }
+        // Ready to come again for a new outbreak.
+        armyCalled = false;
+        armyArrived = false;
+        armySaid = false;
+        outsideStarted = false;
+    }
+
+    /** Outside help has left the map: back in the pool for next time. */
+    void wentHome(int type, int count) {
+        if (type == Entity.COP) policeReserve += count;
+        else squadReserve += count;
+    }
+
     private void outsideFlow() {
         if (w.alert < 1) return;
         Incident worst = null;

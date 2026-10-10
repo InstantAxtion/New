@@ -398,6 +398,9 @@ hills in town. Guns holstered on a quiet day. People spread out in safe zones. C
 and labels, and a one-line stats bar. Hunting rifles, revolvers, machetes and crowbars; new gun, glass and door
 sounds. `./test.sh` runs the tests in parallel (`./test.sh 10.24` runs just one).
 
+**Round the bend (10.25):** curved streets in the suburbs: smooth crescents, oval roads round greens, and
+neighbourhoods of winding S-bend streets with curving closes.
+
 **Countryside:** Villages, small towns and every Massive map are surrounded by open country:
 winding dirt lanes out to the edge of the map, farms and lonely cabins along them, woods, and
 hamlets (a short street of cottages with a lane back to town). A town out in the country is never a

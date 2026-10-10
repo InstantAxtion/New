@@ -1778,6 +1778,39 @@ public final class GameTests {
                     check(Synth.effect(id).length > 1000 && Sfx.MIN_GAP.length == Sfx.COUNT, "new sound " + id);
             }
         });
+        test("10.25: curved streets in the suburbs", new Check() {
+            public void run() throws Exception {
+                CityConfig c = new CityConfig();
+                c.v[CityConfig.OPT_PRESET] = 2;
+                c.seed = 7;
+                c.normalize();
+                c.seed = 7;
+                City city = new City(c, 0.05f);
+                check(city.curves.size() >= 3, "curved streets laid out (" + city.curves.size() + ")");
+                check(city.neighbourhoodKinds()[City.NB_WINDING] >= 1, "a neighbourhood of winding streets");
+                // Every curve is road all along, and joins the rest of the streets (nothing cut off).
+                int[] field = new int[city.w * city.h];
+                float[] start = city.nearestDrivable(city.worldW() / 2, city.worldH() / 2);
+                check(city.driveField(field, start[0], start[1], false, -1), "a road network");
+                for (float[] l : city.curves) {
+                    if (l.length == 3) continue;
+                    for (int k = 0; k < l.length / 2; k++) {
+                        int tx = (int) Math.floor(l[k * 2]), ty = (int) Math.floor(l[k * 2 + 1]);
+                        check(city.tiles[ty * city.w + tx] == City.ROAD, "road under the curve at " + tx + "," + ty);
+                    }
+                    int mid = l.length / 4;
+                    int i = (int) Math.floor(l[mid * 2 + 1]) * city.w + (int) Math.floor(l[mid * 2]);
+                    check(field[i] < City.FAR, "the curve joins the streets");
+                }
+                CityConfig old = new CityConfig();
+                old.v[CityConfig.OPT_PRESET] = 2;
+                old.seed = 7;
+                old.normalize();
+                old.seed = 7;
+                old.civic = 9;
+                check(new City(old, 0.05f).curves.isEmpty(), "saved cities from before keep their straight streets");
+            }
+        });
         test("every screen draws", new Check() {
             public void run() throws Exception {
                 GameView v = new GameView(new android.app.Activity());

@@ -458,6 +458,10 @@ final class City {
     /** What's inside a base beyond barracks: {kind, x0, y0, x1, y1} in world units. */
     private final List<float[]> baseDecor = new ArrayList<float[]>();
     private final List<float[]> paths = new ArrayList<float[]>();
+    /** Curved streets (cities since 10.25): centre lines {x, y, x, y, ...} in tiles, drawn as smooth roads. */
+    final List<float[]> curves = new ArrayList<float[]>();
+    /** Tiles a curved street was laid over (drawn as pavement under the smooth road). */
+    private boolean[] curveTile;
     final List<Facility> facilities = new ArrayList<Facility>();
     final List<float[]> decor = new ArrayList<float[]>();
     /** Gas pumps as {x, y, alive}: an explosion nearby sets them off. */
@@ -4899,7 +4903,7 @@ final class City {
 
     // ------------------------------------------------------------------ neighbourhoods
 
-    static final int NB_CLOSES = 0, NB_CRESCENT = 1, NB_GREEN = 2, NB_ESTATE = 3, NB_ACRES = 4, NB_GATED = 5, NB_WORKS = 6;
+    static final int NB_CLOSES = 0, NB_CRESCENT = 1, NB_GREEN = 2, NB_ESTATE = 3, NB_ACRES = 4, NB_GATED = 5, NB_WORKS = 6, NB_WINDING = 7;
 
     /**
      * A stretch of a big map's suburbs laid out as a neighbourhood of its own instead of more grid: a spine road
@@ -4927,8 +4931,13 @@ final class City {
             type = dt == DT_MIDTOWN ? (r < 0.5f ? NB_ESTATE : NB_GREEN)
                     : r < 0.25f ? NB_CLOSES : r < 0.45f ? NB_CRESCENT : r < 0.65f ? NB_GREEN : r < 0.8f ? NB_ESTATE : NB_GATED;
         }
+        // (Since 10.25 roads needn't be straight: some suburbs are laid out with winding streets instead.)
+        if (cfg.civic >= 10 && (type == NB_CLOSES || type == NB_CRESCENT) && rnd.nextFloat() < 0.4f) type = NB_WINDING;
         int[] green = null;
         switch (type) {
+            case NB_WINDING:
+                if (!winding(x0, y0, x1, y1, rT, rB, rL, rR)) return false;
+                break;
             case NB_CLOSES:
             case NB_GATED:
                 if (!closes(x0, y0, x1, y1, rT, rB, rL, rR)) return false;
@@ -4954,7 +4963,7 @@ final class City {
 
     /** How many neighbourhoods of each kind the town has (NB_CLOSES ... NB_WORKS). */
     int[] neighbourhoodKinds() {
-        int[] n = new int[7];
+        int[] n = new int[8];
         for (int[] b : blocks) if (b.length > 5 && b[4] == 3) n[b[5]]++;
         return n;
     }
@@ -5034,6 +5043,17 @@ final class City {
         int p1 = a0 + 9 + rnd.nextInt(3), p2 = a1 - 12 - rnd.nextInt(3);
         int depth = c1 - c0 - 10 - rnd.nextInt(4);
         int l0 = fromLow ? c0 : c1 - depth, l1 = fromLow ? c0 + depth : c1;
+        if (cfg.civic >= 10) {
+            // (Since 10.25) A real crescent: the two arms sweep round in one smooth curve at the back.
+            float e = fromLow ? c0 - 0.5f : c1 + 0.5f, back = fromLow ? c0 + depth - 1.5f : c1 - depth + 1.5f;
+            float pull = e + (back - e) / 0.75f;
+            float a = p1 + 1.5f, b2 = p2 + 1.5f;
+            float[] pts = legsVert ? bezier(a, e, a, pull, b2, pull, b2, e, 48) : bezier(e, a, pull, a, pull, b2, e, b2, 48);
+            curveRoad(pts, false);
+            int[] g = legsVert ? new int[]{p1 + 3, fromLow ? c0 : c1 - depth + 3, p2, fromLow ? c0 + depth - 3 : c1}
+                    : new int[]{fromLow ? c0 : c1 - depth + 3, p1 + 3, fromLow ? c0 + depth - 3 : c1, p2};
+            return clearOfRoad(g);
+        }
         lane3(legsVert, l0, l1, p1);
         lane3(legsVert, l0, l1, p2);
         int cc = fromLow ? c0 + depth - 3 : c1 - depth;
@@ -5049,10 +5069,23 @@ final class City {
         int gw = Math.min(18, bw - 32), gh = Math.min(18, bh - 32);
         int gx0 = x0 + (bw - gw) / 2 + rnd.nextInt(3) - 1, gy0 = y0 + (bh - gh) / 2 + rnd.nextInt(3) - 1;
         int rx0 = gx0 - 3, ry0 = gy0 - 3, rx1 = gx0 + gw + 3, ry1 = gy0 + gh + 3;
-        lane3(false, rx0, rx1, ry0);
-        lane3(false, rx0, rx1, ry1 - 3);
-        lane3(true, ry0, ry1, rx0);
-        lane3(true, ry0, ry1, rx1 - 3);
+        boolean oval = cfg.civic >= 10;
+        if (oval) {
+            // (Since 10.25) An oval road round the green, not a square.
+            float cx = (rx0 + rx1) / 2f, cy = (ry0 + ry1) / 2f, ax = (rx1 - rx0) / 2f - 1.5f, ay = (ry1 - ry0) / 2f - 1.5f;
+            float[] pts = new float[2 * 65];
+            for (int k = 0; k <= 64; k++) {
+                double t = k / 64.0 * Math.PI * 2;
+                pts[k * 2] = cx + (float) Math.cos(t) * ax;
+                pts[k * 2 + 1] = cy + (float) Math.sin(t) * ay;
+            }
+            curveRoad(pts, true);
+        } else {
+            lane3(false, rx0, rx1, ry0);
+            lane3(false, rx0, rx1, ry1 - 3);
+            lane3(true, ry0, ry1, rx0);
+            lane3(true, ry0, ry1, rx1 - 3);
+        }
         // Roads out: one or two (more is just a grid again), off-centre.
         List<Integer> sides = new ArrayList<Integer>();
         if (rT) sides.add(0);
@@ -5065,22 +5098,149 @@ final class City {
             int sd = sides.get(k);
             if (sd < 2) {
                 int c = gx0 + gw / 3 + rnd.nextInt(Math.max(1, gw / 3));
-                if (sd == 0) lane3(true, y0, ry0, c);
-                else lane3(true, ry1, y1, c);
+                if (sd == 0) lane3(true, y0, ry0 + (oval ? 2 : 0), c);
+                else lane3(true, ry1 - (oval ? 2 : 0), y1, c);
             } else {
                 int c = gy0 + gh / 3 + rnd.nextInt(Math.max(1, gh / 3));
-                if (sd == 2) lane3(false, x0, rx0, c);
-                else lane3(false, rx1, x1, c);
+                if (sd == 2) lane3(false, x0, rx0 + (oval ? 2 : 0), c);
+                else lane3(false, rx1 - (oval ? 2 : 0), x1, c);
             }
         }
+        if (oval) return clearOfRoad(new int[]{gx0, gy0, gx0 + gw, gy0 + gh});
         return new int[]{gx0, gy0, gx0 + gw, gy0 + gh};
+    }
+
+    /**
+     * Winding streets (10.25): one or two roads that bend their way through the block in an S from the street on
+     * one side to the street on the other, with a curving close or two off them. Homes face them all along.
+     */
+    private boolean winding(int x0, int y0, int x1, int y1, boolean rT, boolean rB, boolean rL, boolean rR) {
+        int bw = x1 - x0, bh = y1 - y0;
+        boolean vert;
+        if ((rT && rB) && (!(rL && rR) || bh >= bw)) vert = true;
+        else if (rL && rR) vert = false;
+        else return false;
+        int len = vert ? bh : bw, span = vert ? bw : bh;
+        if (len < 36 || span < 30) return false;
+        int n = span >= 60 ? 2 : 1;
+        float a0 = (vert ? y0 : x0) - 0.5f, a1 = (vert ? y1 : x1) + 0.5f, s0 = vert ? x0 : y0;
+        for (int k = 0; k < n; k++) {
+            // Where it leaves each street, and how far it swings over in between.
+            float lane = s0 + span * (k + 0.5f) / n;
+            float swing = Math.min(span / (2.5f * n), 9) * (rnd.nextBoolean() ? 1 : -1);
+            float in = lane - swing * 0.5f + rnd.nextInt(3) - 1, out = lane + swing * 0.5f + rnd.nextInt(3) - 1;
+            float m1 = a0 + (a1 - a0) * 0.38f, m2 = a0 + (a1 - a0) * 0.62f;
+            float[] pts = vert ? bezier(in, a0, in + swing * 1.6f, m1, out - swing * 1.6f, m2, out, a1, 56)
+                    : bezier(a0, in, m1, in + swing * 1.6f, m2, out - swing * 1.6f, a1, out, 56);
+            curveRoad(pts, false);
+            // A curving close off the outside of the bend, ending in a turning circle.
+            if (len >= 48 && rnd.nextFloat() < 0.7f) {
+                int at = 22 + rnd.nextInt(Math.max(1, (int) (pts.length / 2 * 0.5f)));
+                at = Math.min(pts.length / 2 - 12, at);
+                float px = pts[at * 2], py = pts[at * 2 + 1];
+                float side = swing > 0 ? -1 : 1, reach = Math.min(span / (2f * n) - 5, 11);
+                if (reach >= 6) {
+                    float ex = vert ? px + side * reach : px + 4, ey = vert ? py + 4 : py + side * reach;
+                    float[] spur = bezier(px, py, vert ? px + side * reach * 0.5f : px, vert ? py : py + side * reach * 0.5f,
+                            vert ? ex : ex - 3, vert ? ey - 3 : ey, ex, ey, 20);
+                    curveRoad(spur, false);
+                    int cx = Math.round(ex), cy = Math.round(ey);
+                    for (int y = cy - 2; y <= cy + 2; y++)
+                        for (int x = cx - 2; x <= cx + 2; x++) {
+                            if (x <= x0 || y <= y0 || x >= x1 - 1 || y >= y1 - 1 || (Math.abs(x - cx) == 2 && Math.abs(y - cy) == 2)) continue;
+                            int i = y * w + x;
+                            if (tiles[i] != ROAD) {
+                                tiles[i] = ROAD;
+                                roadDir[i] = 3;
+                                curveTile[i] = true;
+                            }
+                        }
+                    curves.add(new float[]{ex, ey, -2.5f});
+                }
+            }
+        }
+        return true;
+    }
+
+    /** A cubic Bezier from (ax, ay) to (dx, dy) by (bx, by) and (cx, cy), as n + 1 points {x, y, ...} in tiles. */
+    private static float[] bezier(float ax, float ay, float bx, float by, float cx, float cy, float dx, float dy, int n) {
+        float[] p = new float[(n + 1) * 2];
+        for (int k = 0; k <= n; k++) {
+            float t = k / (float) n, u = 1 - t;
+            p[k * 2] = u * u * u * ax + 3 * u * u * t * bx + 3 * u * t * t * cx + t * t * t * dx;
+            p[k * 2 + 1] = u * u * u * ay + 3 * u * u * t * by + 3 * u * t * t * cy + t * t * t * dy;
+        }
+        return p;
+    }
+
+    /**
+     * A street three tiles wide along a smooth centre line {x, y, ...} (in tiles): the tiles under it become road
+     * (running the way the curve goes there), and the line is kept to draw the road smoothly over them.
+     */
+    private void curveRoad(float[] pts, boolean closed) {
+        int n = pts.length / 2;
+        for (int k = 0; k < n - 1; k++) {
+            float ax = pts[k * 2], ay = pts[k * 2 + 1], bx = pts[k * 2 + 2], by = pts[k * 2 + 3];
+            float dx = bx - ax, dy = by - ay, len = (float) Math.sqrt(dx * dx + dy * dy);
+            byte dir = (byte) (Math.abs(dx) > Math.abs(dy) ? 2 : 1);
+            int steps = Math.max(1, (int) (len * 4));
+            for (int s = 0; s <= steps; s++) {
+                float px = ax + dx * s / steps, py = ay + dy * s / steps;
+                for (int y = (int) Math.floor(py - 1.6f); y <= (int) Math.floor(py + 1.6f); y++)
+                    for (int x = (int) Math.floor(px - 1.6f); x <= (int) Math.floor(px + 1.6f); x++) {
+                        if (x < 0 || y < 0 || x >= w || y >= h) continue;
+                        float ox = x + 0.5f - px, oy = y + 0.5f - py;
+                        if (ox * ox + oy * oy > 1.6f * 1.6f) continue;
+                        int i = y * w + x;
+                        if (tiles[i] == ROAD) {
+                            if (roadDir[i] != dir && roadDir[i] != 0) roadDir[i] = 3;
+                            continue;
+                        }
+                        tiles[i] = ROAD;
+                        roadDir[i] = dir;
+                        if (curveTile == null) curveTile = new boolean[w * h];
+                        curveTile[i] = true;
+                    }
+            }
+        }
+        curves.add(pts);
+    }
+
+    /** The largest part of a green {x0, y0, x1, y1} that keeps two tiles clear of any road, or null. */
+    private int[] clearOfRoad(int[] g) {
+        int x0 = g[0], y0 = g[1], x1 = g[2], y1 = g[3];
+        for (int guard = 0; guard < 40 && x1 - x0 >= 4 && y1 - y0 >= 4; guard++) {
+            boolean top = false, bottom = false, left = false, right = false;
+            for (int x = x0; x < x1; x++) {
+                if (roadNear(x, y0, 1)) top = true;
+                if (roadNear(x, y1 - 1, 1)) bottom = true;
+            }
+            for (int y = y0; y < y1; y++) {
+                if (roadNear(x0, y, 1)) left = true;
+                if (roadNear(x1 - 1, y, 1)) right = true;
+            }
+            if (!top && !bottom && !left && !right) return new int[]{x0, y0, x1, y1};
+            if (top) y0++;
+            if (bottom) y1--;
+            if (left) x0++;
+            if (right) x1--;
+        }
+        // (Too small for a green: an empty one, so the neighbourhood still goes ahead round its roads.)
+        return x1 - x0 >= 4 && y1 - y0 >= 4 ? new int[]{x0, y0, x1, y1} : new int[]{x0, y0, x0, y0};
+    }
+
+    private boolean roadNear(int x, int y, int r) {
+        for (int j = y - r; j <= y + r; j++)
+            for (int i = x - r; i <= x + r; i++)
+                if (i >= 0 && j >= 0 && i < w && j < h && tiles[j * w + i] == ROAD) return true;
+        return false;
     }
 
     private void nameNeighbourhood(int x0, int y0, int x1, int y1, int type, int dt) {
         if (districtAt == null || districts.size() > 110 || real != null) return;
         String[][] ends = {{" Meadows", " Fields", " Chase", " Rise"}, {" Crescent", " Gardens", " Park"},
                 {" Green", " Common"}, {" Estate", " Court", " Towers"}, {" Acres", " Ranch", " Farms"},
-                {" Manor", " Reserve", " Hills"}, {" Business Park", " Trading Estate", " Commerce Park"}};
+                {" Manor", " Reserve", " Hills"}, {" Business Park", " Trading Estate", " Commerce Park"}, {" Way", " Bends", " Vale"}};
         String word = country.districtWords[rnd.nextInt(country.districtWords.length)];
         String[] e = ends[type];
         District d = new District();
@@ -6238,7 +6398,9 @@ final class City {
                 if (t == TREE && isPlazaTree(x, y)) col = 0xFFB3A487;
                 if (t == CAR && isLotCar(x, y)) col = 0xFF48494D;
                 if (t == CAR && carKind[y * w + x] == 2) col = 0xFF6A6E5E;
-                if (t == ROAD || (t == CAR && col != 0xFF48494D && col != 0xFF6A6E5E)) {
+                if (curveTile != null && curveTile[y * w + x] && (t == ROAD || t == CAR))
+                    col = country.pavement != 0 ? country.pavement : real ? 0xFF96938C : 0xFF8F8D87;
+                else if (t == ROAD || (t == CAR && col != 0xFF48494D && col != 0xFF6A6E5E)) {
                     int sf = roadSurface(x, y);
                     if (sf == SURF_COBBLE) col = 0xFF5F5A55;
                     else if (sf == SURF_CONCRETE) col = 0xFF77777A;
@@ -6319,6 +6481,8 @@ final class City {
                     p.setColor(0xFFA29376);
                     c.drawLine(fx, fy, fx + T, fy, p);
                     c.drawLine(fx, fy, fx, fy + T, p);
+                } else if ((t == ROAD || t == CAR) && curveTile != null && curveTile[y * w + x]) {
+                    // (Under a curved street: drawn smoothly afterwards.)
                 } else if ((t == ROAD || t == CAR) && roadSurface(x, y) != SURF_ASPHALT) {
                     int sf = roadSurface(x, y);
                     if (sf == SURF_COBBLE) {
@@ -6383,6 +6547,7 @@ final class City {
         }
 
         if (drawnRealistic) drawRealGround(c, p);
+        drawCurves(c, p);
         drawRoadMarkings(c, p);
         drawHighway(c, p);
         drawRail(c, p);
@@ -6596,7 +6761,7 @@ final class City {
                 r.setSeed(tileSeed(x, y, 11));
                 byte t = tiles[y * w + x];
                 float fx = x * T, fy = y * T;
-                if ((t == ROAD || t == CAR) && roadSurface(x, y) == SURF_ASPHALT) {
+                if ((t == ROAD || t == CAR) && roadSurface(x, y) == SURF_ASPHALT && (curveTile == null || !curveTile[y * w + x])) {
                     for (int k = 0; k < 5; k++) {
                         p.setColor(r.nextBoolean() ? 0x14FFFFFF : 0x1A000000);
                         float gx = fx + r.nextFloat() * T, gy = fy + r.nextFloat() * T;
@@ -6797,6 +6962,61 @@ final class City {
         p.setColor(0x40000000);
         c.drawRect(x0, y1 - 0.9f, x1, y1, p);
         c.drawRect(x1 - 0.9f, y0, x1, y1, p);
+    }
+
+    /**
+     * Curved streets (10.25): a kerb and a smooth band of tarmac along each centre line, and turning circles,
+     * over the tiles they were laid on (which are drawn as pavement, so no steps show at the edges).
+     */
+    private void drawCurves(Canvas c, Paint p) {
+        if (curves.isEmpty()) return;
+        boolean real = drawnRealistic;
+        int road = real ? 0xFF38393C : 0xFF3A3D43, kerb = 0xFF7E7C77;
+        Path path = new Path();
+        p.setStyle(Paint.Style.STROKE);
+        for (int pass = 0; pass < 2; pass++) {
+            for (float[] l : curves) {
+                if (l.length == 3) {
+                    // A turning circle.
+                    p.setStyle(Paint.Style.FILL);
+                    p.setColor(pass == 0 ? kerb : road);
+                    c.drawCircle(l[0] * T, l[1] * T, (-l[2] + (pass == 0 ? 0.12f : 0)) * T, p);
+                    p.setStyle(Paint.Style.STROKE);
+                    continue;
+                }
+                // (The kerb stops short of the street it joins, so it doesn't cross it.)
+                int a = 0, b = l.length / 2 - 1;
+                if (pass == 0) {
+                    while (a < b && !onCurveTile(l[a * 2], l[a * 2 + 1])) a++;
+                    while (b > a && !onCurveTile(l[b * 2], l[b * 2 + 1])) b--;
+                }
+                if (b - a < 1) continue;
+                path.reset();
+                path.moveTo(l[a * 2] * T, l[a * 2 + 1] * T);
+                for (int k = a + 1; k <= b; k++) path.lineTo(l[k * 2] * T, l[k * 2 + 1] * T);
+                p.setStrokeCap(Paint.Cap.BUTT);
+                p.setStrokeWidth(pass == 0 ? 3.35f * T : 3.1f * T);
+                p.setColor(pass == 0 ? kerb : road);
+                c.drawPath(path, p);
+            }
+        }
+        // A faint worn line down the middle.
+        p.setStrokeWidth(0.5f);
+        p.setColor(0x40E8E2C8);
+        for (float[] l : curves) {
+            if (l.length == 3) continue;
+            path.reset();
+            path.moveTo(l[0] * T, l[1] * T);
+            for (int k = 1; k < l.length / 2; k++) path.lineTo(l[k * 2] * T, l[k * 2 + 1] * T);
+            c.drawPath(path, p);
+        }
+        p.setStyle(Paint.Style.FILL);
+        p.setStrokeCap(Paint.Cap.BUTT);
+    }
+
+    private boolean onCurveTile(float x, float y) {
+        int tx = (int) Math.floor(x), ty = (int) Math.floor(y);
+        return curveTile != null && tx >= 0 && ty >= 0 && tx < w && ty < h && curveTile[ty * w + tx];
     }
 
     /** Rounds the outer corners of every block's sidewalk where two roads meet. */

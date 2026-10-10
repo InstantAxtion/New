@@ -2,11 +2,16 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.24";
-    static final int VERSION_CODE = 62;
+    static final String VERSION = "10.25";
+    static final int VERSION_CODE = 63;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.25  -  Round the bend",
+                    "Roads don't have to be straight any more. In new cities the suburbs get curved streets: crescents that sweep round in one smooth curve, oval roads round the village greens, and whole neighbourhoods of winding streets that bend through in an S, with curving closes ending in turning circles.",
+                    "Curved streets are drawn as smooth tarmac with a kerb, and cars, buses and everyone else use them like any other street. Saved games keep their old maps.",
+            },
             {
                     "10.24  -  Back to base",
                     "Police cars and army trucks that drop people off now drive back to the nearest police station or base and park there. The next call takes one of the parked ones, and when their people are done somewhere far off, a car or truck drives out to pick them up and bring them home.",

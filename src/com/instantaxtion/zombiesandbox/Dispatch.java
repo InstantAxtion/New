@@ -721,13 +721,17 @@ final class Dispatch {
             target.militaryRequested = true;
             return;
         }
+        target.militaryRequested = true;
+        if (w.fleet.mountUp(pick, target)) {
+            say(WHO_MILITARY, lead, squadName + " squad, mounting up. Driving to " + target.place + " to support the police.", target.x, target.y);
+            return;
+        }
         for (Entity e : pick) {
             e.task = T_RESPOND;
             e.incident = target;
             e.onScene = false;
             target.soldiers++;
         }
-        target.militaryRequested = true;
         say(WHO_MILITARY, lead, squadName + " squad moving to " + target.place + " to support the police.", target.x, target.y);
     }
 
@@ -1081,7 +1085,12 @@ final class Dispatch {
         say(WHO_POLICE, null, "Police Command: Requesting military support at " + place + ". " + hostiles
                 + " hostiles.", x, y);
         ArrayList<Entity> squad = nearestFree(Entity.SOLDIER, x, y, 4, Float.MAX_VALUE);
-        if (!squad.isEmpty()) {
+        if (!squad.isEmpty() && zone == null && w.fleet.mountUp(squad, inc)) {
+            Entity lead = squad.get(0);
+            say(WHO_MILITARY, lead, "Copy that, Police. " + SQUADS[Math.max(0, lead.squad) % SQUADS.length]
+                    + " squad mounting up, on our way to " + place + ".", lead.x, lead.y);
+            squad.clear();
+        } else if (!squad.isEmpty()) {
             Entity lead = squad.get(0);
             for (Entity e : squad) {
                 if (zone != null) {
@@ -1351,6 +1360,11 @@ final class Dispatch {
             if (have < want) {
                 ArrayList<Entity> squad = nearestFree(Entity.SOLDIER, e.x, e.y, Math.min(4, want - have), 1500);
                 int n = squad.size();
+                if (n > 0 && w.fleet.mountUp(squad, inc)) {
+                    say(WHO_MILITARY, null, "Military: " + n + " mounting up to support at " + inc.place + ".", inc.x, inc.y);
+                    squad.clear();
+                    return;
+                }
                 for (Entity s : squad) {
                     s.task = T_RESPOND;
                     s.incident = inc;

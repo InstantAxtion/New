@@ -1234,6 +1234,8 @@ final class GameView extends View implements Menu.Host {
      */
     private static final float CHUNK = 192;
     private static final int MAX_CHUNKS = 44;
+    /** How fine the close-ups being drawn are (pixels per world unit), or 0 when there are none. */
+    private int closeRes;
     private final java.util.concurrent.ConcurrentHashMap<Long, android.graphics.Bitmap> chunks =
             new java.util.concurrent.ConcurrentHashMap<Long, android.graphics.Bitmap>();
     private final java.util.Set<Long> chunkPending = java.util.Collections.newSetFromMap(
@@ -1302,7 +1304,7 @@ final class GameView extends View implements Menu.Host {
             int ay0 = Math.max(0, (int) ((r[1] - 30) / CHUNK)), ay1 = (int) ((r[3] + 90) / CHUNK);
             for (int ky = ay0; ky <= ay1; ky++)
                 for (int kx = ax0; kx <= ax1; kx++)
-                    for (int kr = 2; kr <= 4; kr += 2) {
+                    for (int kr = 2; kr <= 8; kr *= 2) {
                         long key = ((long) kr << 40) | ((long) ky << 20) | kx;
                         if (!chunks.containsKey(key)) continue;
                         if (!chunksOnScreen.contains(key)) chunks.remove(key);
@@ -1310,8 +1312,11 @@ final class GameView extends View implements Menu.Host {
                     }
         }
         // Only once the map picture is being stretched noticeably.
+        closeRes = 0;
         if (scale < city.detail * 1.6f) return;
-        int res = scale >= 3.2f && world.quality < World.Q_LOW ? 4 : 2;
+        // (10.26) Zoomed right in, an even finer close-up, so roofs and ground stay sharp at the closest zoom.
+        int res = scale >= 5.5f && world.quality == World.Q_FULL ? 8 : scale >= 3.2f && world.quality < World.Q_LOW ? 4 : 2;
+        closeRes = res;
         int cx0 = Math.max(0, (int) (camX / CHUNK)), cy0 = Math.max(0, (int) (camY / CHUNK));
         int cx1 = (int) ((camX + getWidth() / scale) / CHUNK), cy1 = (int) ((camY + barTop / scale) / CHUNK);
         int nx = (int) Math.ceil(city.worldW() / CHUNK), ny = (int) Math.ceil(city.worldH() / CHUNK);
@@ -1326,7 +1331,8 @@ final class GameView extends View implements Menu.Host {
                 android.graphics.Bitmap b = chunks.get(key);
                 if (b == null) {
                     // A coarser one will do until the finer one is ready.
-                    b = chunks.get(((long) (6 - res) << 40) | ((long) cy << 20) | cx);
+                    b = chunks.get(((long) (res == 8 ? 4 : 6 - res) << 40) | ((long) cy << 20) | cx);
+                    if (b == null && res == 8) b = chunks.get(((long) 2 << 40) | ((long) cy << 20) | cx);
                     if (chunkPending.add(key)) {
                         Object[] job = {city, key, cx * CHUNK, cy * CHUNK, (float) res, chunkVersion};
                         // Nearest the middle of the screen first.
@@ -1351,9 +1357,11 @@ final class GameView extends View implements Menu.Host {
                 }
         chunksOnScreen = new java.util.HashSet<Long>(chunksWanted);
         // Forget the ones furthest from view when there are too many.
-        if (chunks.size() > MAX_CHUNKS)
+        // (The finest close-ups are big: fewer of those are kept.)
+        int keep = res == 8 ? 18 : MAX_CHUNKS;
+        if (chunks.size() > keep)
             for (Long k : chunks.keySet()) {
-                if (chunks.size() <= MAX_CHUNKS) break;
+                if (chunks.size() <= keep) break;
                 if (!chunksWanted.contains(k)) chunks.remove(k);
             }
         if (chunkWorker == null) {
@@ -2127,12 +2135,36 @@ final class GameView extends View implements Menu.Host {
             bmpPaint.setAlpha((int) (255 * roofA));
             c.drawBitmap(world.city.bitmap, roofSrc, roofDst, bmpPaint);
             bmpPaint.setAlpha(255);
+            if (roofA >= 0.999f) sharpRoof(c, b, s, cx, cy);
             drawDamage(c, b, rx0, ry0, rx1, ry1, roofA);
             if (b.flash > 0) drawGunGlow(c, b, rx0, ry0, rx1, ry1);
             drawRoofLabels(c, b, cx, cy, s, roofA);
         }
         wallFade = 1;
         drawStructures(c, vx0, vy0, vx1, vy1, true, cx, cy, camH);
+    }
+
+    /**
+     * (10.26) A roof raised up in 3D, taken from the sharp close-ups of the map (where they're ready) instead of
+     * the whole-map picture, which is much coarser and went blurry as soon as you zoomed in.
+     */
+    private void sharpRoof(Canvas c, City.Building b, float s, float cx, float cy) {
+        int res = closeRes;
+        if (res == 0) return;
+        int kx0 = (int) (b.x0 / CHUNK), kx1 = (int) ((b.x1 - 0.01f) / CHUNK);
+        int ky0 = (int) (b.y0 / CHUNK), ky1 = (int) ((b.y1 - 0.01f) / CHUNK);
+        for (int ky = ky0; ky <= ky1; ky++)
+            for (int kx = kx0; kx <= kx1; kx++) {
+                android.graphics.Bitmap bm = chunks.get(((long) res << 40) | ((long) ky << 20) | kx);
+                if (bm == null) continue;
+                float ox = kx * CHUNK, oy = ky * CHUNK;
+                float ax0 = Math.max(b.x0, ox), ay0 = Math.max(b.y0, oy), ax1 = Math.min(b.x1, ox + CHUNK), ay1 = Math.min(b.y1, oy + CHUNK);
+                if (ax1 <= ax0 || ay1 <= ay0) continue;
+                roofSrc.set((int) ((ax0 - ox) * res), (int) ((ay0 - oy) * res),
+                        Math.min(bm.getWidth(), (int) Math.ceil((ax1 - ox) * res)), Math.min(bm.getHeight(), (int) Math.ceil((ay1 - oy) * res)));
+                roofDst.set(cx + (ax0 - cx) * s, cy + (ay0 - cy) * s, cx + (ax1 - cx) * s, cy + (ay1 - cy) * s);
+                c.drawBitmap(bm, roofSrc, roofDst, bmpPaint);
+            }
     }
 
     // ------------------------------------------------------------------ real landmarks standing up (10.18)

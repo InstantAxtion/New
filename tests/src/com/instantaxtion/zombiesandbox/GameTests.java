@@ -1811,6 +1811,66 @@ public final class GameTests {
                 check(new City(old, 0.05f).curves.isEmpty(), "saved cities from before keep their straight streets");
             }
         });
+        test("10.26: soldiers drive to calls, farm fields kept clear", new Check() {
+            public void run() throws Exception {
+                CityConfig c = new CityConfig();
+                c.v[CityConfig.OPT_PRESET] = 0;
+                c.v[CityConfig.OPT_ZOMBIES] = 0;
+                c.seed = 4;
+                c.normalize();
+                c.seed = 4;
+                World w = new World(c);
+                w.populate(c);
+                for (int f = 0; f < 30; f++) w.update(1 / 30f);
+                City.Facility base = w.city.nearestFacility(City.FACILITY_BASE, w.city.worldW() / 2, w.city.worldH() / 2);
+                java.util.ArrayList<Entity> squad = new java.util.ArrayList<Entity>();
+                for (Entity e : w.entities)
+                    if (squad.size() < 4 && e.type == Entity.SOLDIER && !e.dead && Math.hypot(e.x - base.x, e.y - base.y) < 400) squad.add(e);
+                check(squad.size() >= 2, "soldiers at the base (" + squad.size() + ")");
+                // A call a long way off: they climb into a truck rather than walk.
+                float far = 0;
+                float[] q = null;
+                for (int k = 0; k < 40; k++) {
+                    float[] t = w.city.findWalkable(w.city.worldW() * (0.1f + 0.8f * ((k * 37) % 40) / 40f), w.city.worldH() * (0.1f + 0.8f * ((k * 13) % 40) / 40f));
+                    if (t != null && Math.hypot(t[0] - base.x, t[1] - base.y) > far) {
+                        far = (float) Math.hypot(t[0] - base.x, t[1] - base.y);
+                        q = t;
+                    }
+                }
+                Dispatch.Incident inc = new Dispatch.Incident();
+                inc.x = q[0];
+                inc.y = q[1];
+                inc.place = "the test";
+                inc.field = new int[w.city.w * w.city.h];
+                w.city.walkFieldFromPoints(inc.field, new float[]{inc.x}, new float[]{inc.y}, 1);
+                w.dispatch.incidents.add(inc);
+                check(w.fleet.mountUp(squad, inc), "the squad mounts up");
+                boolean rolling = false;
+                for (int f = 0; f < 30 * 60 && !rolling; f++) {
+                    w.update(1 / 30f);
+                    for (Fleet.Vehicle v : w.fleet.vehicles) if (v.incident == inc && v.state == Fleet.DRIVE && v.crew.size() >= 2) rolling = true;
+                }
+                check(rolling, "and drives to the call");
+                // Woods don't grow over the farm fields.
+                CityConfig fc = new CityConfig();
+                fc.v[CityConfig.OPT_PRESET] = 0;
+                fc.seed = 7;
+                fc.normalize();
+                fc.seed = 7;
+                City city = new City(fc, 0.05f);
+                java.lang.reflect.Field ff = City.class.getDeclaredField("fieldTile");
+                ff.setAccessible(true);
+                boolean[] field = (boolean[]) ff.get(city);
+                check(field != null, "farms with fields");
+                int trees = 0, cells = 0;
+                for (int i = 0; i < field.length; i++)
+                    if (field[i]) {
+                        cells++;
+                        if (city.tiles[i] == City.TREE) trees++;
+                    }
+                check(cells > 100 && trees == 0, "no trees in the fields (" + trees + " of " + cells + ")");
+            }
+        });
         test("every screen draws", new Check() {
             public void run() throws Exception {
                 GameView v = new GameView(new android.app.Activity());

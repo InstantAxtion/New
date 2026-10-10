@@ -3288,19 +3288,49 @@ final class Fleet {
         float[] p = city.takeParkedTruck(base.x, base.y, Math.max(260, base.r * 2.5f));
         if (p == null) p = city.nearestDrivable(base.gateX > 0 ? base.gateX : base.x, base.gateY > 0 ? base.gateY : base.y);
         if (p == null || squad.isEmpty()) return false;
+        int kind = 0;
+        if (city.cfg.nature()) {
+            // An APC into a big fight (or from an armoured base), a Humvee for a fast run a long way out.
+            float far = (float) Math.hypot(inc.x - p[0], inc.y - p[1]);
+            kind = inc.zombiesNear >= 10 || (base.baseType == City.BT_ARMOUR && inc.zombiesNear >= 5) ? K_APC
+                    : far > 900 && squad.size() <= 4 ? K_HUMVEE : 0;
+            if (forceKind >= 0) kind = forceKind;
+        }
+        musterTruck(squad, p, inc, kind);
+        return true;
+    }
+
+    /**
+     * (10.26) Soldiers go by road whenever they can: a squad sent to a call more than a short walk away first
+     * climbs into the nearest army truck parked near it (back at a base after an earlier run, or in a base's
+     * bays) and drives there. False if the call is close or there's no truck near them (they go on foot).
+     */
+    boolean mountUp(java.util.List<Entity> squad, Dispatch.Incident inc) {
+        if (squad.isEmpty() || inc == null) return false;
+        float sx = 0, sy = 0;
+        for (Entity e : squad) {
+            sx += e.x;
+            sy += e.y;
+        }
+        sx /= squad.size();
+        sy /= squad.size();
+        if (Math.hypot(inc.x - sx, inc.y - sy) < 350) return false;
+        float[] p = takeStandby(TRUCK, sx, sy, 600);
+        if (p == null) p = city.takeParkedTruck(sx, sy, 600);
+        if (p == null) return false;
+        int kind = city.cfg.nature() ? (inc.zombiesNear >= 10 ? K_APC : squad.size() <= 4 ? K_HUMVEE : 0) : 0;
+        musterTruck(squad, p, inc, kind);
+        return true;
+    }
+
+    /** A truck at p waiting for this squad to climb in, then off to the call. */
+    private void musterTruck(java.util.List<Entity> squad, float[] p, Dispatch.Incident inc, int kind) {
         Vehicle v = make(TRUCK);
         v.x = p[0];
         v.y = p[1];
         v.homeX = p[0];
         v.homeY = p[1];
-        if (city.cfg.nature()) {
-            // An APC into a big fight (or from an armoured base), a Humvee for a fast run a long way out.
-            float far = (float) Math.hypot(inc.x - p[0], inc.y - p[1]);
-            int kind = inc.zombiesNear >= 10 || (base.baseType == City.BT_ARMOUR && inc.zombiesNear >= 5) ? K_APC
-                    : far > 900 && squad.size() <= 4 ? K_HUMVEE : 0;
-            if (forceKind >= 0) kind = forceKind;
-            if (kind != 0) setKind(v, kind);
-        }
+        if (kind != 0) setKind(v, kind);
         v.angle = (float) Math.atan2(inc.y - p[1], inc.x - p[0]);
         v.state = MUSTER;
         v.crewWanted = squad.size();
@@ -3314,7 +3344,6 @@ final class Fleet {
             e.task = Dispatch.T_BOARD;
         }
         vehicles.add(v);
-        return true;
     }
 
     /**

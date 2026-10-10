@@ -401,6 +401,9 @@ sounds. `./test.sh` runs the tests in parallel (`./test.sh 10.24` runs just one)
 **Round the bend (10.25):** curved streets in the suburbs: smooth crescents, oval roads round greens, and
 neighbourhoods of winding S-bend streets with curving closes.
 
+**Mount up (10.26):** soldiers take the nearest parked truck to any call that isn't close by; roofs stay sharp
+zoomed in; fields, playgrounds and park paths no longer overlap roads, streams, trees and the like.
+
 **Countryside:** Villages, small towns and every Massive map are surrounded by open country:
 winding dirt lanes out to the edge of the map, farms and lonely cabins along them, woods, and
 hamlets (a short street of cottages with a lane back to town). A town out in the country is never a

@@ -460,6 +460,8 @@ final class City {
     private final List<float[]> paths = new ArrayList<float[]>();
     /** Curved streets (cities since 10.25): centre lines {x, y, x, y, ...} in tiles, drawn as smooth roads. */
     final List<float[]> curves = new ArrayList<float[]>();
+    /** Farm fields (cities since 10.26): kept clear of the woods the terrain grows round them. */
+    private boolean[] fieldTile;
     /** Tiles a curved street was laid over (drawn as pavement under the smooth road). */
     private boolean[] curveTile;
     final List<Facility> facilities = new ArrayList<Facility>();
@@ -1459,6 +1461,8 @@ final class City {
         // The lie of the land: hills, and out in the country mountains, streams, lakes, a park and campsites.
         if (real != null) elev = new Terrain(this, new Random(cfg.seed * 977L + 3)).buildReal(real, realAreaAt);
         else if (cfg.nature()) elev = new Terrain(this, new Random(cfg.seed * 977L + 3)).build();
+        if (fieldTile != null)
+            for (int i = 0; i < w * h; i++) if (fieldTile[i] && tiles[i] == TREE) tiles[i] = GRASS;
         // Each neighbourhood is a place of its own, as far as anyone roaming between places is concerned.
         for (int[] b : blocks)
             if (b.length > 5 && b[4] == 3) settlements.add(new float[]{(b[0] + b[2]) / 2f * T, (b[1] + b[3]) / 2f * T});
@@ -6160,6 +6164,11 @@ final class City {
             if (wide) addDecor(D_CROPS, a0 * T + 3, fy * T + 3, a1 * T - 3, (fy + fh) * T - 3, rnd.nextInt(3));
             else addDecor(D_CROPS, fx * T + 3, a0 * T + 3, (fx + fw) * T - 3, a1 * T - 3, rnd.nextInt(3));
         }
+        if (cfg.civic >= 11) {
+            if (fieldTile == null) fieldTile = new boolean[w * h];
+            for (int j = fy; j < fy + fh; j++)
+                for (int i = fx; i < fx + fw; i++) if (i >= 0 && j >= 0 && i < w && j < h) fieldTile[j * w + i] = true;
+        }
     }
 
     /** Helipads by who uses them (the third value, when there is one): the army's, the police's, the rescue service's. */
@@ -6333,7 +6342,7 @@ final class City {
         boolean organic = cfg.layout() == 2 || (cfg.layout() == 1 && rnd.nextBoolean());
         if (organic) {
             // Curved footpaths (drawn smoothly; the grass is walkable anyway).
-            paths.add(new float[]{(x + pw / 2f) * T, (y + ph / 2f) * T, pw * T * 0.32f, ph * T * 0.3f});
+            paths.add(new float[]{(x + pw / 2f) * T, (y + ph / 2f) * T, pw * T * 0.32f, ph * T * 0.3f, x * T, y * T, (x + pw) * T, (y + ph) * T});
         } else {
             for (int i = x; i < x + pw; i++) tiles[cy * w + i] = PLAZA;
             for (int j = y; j < y + ph; j++) tiles[j * w + cx] = PLAZA;
@@ -6342,6 +6351,18 @@ final class City {
             for (int i = x; i < x + pw; i++)
                 if (tiles[j * w + i] == GRASS && rnd.nextFloat() < 0.13f && !hasNeighbor(i, j, TREE))
                     tiles[j * w + i] = TREE;
+        if (organic && cfg.civic >= 11) {
+            // (Since 10.26) No trees standing in the middle of the footpaths.
+            float pcx = x + pw / 2f, pcy = y + ph / 2f, rx = pw * 0.32f, ry = ph * 0.3f;
+            for (int j = y; j < y + ph; j++)
+                for (int i = x; i < x + pw; i++) {
+                    if (tiles[j * w + i] != TREE) continue;
+                    float dx = (i + 0.5f - pcx) / rx, dy = (j + 0.5f - pcy) / ry;
+                    float ring = Math.abs((float) Math.sqrt(dx * dx + dy * dy) - 1) * Math.min(rx, ry);
+                    boolean arm = (Math.abs(i + 0.5f - pcx) < 1 && Math.abs(dy) > 1) || (Math.abs(j + 0.5f - pcy) < 1 && Math.abs(dx) > 1);
+                    if (ring < 1.2f || arm) tiles[j * w + i] = GRASS;
+                }
+        }
     }
 
     private void plaza(int x, int y, int pw, int ph) {
@@ -6561,6 +6582,12 @@ final class City {
         p.setStyle(Paint.Style.STROKE);
         p.setStrokeCap(Paint.Cap.ROUND);
         for (float[] pa : paths) {
+            // (Kept inside its own park since 10.26: the paths used to run on over the pavement and the road.)
+            boolean clip = pa.length >= 8;
+            if (clip) {
+                c.save();
+                c.clipRect(pa[4] + 2, pa[5] + 2, pa[6] - 2, pa[7] - 2);
+            }
             p.setStrokeWidth(8f);
             p.setColor(0xFFB3A487);
             c.drawOval(new RectF(pa[0] - pa[2], pa[1] - pa[3], pa[0] + pa[2], pa[1] + pa[3]), p);
@@ -6568,10 +6595,11 @@ final class City {
             c.drawLine(pa[0], pa[1] + pa[3], pa[0], pa[1] + pa[3] * 1.7f, p);
             c.drawLine(pa[0] - pa[2] * 1.6f, pa[1], pa[0] - pa[2], pa[1], p);
             c.drawLine(pa[0] + pa[2], pa[1], pa[0] + pa[2] * 1.6f, pa[1], p);
+            if (clip) c.restore();
         }
         p.setStyle(Paint.Style.FILL);
 
-        for (float[] d : decor) if (!offRegion(d[1], d[2], d[3], d[4])) drawDecor(c, p, d);
+        for (float[] d : decor) if (!offRegion(d[1], d[2], d[3], d[4])) drawGroundDecor(c, p, d);
 
         // Building shadows (longer for taller buildings), then roofs. The roof art is drawn at the
         // footprint and GameView lifts it to the building's height.
@@ -7233,6 +7261,48 @@ final class City {
         p.setColor(0xFFF2F2F2);
         box(c, p, ct, -0.012f, 0.5f - 3.66f / 68, 0, 0.5f + 3.66f / 68);
         box(c, p, ct, 1, 0.5f - 3.66f / 68, 1.012f, 0.5f + 3.66f / 68);
+    }
+
+    /**
+     * (10.26) Fields, crops, playgrounds, gardens, courts and the like are painted on the ground only where it's
+     * still open ground: a lane, a stream, a driveway, a helipad or a tree that ended up on one shows as itself
+     * instead of the field being drawn over it (or it over the field).
+     */
+    private void drawGroundDecor(Canvas c, Paint p, float[] d) {
+        int kind = (int) d[0];
+        boolean ground = kind == D_CROPS || kind == D_FIELD || kind == D_PLAYGROUND || kind == D_GARDEN || kind == D_COURT
+                || kind == D_SKATE || kind == D_FLOWERS || kind == D_GRAVE;
+        if (!ground) {
+            drawDecor(c, p, d);
+            return;
+        }
+        int tx0 = Math.max(0, (int) (d[1] / T)), ty0 = Math.max(0, (int) (d[2] / T));
+        int tx1 = Math.min(w - 1, (int) ((d[3] - 0.01f) / T)), ty1 = Math.min(h - 1, (int) ((d[4] - 0.01f) / T));
+        boolean clear = true;
+        for (int y = ty0; y <= ty1 && clear; y++)
+            for (int x = tx0; x <= tx1 && clear; x++) if (!openGround(tiles[y * w + x])) clear = false;
+        if (clear) {
+            drawDecor(c, p, d);
+            return;
+        }
+        // Row by row, in runs of open ground.
+        for (int y = ty0; y <= ty1; y++)
+            for (int x = tx0; x <= tx1; ) {
+                if (!openGround(tiles[y * w + x])) {
+                    x++;
+                    continue;
+                }
+                int x0 = x;
+                while (x <= tx1 && openGround(tiles[y * w + x])) x++;
+                c.save();
+                c.clipRect(Math.max(d[1], x0 * T), Math.max(d[2], y * T), Math.min(d[3], x * T), Math.min(d[4], (y + 1) * T));
+                drawDecor(c, p, d);
+                c.restore();
+            }
+    }
+
+    private static boolean openGround(byte t) {
+        return t == GRASS || t == PLAZA || t == LOT || t == SAND;
     }
 
     private void drawDecor(Canvas c, Paint p, float[] d) {

@@ -2,11 +2,17 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.25";
-    static final int VERSION_CODE = 63;
+    static final String VERSION = "10.26";
+    static final int VERSION_CODE = 64;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.26  -  Mount up",
+                    "Soldiers drive wherever they can: a squad sent to a call more than a short walk away climbs into the nearest parked army truck (at a base, or one parked there after an earlier run) and drives, instead of walking across town.",
+                    "Roofs stay sharp when you zoom in: in 3D view they're now taken from the detailed close-up of the map, not the coarse whole-map picture, and there's an extra-fine close-up for the closest zoom.",
+                    "Farm fields, sports fields, playgrounds, gardens and courts are only painted on open ground, so a lane, stream, driveway, helipad or tree that ends up on one no longer has the field drawn over it. Park footpaths stay inside their park, and in new cities trees no longer grow in the middle of fields or footpaths.",
+            },
             {
                     "10.25  -  Round the bend",
                     "Roads don't have to be straight any more. In new cities the suburbs get curved streets: crescents that sweep round in one smooth curve, oval roads round the village greens, and whole neighbourhoods of winding streets that bend through in an S, with curving closes ending in turning circles.",

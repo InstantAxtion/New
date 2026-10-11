@@ -391,20 +391,10 @@ final class Fleet {
     void spawnTraffic(int n) {
         int buses = 0;
         for (int i = 0; i < n; i++) {
-            // Some of it is through traffic on the highway, end to end.
-            if (city.hwyAxis >= 0 && w.rnd.nextFloat() < 0.3f) {
-                float[] run = city.highwayRun(w.rnd);
-                if (run != null && !inView(run[0], run[1])) {
-                    Vehicle v = make(CAR);
-                    v.state = CRUISE;
-                    v.x = run[0];
-                    v.y = run[1];
-                    pickModel(v, false);
-                    v.angle = (float) Math.atan2(run[3] - run[1], run[2] - run[0]);
-                    v.through = true;
-                    if (route(v, run[2], run[3])) vehicles.add(v);
-                    continue;
-                }
+            // Some of it is through traffic on the highway, end to end (spread along it, not queued at the ends).
+            if (city.hwyAxis >= 0 && w.rnd.nextFloat() < 0.3f && throughTraffic() < throughTarget() * 1.3f) {
+                spawnThrough(true);
+                continue;
             }
             float[] start = randomRoad();
             // New cars turn up out of sight, not out of thin air in front of you.
@@ -420,6 +410,55 @@ final class Fleet {
             if (!newDestination(v)) continue;
             vehicles.add(v);
         }
+    }
+
+    /** Cars out on the highway. */
+    int throughTraffic() {
+        int n = 0;
+        for (int i = 0; i < vehicles.size(); i++) {
+            Vehicle v = vehicles.get(i);
+            if (v.type == CAR && !v.parked && city.onHighway(v.x, v.y)) n++;
+        }
+        return n;
+    }
+
+    /** (10.29) How many cars the highway carries while things are calm: one every couple of dozen tiles. */
+    int throughTarget() {
+        if (city.hwyAxis < 0) return 0;
+        return Math.max(4, Math.round((city.hwyAxis == 0 ? city.w : city.h) / 24f * Math.max(0.4f, trafficScale)));
+    }
+
+    /**
+     * A car on the highway: anywhere along its carriageway (at the start), or coming on at the far end of it.
+     * Most carry on through and off the other end; some come off at an interchange, into town.
+     */
+    private void spawnThrough(boolean anywhere) {
+        float[] run = city.highwayRun(w.rnd);
+        if (run == null) return;
+        float t = anywhere ? w.rnd.nextFloat() * 0.85f : 0;
+        float sx = run[0] + (run[2] - run[0]) * t, sy = run[1] + (run[3] - run[1]) * t;
+        if (inView(sx, sy)) return;
+        // (Not on top of a car already there.)
+        for (int i = 0; i < vehicles.size(); i++) {
+            Vehicle o = vehicles.get(i);
+            if (Math.abs(o.x - sx) < 3 * City.T && Math.abs(o.y - sy) < 3 * City.T) return;
+        }
+        Vehicle v = make(CAR);
+        v.state = CRUISE;
+        v.x = sx;
+        v.y = sy;
+        pickModel(v, false);
+        v.angle = (float) Math.atan2(run[3] - run[1], run[2] - run[0]);
+        v.through = true;
+        if (w.rnd.nextFloat() < 0.3f) {
+            float[] d = randomRoad();
+            if (d != null && city.inTown(d[0], d[1]) && route(v, d[0], d[1])) {
+                v.through = false;
+                vehicles.add(v);
+                return;
+            }
+        }
+        if (route(v, run[2], run[3])) vehicles.add(v);
     }
 
     /** What kind of car this is, and its paint, as the country's streets would have them. */
@@ -592,6 +631,16 @@ final class Fleet {
                     if (++routes >= 3) break;
                 }
             }
+        // (10.29) Now and then a trip out of town, by the highway: off the end of it and gone.
+        if (v.type == CAR && !v.patrol && v.player == null && v.riders.isEmpty() && !v.through && city.hwyAxis >= 0
+                && w.alert < 2 && w.rnd.nextFloat() < 0.04f) {
+            float[] run = city.highwayRun(w.rnd);
+            if (run != null && route(v, run[2], run[3])) {
+                v.through = true;
+                return true;
+            }
+            routes++;
+        }
         for (int tries = 0; tries < 12; tries++) {
             float[] d = randomRoad();
             if (d == null || Math.hypot(d[0] - v.x, d[1] - v.y) < (tries < 6 ? 400 : 160)) continue;
@@ -1495,7 +1544,7 @@ final class Fleet {
         int base = new int[]{0, 12, 24}[city.cfg.traffic()];
         return Math.min(base * 10, (int) (base * (long) city.w * city.h / (96 * 128)));
     }
-    private float trafficTimer, trainTimer = 20;
+    private float trafficTimer, trainTimer = 20, hwyTimer = 5;
 
     /** A train is on the line near this car's crossing: wait. */
     private boolean trainComing(Vehicle v) {
@@ -1598,6 +1647,12 @@ final class Fleet {
         if (trainTimer <= 0 && city.railY0 >= 0) {
             trainTimer = 70 + w.rnd.nextFloat() * 50;
             spawnTrain();
+        }
+        // (10.29) The highway has traffic of its own, coming on at the ends, so it doesn't empty out.
+        hwyTimer -= dt;
+        if (hwyTimer <= 0) {
+            hwyTimer = 2;
+            if (city.hwyAxis >= 0 && w.alert < 2 && throughTraffic() < throughTarget()) spawnThrough(false);
         }
         if (trafficTimer <= 0) {
             trafficTimer = 6;

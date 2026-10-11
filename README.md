@@ -411,6 +411,10 @@ new outbreak; four-wheel drives go off-road on emergencies; shooters fire past e
 road network, smoother junction turns; no real-city maps or bloaters; tougher zombies; a slow start; police
 perimeters while the army goes in; police cars wait at the scene; no crowds at the police station.
 
+**Interchanges (10.29):** the highway gets interchanges with curving slip roads on and off instead of crossroads
+with lights cutting across it, gaps in the median to turn round, and steady traffic of its own that comes on at
+the ends of the map (some of it into town, some of town's out on it).
+
 **Countryside:** Villages, small towns and every Massive map are surrounded by open country:
 winding dirt lanes out to the edge of the map, farms and lonely cabins along them, woods, and
 hamlets (a short street of cottages with a lane back to town). A town out in the country is never a

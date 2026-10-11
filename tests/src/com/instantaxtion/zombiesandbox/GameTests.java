@@ -1980,7 +1980,7 @@ public final class GameTests {
                 for (int k = 0; k < 4000; k++) check(w.turnType(Entity.CIVILIAN) != Entity.BLOATER, "nobody comes back a bloater");
                 float[] q = w.city.findWalkable(w.city.worldW() / 2, w.city.worldH() / 2);
                 Entity z = w.spawn(Entity.ZOMBIE, q[0], q[1]);
-                check(z.hp >= 90, "an ordinary zombie takes more stopping (" + z.hp + ")");
+                check(z.hp >= 90 * 0.75f, "an ordinary zombie takes more stopping (" + z.hp + ", frail ones a quarter less)");
                 // The ring road round town, and every station on the road network.
                 java.lang.reflect.Field rs = City.class.getDeclaredField("ringStreets");
                 rs.setAccessible(true);
@@ -2005,6 +2005,52 @@ public final class GameTests {
                 w.dispatch.calls = 2;
                 for (int f = 0; f < 30 * 5; f++) w.update(1 / 30f);
                 check(w.alert == 0, "two strange calls aren't news yet (alert " + w.alert + ")");
+            }
+        });
+        test("10.29: highway interchanges with slip roads, no lights on the highway, steady traffic on it", new Check() {
+            public void run() throws Exception {
+                CityConfig c = new CityConfig();
+                c.v[CityConfig.OPT_PRESET] = 2;
+                c.v[CityConfig.OPT_ZOMBIES] = 0;
+                c.seed = 7;
+                c.normalize();
+                c.seed = 7;
+                World w = new World(c);
+                w.populate(c);
+                City city = w.city;
+                check(city.hwyAxis >= 0 && !city.hwyExits.isEmpty(), "a highway with ways on and off");
+                boolean ew = city.hwyAxis == 0;
+                int len = ew ? city.w : city.h;
+                for (int k = 0; k < len; k++)
+                    for (int a = 0; a < 7; a++) {
+                        int x = ew ? k : city.hwyAt + a, y = ew ? city.hwyAt + a : k;
+                        check(!city.junctionAt(x, y), "no junction (or lights) on the highway at " + x + "," + y);
+                        check(city.tiles[y * city.w + x] != City.CAR, "nobody parked on the highway at " + x + "," + y);
+                    }
+                int[] f = new int[city.w * city.h];
+                float[] mid = city.nearestDrivable((city.townX0 + city.townX1) / 2f * City.T, (city.townY0 + city.townY1) / 2f * City.T);
+                city.driveField(f, mid[0], mid[1]);
+                for (int[] ex : city.hwyExits) {
+                    check(ex.length == 5, "an interchange, not a crossroads");
+                    int kc = ex[0] + ex[1] / 2;
+                    int x = ew ? kc : city.hwyAt + 3, y = ew ? city.hwyAt + 3 : kc;
+                    check(city.tiles[y * city.w + x] == City.FENCE, "the road from town doesn't cut across the highway at " + kc);
+                    // The slip road joins the near carriageway (and so town can be reached from the highway there).
+                    int la = ex[2] < 0 ? city.hwyAt + 5 : city.hwyAt + 1;
+                    int sx = ew ? ex[3] : la, sy = ew ? la : ex[3];
+                    check(f[sy * city.w + sx] < City.FAR, "the way off at " + ex[3] + " leads into town");
+                }
+                // Both carriageways reach town (by the slip roads and the gaps to turn round in).
+                for (int a : new int[]{1, 5}) {
+                    int x = ew ? len / 2 : city.hwyAt + a, y = ew ? city.hwyAt + a : len / 2;
+                    check(f[y * city.w + x] < City.FAR, "carriageway " + a + " connects to town");
+                }
+                for (int fr = 0; fr < 30 * 100; fr++) {
+                    w.update(1 / 30f);
+                    w.evCount = 0;
+                }
+                check(w.fleet.throughTraffic() >= w.fleet.throughTarget() / 2,
+                        "the highway still has traffic after a while (" + w.fleet.throughTraffic() + " of " + w.fleet.throughTarget() + ")");
             }
         });
         test("every screen draws", new Check() {

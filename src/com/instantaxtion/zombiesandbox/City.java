@@ -402,6 +402,11 @@ final class City {
         if (cfg.civic < 9 || real != null) return SURF_ASPHALT;
         int i = y * w + x;
         if (mainRoad[i] || (bridge != null && bridge[i])) return SURF_ASPHALT;
+        // (10.29) The frontage road and the slip roads by the highway are tarmac, not country chip-seal.
+        if (cfg.civic >= 13 && hwyAxis >= 0) {
+            int a = (hwyAxis == 0 ? y : x) - hwyAt;
+            if (a >= -8 && a <= 14) return SURF_ASPHALT;
+        }
         boolean inTown = x >= townX0 && x < townX1 && y >= townY0 && y < townY1;
         if (!inTown) return SURF_CHIPSEAL;
         int dt = districtType(x, y);
@@ -1724,6 +1729,8 @@ final class City {
                 int dir = roadDir[y * w + x];
                 if (dir == 0 || dir == 3 || hasNeighborDir(x, y)) continue;
                 if (railY0 >= 0 && y >= railY0 - 1 && y <= railY0 + railRows) continue;
+                // (Nobody parks on the highway, against the barrier, since 10.29.)
+                if (cfg.civic >= 13 && oneWay != null && oneWay[y * w + x] != 0) continue;
                 if (rnd.nextFloat() > carChance) continue;
                 if (hasNeighbor(x, y, CAR)) continue;
                 // Parked against the kerb, never in the middle lanes.
@@ -4632,6 +4639,8 @@ final class City {
         boolean before = rnd.nextBoolean();
         if (wildSide >= 0 && (wildSide >= 2) == ew) before = wildSide == 1 || wildSide == 3;
         int at = before ? lo / 2 - 3 : hi + (len - hi) / 2 - 3;
+        // (Since 10.29 well clear of town, with room for the slip roads in between.)
+        if (cfg.civic >= 13) at = before ? Math.min(at, lo - 18) : Math.max(at, hi + 11);
         at = Math.max(3, Math.min(len - 10, at));
         hwyAt = at;
         String[] hn = country.highways[rnd.nextInt(country.highways.length)];
@@ -4695,6 +4704,7 @@ final class City {
         });
         int made = 0;
         List<Integer> used = new ArrayList<Integer>();
+        List<int[]> picked = new ArrayList<int[]>();
         for (int[] cnd : cands) {
             if (made >= (len2 > 300 ? 3 : 2)) break;
             boolean near = false;
@@ -4702,6 +4712,11 @@ final class City {
             if (near || cnd[1] > 6) continue;
             used.add(cnd[0]);
             made++;
+            // (Since 10.29: an interchange, laid once the frontage road is in. See interchange.)
+            if (cfg.civic >= 13) {
+                picked.add(cnd);
+                continue;
+            }
             // The connecting road across the fields (a street of its own, with a name), and a gap in the
             // barrier so traffic can turn across.
             int r0 = Math.min(edge, edge - side * (cnd[2] - 1)), r1 = Math.max(edge, edge - side * (cnd[2] - 1)) + 1;
@@ -4716,7 +4731,8 @@ final class City {
         // Where town comes right up to the highway, a frontage road runs along beside it, and the streets that
         // stop just short of it carry on to meet it (instead of ending in the verge).
         int f0 = before ? at + 8 : at - 4;
-        boolean room = f0 >= 0 && f0 + 3 <= len && (before ? lo - (f0 + 3) : f0 - hi) <= 6;
+        // (Not since 10.29: the slip roads join the streets from town instead.)
+        boolean room = cfg.civic < 13 && f0 >= 0 && f0 + 3 <= len && (before ? lo - (f0 + 3) : f0 - hi) <= 6;
         for (int k = 0; k < len2 && room; k++)
             for (int a = 0; a < 3; a++) {
                 int x = ew ? k : f0 + a, y = ew ? f0 + a : k;
@@ -4742,6 +4758,89 @@ final class City {
                 }
             }
         }
+        for (int[] cnd : picked) interchange(cnd, ew, at, side, edge, room ? f0 : -1);
+    }
+
+    /**
+     * (10.29) Where a road from town meets the highway: an interchange, not a crossroads. The road stops short
+     * of the highway (at the frontage road, if there is one) and two curving slip roads join the near
+     * carriageway, the way off it before the junction and the way on after it. A gap in the median a little way
+     * beyond each lets traffic turn round to and from the far carriageway. Nothing crosses the highway, and
+     * there are no lights on it. Recorded in hwyExits as {k, width, side, where the way off leaves, flow}.
+     */
+    private void interchange(int[] cnd, boolean ew, int at, int side, int edge, int f0) {
+        int k0 = cnd[0], width = cnd[1], d = cnd[2], len2 = ew ? w : h;
+        // The road out from town, over the fields, up to the frontage road or four tiles short of the verge.
+        int stop = f0 >= 0 ? (side < 0 ? f0 + 3 : f0 - 1) : edge - side * 4;
+        int far = edge - side * (d - 1), last = Integer.MIN_VALUE;
+        for (int r = far; (r - stop) * side <= 0 && r >= 0 && r < (ew ? h : w); r += side) {
+            boolean open = true;
+            for (int q = 0; q < width && open; q++) {
+                int x = ew ? k0 + q : r, y = ew ? r : k0 + q;
+                if (tiles[y * w + x] == ROAD) open = false;
+            }
+            if (!open) break;
+            last = r;
+        }
+        if (last != Integer.MIN_VALUE) {
+            int r0 = Math.min(far, last), r1 = Math.max(far, last) + 1;
+            carve(ew ? new Street(k0, r0, k0 + width, r1, true, true) : new Street(r0, k0, r1, k0 + width, false, true));
+        }
+        float startA = f0 >= 0 ? f0 + 1.5f : (last != Integer.MIN_VALUE ? last : edge - side * d) + 0.5f;
+        // The near carriageway, and which way its traffic flows (along the highway).
+        float lane = side < 0 ? at + 6f : at + 1f;
+        int la = side < 0 ? at + 5 : at + 1;
+        int ow = oneWay[ew ? la * w : la];
+        int flow = ow == 1 || ow == 3 ? 1 : -1;
+        float kc = k0 + width / 2f, reach = 18;
+        for (int r = 0; r < 2; r++) {
+            int dir = r == 0 ? -flow : flow;
+            float k3 = kc + dir * reach;
+            if (k3 < 6 || k3 > len2 - 7) continue;
+            float k1 = kc + dir * (width / 2f - 1.5f);
+            float[] pts = ew ? bezier(k1, startA, k1, (startA + lane) / 2, k1 + dir * reach * 0.45f, lane, k3, lane, 30)
+                    : bezier(startA, k1, (startA + lane) / 2, k1, lane, k1 + dir * reach * 0.45f, lane, k3, 30);
+            curveRoad(pts, false);
+            // (The highway's own lanes keep running along it under the slip road.)
+            for (int k = Math.max(0, (int) Math.min(k1, k3) - 2); k < Math.min(len2, (int) Math.max(k1, k3) + 3); k++)
+                for (int a = 0; a < 7; a++) {
+                    int x = ew ? k : at + a, y = ew ? at + a : k;
+                    if (tiles[y * w + x] == ROAD) roadDir[y * w + x] = (byte) (ew ? 2 : 1);
+                }
+            // The gap in the median, a little way on from where the slip road joins.
+            int kx = Math.round(kc + dir * (reach + 12));
+            for (int q = -1; q <= 1; q++) {
+                int k = kx + q;
+                if (k < 3 || k > len2 - 4) continue;
+                int x = ew ? k : at + 3, y = ew ? at + 3 : k;
+                if (tiles[y * w + x] == FENCE) {
+                    tiles[y * w + x] = ROAD;
+                    roadDir[y * w + x] = (byte) (ew ? 2 : 1);
+                }
+            }
+        }
+        hwyExits.add(new int[]{k0, width, side, Math.round(kc - flow * reach), flow});
+        slipZone(ew, kc - reach - 2, kc + reach + 2, side < 0 ? at + 7 : startA - 1, side < 0 ? startA + 1 : at - 1);
+    }
+
+    /** (10.29) Where slip roads run between the highway and a road joining it: {x0, y0, x1, y1} in tiles. */
+    private final List<int[]> slipZones = new ArrayList<int[]>();
+    private boolean[] slipTile;
+
+    /** Marks the slip roads' area, from k0 to k1 along the highway and a0 to a1 across it. */
+    private void slipZone(boolean ew, float k0, float k1, float a0, float a1) {
+        int ka = (int) Math.floor(Math.min(k0, k1)), kb = (int) Math.ceil(Math.max(k0, k1));
+        int aa = (int) Math.floor(Math.min(a0, a1)), ab = (int) Math.ceil(Math.max(a0, a1));
+        int[] z = ew ? new int[]{ka, aa, kb, ab} : new int[]{aa, ka, ab, kb};
+        z[0] = Math.max(0, z[0]);
+        z[1] = Math.max(0, z[1]);
+        z[2] = Math.min(w - 1, z[2]);
+        z[3] = Math.min(h - 1, z[3]);
+        slipZones.add(z);
+        if (slipTile == null) slipTile = new boolean[w * h];
+        for (int y = z[1]; y <= z[3]; y++)
+            for (int x = z[0]; x <= z[2]; x++)
+                if (curveTile != null && curveTile[y * w + x]) slipTile[y * w + x] = true;
     }
 
     /** The ring road's streets (named after the rest), and its tiles (country lanes carry on across it). */
@@ -4805,7 +4904,7 @@ final class City {
             for (int yy = st.y0; yy < st.y1; yy++)
                 for (int xx = st.x0; xx < st.x1; xx++) ringTile[yy * w + xx] = true;
             // Where it meets the highway (a side that runs up to it): a gap in the barrier to turn either way.
-            if (hwyAxis == (horiz ? 1 : 0))
+            if (hwyAxis == (horiz ? 1 : 0) && cfg.civic < 13)
                 for (int k = 0; k < rw; k++) {
                     int c = horiz ? at[s] + k : at[s] + k;
                     int bx = horiz ? hwyAt + 3 : c, by = horiz ? c : hwyAt + 3;
@@ -4854,10 +4953,26 @@ final class City {
             float k2 = k + dir * 16;
             float mid = (ringEdge + lane) / 2;
             float[] pts = horiz ? bezier(k, ringEdge, k, mid, k2, mid, k2, lane, 30) : bezier(ringEdge, k, mid, k, mid, k2, lane, k2, 30);
+            // (Since 10.29 it runs into the highway alongside it, merging, rather than straight at it.)
+            if (cfg.civic >= 13) {
+                float ln = nearIsHigh ? hwyAt + 6f : hwyAt + 1f;
+                k2 = k + dir * 20;
+                pts = horiz ? bezier(k, ringEdge, k, (ringEdge + ln) / 2, k + dir * 9, ln, k2, ln, 30)
+                        : bezier(ringEdge, k, (ringEdge + ln) / 2, k, ln, k + dir * 9, ln, k2, 30);
+            }
             curveRoad(pts, false);
-            // And a gap in the barrier there, to reach the far carriageway.
+            if (cfg.civic >= 13) slipZone(horiz, Math.min(k, k2) - 2, Math.max(k, k2) + 2, ringEdge, nearIsHigh ? hwyAt + 7 : hwyAt - 1);
+            // And a gap in the barrier there, to reach the far carriageway. (Since 10.29 a little way on from the
+            // slip road, to turn round in, rather than straight across where it joins.)
+            int kg = Math.round(k2 + (cfg.civic >= 13 ? dir * 12 : 0));
+            if (cfg.civic >= 13)
+                for (int kk = Math.round(Math.min(k, k2)) - 2; kk <= Math.round(Math.max(k, k2)) + 2; kk++)
+                    for (int a = 0; a < 7; a++) {
+                        int x = horiz ? kk : hwyAt + a, y = horiz ? hwyAt + a : kk;
+                        if (x >= 0 && y >= 0 && x < w && y < h && tiles[y * w + x] == ROAD) roadDir[y * w + x] = (byte) (horiz ? 2 : 1);
+                    }
             for (int q = -1; q <= 1; q++) {
-                int bx = horiz ? Math.round(k2) + q : hwyAt + 3, by = horiz ? hwyAt + 3 : Math.round(k2) + q;
+                int bx = horiz ? kg + q : hwyAt + 3, by = horiz ? hwyAt + 3 : kg + q;
                 if (bx >= 0 && by >= 0 && bx < w && by < h && tiles[by * w + bx] == FENCE) {
                     tiles[by * w + bx] = ROAD;
                     roadDir[by * w + bx] = 3;
@@ -6621,7 +6736,9 @@ final class City {
                 if (t == TREE && isPlazaTree(x, y)) col = 0xFFB3A487;
                 if (t == CAR && isLotCar(x, y)) col = 0xFF48494D;
                 if (t == CAR && carKind[y * w + x] == 2) col = 0xFF6A6E5E;
-                if (curveTile != null && curveTile[y * w + x] && (t == ROAD || t == CAR))
+                if (slipTile != null && slipTile[y * w + x] && (t == ROAD || t == CAR))
+                    col = country.grass != 0 ? country.grass : real ? 0xFF4F6F36 : 0xFF4C7837;
+                else if (curveTile != null && curveTile[y * w + x] && (t == ROAD || t == CAR))
                     col = country.pavement != 0 ? country.pavement : real ? 0xFF96938C : 0xFF8F8D87;
                 else if (t == ROAD || (t == CAR && col != 0xFF48494D && col != 0xFF6A6E5E)) {
                     int sf = roadSurface(x, y);
@@ -8717,15 +8834,19 @@ final class City {
             p.setColor(0xFF303236);
             hwyRect(c, p, k, k + 1, 0, 3);
             hwyRect(c, p, k, k + 1, 4, 7);
+            // (10.29) Where a slip road joins, the edge is open: no shoulder, a broken line instead.
+            boolean slipLo = hwySlip(k, -1), slipHi = hwySlip(k, 7);
             // Gravel shoulders.
             p.setColor(0xFF6A665E);
-            hwyRect(c, p, k, k + 1, -0.35f, 0);
-            hwyRect(c, p, k, k + 1, 7, 7.35f);
+            if (!slipLo) hwyRect(c, p, k, k + 1, -0.35f, 0);
+            if (!slipHi) hwyRect(c, p, k, k + 1, 7, 7.35f);
             if (rail) continue;
             if (!junc) {
                 p.setColor(0xF0ECECEC);
-                hwyRect(c, p, k, k + 1, 0.12f, 0.24f);
-                hwyRect(c, p, k, k + 1, 6.76f, 6.88f);
+                if (!slipLo) hwyRect(c, p, k, k + 1, 0.12f, 0.24f);
+                else if (k % 2 == 0) hwyRect(c, p, k + 0.1f, k + 0.9f, 0.1f, 0.3f);
+                if (!slipHi) hwyRect(c, p, k, k + 1, 6.76f, 6.88f);
+                else if (k % 2 == 0) hwyRect(c, p, k + 0.1f, k + 0.9f, 6.7f, 6.9f);
                 // The inside edge: yellow next to the barrier in the Americas, white elsewhere.
                 p.setColor(country.id == Country.USA || country.id == Country.MEXICO || country.id == Country.KOREA ? 0xF0E8C440 : 0xF0ECECEC);
                 hwyRect(c, p, k, k + 1, 2.76f, 2.88f);
@@ -8754,6 +8875,23 @@ final class City {
         }
         // Stop lines at the lights, and the signs: a green board before each junction, both ways.
         for (int[] ex : hwyExits) {
+            if (ex.length > 3) {
+                // (10.29) An interchange: just the sign, a good way before the way off.
+                boolean lo = ex[2] > 0;
+                float sk = ex[3] - ex[4] * 12 - 1, sa = lo ? -1.6f : 7.6f;
+                p.setColor(0x60000000);
+                hwyRect(c, p, sk + 0.15f, sk + 2.15f, sa + 0.15f, sa + 1.25f);
+                p.setColor(0xFF1E6A3A);
+                hwyRect(c, p, sk, sk + 2, sa, sa + 1.1f);
+                p.setColor(0xFFF2F2F2);
+                hwyRect(c, p, sk + 0.15f, sk + 1.85f, sa + 0.1f, sa + 0.16f);
+                hwyRect(c, p, sk + 0.15f, sk + 1.85f, sa + 0.94f, sa + 1f);
+                // And an arrow on the inside lane pointing off, just before it.
+                p.setColor(0xE0ECECEC);
+                float ak = ex[3] - ex[4] * 4, aa = lo ? 0.5f : 6.5f;
+                hwyRect(c, p, Math.min(ak, ak - ex[4] * 1.6f), Math.max(ak, ak - ex[4] * 1.6f), aa - 0.08f, aa + 0.08f);
+                continue;
+            }
             int k0 = ex[0], k1 = ex[0] + ex[1];
             int jk0 = k0, jk1 = k1;
             while (jk0 > 0 && junctionAt(hwyAxis == 0 ? jk0 - 1 : hwyAt + 1, hwyAxis == 0 ? hwyAt + 1 : jk0 - 1)) jk0--;
@@ -8796,6 +8934,12 @@ final class City {
             p.setFakeBoldText(false);
             p.setTextAlign(Paint.Align.LEFT);
         }
+    }
+
+    /** A slip road beside the highway at k, a (across it): its edge is open there. */
+    private boolean hwySlip(int k, int a) {
+        int x = hwyAxis == 0 ? k : hwyAt + a, y = hwyAxis == 0 ? hwyAt + a : k;
+        return cfg.civic >= 13 && curveTile != null && x >= 0 && y >= 0 && x < w && y < h && curveTile[y * w + x];
     }
 
     private void drawRoadMarkings(Canvas c, Paint p) {
@@ -9902,6 +10046,18 @@ final class City {
                 for (int k = s; k < y; k++) if (y - s >= 7 && run[k * w + x] >= 7) junction[k * w + x] = true;
             }
         }
+        // (10.29) Nothing on the highway is a junction: slip roads merge into it, and the gaps in the median
+        // are for turning round, not crossroads with lights.
+        if (cfg.civic >= 13 && hwyAxis >= 0)
+            for (int k = 0, len = hwyAxis == 0 ? w : h; k < len; k++)
+                for (int a = -1; a <= 7; a++) {
+                    int x = hwyAxis == 0 ? k : hwyAt + a, y = hwyAxis == 0 ? hwyAt + a : k;
+                    if (x >= 0 && y >= 0 && x < w && y < h) junction[y * w + x] = false;
+                }
+        // (Nor where the slip roads fork off a road joining it: they merge.)
+        for (int[] z : slipZones)
+            for (int y = z[1]; y <= z[3]; y++)
+                for (int x = z[0]; x <= z[2]; x++) junction[y * w + x] = false;
         // Group the junction tiles into junctions, and decide how each is controlled.
         junctionId = new int[w * h];
         Arrays.fill(junctionId, -1);

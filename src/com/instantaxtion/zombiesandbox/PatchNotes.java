@@ -2,11 +2,20 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.28";
-    static final int VERSION_CODE = 66;
+    static final String VERSION = "10.29";
+    static final int VERSION_CODE = 67;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.29  -  Interchanges",
+                    "The highway has proper interchanges in new cities: the road from town stops short of it and curving slip roads lead on and off the near side, the way off before the junction and the way on after it. Nothing cuts across the highway any more, so there are no traffic lights or stop lines on it.",
+                    "Gaps in the median a little way past each interchange let traffic turn round to reach the far side, without stopping the highway.",
+                    "The highway runs a little further out from town, with room for the slip roads, and the ring road's slip roads merge alongside it instead of meeting it head on.",
+                    "The highway keeps its traffic: cars keep coming on at the ends, so it no longer empties out a minute in. Some come off at an interchange into town, and now and then someone in town heads out on it.",
+                    "Highway traffic starts spread out along it, not queued up at the ends of the map.",
+                    "No cars are parked on the highway, and the roads beside it are tarmac, not country chip-seal.",
+            },
             {
                     "10.28  -  Ring road",
                     "A ring road round the town in new cities: two lanes each way, a little way out from the edge of town, joined to the streets that reach it, and to the highway by curving slip roads on and off. It's left open on the side facing the wild country, so it wraps most of the town.",

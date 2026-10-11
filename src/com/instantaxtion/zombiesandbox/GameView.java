@@ -162,6 +162,8 @@ final class GameView extends View implements Menu.Host {
     private final java.util.ArrayList<Entity> selection = new java.util.ArrayList<Entity>();
     private float orderX, orderY, orderMarker;
     private Entity follow;
+    /** The vehicle leading the way to each call (police, and army keyed apart), for the lines to calls. */
+    private final java.util.HashMap<Object, Fleet.Vehicle> leadToCall = new java.util.HashMap<Object, Fleet.Vehicle>();
     /** A vehicle the camera is following (tap one), with its card. */
     private Fleet.Vehicle followV;
     private boolean wasControlling;
@@ -1898,6 +1900,9 @@ final class GameView extends View implements Menu.Host {
             for (int i = 0, n = world.entities.size(); i < n; i++) {
                 Entity e = world.entities.get(i);
                 if (e.dead || e.task != Dispatch.T_RESPOND || e.incident == null || e.onScene) continue;
+                // (10.31) Only for whoever you're following: a line from every officer on foot was a tangle. The
+                // police cars and army trucks on their way still show theirs, below.
+                if (e != follow) continue;
                 Dispatch.Incident inc = e.incident;
                 if (Math.max(e.x, inc.x) < lx0 || Math.min(e.x, inc.x) > lx1 || Math.max(e.y, inc.y) < ly0 || Math.min(e.y, inc.y) > ly1) continue;
                 stroke.setColor(e.type == Entity.SOLDIER ? 0x9990C060 : 0x9960A0FF);
@@ -1907,12 +1912,25 @@ final class GameView extends View implements Menu.Host {
             // the call, and a ring in their colour round the call itself, so a response is plain to see.
             stroke.setStrokeWidth(2.2f / Math.max(0.5f, scale) + 0.6f);
             float march = (world.time * 40) % 18;
+            // (10.31) One line to each call for the police and one for the army, from whichever of their vehicles
+            // is nearest it, not one from every car in the convoy.
+            leadToCall.clear();
+            for (int i = 0, n = world.fleet.vehicles.size(); i < n; i++) {
+                Fleet.Vehicle v = world.fleet.vehicles.get(i);
+                Dispatch.Incident inc = v.incident;
+                if (inc == null || v.state != Fleet.DRIVE || v.broken || inc.resolved) continue;
+                boolean army = v.type == Fleet.TRUCK || v.type == Fleet.TANK;
+                Object key = army ? (Object) java.util.Arrays.asList(inc, Boolean.TRUE) : inc;
+                Fleet.Vehicle o = leadToCall.get(key);
+                if (o == null || Math.hypot(v.x - inc.x, v.y - inc.y) < Math.hypot(o.x - inc.x, o.y - inc.y)) leadToCall.put(key, v);
+            }
             for (int i = 0, n = world.fleet.vehicles.size(); i < n; i++) {
                 Fleet.Vehicle v = world.fleet.vehicles.get(i);
                 Dispatch.Incident inc = v.incident;
                 if (inc == null || v.state != Fleet.DRIVE || v.broken || inc.resolved) continue;
                 if (Math.max(v.x, inc.x) < lx0 || Math.min(v.x, inc.x) > lx1 || Math.max(v.y, inc.y) < ly0 || Math.min(v.y, inc.y) > ly1) continue;
                 boolean army = v.type == Fleet.TRUCK || v.type == Fleet.TANK;
+                if (leadToCall.get(army ? (Object) java.util.Arrays.asList(inc, Boolean.TRUE) : inc) != v) continue;
                 int col = army ? 0xE0A8E070 : 0xE070B0FF;
                 stroke.setColor(col);
                 float dx = inc.x - v.x, dy = inc.y - v.y, len = (float) Math.sqrt(dx * dx + dy * dy);

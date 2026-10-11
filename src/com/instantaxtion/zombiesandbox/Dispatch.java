@@ -34,7 +34,7 @@ final class Dispatch {
         String backupBy;
         /** Seconds before the SWAT van tries again, when it couldn't find a way there. */
         float swatWait;
-        int[] field;
+        char[] field;
         /** A post on the cordon round the outbreak (World.updateCordon), or -1 for a real call. */
         int cordonPost = -1;
     }
@@ -467,8 +467,7 @@ final class Dispatch {
         inc.y = zombie.y;
         inc.place = city.placeName(zombie.x, zombie.y);
         inc.reported = inc.lastLogged = count;
-        inc.field = new int[city.w * city.h];
-        city.walkFieldFromPoints(inc.field, new float[]{inc.x}, new float[]{inc.y}, 1);
+        inc.field = city.walkField16(inc.x, inc.y);
         incidents.add(inc);
         String line = CALLS[rnd.nextInt(CALLS.length)];
         String text = line.contains("%d") ? String.format(line, count, inc.place) : String.format(line, inc.place);
@@ -652,8 +651,7 @@ final class Dispatch {
             inc.y = p[1];
             inc.place = city.placeName(p[0], p[1]);
             inc.reported = inc.lastLogged = Math.max(1, w.countZombiesNear(p[0], p[1], 140));
-            inc.field = new int[city.w * city.h];
-            city.walkFieldFromPoints(inc.field, new float[]{inc.x}, new float[]{inc.y}, 1);
+            inc.field = city.walkField16(inc.x, inc.y);
             incidents.add(inc);
             say(WHO_POLICE, null, "Dispatch: Patrols report " + inc.reported + " of them at " + inc.place
                     + ". All available units.", inc.x, inc.y);
@@ -950,7 +948,7 @@ final class Dispatch {
                 int got = assign(inc, Entity.COP, need - have);
                 have += got;
                 // Nobody free in town to send (or far too few for a big one): help from outside.
-                if ((got == 0 && have == 0) || (have < need / 2 && inc.zombiesNear >= 6) || (inc.backupNeed > have && got == 0)) policeBackup(inc);
+                if (outsideNeeded(inc) && ((got == 0 && have == 0) || (have < need / 2 && inc.zombiesNear >= 6) || (inc.backupNeed > have && got == 0))) policeBackup(inc);
             }
             if (inc.backupNeed > 0 && have >= inc.backupNeed) inc.backupNeed = 0;
             // A big one, or officers down: the SWAT team goes in (before the army is asked).
@@ -1320,8 +1318,8 @@ final class Dispatch {
         }
         if (worst == null) return;
         // (A serious outbreak: the towns around don't wait to be asked twice.)
-        if (w.alert >= 2 || w.zombies >= 25) outsideStarted = true;
-        if (outsideStarted && policeReserve > 0 && policeCd <= 0 && w.zombies >= 12) policeBackup(worst);
+        if (w.alert >= 2 || w.zombies >= 40) outsideStarted = true;
+        if (outsideStarted && policeReserve > 0 && policeCd <= 0 && w.zombies >= 20 && outsideNeeded(worst)) policeBackup(worst);
         if (!armyCalled && squadReserve > 0 && w.alert >= 2 && w.zombies >= 60)
             sendReserveSquad(worst.x, worst.y, worst.place, worst, null);
     }
@@ -1332,9 +1330,19 @@ final class Dispatch {
      * police, highway patrol, a SWAT team, the sheriff's deputies, federal agents. They drive in from the edge
      * of the map in their own cars, a minute or less away.
      */
+    /**
+     * (10.31) Whether it's time to ask outside the city for police: not while the city's own have it in hand. A
+     * call that has gone on a while and is a serious one, officers down, or the news out and still going on.
+     */
+    private boolean outsideNeeded(Incident inc) {
+        if (inc.officersDown > 0 && inc.age > 20) return true;
+        if (w.alert >= 2 && inc.age > 30) return true;
+        return inc.age > 60 && (inc.zombiesNear >= 8 || w.zombies >= 20);
+    }
+
     private boolean policeBackup(Incident inc) {
         if (policeReserve <= 0 || policeCd > 0) return false;
-        policeCd = 10;
+        policeCd = 25;
         outsideStarted = true;
         Country c = city.country;
         // (Who comes next is a random mix: each force in turn from a shuffled round, so any of them can be first.)
@@ -1423,8 +1431,7 @@ final class Dispatch {
             inc.y = e.y;
             inc.place = city.placeName(e.x, e.y);
             inc.reported = inc.lastLogged = hostiles;
-            inc.field = new int[city.w * city.h];
-            city.walkFieldFromPoints(inc.field, new float[]{inc.x}, new float[]{inc.y}, 1);
+            inc.field = city.walkField16(inc.x, inc.y);
             incidents.add(inc);
         }
         int want = Math.min(12, 2 + hostiles / 2);

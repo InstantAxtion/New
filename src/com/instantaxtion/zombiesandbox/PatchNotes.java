@@ -2,11 +2,19 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.30";
-    static final int VERSION_CODE = 68;
+    static final String VERSION = "10.31";
+    static final int VERSION_CODE = 69;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.31  -  Gigantic",
+                    "A new map size, Gigantic: over a thousand tiles across, with a city of over twenty thousand people on most maps (around twenty-six thousand on Downtown, more on the sea and river maps), and more small towns round it.",
+                    "Big cities run much lighter: people off screen with nothing going on near them move and think less often, many searches use the city grid instead of looking through everyone, and the routes to police stations and calls take half the memory and are only kept for the places in use. Massive maps are quicker too.",
+                    "Slip roads are one way: off the highway before the junction, on after it, and nobody drives up the wrong one. Each runs in alongside the highway as an extra lane for a stretch before it merges, instead of meeting it at an angle.",
+                    "Help from outside the city waits until it's needed: not while the city's own police have a small outbreak in hand. They're asked once a call has gone on a while and is a serious one, officers are down, or the news is out; and waves of help come further apart.",
+                    "Fewer lines on the map when people respond to a call: one from the lead police car and one from the lead army truck to each call, not one from every officer and vehicle (the person you're following still shows theirs).",
+            },
             {
                     "10.30  -  Country towns and the army base",
                     "Massive and Huge maps have much more going on outside the city: more room round it, and twice the places out there. Five small towns on a Massive map (seven on Huge), each with a main street, two cross streets, houses all along, and its own police and fire station, plus more hamlets and farms.",

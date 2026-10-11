@@ -1525,8 +1525,7 @@ public final class GameTests {
                 inc.x = iq[0];
                 inc.y = iq[1];
                 inc.place = "the test";
-                inc.field = new int[hw.city.w * hw.city.h];
-                hw.city.walkFieldFromPoints(inc.field, new float[]{inc.x}, new float[]{inc.y}, 1);
+                inc.field = hw.city.walkField16(inc.x, inc.y);
                 hw.dispatch.incidents.add(inc);
                 java.lang.reflect.Method pb = Dispatch.class.getDeclaredMethod("policeBackup", Dispatch.Incident.class);
                 pb.setAccessible(true);
@@ -1670,8 +1669,7 @@ public final class GameTests {
                 inc.x = q[0];
                 inc.y = q[1];
                 inc.place = "the test";
-                inc.field = new int[w.city.w * w.city.h];
-                w.city.walkFieldFromPoints(inc.field, new float[]{inc.x}, new float[]{inc.y}, 1);
+                inc.field = w.city.walkField16(inc.x, inc.y);
                 w.dispatch.incidents.add(inc);
                 java.lang.reflect.Method sr = Dispatch.class.getDeclaredMethod("sendReserveSquad", float.class, float.class, String.class, Dispatch.Incident.class, Dispatch.SafeZone.class);
                 sr.setAccessible(true);
@@ -1847,8 +1845,7 @@ public final class GameTests {
                 inc.x = q[0];
                 inc.y = q[1];
                 inc.place = "the test";
-                inc.field = new int[w.city.w * w.city.h];
-                w.city.walkFieldFromPoints(inc.field, new float[]{inc.x}, new float[]{inc.y}, 1);
+                inc.field = w.city.walkField16(inc.x, inc.y);
                 w.dispatch.incidents.add(inc);
                 check(w.fleet.mountUp(squad, inc), "the squad mounts up");
                 boolean rolling = false;
@@ -1894,8 +1891,7 @@ public final class GameTests {
                 inc.x = q[0];
                 inc.y = q[1];
                 inc.place = "the test";
-                inc.field = new int[w.city.w * w.city.h];
-                w.city.walkFieldFromPoints(inc.field, new float[]{inc.x}, new float[]{inc.y}, 1);
+                inc.field = w.city.walkField16(inc.x, inc.y);
                 w.dispatch.incidents.add(inc);
                 Fleet.Vehicle heli = w.fleet.readyHeli(Fleet.K_POLICE_HELI, q[0], q[1]);
                 check(heli != null && w.fleet.launchHeli(heli, q[0], q[1], "the test", inc, 1), "police helicopter launched");
@@ -2097,6 +2093,61 @@ public final class GameTests {
                 l.v[CityConfig.OPT_SIZE] = CityConfig.LARGE;
                 l.normalize();
                 check(!l.outskirtsBase(), "no country base on a Large map");
+            }
+        });
+        test("10.31: Gigantic maps, one-way slip roads, outside help only when it's needed", new Check() {
+            public void run() throws Exception {
+                // Gigantic: over twenty thousand people.
+                CityConfig g = new CityConfig();
+                g.v[CityConfig.OPT_PRESET] = 1;
+                g.v[CityConfig.OPT_SIZE] = CityConfig.GIGANTIC;
+                g.seed = 5;
+                g.normalize();
+                g.seed = 5;
+                City big = new City(g, 0.02f);
+                check(big.w >= 1000, "a Gigantic map is over a thousand tiles across (" + big.w + ")");
+                check(big.totalResidents > 20000, "and has over twenty thousand residents (" + big.totalResidents + ")");
+                // Slip roads are one way, and the highway still connects to town both ways.
+                CityConfig c = new CityConfig();
+                c.v[CityConfig.OPT_PRESET] = 2;
+                c.seed = 7;
+                c.normalize();
+                c.seed = 7;
+                City city = new City(c, 0.05f);
+                check(city.slipWay != null, "slip roads are one way");
+                int oneWay = 0;
+                for (byte b : city.slipWay) if (b > 0) oneWay++;
+                check(oneWay > 50, "plenty of one-way slip road (" + oneWay + " tiles)");
+                boolean ew = city.hwyAxis == 0;
+                int len = ew ? city.w : city.h;
+                int[] f = new int[city.w * city.h];
+                float[] mid = city.nearestDrivable((city.townX0 + city.townX1) / 2f * City.T, (city.townY0 + city.townY1) / 2f * City.T);
+                city.driveField(f, mid[0], mid[1]);
+                for (int a : new int[]{1, 5}) {
+                    int x = ew ? len / 2 : city.hwyAt + a, y = ew ? city.hwyAt + a : len / 2;
+                    check(f[y * city.w + x] < City.FAR, "off the highway into town from carriageway " + a);
+                }
+                float[] end = city.highwayRun(new java.util.Random(3));
+                city.driveField(f, end[2], end[3]);
+                check(f[city.tileIndex(mid[0], mid[1])] < City.FAR, "and from town onto the highway");
+                // A small fresh outbreak the police have in hand: no call for outside help.
+                CityConfig wc = new CityConfig();
+                wc.v[CityConfig.OPT_PRESET] = 2;
+                wc.v[CityConfig.OPT_ZOMBIES] = 0;
+                wc.seed = 4;
+                wc.normalize();
+                wc.seed = 4;
+                World w = new World(wc);
+                w.populate(wc);
+                Dispatch.Incident inc = new Dispatch.Incident();
+                inc.age = 10;
+                inc.zombiesNear = 4;
+                java.lang.reflect.Method need = Dispatch.class.getDeclaredMethod("outsideNeeded", Dispatch.Incident.class);
+                need.setAccessible(true);
+                check(!(Boolean) need.invoke(w.dispatch, inc), "no outside help for a small outbreak just started");
+                inc.age = 90;
+                inc.zombiesNear = 12;
+                check((Boolean) need.invoke(w.dispatch, inc), "but there is for a big one the police haven't stopped");
             }
         });
         test("every screen draws", new Check() {

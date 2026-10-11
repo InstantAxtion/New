@@ -464,8 +464,6 @@ final class World {
         if (city.courthouse != null) {
             City.Building b = city.courthouse;
             courtArmoury = new City.Facility(City.FACILITY_POLICE, b.doorX, b.doorY, 40, b.doorX, b.doorY, b.name);
-            courtArmoury.field = new int[city.w * city.h];
-            city.walkFieldFromPoints(courtArmoury.field, new float[]{b.doorX}, new float[]{b.doorY}, 1);
         }
     }
 
@@ -1613,26 +1611,42 @@ final class World {
         lodFrame++;
         for (int i = 0, n = entities.size(); i < n; i++) {
             Entity e = entities.get(i);
+            e.lodStep = 1;
             if (e.dead) continue;
             // Far from any zombie and just going about their day: they decide what to do a third as often
             // (but still move every frame), which lets a city of thousands run smoothly.
-            if (e.type == Entity.CIVILIAN && e.task == Dispatch.T_NONE && e.fleeTimer <= 0 && e != controlled && e.leader == null
+            // ((10.31) Families and friends out together too, while whoever they're with is calm as well.)
+            if (e.type == Entity.CIVILIAN && e.task == Dispatch.T_NONE && e.fleeTimer <= 0 && e != controlled
+                    && (e.leader == null || (e.leader.type == Entity.CIVILIAN && e.leader.task == Dispatch.T_NONE && e.leader.fleeTimer <= 0 && e.leader != controlled))
                     && city.fieldAt(city.zombieDist, e.x, e.y) > 30) {
+                boolean seen = onScreen(e);
+                // (10.31) Off screen they also only move, and get out of each other's way, every third frame, three
+                // frames' worth at a time: with tens of thousands in a Gigantic city, that's most of the work.
+                if (!seen) e.lodStep = (i + lodFrame) % 3 == 0 ? 3 : 0;
                 // (On a struggling phone, those off screen even less often.)
-                int every = quality == Q_FULL || onScreen(e) ? 3 : quality == Q_REDUCED ? 5 : 8;
+                int every = quality == Q_FULL || seen ? 3 : quality == Q_REDUCED ? 5 : 8;
                 if ((i + lodFrame) % every != 0) continue;
                 think(e, dt * every);
-            } else if (quality > Q_FULL && e.isZombie() && e.charge <= 0 && e.noiseTimer <= 0 && e != controlled && !onScreen(e)
+            } else if (e.isZombie() && e.charge <= 0 && e.noiseTimer <= 0 && e != controlled && !onScreen(e)
                     && city.fieldAt(city.humanDist, e.x, e.y) > 40) {
-                // The same for the dead shuffling about off screen with nobody near.
-                int every = quality == Q_REDUCED ? 2 : 3;
+                // The same for the dead shuffling about off screen with nobody near (since 10.31 on any phone,
+                // and they move every other frame too).
+                e.lodStep = (i + lodFrame) % 2 == 0 ? 2 : 0;
+                int every = quality == Q_LOW ? 3 : 2;
+                if ((i + lodFrame) % every != 0) continue;
+                think(e, dt * every);
+            } else if (e.type == Entity.CIVILIAN && e != controlled && !onScreen(e) && city.fieldAt(city.zombieDist, e.x, e.y) > 30) {
+                // (10.31) And people off screen who know what's going on but have none of the dead near them:
+                // every other frame (a Gigantic city in a panic is tens of thousands of them).
+                e.lodStep = (i + lodFrame) % 2 == 0 ? 2 : 0;
+                int every = quality == Q_FULL ? 2 : quality == Q_REDUCED ? 3 : 4;
                 if ((i + lodFrame) % every != 0) continue;
                 think(e, dt * every);
             } else think(e, dt);
         }
         for (int i = 0, n = entities.size(); i < n; i++) {
             Entity e = entities.get(i);
-            if (!e.dead) move(e, dt);
+            if (!e.dead && e.lodStep > 0) move(e, dt * e.lodStep);
         }
         separate();
         stampedeNews(dt);
@@ -1861,6 +1875,24 @@ final class World {
             }
         }
         return res;
+    }
+
+    /** (10.31) The living in the grid cells within r of (x, y) (some a little further), into gathered[]. */
+    private Entity[] gathered = new Entity[256];
+
+    private int gatherLiving(float x, float y, float r) {
+        int n = 0;
+        int cx0 = Math.max(0, (int) ((x - r) / CELL)), cx1 = Math.min(gw - 1, (int) ((x + r) / CELL));
+        int cy0 = Math.max(0, (int) ((y - r) / CELL)), cy1 = Math.min(gh - 1, (int) ((y + r) / CELL));
+        for (int cy = cy0; cy <= cy1; cy++)
+            for (int cx = cx0; cx <= cx1; cx++) {
+                int c = cy * gw + cx;
+                for (int k = cellStart[c] + zCount[c], end = cellStart[c] + cellCount[c]; k < end; k++) {
+                    if (n == gathered.length) gathered = Arrays.copyOf(gathered, n * 2);
+                    gathered[n++] = sorted[k];
+                }
+            }
+        return n;
     }
 
     /** Any of the dead within radius? Quick when there's none within a walk of here (the usual case). */
@@ -3292,8 +3324,11 @@ final class World {
             thinkMilitia(e, dt);
             if (e.militia) return;
         }
-        Entity threat = nearest(e, 100, true, true);
-        if (threat == null) threat = nearest(e, 26, true, false);
+        // ((10.31) Not even looking when the nearest of the dead is well out of reach: most of a big city, most
+        // of the time.)
+        boolean zNear = city.fieldAt(city.zombieDist, e.x, e.y) <= 100 / City.T + 6;
+        Entity threat = zNear ? nearest(e, 100, true, true) : null;
+        if (threat == null && zNear) threat = nearest(e, 26, true, false);
         // Raiders are frightening too (unless you're following one).
         if (threat == null && counts[Entity.RAIDER] > 0) threat = nearestRaider(e, 70);
         float threatDist = Float.MAX_VALUE;
@@ -3628,12 +3663,12 @@ final class World {
         }
         // Nowhere to hide yet: hurry to the police station, and keep moving.
         City.Facility police = city.nearestFacility(City.FACILITY_POLICE, e.x, e.y);
-        if (police != null && police.field != null) {
+        if (police != null) {
             float pd = (float) Math.hypot(police.x - e.x, police.y - e.y);
             // (10.28) Each to a spot of their own round the station, not all in a crowd at its door.
             float a = (e.nameSeed & 255) / 256f * TAU, rr = police.r * (1.3f + ((e.nameSeed >> 8) & 7) * 0.25f);
             float sx = police.x + (float) Math.cos(a) * rr, sy = police.y + (float) Math.sin(a) * rr;
-            if (pd > rr + 60 && followField(e, police.field, e.speed * 1.6f)) return true;
+            if (pd > rr + 60 && followField(e, city.field(police), e.speed * 1.6f)) return true;
             if (!city.solidAt(sx, sy) && Math.hypot(sx - e.x, sy - e.y) > 6) {
                 walkToSpot(e, sx, sy, e.speed * 1.2f);
                 return true;
@@ -3789,8 +3824,10 @@ final class World {
         e.removed = true;
         e.vx = e.vy = 0;
         b.visitors.add(e);
-        for (int i = 0, n = entities.size(); i < n; i++) {
-            Entity o = entities.get(i);
+        // (Only those at the door: looked up on the grid, not through everyone in the city.)
+        if (e.followerFrame != hashFrame) return;
+        for (int i = 0, n = gatherLiving(b.doorX, b.doorY, 50); i < n; i++) {
+            Entity o = gathered[i];
             if (o.dead || o.leader != e) continue;
             if ((o.x - b.doorX) * (o.x - b.doorX) + (o.y - b.doorY) * (o.y - b.doorY) > 50 * 50) continue;
             o.errandTimer = stay;
@@ -3839,6 +3876,9 @@ final class World {
     private ArrayList<City.Building> workplaces;
 
     /** Gives someone a life: a job and somewhere to do it, or a way of spending the day. */
+    /** Postal workers and street vendors handed out so far. */
+    private final int[] jobsGiven = new int[2];
+
     void assignJob(Entity e) {
         if (e.job != Entity.J_NONE) return;
         City.Building home = homeOf(e);
@@ -3851,7 +3891,8 @@ final class World {
             return;
         }
         boolean dog = false;
-        for (int i = 0, n = entities.size(); i < n && !dog; i++)
+        // (No dogs since 10.18: no need to look through everyone for one.)
+        for (int i = 0, n = counts[Entity.DOG] > 0 ? entities.size() : 0; i < n && !dog; i++)
             if (entities.get(i).leader == e && entities.get(i).type == Entity.DOG) dog = true;
         if (dog) {
             e.job = Entity.J_PARK;
@@ -3880,14 +3921,9 @@ final class World {
                 return;
             }
         }
-        int posties = 0, vendors = 0, civs = 0;
-        for (int i = 0, n = entities.size(); i < n; i++) {
-            Entity o = entities.get(i);
-            if (o.type != Entity.CIVILIAN) continue;
-            civs++;
-            if (o.job == Entity.J_POSTIE) posties++;
-            if (o.job == Entity.J_VENDOR) vendors++;
-        }
+        // (Counted as they're handed out, not by looking through everyone each time: a big city has tens of
+        // thousands.)
+        int posties = jobsGiven[0], vendors = jobsGiven[1], civs = counts[Entity.CIVILIAN];
         float r = rnd.nextFloat();
         if (posties < 1 + civs / 250 && r < 0.03f) e.job = Entity.J_POSTIE;
         else if (vendors < 1 + civs / 300 && r < 0.05f && !city.openAreas.isEmpty()) e.job = Entity.J_VENDOR;
@@ -3898,6 +3934,8 @@ final class World {
         else if (r < 0.88f) e.job = Entity.J_JOGGER;
         else if (r < 0.95f) e.job = Entity.J_PARK;
         else e.job = Entity.J_STUDENT;
+        if (e.job == Entity.J_POSTIE) jobsGiven[0]++;
+        if (e.job == Entity.J_VENDOR) jobsGiven[1]++;
         if (e.job == Entity.J_WORKER) e.work = pickWorkplace(e);
         else if (e.job == Entity.J_SHOPKEEPER) e.work = pickShop(e);
         else if (e.job == Entity.J_STUDENT) e.work = nearestOfKind(e, City.SCHOOL);
@@ -5055,8 +5093,8 @@ final class World {
     private float[] gunStoreNear(float x, float y) {
         float[] best = null;
         float bd = Float.MAX_VALUE;
-        for (int i = 0, n = city.buildings.size(); i < n; i++) {
-            City.Building b = city.buildings.get(i);
+        for (int i = 0, n = gunStores().size(); i < n; i++) {
+            City.Building b = gunStores().get(i);
             if (b.kind != City.SHOP || b.shopType != 1 || b.stock <= 0 || b.collapsed) continue;
             float d = (b.doorX - x) * (b.doorX - x) + (b.doorY - y) * (b.doorY - y);
             if (d < bd) {
@@ -5642,7 +5680,7 @@ final class World {
             Entity e = entities.get(i);
             if (e.dead || e.type != Entity.CIVILIAN || e.asked || e.infected || e.fleeTimer > 0) continue;
             if (e.task != Dispatch.T_NONE && e.task != Dispatch.T_SEEK) continue;
-            if (Math.hypot(e.x - office.x, e.y - office.y) > 900 || city.fieldAt(office.field, e.x, e.y) >= City.FAR) continue;
+            if (Math.hypot(e.x - office.x, e.y - office.y) > 900 || city.fieldAt(city.field(office), e.x, e.y) >= City.FAR) continue;
             asks--;
             e.asked = true;
             if (rnd.nextFloat() < willingness(e)) {
@@ -5678,7 +5716,7 @@ final class World {
         float ddx = f.x - e.x, ddy = f.y - e.y;
         if (ddx * ddx + ddy * ddy > f.r * f.r * 0.5f) {
             e.taskTimer = 0;
-            if (!followField(e, f.field, e.speed * 1.4f)) {
+            if (!followField(e, city.field(f), e.speed * 1.4f)) {
                 float d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
                 steer(e, ddx / d, ddy / d, e.speed * 1.4f);
             }
@@ -5776,11 +5814,22 @@ final class World {
     /** People who armed themselves at a gun store, and gun stores broken into. */
     int armedAtStores, gunStoreRaids;
 
+    /** The gun stores (looked through often in a panic; a big city has thousands of buildings). */
+    private java.util.List<City.Building> gunStores;
+
+    private java.util.List<City.Building> gunStores() {
+        if (gunStores == null) {
+            gunStores = new ArrayList<City.Building>();
+            for (City.Building b : city.buildings) if (b.kind == City.SHOP && b.shopType == 1) gunStores.add(b);
+        }
+        return gunStores;
+    }
+
     private City.Building gunStoreNear(Entity e, float radius) {
         City.Building best = null;
         float bd = radius * radius;
-        for (int i = 0, n = city.buildings.size(); i < n; i++) {
-            City.Building b = city.buildings.get(i);
+        for (int i = 0, n = gunStores().size(); i < n; i++) {
+            City.Building b = gunStores().get(i);
             if (b.kind != City.SHOP || b.shopType != 1 || b.stock <= 0 || b.collapsed || b.infestKnown) continue;
             float d = (b.doorX - e.x) * (b.doorX - e.x) + (b.doorY - e.y) * (b.doorY - e.y);
             if (d < bd) {
@@ -6142,7 +6191,7 @@ final class World {
             wander(e, e.speed * 0.3f);
             return true;
         }
-        if (!followField(e, hospital.field, e.speed)) e.task = Dispatch.T_NONE;
+        if (!followField(e, city.field(hospital), e.speed)) e.task = Dispatch.T_NONE;
         return true;
     }
 
@@ -6229,8 +6278,8 @@ final class World {
         // First aid for anyone badly hurt close by.
         Entity patient = null;
         float pd = 140 * 140;
-        for (int i = 0, n = entities.size(); i < n; i++) {
-            Entity o = entities.get(i);
+        for (int i = 0, n = gatherLiving(e.x, e.y, 140); i < n; i++) {
+            Entity o = gathered[i];
             if (o == e || o.dead || o.isZombie() || o.type == Entity.RAIDER || o.hp >= o.maxHp * 0.6f) continue;
             float d2 = (o.x - e.x) * (o.x - e.x) + (o.y - e.y) * (o.y - e.y);
             if (d2 < pd) {
@@ -6250,7 +6299,7 @@ final class World {
         City.Facility st = city.nearestFacility(City.FACILITY_FIRE, e.x, e.y);
         if (st != null) {
             float ddx = st.x - e.x, ddy = st.y - e.y;
-            if (ddx * ddx + ddy * ddy > st.r * st.r * 2 && followField(e, st.field, e.speed)) return;
+            if (ddx * ddx + ddy * ddy > st.r * st.r * 2 && followField(e, city.field(st), e.speed)) return;
         }
         wander(e, e.speed * 0.5f);
     }
@@ -6350,8 +6399,8 @@ final class World {
         if (countZombiesNear(e.x, e.y, 55) > 0) return false;
         Entity patient = null;
         float best = 150 * 150;
-        for (int i = 0, n = entities.size(); i < n; i++) {
-            Entity o = entities.get(i);
+        for (int i = 0, n = gatherLiving(e.x, e.y, 215); i < n; i++) {
+            Entity o = gathered[i];
             if (o == e || o.dead || o.isZombie() || o.type == Entity.RAIDER || o.type == Entity.DOG) continue;
             if (o.hp >= o.maxHp * 0.7f) continue;
             float ddx = o.x - e.x, ddy = o.y - e.y, d2 = (ddx * ddx + ddy * ddy) * (0.5f + o.hp / o.maxHp);
@@ -6404,8 +6453,8 @@ final class World {
         // Triage: the worst hurt first, then whoever is closest.
         Entity patient = null;
         float best = Float.MAX_VALUE;
-        for (int i = 0, n = entities.size(); i < n; i++) {
-            Entity o = entities.get(i);
+        for (int i = 0, n = gatherLiving(e.x, e.y, 320); i < n; i++) {
+            Entity o = gathered[i];
             if (o == e || o.dead || o.isZombie() || o.type == Entity.RAIDER) continue;
             if (o.hp >= o.maxHp * 0.8f) continue;
             float ddx = o.x - e.x, ddy = o.y - e.y, d2 = ddx * ddx + ddy * ddy;
@@ -6437,7 +6486,7 @@ final class World {
         City.Facility hospital = city.nearestFacility(City.FACILITY_HOSPITAL, e.x, e.y);
         if (hospital != null) {
             float ddx = hospital.x - e.x, ddy = hospital.y - e.y;
-            if (ddx * ddx + ddy * ddy > hospital.r * hospital.r * 4 && followField(e, hospital.field, e.speed)) return;
+            if (ddx * ddx + ddy * ddy > hospital.r * hospital.r * 4 && followField(e, city.field(hospital), e.speed)) return;
         }
         wander(e, e.speed * 0.6f);
     }
@@ -6566,7 +6615,7 @@ final class World {
                     if (t != null) {
                         float tx = e.x - t.x, ty = e.y - t.y, d = (float) Math.sqrt(tx * tx + ty * ty) + 0.001f;
                         flee(e, tx / d, ty / d, e.runSpeed);
-                    } else if (!followField(e, f.field, e.runSpeed)) {
+                    } else if (!followField(e, city.field(f), e.runSpeed)) {
                         e.task = Dispatch.T_NONE;
                     }
                     return;
@@ -6844,7 +6893,7 @@ final class World {
             if (st != null) {
                 float sx = st.x - e.x, sy = st.y - e.y;
                 if (sx * sx + sy * sy > 500 * 500) {
-                    if (followField(e, st.field, e.speed)) return;
+                    if (followField(e, city.field(st), e.speed)) return;
                 } else {
                     float a = (e.callsign * 2.39996f) % TAU, r = st.r * 0.95f + 10;
                     float px = st.x + (float) Math.cos(a) * r, py = st.y + (float) Math.sin(a) * r;
@@ -6861,7 +6910,7 @@ final class World {
             City.Facility base = city.nearestFacility(City.FACILITY_BASE, e.x, e.y);
             if (base != null) {
                 float bx = base.x - e.x, by = base.y - e.y;
-                if (bx * bx + by * by > base.r * base.r * 2.2f && followField(e, base.field, e.speed * 0.8f)) return;
+                if (bx * bx + by * by > base.r * base.r * 2.2f && followField(e, city.field(base), e.speed * 0.8f)) return;
             }
         }
         wander(e, e.speed * 0.6f);
@@ -6928,8 +6977,10 @@ final class World {
     private Entity nearestOfType(Entity e, int type, float radius) {
         Entity best = null;
         float bd = radius * radius;
-        for (int i = 0, n = entities.size(); i < n; i++) {
-            Entity o = entities.get(i);
+        // ((10.31) The living off the grid, not a look through everyone.)
+        boolean grid = !Entity.isZombieType(type);
+        for (int i = 0, n = grid ? gatherLiving(e.x, e.y, radius) : entities.size(); i < n; i++) {
+            Entity o = grid ? gathered[i] : entities.get(i);
             if (o.type != type || o.dead || o == e) continue;
             float d = (o.x - e.x) * (o.x - e.x) + (o.y - e.y) * (o.y - e.y);
             if (d < bd) {
@@ -8178,7 +8229,8 @@ final class World {
             // The last shot's flash in the windows fades whatever happens next (it used to stay lit for good
             // when the fight ended, or everyone inside was lost, right after a shot).
             if (b.flash > 0) b.flash = Math.max(0, b.flash - dt);
-            updateVisitors(b, dt);
+            // ((10.31) A quarter of the buildings each frame, four frames' worth: thousands of them in a big city.)
+            if (((i + lodFrame) & 3) == 0) updateVisitors(b, dt * 4);
             if (b.lurkers > 0 && !b.collapsed && b.occupants.isEmpty()) {
                 // Zombies inside burst out when someone comes close, or when they get restless.
                 boolean near = peopleNear(b.doorX, b.doorY, 32);
@@ -8797,6 +8849,31 @@ final class World {
     }
 
     /** Walks one tile downhill in a distance field. Returns false if there is nowhere lower to go. */
+    /** (10.31) The same, along a 16-bit field (the facilities'). */
+    private boolean followField(Entity e, char[] field, float speed) {
+        if (field == null) return false;
+        int w = city.w;
+        int tx = (int) (e.x / City.T), ty = (int) (e.y / City.T);
+        int cur = field[city.tileIndex(e.x, e.y)];
+        if (cur >= City.FAR_C || cur == 0) return false;
+        int best = cur, bx = -1, by = -1;
+        for (int oy = -1; oy <= 1; oy++) {
+            for (int ox = -1; ox <= 1; ox++) {
+                if (ox == 0 && oy == 0) continue;
+                int nx = tx + ox, ny = ty + oy;
+                if (city.solidTile(nx, ny)) continue;
+                if (ox != 0 && oy != 0 && (city.solidTile(tx + ox, ty) || city.solidTile(tx, ty + oy))) continue;
+                int v = field[ny * w + nx];
+                if (v < best) {
+                    best = v;
+                    bx = nx;
+                    by = ny;
+                }
+            }
+        }
+        return stepTo(e, tx, ty, bx, by, speed);
+    }
+
     private boolean followField(Entity e, int[] field, float speed) {
         if (field == null) return false;
         int w = city.w;
@@ -8818,6 +8895,12 @@ final class World {
                 }
             }
         }
+        return stepTo(e, tx, ty, bx, by, speed);
+    }
+
+    /** One step of following a field: towards tile (bx, by) from (tx, ty), or false if there's nowhere better. */
+    private boolean stepTo(Entity e, int tx, int ty, int bx, int by, float speed) {
+        int w = city.w;
         if (bx < 0) return false;
         // Calm people wait at the kerb for traffic to pass.
         if (keepsRules(e) && city.tiles[by * w + bx] == City.ROAD && city.tiles[ty * w + tx] != City.ROAD
@@ -9038,7 +9121,7 @@ final class World {
     private void separate() {
         for (int i = 0, n = entities.size(); i < n; i++) {
             Entity e = entities.get(i);
-            if (e.dead) continue;
+            if (e.dead || e.lodStep == 0) continue;
             // Only the cells within touching distance (the biggest body is under 8 across, plus a little for
             // movement since the grid was built).
             float reach = e.radius + 10;

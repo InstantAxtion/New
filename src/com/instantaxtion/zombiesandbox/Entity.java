@@ -185,6 +185,8 @@ final class Entity {
     City.Building lastErrand;
     /** Set to the world's grid frame when someone is following this one. */
     int followerFrame;
+    /** (10.31) How many frames' worth this one moves this frame: 1, or for the calm off screen 3 every third frame (0 between). */
+    transient int lodStep = 1;
     /** Which way (1 or -1) this one steps round obstacles it walks straight into. */
     float slideSide = 1;
     /** Breath for sprinting (0 to 1): the living tire, the dead don't. */
@@ -198,6 +200,10 @@ final class Entity {
     boolean retreatSaid;
 
     boolean isZombie() {
+        return type >= ZOMBIE && type <= BLOATER;
+    }
+
+    static boolean isZombieType(int type) {
         return type >= ZOMBIE && type <= BLOATER;
     }
 

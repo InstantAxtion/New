@@ -419,6 +419,10 @@ the ends of the map (some of it into town, some of town's out on it).
 towns in it (proper small towns with paved streets, roads in, and their own police and fire stations), and a
 big army base out in the country with army checkpoints on its road.
 
+**Gigantic (10.31):** a new Gigantic map size with over 20,000 people, big cities running lighter, one-way slip
+roads that run in alongside the highway, outside help only when the local police can't cope, and fewer
+response lines on the map.
+
 **Countryside:** Villages, small towns and every Massive map are surrounded by open country:
 winding dirt lanes out to the edge of the map, farms and lonely cabins along them, woods, and
 hamlets (a short street of cottages with a lane back to town). A town out in the country is never a

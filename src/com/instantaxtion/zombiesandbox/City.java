@@ -40,7 +40,6 @@ final class City {
         final int kind;
         final float x, y, r, gateX, gateY;
         String name;
-        int[] field;
         /** Rounds of ammunition in the armoury. */
         int ammo;
         boolean dryAnnounced;
@@ -320,7 +319,8 @@ final class City {
         if (m > 0) {
             District d = new District();
             d.type = DT_PARKSIDE;
-            d.name = this.country.districtName(words.get(word) + (r.nextBoolean() ? " Valley" : " Vale"), words.get(word), -2);
+            String cw = words.get(word % words.size());
+            d.name = this.country.districtName(cw + (r.nextBoolean() ? " Valley" : " Vale"), cw, -2);
             word++;
             country = districts.size();
             countryDistrict = country;
@@ -547,10 +547,6 @@ final class City {
         clearDoorways();
         Arrays.fill(humanDist, FAR);
         Arrays.fill(zombieDist, FAR);
-        for (Facility f : facilities) {
-            f.field = new int[w * h];
-            walkFieldFromPoints(f.field, new float[]{f.x}, new float[]{f.y}, 1);
-        }
         // The big map uses 16-bit colour to keep memory down.
         bitmap = Bitmap.createBitmap((int) (w * T * detail), (int) (h * T * detail),
                 w * detail > 140 ? Bitmap.Config.RGB_565 : Bitmap.Config.ARGB_8888);
@@ -715,7 +711,46 @@ final class City {
 
     /** After live edits: routes to the police stations, base and hospital are worked out again. */
     void editsDone() {
-        for (Facility f : facilities) fieldFromPoints(f.field, new float[]{f.x}, new float[]{f.y}, 1);
+        facilityFields.clear();
+    }
+
+    /**
+     * (10.31) The way on foot to each facility (police stations, the base, the hospital...), worked out the first
+     * time someone needs it, and only the most recently used kept: a Gigantic city has dozens of facilities, and
+     * one of these for each took most of a phone's memory.
+     */
+    private final java.util.LinkedHashMap<Facility, char[]> facilityFields = new java.util.LinkedHashMap<Facility, char[]>(16, 0.75f, true) {
+        @Override
+        protected boolean removeEldestEntry(java.util.Map.Entry<Facility, char[]> eldest) {
+            return size() > Math.max(8, (int) (96L * 1024 * 1024 / (2L * w * h)));
+        }
+    };
+    private int[] fieldTmp;
+
+    /** (Kept as 16-bit distances, half the memory: FAR_C means out of reach.) */
+    char[] field(Facility f) {
+        char[] a = facilityFields.get(f);
+        if (a == null) {
+            a = walkField16(f.x, f.y);
+            facilityFields.put(f, a);
+        }
+        return a;
+    }
+
+    static final int FAR_C = 0xFFFF;
+
+    /** (10.31) A 16-bit walking field to (x, y) (half the memory: calls each have one). */
+    char[] walkField16(float x, float y) {
+        if (fieldTmp == null) fieldTmp = new int[w * h];
+        walkFieldFromPoints(fieldTmp, new float[]{x}, new float[]{y}, 1);
+        char[] a = new char[w * h];
+        for (int i = 0; i < a.length; i++) a[i] = (char) Math.min(FAR_C, fieldTmp[i]);
+        return a;
+    }
+
+    int fieldAt(char[] field, float x, float y) {
+        int v = field[tileIndex(x, y)];
+        return v >= FAR_C ? FAR : v;
     }
 
     // ------------------------------------------------------------------ close-ups
@@ -1464,7 +1499,7 @@ final class City {
             // (Since 10.20 the country is busier: more hamlets, the bigger ones small towns of their own.)
             if (cfg.servicePads()) n = w >= 600 ? 7 + rnd.nextInt(3) : w >= 400 ? 5 + rnd.nextInt(2) : w >= 300 ? 3 + rnd.nextInt(2) : 1 + rnd.nextInt(2);
             // (Since 10.30 the Massive and Huge maps' country is much fuller: twice the places, more of them towns.)
-            if (cfg.civic >= 14 && cfg.massive()) n = w >= 650 ? 15 + rnd.nextInt(3) : 11 + rnd.nextInt(3);
+            if (cfg.civic >= 14 && cfg.massive()) n = w >= 900 ? 22 + rnd.nextInt(4) : w >= 650 ? 15 + rnd.nextInt(3) : 11 + rnd.nextInt(3);
             // (10.30) A big army base of its own out in the country, on the Massive maps (laid out first, so the
             // towns and farms go round it).
             if (cfg.outskirtsBase()) outskirtsBase();
@@ -5024,6 +5059,26 @@ final class City {
         int ow = oneWay[ew ? la * w : la];
         int flow = ow == 1 || ow == 3 ? 1 : -1;
         float kc = k0 + width / 2f, reach = 18;
+        // (10.31) One-way slip roads that run in alongside the highway before they join it.
+        if (cfg.civic >= 15) {
+            for (int r = 0; r < 2; r++) {
+                int dir = r == 0 ? -flow : flow;
+                float k1 = kc + dir * (width / 2f - 1.5f);
+                if (!slipRoad(ew, k1, startA, dir, dir == flow, side, at)) continue;
+                int kx = Math.round(k1 + dir * (SLIP_LEN + 14));
+                for (int q = -1; q <= 1; q++) {
+                    int k = kx + q;
+                    if (k < 3 || k > len2 - 4) continue;
+                    int x = ew ? k : at + 3, y = ew ? at + 3 : k;
+                    if (tiles[y * w + x] == FENCE) {
+                        tiles[y * w + x] = ROAD;
+                        roadDir[y * w + x] = (byte) (ew ? 2 : 1);
+                    }
+                }
+            }
+            hwyExits.add(new int[]{k0, width, side, Math.round(kc - flow * SLIP_LEN), flow});
+            return;
+        }
         for (int r = 0; r < 2; r++) {
             int dir = r == 0 ? -flow : flow;
             float k3 = kc + dir * reach;
@@ -5052,6 +5107,87 @@ final class City {
         }
         hwyExits.add(new int[]{k0, width, side, Math.round(kc - flow * reach), flow});
         slipZone(ew, kc - reach - 2, kc + reach + 2, side < 0 ? at + 7 : startA - 1, side < 0 ? startA + 1 : at - 1);
+    }
+
+    /** (10.31) How far along the highway a slip road reaches from the road it leaves, to where it merges. */
+    static final int SLIP_LEN = 28;
+    /** One-way slip roads: which way along each tile traffic may go (as oneWay). */
+    byte[] slipWay;
+
+    /**
+     * (10.31) A slip road from a road at (k0, a0) (along and across the highway) to the near carriageway, dir
+     * along it: curving round to run in alongside the highway as an extra lane for a stretch, then merging into
+     * the outside lane (an on-ramp; an off-ramp the same the other way round). One way along its length. False if
+     * it would run off the map.
+     */
+    private boolean slipRoad(boolean ew, float k0, float a0, int dir, boolean on, int side, int at) {
+        int len2 = ew ? w : h;
+        float kEnd = k0 + dir * SLIP_LEN;
+        if (kEnd < 6 || kEnd > len2 - 7) return false;
+        float aAux = side < 0 ? at + 7.7f : at - 0.7f, aOut = side < 0 ? at + 6.5f : at + 0.5f;
+        float kA = k0 + dir * 12, kB = k0 + dir * (SLIP_LEN - 7);
+        float[] bend = bezier(k0, a0, k0, (a0 + aAux) / 2, k0 + dir * 6, aAux, kA, aAux, 24);
+        List<Float> ka = new ArrayList<Float>();
+        for (int i = 0; i < bend.length; i += 2) {
+            ka.add(bend[i]);
+            ka.add(bend[i + 1]);
+        }
+        for (int i = 1; i <= 6; i++) {
+            ka.add(kA + (kB - kA) * i / 6f);
+            ka.add(aAux);
+        }
+        for (int i = 1; i <= 4; i++) {
+            ka.add(kB + (kEnd - kB) * i / 4f);
+            ka.add(aAux + (aOut - aAux) * i / 4f);
+        }
+        // In the direction traffic goes: on from the road, or off the highway onto it.
+        int n = ka.size() / 2;
+        float[] pts = new float[n * 2];
+        for (int i = 0; i < n; i++) {
+            int j = on ? i : n - 1 - i;
+            float k = ka.get(j * 2), a = ka.get(j * 2 + 1);
+            pts[i * 2] = ew ? k : a;
+            pts[i * 2 + 1] = ew ? a : k;
+        }
+        curveOnGrass = true;
+        curveRoad(pts, false);
+        curveOnGrass = false;
+        // (The highway's own lanes keep running along it under the merge.)
+        for (int k = (int) Math.min(k0, kEnd) - 2; k < (int) Math.max(k0, kEnd) + 3; k++)
+            for (int a = 0; a < 7; a++) {
+                int x = ew ? k : at + a, y = ew ? at + a : k;
+                if (x >= 0 && y >= 0 && x < w && y < h && tiles[y * w + x] == ROAD) roadDir[y * w + x] = (byte) (ew ? 2 : 1);
+            }
+        markSlipWay(pts);
+        slipZone(ew, Math.min(k0, kEnd) - 2, Math.max(k0, kEnd) + 2, side < 0 ? at + 7 : a0 - 1, side < 0 ? a0 + 1 : at - 1);
+        return true;
+    }
+
+    /** One way along a slip road's centre line {x, y, ...} (in the way traffic goes), off the highway itself. */
+    private void markSlipWay(float[] pts) {
+        if (slipWay == null) slipWay = new byte[w * h];
+        int n = pts.length / 2;
+        for (int k = 0; k < n - 1; k++) {
+            float ax = pts[k * 2], ay = pts[k * 2 + 1], dx = pts[k * 2 + 2] - ax, dy = pts[k * 2 + 3] - ay;
+            byte code = (byte) (Math.abs(dx) >= Math.abs(dy) ? (dx > 0 ? 1 : 2) : (dy > 0 ? 3 : 4));
+            float len = (float) Math.sqrt(dx * dx + dy * dy);
+            int steps = Math.max(1, (int) (len * 3));
+            for (int s = 0; s <= steps; s++) {
+                float px = ax + dx * s / steps, py = ay + dy * s / steps;
+                for (int y = (int) Math.floor(py - 1.6f); y <= (int) Math.floor(py + 1.6f); y++)
+                    for (int x = (int) Math.floor(px - 1.6f); x <= (int) Math.floor(px + 1.6f); x++) {
+                        if (x < 0 || y < 0 || x >= w || y >= h) continue;
+                        float ox = x + 0.5f - px, oy = y + 0.5f - py;
+                        if (ox * ox + oy * oy > 1.6f * 1.6f) continue;
+                        int i = y * w + x;
+                        if (tiles[i] != ROAD || (oneWay != null && oneWay[i] != 0) || curveTile == null || !curveTile[i]) continue;
+                        byte had = slipWay[i];
+                        // (Where two slip roads meet, the one going the other way: both ways there.)
+                        if (had == 0) slipWay[i] = code;
+                        else if (had != code && (had + code == 3 || had + code == 7)) slipWay[i] = -1;
+                    }
+            }
+        }
     }
 
     /** (10.29) Where slip roads run between the highway and a road joining it: {x0, y0, x1, y1} in tiles. */
@@ -5181,6 +5317,26 @@ final class City {
         boolean nearIsHigh = hwyAt < at[face];
         float lane = hwyAt + (nearIsHigh ? 5.5f : 1.5f);
         float span = to[face] - from[face];
+        // (10.31) One way, running in alongside the highway (see slipRoad).
+        if (cfg.civic >= 15) {
+            int la = nearIsHigh ? hwyAt + 5 : hwyAt + 1;
+            int ow = oneWay[horiz ? la * w : la];
+            int flow = ow == 1 || ow == 3 ? 1 : -1;
+            for (int r = 0; r < 2; r++) {
+                float k = from[face] + span * (r == 0 ? 0.3f : 0.7f);
+                int dir = r == 0 ? -1 : 1;
+                if (!slipRoad(horiz, k, ringEdge, dir, dir == flow, nearIsHigh ? -1 : 1, hwyAt)) continue;
+                int kg = Math.round(k + dir * (SLIP_LEN + 14));
+                for (int q = -1; q <= 1; q++) {
+                    int bx = horiz ? kg + q : hwyAt + 3, by = horiz ? hwyAt + 3 : kg + q;
+                    if (bx >= 3 && by >= 3 && bx < w - 3 && by < h - 3 && tiles[by * w + bx] == FENCE) {
+                        tiles[by * w + bx] = ROAD;
+                        roadDir[by * w + bx] = (byte) (horiz ? 2 : 1);
+                    }
+                }
+            }
+            return;
+        }
         for (int r = 0; r < 2; r++) {
             float k = from[face] + span * (r == 0 ? 0.3f : 0.7f), dir = r == 0 ? -1 : 1;
             float k2 = k + dir * 16;
@@ -6423,7 +6579,7 @@ final class City {
                 boolean vertical = rnd.nextBoolean();
                 // (The first two or three, on a big map since 10.20, are small towns: a longer main street with a
                 // cross street, their own police and fire stations, and houses all along.)
-                boolean town = cfg.servicePads() && k < (cfg.civic >= 14 && cfg.massive() ? (w >= 650 ? 7 : 5) : w >= 600 ? 3 : w >= 300 ? 2 : 1);
+                boolean town = cfg.servicePads() && k < (cfg.civic >= 14 && cfg.massive() ? (w >= 900 ? 10 : w >= 650 ? 7 : 5) : w >= 600 ? 3 : w >= 300 ? 2 : 1);
                 boolean big = town && cfg.civic >= 14 && cfg.massive();
                 int len = big ? 60 + rnd.nextInt(12) : town ? 46 + rnd.nextInt(10) : 30 + rnd.nextInt(20);
                 Street st = vertical ? new Street(cx - 1, cy - len / 2, cx + 2, cy + len / 2, true, false)
@@ -6842,7 +6998,7 @@ final class City {
                 opaque[k] = false;
             }
         drawRubble(b);
-        for (Facility f : facilities) fieldFromPoints(f.field, new float[]{f.x}, new float[]{f.y}, 1);
+        facilityFields.clear();
     }
 
     private void drawRubble(Building b) {
@@ -9138,10 +9294,6 @@ final class City {
                 p.setColor(0xFFF2F2F2);
                 hwyRect(c, p, sk + 0.15f, sk + 1.85f, sa + 0.1f, sa + 0.16f);
                 hwyRect(c, p, sk + 0.15f, sk + 1.85f, sa + 0.94f, sa + 1f);
-                // And an arrow on the inside lane pointing off, just before it.
-                p.setColor(0xE0ECECEC);
-                float ak = ex[3] - ex[4] * 4, aa = lo ? 0.5f : 6.5f;
-                hwyRect(c, p, Math.min(ak, ak - ex[4] * 1.6f), Math.max(ak, ak - ex[4] * 1.6f), aa - 0.08f, aa + 0.08f);
                 continue;
             }
             int k0 = ex[0], k1 = ex[0] + ex[1];
@@ -9263,7 +9415,7 @@ final class City {
                 int x = st.vertical ? st.x0 : st.x0 + k, y = st.vertical ? st.y0 + k : st.y0;
                 // Only between junctions.
                 int mx = st.vertical ? st.x0 + st.width / 2 : x, my = st.vertical ? y : st.y0 + st.width / 2;
-                if (mx >= w || my >= h || roadDir[my * w + mx] != dir || !paved(mx, my)) continue;
+                if (mx < 0 || my < 0 || mx >= w || my >= h || roadDir[my * w + mx] != dir || !paved(mx, my)) continue;
                 // (10.28) Only where the street is still road all the way across: a stretch that went back to
                 // grass, or was cut short, gets no lines painted on the grass.
                 boolean whole = true;
@@ -10144,8 +10296,21 @@ final class City {
     void computeFields(List<Entity> entities) {
         // Only near distances matter (how far the nearest zombie or person is, within smelling range), so
         // the searches stop spreading after a while instead of covering a whole massive map.
-        bfs(humanDist, entities, false, (int) (World.SCENT * 1.7f) + 4);
+        // (10.31) Only the dead and raiders go by the scent of the living: with neither about (a calm city of tens
+        // of thousands) that search is skipped.
+        boolean hunters = false, raiders = false;
+        for (int i = 0, n = entities.size(); i < n; i++) {
+            Entity e = entities.get(i);
+            if (e.dead) continue;
+            if (e.isZombie()) hunters = true;
+            if (e.type == Entity.RAIDER) raiders = true;
+        }
         bfs(zombieDist, entities, true, 70);
+        // (And with only the dead to smell them, only the living within reach of one count: the rest of the city
+        // can't be smelled from anywhere a zombie is.)
+        nearZombiesOnly = !raiders;
+        if (hunters || raiders) bfs(humanDist, entities, false, (int) (World.SCENT * 1.7f) + 4);
+        nearZombiesOnly = false;
     }
 
     /** Can a vehicle drive over this tile, and at what cost: roads are cheap, sidewalks and lots dearer. */
@@ -10273,6 +10438,8 @@ final class City {
                 if (oneWay != null && c >= 0 && (!oneWayOk(n, tx - nx, ty - ny) || !oneWayOk(t, tx - nx, ty - ny))) continue;
                 // (And down each side of a boulevard.)
                 if (divided != null && c >= 0 && (!wayOk(divided, n, tx - nx, ty - ny) || !wayOk(divided, t, tx - nx, ty - ny))) continue;
+                // (And down the slip roads, since 10.31.)
+                if (slipWay != null && c >= 0 && (!wayOk(slipWay, n, tx - nx, ty - ny) || !wayOk(slipWay, t, tx - nx, ty - ny))) continue;
                 // A step across the road (from lane to lane) outside a junction is a last resort: routes keep
                 // to their row of the road and only change rows at the junctions, so cars don't swerve over.
                 // (Emergencies too: lights and sirens still keep to their own side.)
@@ -10569,6 +10736,8 @@ final class City {
             return Math.max(-T * 1.3f, Math.min(T * 1.3f, off));
         }
         if (junctionAt(tx, ty)) return 4.5f * (country.leftHand ? -1 : 1);
+        // (10.31) A one-way slip road: down the middle of it.
+        if (slipWay != null && slipWay[ty * w + tx] > 0) return 0;
         int rx = -dy, ry = dx;
         int right = 0, left = 0;
         // (The highway is a road of its own: a frontage road beside it doesn't count its lanes as its own.)
@@ -10643,7 +10812,8 @@ final class City {
     void walkFieldFromPoints(int[] dist, float[] xs, float[] ys, int n, int limit) {
         if (walkCost == null) computeWalkCost();
         Arrays.fill(dist, FAR);
-        if (walkBuckets == null) walkBuckets = new int[9][w * h];
+        // ((10.31) Each starts small and grows as needed: nine whole-map arrays were 36MB on a Gigantic map.)
+        if (walkBuckets == null) walkBuckets = new int[9][Math.max(1024, w * h / 16)];
         int[] sizes = new int[9];
         int pending = 0;
         for (int i = 0; i < n; i++) {
@@ -10678,6 +10848,7 @@ final class City {
                     if (nd >= dist[nb]) continue;
                     dist[nb] = nd;
                     int b2 = nd % 9;
+                    if (sizes[b2] == walkBuckets[b2].length) walkBuckets[b2] = Arrays.copyOf(walkBuckets[b2], Math.min(w * h * 4, sizes[b2] * 2));
                     walkBuckets[b2][sizes[b2]++] = nb;
                     pending++;
                 }
@@ -10799,6 +10970,8 @@ final class City {
     int[] extraScent;
     int extraScentN;
 
+    private boolean nearZombiesOnly;
+
     private void bfs(int[] dist, List<Entity> entities, boolean zombies, int limit) {
         Arrays.fill(dist, FAR);
         int tail = 0;
@@ -10814,6 +10987,7 @@ final class City {
             Entity e = entities.get(i);
             if (e.dead || e.isZombie() != zombies) continue;
             int t = tileIndex(e.x, e.y);
+            if (nearZombiesOnly && zombieDist[t] >= FAR) continue;
             if (dist[t] != 0) {
                 dist[t] = 0;
                 queue[tail++] = t;
@@ -10825,6 +10999,7 @@ final class City {
                 Building b = buildings.get(i);
                 if (b.occupants.isEmpty()) continue;
                 int t = tileIndex(b.doorX, b.doorY);
+                if (nearZombiesOnly && zombieDist[t] >= FAR) continue;
                 if (dist[t] != 0) {
                     dist[t] = 0;
                     queue[tail++] = t;

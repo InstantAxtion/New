@@ -44,7 +44,7 @@ final class CityConfig implements OptionSet {
     private static final String[][] VALUES = {
             PRESETS,
             // (Since 10.18 the three sizes offered are called Default, Large and Massive.)
-            {"Tiny", "Small", "Medium", "Default", "Large", "Massive"},
+            {"Tiny", "Small", "Medium", "Default", "Large", "Massive", "Gigantic"},
             {"None", "Few", "Some", "Most", "All"},
             {"0", "5", "10", "20", "40", "60"},
             {"0", "5", "10", "20", "40"},
@@ -54,10 +54,10 @@ final class CityConfig implements OptionSet {
             Country.NAMES,
     };
     /** Tiles across for each size; cities built before 10.10 (no Tiny or Huge then) were a quarter smaller. */
-    private static final int[] SIZES = {160, 240, 320, 400, 560, 704};
-    private static final int[] OLD_SIZES = {192, 192, 256, 320, 448, 448};
+    private static final int[] SIZES = {160, 240, 320, 400, 560, 704, 1024};
+    private static final int[] OLD_SIZES = {192, 192, 256, 320, 448, 448, 448};
     /** The size settings, by name. */
-    static final int TINY = 0, SMALL = 1, MEDIUM = 2, LARGE = 3, MASSIVE = 4, HUGE = 5;
+    static final int TINY = 0, SMALL = 1, MEDIUM = 2, LARGE = 3, MASSIVE = 4, HUGE = 5, GIGANTIC = 6;
     /** Share of the city's residents out and about when the game starts. */
     private static final float[] RESIDENT_SHARE = {0, 0.2f, 0.45f, 0.7f, 1f};
     private static final int[] COPS = {0, 5, 10, 20, 40, 60};
@@ -173,9 +173,9 @@ final class CityConfig implements OptionSet {
      * 2 and the National Guard armory (10.5), 3 the bigger maps of 10.10 with hills, mountains, lakes, streams
      * and nature parks out in the country, 4 the wilds of 10.14 (streams you can wade, trails that cross the
      * lanes, a ranger station and fire lookout towers), 5 the lanes of 10.18 (no stretch of tarmac in the
-     * middle of a dirt lane) and the real cities, 6 the driveways of 10.19, 7 the helipads and busier outskirts of 10.20, 8 dirt lanes that stay dirt into town (10.23), 9 streets that line up, more kinds of road and hills in town (10.24), 10 curved streets in the suburbs (10.25), 11 farm fields and park paths kept clear (10.26), 12 the ring road, wider avenues and stations on the road network (10.28), 13 highway interchanges with slip roads instead of crossroads (10.29), 14 fuller country on the Massive maps with a big army base and its checkpoints (10.30). Saved games rebuild with what they had.
+     * middle of a dirt lane) and the real cities, 6 the driveways of 10.19, 7 the helipads and busier outskirts of 10.20, 8 dirt lanes that stay dirt into town (10.23), 9 streets that line up, more kinds of road and hills in town (10.24), 10 curved streets in the suburbs (10.25), 11 farm fields and park paths kept clear (10.26), 12 the ring road, wider avenues and stations on the road network (10.28), 13 highway interchanges with slip roads instead of crossroads (10.29), 14 fuller country on the Massive maps with a big army base and its checkpoints (10.30), 15 one-way slip roads that run in alongside the highway, and the Gigantic size (10.31). Saved games rebuild with what they had.
      */
-    int civic = 14;
+    int civic = 15;
 
     /** Hills, mountains, streams, lakes, parks and campsites (cities built since 10.10). */
     boolean nature() { return civic >= 3; }
@@ -362,9 +362,9 @@ final class CityConfig implements OptionSet {
         // Since 10.10 the maps are a quarter bigger, and the extra room is countryside: hills and woods,
         // mountains, lakes and streams, a nature park and campsites round a town a little bigger than before.
         if (p == 9) return v[OPT_SIZE] <= SMALL ? 0.6f : 0.5f;
-        float town = new float[]{1f, 0.86f, 0.8f, 0.76f, 0.74f, 0.66f}[v[OPT_SIZE]];
+        float town = new float[]{1f, 0.86f, 0.8f, 0.76f, 0.74f, 0.66f, 0.66f}[v[OPT_SIZE]];
         // (Since 10.30 the Massive and Huge maps have more country round the town, for its towns and the base.)
-        if (civic >= 14 && massive()) town = v[OPT_SIZE] >= HUGE ? 0.6f : 0.66f;
+        if (civic >= 14 && massive()) town = v[OPT_SIZE] >= GIGANTIC ? 0.7f : v[OPT_SIZE] >= HUGE ? 0.6f : 0.66f;
         return p == 6 ? town * 0.8f : town;
     }
     /** How many of a city's residents (everyone its homes can house) are in the game. */
@@ -412,7 +412,7 @@ final class CityConfig implements OptionSet {
     int policeStations() {
         int n = map(6);
         int s = v[OPT_SIZE];
-        return n == 0 ? 0 : Math.max(1, n - (s == TINY ? 1 : 0)) + (s >= LARGE ? 1 : 0) + (s >= MASSIVE ? 1 : 0) + (s >= HUGE ? 1 : 0);
+        return n == 0 ? 0 : Math.max(1, n - (s == TINY ? 1 : 0)) + (s >= LARGE ? 1 : 0) + (s >= MASSIVE ? 1 : 0) + (s >= HUGE ? 1 : 0) + (s >= GIGANTIC ? 2 : 0);
     }
 
     /** Medics: the hospital's, and the paramedics at the fire stations, growing with the city. */
@@ -435,6 +435,7 @@ final class CityConfig implements OptionSet {
         if (s == SMALL) return n > 1 ? 1 : n;
         if (s == LARGE) return n + (n + 1) / 2;
         if (s == HUGE) return n * 2;
+        if (s >= GIGANTIC) return n * 3;
         return n;
     }
 

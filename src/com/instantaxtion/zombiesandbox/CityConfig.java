@@ -173,9 +173,9 @@ final class CityConfig implements OptionSet {
      * 2 and the National Guard armory (10.5), 3 the bigger maps of 10.10 with hills, mountains, lakes, streams
      * and nature parks out in the country, 4 the wilds of 10.14 (streams you can wade, trails that cross the
      * lanes, a ranger station and fire lookout towers), 5 the lanes of 10.18 (no stretch of tarmac in the
-     * middle of a dirt lane) and the real cities, 6 the driveways of 10.19, 7 the helipads and busier outskirts of 10.20, 8 dirt lanes that stay dirt into town (10.23), 9 streets that line up, more kinds of road and hills in town (10.24), 10 curved streets in the suburbs (10.25), 11 farm fields and park paths kept clear (10.26), 12 the ring road, wider avenues and stations on the road network (10.28), 13 highway interchanges with slip roads instead of crossroads (10.29). Saved games rebuild with what they had.
+     * middle of a dirt lane) and the real cities, 6 the driveways of 10.19, 7 the helipads and busier outskirts of 10.20, 8 dirt lanes that stay dirt into town (10.23), 9 streets that line up, more kinds of road and hills in town (10.24), 10 curved streets in the suburbs (10.25), 11 farm fields and park paths kept clear (10.26), 12 the ring road, wider avenues and stations on the road network (10.28), 13 highway interchanges with slip roads instead of crossroads (10.29), 14 fuller country on the Massive maps with a big army base and its checkpoints (10.30). Saved games rebuild with what they had.
      */
-    int civic = 13;
+    int civic = 14;
 
     /** Hills, mountains, streams, lakes, parks and campsites (cities built since 10.10). */
     boolean nature() { return civic >= 3; }
@@ -341,6 +341,8 @@ final class CityConfig implements OptionSet {
 
     /** A massive (or huge) map: the city sits in the middle of open countryside. */
     boolean massive() { return v[OPT_SIZE] >= MASSIVE; }
+    /** (10.30) A big army base out in the country: every Massive and Huge map with country round the town. */
+    boolean outskirtsBase() { return civic >= 14 && massive() && water() == W_NONE && coreFraction() < 0.99f; }
 
     int size() { return v[OPT_SIZE]; }
 
@@ -361,6 +363,8 @@ final class CityConfig implements OptionSet {
         // mountains, lakes and streams, a nature park and campsites round a town a little bigger than before.
         if (p == 9) return v[OPT_SIZE] <= SMALL ? 0.6f : 0.5f;
         float town = new float[]{1f, 0.86f, 0.8f, 0.76f, 0.74f, 0.66f}[v[OPT_SIZE]];
+        // (Since 10.30 the Massive and Huge maps have more country round the town, for its towns and the base.)
+        if (civic >= 14 && massive()) town = v[OPT_SIZE] >= HUGE ? 0.6f : 0.66f;
         return p == 6 ? town * 0.8f : town;
     }
     /** How many of a city's residents (everyone its homes can house) are in the game. */
@@ -378,7 +382,7 @@ final class CityConfig implements OptionSet {
 
     /** Soldiers at the base (if the map has one): a garrison that grows with the city. */
     int soldiers(int residents) {
-        if (!militaryBase()) return 0;
+        if (!militaryBase() && !outskirtsBase()) return 0;
         return Math.max(12, Math.min(72, Math.round(residents / 75f) + 6));
     }
 

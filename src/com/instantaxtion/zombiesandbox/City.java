@@ -1463,10 +1463,16 @@ final class City {
             int n = w >= 400 ? 3 + rnd.nextInt(3) : w >= 300 ? 1 + rnd.nextInt(2) : rnd.nextInt(2);
             // (Since 10.20 the country is busier: more hamlets, the bigger ones small towns of their own.)
             if (cfg.servicePads()) n = w >= 600 ? 7 + rnd.nextInt(3) : w >= 400 ? 5 + rnd.nextInt(2) : w >= 300 ? 3 + rnd.nextInt(2) : 1 + rnd.nextInt(2);
+            // (Since 10.30 the Massive and Huge maps' country is much fuller: twice the places, more of them towns.)
+            if (cfg.civic >= 14 && cfg.massive()) n = w >= 650 ? 15 + rnd.nextInt(3) : 11 + rnd.nextInt(3);
+            // (10.30) A big army base of its own out in the country, on the Massive maps (laid out first, so the
+            // towns and farms go round it).
+            if (cfg.outskirtsBase()) outskirtsBase();
             hamlets(n);
         }
         if (m > 0) countryside(townX0, townY0, townX1, townY1);
         if (m > 0) tidyDeadEnds();
+        // (10.30) A big army base of its own out in the country, on the Massive maps.
         // The lie of the land: hills, and out in the country mountains, streams, lakes, a park and campsites.
         if (real != null) elev = new Terrain(this, new Random(cfg.seed * 977L + 3)).buildReal(real, realAreaAt);
         else if (cfg.nature()) elev = new Terrain(this, new Random(cfg.seed * 977L + 3)).build();
@@ -1809,7 +1815,7 @@ final class City {
             int[] part = parts.get(id);
             if (part.length >= biggest / 3 || part.length > 600) continue;
             boolean bridged = false;
-            for (int c : part) if (bridge != null && bridge[c]) bridged = true;
+            for (int c : part) if ((bridge != null && bridge[c]) || (keepPaved != null && keepPaved[c])) bridged = true;
             if (bridged) continue;
             // The dirt it touches, in separate places (one lane in is a hamlet's street; two is a lane running on).
             List<Integer> touch = new ArrayList<Integer>();
@@ -1895,6 +1901,10 @@ final class City {
 
     /** A fenced compound with gates, barracks, a helipad, tents, a watchtower and army trucks. */
     private void militaryBase(int x, int y, int bw, int bh) {
+        militaryBase(x, y, bw, bh, 13);
+    }
+
+    private Facility militaryBase(int x, int y, int bw, int bh, long salt) {
         fill(x, y, bw, bh, BASE);
         for (int i = x; i < x + bw; i++) {
             tiles[y * w + i] = FENCE;
@@ -1931,7 +1941,7 @@ final class City {
         addFacilityLot(ax, ay + ah - 2, 2, 2, TOWER, 3);
         addFacilityLot(ax + aw - 2, ay, 2, 2, TOWER, 3);
         // The open lower half depends on what kind of base it is (trucks are parked along the bottom right).
-        Random bt = new Random(cfg.seed * 977L + 13);
+        Random bt = new Random(cfg.seed * 977L + salt);
         int type = bt.nextInt(BASE_TYPES.length);
         baseLayout(type, ax, ay, aw, ah, bt);
         for (int i = ax + aw / 2 + 2; i < ax + aw - 1; i++) {
@@ -1945,8 +1955,15 @@ final class City {
         float[] c = findWalkable(cx, cy);
         if (c == null) c = new float[]{cx, cy};
         float r = Math.min(110, Math.min(aw, ah) * T * 0.42f);
-        Facility base = new Facility(FACILITY_BASE, c[0], c[1], r, (gx + 1.5f) * T, (y + bh - 2.5f) * T,
-                country.bases[rnd.nextInt(country.bases.length)]);
+        String bn = country.bases[rnd.nextInt(country.bases.length)];
+        // (Two bases on a map since 10.30: never the same name.)
+        for (int k = 0; k < 12 && cfg.civic >= 14; k++) {
+            boolean taken = false;
+            for (Facility f : facilities) if (f.kind == FACILITY_BASE && f.name.startsWith(bn)) taken = true;
+            if (!taken) break;
+            bn = country.bases[rnd.nextInt(country.bases.length)];
+        }
+        Facility base = new Facility(FACILITY_BASE, c[0], c[1], r, (gx + 1.5f) * T, (y + bh - 2.5f) * T, bn);
         base.baseType = type;
         if (type != BT_GARRISON) base.name += " (" + BASE_TYPES[type] + ")";
         // Two guards inside each gate.
@@ -1960,6 +1977,220 @@ final class City {
             }
         }
         facilities.add(base);
+        return base;
+    }
+
+    /** (10.30) Army checkpoints on the road to the country base: {x, y, angle of the road} in world units. */
+    final List<float[]> checkpoints = new ArrayList<float[]>();
+    /** Where the soldiers stand at them (two each), in world units. */
+    final List<float[]> checkpointPosts = new ArrayList<float[]>();
+
+    /** The town's own army base (not the big one out in the country), or any base. */
+    Facility mainBase() {
+        Facility any = null;
+        for (Facility f : facilities) {
+            if (f.kind != FACILITY_BASE) continue;
+            if (!f.satellite) return f;
+            if (any == null) any = f;
+        }
+        return any;
+    }
+
+    /**
+     * (10.30) On the Massive maps: a big army base out in open country, well away from the towns, fenced, with
+     * its barracks, vehicles and the rest. A paved road runs from its gate to the nearest road, and the army
+     * keeps two checkpoints on it, a barrier, sandbags and a hut, one near the gate and one where it joins.
+     */
+    private void outskirtsBase() {
+        int bw = w >= 650 ? 70 : 58, bh = w >= 650 ? 48 : 40;
+        float tcx = (townX0 + townX1) / 2f, tcy = (townY0 + townY1) / 2f;
+        int[] prev = new int[w * h];
+        for (int tries = 0; tries < 1500; tries++) {
+            int x = 14 + rnd.nextInt(Math.max(1, w - bw - 28)), y = 14 + rnd.nextInt(Math.max(1, h - bh - 28));
+            if (!allOpen(x - 6, y - 6, bw + 12, bh + 12)) continue;
+            // (Kept off the wild side of the map, the hills and the park, unless there's nowhere else.)
+            if (tries < 900 && (inWildBand(x, y) || inWildBand(x + bw, y + bh) || inWildBand(x + bw, y) || inWildBand(x, y + bh))) continue;
+            if (railY0 >= 0 && railY0 + railRows >= y - 8 && railY0 <= y + bh + 8) continue;
+            // (Out in the country, not on the edge of town.)
+            if (x + bw > townX0 - 40 && x < townX1 + 40 && y + bh > townY0 - 40 && y < townY1 + 40) continue;
+            // The gate that faces town.
+            int gx = x + bw / 2 - 1, gy = y + bh / 2 - 1;
+            int[][] gates = {{gx + 1, y + bh, 0, 1}, {gx + 1, y - 1, 0, -1}, {x + bw, gy + 1, 1, 0}};
+            int[] gate = gates[0];
+            float gd = Float.MAX_VALUE;
+            for (int[] g : gates) {
+                float d = (float) Math.hypot(g[0] - tcx, g[1] - tcy);
+                if (d < gd) {
+                    gd = d;
+                    gate = g;
+                }
+            }
+            // A straight stretch out from the gate (the first checkpoint is on it), then the way across open
+            // country to the nearest road (not the highway).
+            int stub = 9;
+            Street gateRoad = gate[3] > 0 ? new Street(gate[0] - 1, gate[1], gate[0] + 2, gate[1] + stub, true, true)
+                    : gate[3] < 0 ? new Street(gate[0] - 1, gate[1] - stub + 1, gate[0] + 2, gate[1] + 1, true, true)
+                    : new Street(gate[0], gate[1] - 1, gate[0] + stub, gate[1] + 2, false, true);
+            if (!allOpen(gateRoad.x0, gateRoad.y0, gateRoad.x1 - gateRoad.x0, gateRoad.y1 - gateRoad.y0)) continue;
+            int ex = gate[0] + gate[2] * stub, ey = gate[1] + gate[3] * stub;
+            int start = ey * w + ex;
+            int end = roadSearch(start, x - 1, y - 1, bw + 2, bh + 2, prev);
+            if (end < 0) continue;
+            List<Integer> path = new ArrayList<Integer>();
+            for (int c = end; c != -1; c = prev[c]) path.add(0, c);
+            if (path.size() > 260) continue;
+            Facility base = militaryBase(x, y, bw, bh, 29);
+            base.satellite = true;
+            carve(gateRoad);
+            {
+                float ang = (float) Math.atan2(gate[3], gate[2]);
+                float px = (gate[0] + gate[2] * 4 + 0.5f) * T, py = (gate[1] + gate[3] * 4 + 0.5f) * T;
+                checkpoints.add(new float[]{px, py, ang});
+                for (int sd = -1; sd <= 1; sd += 2) {
+                    float[] q = findWalkable(px - (float) Math.sin(ang) * sd * 2.4f * T, py + (float) Math.cos(ang) * sd * 2.4f * T);
+                    if (q != null) checkpointPosts.add(q);
+                }
+            }
+            // The road on from there: smoothed out from the line it takes.
+            List<Float> pts = new ArrayList<Float>();
+            pts.add(gate[0] + gate[2] * (stub - 1) + 0.5f);
+            pts.add(gate[1] + gate[3] * (stub - 1) + 0.5f);
+            for (int k = 3; k < path.size() - 1; k += 4) {
+                pts.add(path.get(k) % w + 0.5f);
+                pts.add(path.get(k) / w + 0.5f);
+            }
+            pts.add(end % w + 0.5f);
+            pts.add(end / w + 0.5f);
+            float[] line = new float[pts.size()];
+            for (int k = 0; k < line.length; k++) line[k] = pts.get(k);
+            for (int it = 0; it < 2; it++) line = chaikin(line);
+            curveOnGrass = true;
+            curveRoad(line, false);
+            curveOnGrass = false;
+            // The second checkpoint: before the road joins.
+            int n = path.size();
+            int[] at = n >= 16 ? new int[]{n - 8} : new int[0];
+            for (int a : at) {
+                int c = path.get(a), c0 = path.get(Math.max(0, a - 3)), c1 = path.get(Math.min(n - 1, a + 3));
+                float ang = (float) Math.atan2(c1 / w - c0 / w, c1 % w - c0 % w);
+                float px = (c % w + 0.5f) * T, py = (c / w + 0.5f) * T;
+                checkpoints.add(new float[]{px, py, ang});
+                for (int sd = -1; sd <= 1; sd += 2) {
+                    float ox = (float) -Math.sin(ang) * sd * 2.4f * T, oy = (float) Math.cos(ang) * sd * 2.4f * T;
+                    float[] q = findWalkable(px + ox, py + oy);
+                    if (q != null) checkpointPosts.add(q);
+                }
+            }
+            return;
+        }
+    }
+
+    /**
+     * From tile start, the nearest road tile (not the highway, nor inside the rectangle) across open country,
+     * keeping a tile clear of buildings, fences and water; prev[] holds the way back. -1 if there's none.
+     */
+    private int roadSearch(int start, int rx, int ry, int rw, int rh, int[] prev) {
+        Arrays.fill(prev, -2);
+        int[] queue = new int[w * h];
+        int qh = 0, qt = 0;
+        prev[start] = -1;
+        queue[qt++] = start;
+        int sx = start % w, sy = start / w;
+        while (qh < qt) {
+            int c = queue[qh++], x = c % w, y = c / w;
+            for (int k = 0; k < 4; k++) {
+                int nx = x + (k == 0 ? 1 : k == 1 ? -1 : 0), ny = y + (k == 2 ? 1 : k == 3 ? -1 : 0);
+                if (nx < 2 || ny < 2 || nx >= w - 2 || ny >= h - 2) continue;
+                int j = ny * w + nx;
+                if (prev[j] != -2) continue;
+                if (nx >= rx - 1 && nx <= rx + rw && ny >= ry - 1 && ny <= ry + rh) continue;
+                byte t = tiles[j];
+                if (t == ROAD && (oneWay == null || oneWay[j] == 0) && !nearHighwayTile(nx, ny)) {
+                    prev[j] = c;
+                    return j;
+                }
+                if (t != GRASS && t != TREE && t != DIRT && t != TRAIL && t != RAIL) continue;
+                // (A tile clear all round, except just outside the gate.)
+                boolean near = Math.abs(nx - sx) + Math.abs(ny - sy) <= 2, ok = true;
+                for (int dy = -1; dy <= 1 && ok && !near; dy++)
+                    for (int dx = -1; dx <= 1 && ok; dx++) {
+                        byte o = tiles[(ny + dy) * w + nx + dx];
+                        if (o == BUILDING || o == FENCE || o == WATER || o == BASE || o == LOT || o == SIDEWALK || o == PLAZA || o == CAR) ok = false;
+                    }
+                if (!ok) continue;
+                prev[j] = c;
+                queue[qt++] = j;
+            }
+        }
+        return -1;
+    }
+
+    private boolean nearHighwayTile(int x, int y) {
+        if (hwyAxis < 0) return false;
+        int a = (hwyAxis == 0 ? y : x) - hwyAt;
+        return a >= -2 && a <= 8;
+    }
+
+    /** (10.30) Roads that stay paved however they join up (the small towns' streets and their roads in). */
+    private boolean[] keepPaved;
+
+    private void keepPaved(Street st) {
+        if (keepPaved == null) keepPaved = new boolean[w * h];
+        for (int y = Math.max(0, st.y0); y < Math.min(h, st.y1); y++)
+            for (int x = Math.max(0, st.x0); x < Math.min(w, st.x1); x++) keepPaved[y * w + x] = true;
+    }
+
+    /**
+     * (10.30) A paved road from (x, y), just off the end of a town's street, across open country to the nearest
+     * road that isn't one of the town's own. False (and nothing laid) if there's no way, or it's very long.
+     */
+    private boolean pavedLink(int x, int y, int[] box) {
+        if (x < 2 || y < 2 || x >= w - 2 || y >= h - 2) return false;
+        int[] prev = new int[w * h];
+        // (Steering clear of the town itself: {x0, y0, x1, y1}, x1/y1 exclusive.)
+        int end = roadSearch(y * w + x, box[0] + 1, box[1] + 1, box[2] - box[0] - 2, box[3] - box[1] - 2, prev);
+        if (end < 0) return false;
+        List<Integer> path = new ArrayList<Integer>();
+        for (int c = end; c != -1; c = prev[c]) path.add(0, c);
+        if (path.size() > 220) return false;
+        List<Float> pts = new ArrayList<Float>();
+        for (int k = 0; k < path.size() - 1; k += 4) {
+            pts.add(path.get(k) % w + 0.5f);
+            pts.add(path.get(k) / w + 0.5f);
+        }
+        pts.add(end % w + 0.5f);
+        pts.add(end / w + 0.5f);
+        float[] line = new float[pts.size()];
+        for (int k = 0; k < line.length; k++) line[k] = pts.get(k);
+        for (int it = 0; it < 2; it++) line = chaikin(line);
+        curveOnGrass = true;
+        curveRoad(line, false);
+        curveOnGrass = false;
+        return true;
+    }
+
+    /** A line {x, y, ...} with its corners cut (the ends kept). */
+    private static float[] chaikin(float[] l) {
+        int n = l.length / 2;
+        if (n < 3) return l;
+        float[] o = new float[(2 * (n - 1)) * 2];
+        int k = 0;
+        o[k++] = l[0];
+        o[k++] = l[1];
+        for (int i = 0; i < n - 1; i++) {
+            float ax = l[i * 2], ay = l[i * 2 + 1], bx = l[i * 2 + 2], by = l[i * 2 + 3];
+            if (i > 0) {
+                o[k++] = ax * 0.75f + bx * 0.25f;
+                o[k++] = ay * 0.75f + by * 0.25f;
+            }
+            if (i < n - 2) {
+                o[k++] = ax * 0.25f + bx * 0.75f;
+                o[k++] = ay * 0.25f + by * 0.75f;
+            }
+        }
+        o[k++] = l[l.length - 2];
+        o[k++] = l[l.length - 1];
+        return Arrays.copyOf(o, k);
     }
 
     /** Lays out the open part of a base for its kind: what stands there, and its helipads and tents. */
@@ -4826,6 +5057,8 @@ final class City {
     /** (10.29) Where slip roads run between the highway and a road joining it: {x0, y0, x1, y1} in tiles. */
     private final List<int[]> slipZones = new ArrayList<int[]>();
     private boolean[] slipTile;
+    /** (10.30) A curved road being laid out in the country: grass, not pavement, either side of it. */
+    private boolean curveOnGrass;
 
     /** Marks the slip roads' area, from k0 to k1 along the highway and a0 to a1 across it. */
     private void slipZone(boolean ew, float k0, float k1, float a0, float a1) {
@@ -5521,6 +5754,12 @@ final class City {
                         roadDir[i] = dir;
                         if (curveTile == null) curveTile = new boolean[w * h];
                         curveTile[i] = true;
+                        if (curveOnGrass) {
+                            if (slipTile == null) slipTile = new boolean[w * h];
+                            slipTile[i] = true;
+                            if (keepPaved == null) keepPaved = new boolean[w * h];
+                            keepPaved[i] = true;
+                        }
                     }
             }
         }
@@ -6171,7 +6410,7 @@ final class City {
         settlements.add(new float[]{tcx * T, tcy * T});
         List<float[]> made = new ArrayList<float[]>();
         for (int k = 0; k < count; k++) {
-            for (int tries = 0; tries < 250; tries++) {
+            for (int tries = 0; tries < (cfg.civic >= 14 && cfg.massive() ? 500 : 250); tries++) {
                 int cx = 30 + rnd.nextInt(Math.max(1, w - 60)), cy = 30 + rnd.nextInt(Math.max(1, h - 60));
                 // Clear of the town's own (eroded, irregular) edge rather than its bounding box.
                 if (!allOpen(cx - 28, cy - 28, 56, 56)) continue;
@@ -6179,13 +6418,14 @@ final class City {
                 if (inWildBand(cx, cy) || inWildBand(cx - 28, cy - 28) || inWildBand(cx + 28, cy + 28)) continue;
                 if (railY0 >= 0 && Math.abs(cy - railY0) < 30) continue;
                 boolean far = true;
-                for (float[] o : made) if (Math.hypot(o[0] - cx, o[1] - cy) < 90) far = false;
+                for (float[] o : made) if (Math.hypot(o[0] - cx, o[1] - cy) < (cfg.civic >= 14 && cfg.massive() ? 75 : 90)) far = false;
                 if (!far) continue;
                 boolean vertical = rnd.nextBoolean();
                 // (The first two or three, on a big map since 10.20, are small towns: a longer main street with a
                 // cross street, their own police and fire stations, and houses all along.)
-                boolean town = cfg.servicePads() && k < (w >= 600 ? 3 : w >= 300 ? 2 : 1);
-                int len = town ? 46 + rnd.nextInt(10) : 30 + rnd.nextInt(20);
+                boolean town = cfg.servicePads() && k < (cfg.civic >= 14 && cfg.massive() ? (w >= 650 ? 7 : 5) : w >= 600 ? 3 : w >= 300 ? 2 : 1);
+                boolean big = town && cfg.civic >= 14 && cfg.massive();
+                int len = big ? 60 + rnd.nextInt(12) : town ? 46 + rnd.nextInt(10) : 30 + rnd.nextInt(20);
                 Street st = vertical ? new Street(cx - 1, cy - len / 2, cx + 2, cy + len / 2, true, false)
                         : new Street(cx - len / 2, cy - 1, cx + len / 2, cy + 2, false, false);
                 carve(st);
@@ -6199,6 +6439,15 @@ final class City {
                     int fx = vertical ? cx - 13 : cx - 13, fy = vertical ? cy - 13 : cy - 12;
                     if (allOpen(px - 1, py - 1, 12, 11)) serviceBuilding(px, py, 10, 9, STATION, facilities.size() + 1);
                     if (allOpen(fx - 1, fy - 1, 12, 11)) serviceBuilding(fx, fy, 10, 9, FIRE_STATION, 0);
+                    // (10.30) A bigger town on the Massive maps: a second cross street the other side of the middle,
+                    // houses all along all three, and its streets stay paved.
+                    if (big) {
+                        Street cross2 = vertical ? new Street(cx - 14, cy - 12, cx + 15, cy - 9, false, false)
+                                : new Street(cx - 12, cy - 14, cx - 9, cy + 15, true, false);
+                        carve(cross2);
+                        for (Street o : new Street[]{st, cross, cross2}) keepPaved(o);
+                        plotsAlong(cross2, cx - 38, cy - 38, cx + 38, cy + 38, 2);
+                    }
                     plotsAlong(cross, cx - 32, cy - 32, cx + 32, cy + 32, 2);
                     plotsAlong(st, cx - 32, cy - 32, cx + 32, cy + 32, 2);
                 }
@@ -6214,7 +6463,9 @@ final class City {
                     ex = tcx < cx ? st.x0 - 1 : st.x1;
                     ey = cy;
                 }
-                laneTo(ex, ey, (int) tcx, (int) tcy);
+                // (10.30: a paved road for a town on the Massive maps, if there's a way across.)
+                if (!big || !pavedLink(ex, ey, new int[]{Math.min(st.x0, cx - 14), Math.min(st.y0, cy - 14), Math.max(st.x1, cx + 15), Math.max(st.y1, cy + 15)}))
+                    laneTo(ex, ey, (int) tcx, (int) tcy);
                 int named = districts.size();
                 nameHamlet(cx, cy);
                 // Its stations go by its name.
@@ -6890,6 +7141,7 @@ final class City {
         drawCurves(c, p);
         drawRoadMarkings(c, p);
         drawHighway(c, p);
+        drawCheckpoints(c, p);
         drawRail(c, p);
         drawStreetFurniture(c, p);
         drawParkingLines(c, p);
@@ -8933,6 +9185,65 @@ final class City {
             c.drawText(hwyShield, sx + 13, sy + 11.5f, p);
             p.setFakeBoldText(false);
             p.setTextAlign(Paint.Align.LEFT);
+        }
+    }
+
+    /** (10.30) The army's checkpoints: a hut, sandbags either side and a striped barrier across the road. */
+    private void drawCheckpoints(Canvas c, Paint p) {
+        for (float[] cp : checkpoints) {
+            c.save();
+            c.translate(cp[0], cp[1]);
+            c.rotate((float) Math.toDegrees(cp[2]));
+            // (Along the road is x, across it y; the road is about 3 tiles wide.)
+            float hw = 1.6f * T;
+            // Sandbag walls on both verges, either side of the barrier.
+            for (int sd = -1; sd <= 1; sd += 2)
+                for (int end = -1; end <= 1; end += 2) {
+                    float x0 = end < 0 ? -30 : 6, x1 = end < 0 ? -6 : 30;
+                    float y0 = sd * (hw + 2), y1 = sd * (hw + 11);
+                    p.setColor(0x50000000);
+                    c.drawRect(x0 + 2, Math.min(y0, y1) + 2, x1 + 2, Math.max(y0, y1) + 2, p);
+                    p.setColor(0xFF6E6248);
+                    c.drawRect(x0, Math.min(y0, y1), x1, Math.max(y0, y1), p);
+                    p.setColor(0xFFA8986E);
+                    for (float bx = x0 + 0.8f; bx < x1 - 1; bx += 6)
+                        for (float by = Math.min(y0, y1) + 0.8f; by < Math.max(y0, y1) - 1; by += 4.5f)
+                            c.drawRect(bx, by, Math.min(x1 - 0.8f, bx + 5), Math.min(Math.max(y0, y1) - 0.8f, by + 3.6f), p);
+                }
+            // The guard hut, on one side, behind its sandbags.
+            float hy = hw + 14;
+            p.setColor(0x60000000);
+            c.drawRect(-9, hy + 3, 15, hy + 23, p);
+            p.setColor(0xFF59614A);
+            c.drawRect(-12, hy, 12, hy + 20, p);
+            p.setColor(0xFF424A36);
+            c.drawRect(-12, hy, 12, hy + 4, p);
+            c.drawRect(-12, hy + 16, 12, hy + 20, p);
+            p.setColor(0xFF9AB4C4);
+            c.drawRect(-8, hy + 6, -2, hy + 9, p);
+            c.drawRect(2, hy + 6, 8, hy + 9, p);
+            // A sign on the other side: the army's, white on green.
+            float sy = -(hw + 17);
+            p.setColor(0xFF2A2A2A);
+            c.drawRect(-1, sy, 1, sy + 4, p);
+            p.setColor(0xFF2F5A2A);
+            c.drawRect(-12, sy - 8, 12, sy, p);
+            p.setColor(0xFFF0F0F0);
+            c.drawRect(-10, sy - 6, 10, sy - 5, p);
+            c.drawRect(-10, sy - 3, 6, sy - 2, p);
+            // The barrier: a red and white pole across the road, on its post.
+            p.setColor(0xFF2A2A2A);
+            c.drawRect(-2.5f, hw - 1, 2.5f, hw + 4, p);
+            for (int k = 0; k < 8; k++) {
+                p.setColor(k % 2 == 0 ? 0xFFD03028 : 0xFFF0F0F0);
+                float a0 = hw - (k + 1) * (2 * hw - 2) / 8f, a1 = hw - k * (2 * hw - 2) / 8f;
+                c.drawRect(-1.3f, a0, 1.3f, a1, p);
+            }
+            // Stop lines either side.
+            p.setColor(0xD0ECECEC);
+            c.drawRect(-36, -hw + 1, -34.5f, hw - 1, p);
+            c.drawRect(34.5f, -hw + 1, 36, hw - 1, p);
+            c.restore();
         }
     }
 

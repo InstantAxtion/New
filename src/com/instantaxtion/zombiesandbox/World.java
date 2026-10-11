@@ -532,7 +532,7 @@ final class World {
         for (City.Facility f : fireStations)
             for (int i = 0; i < 5; i++) spawn(Entity.FIREFIGHTER, f.x + rnd.nextFloat() * 30 - 15, f.y + rnd.nextFloat() * 30 - 15);
         // Half the cops start at their precinct, the rest on patrol; soldiers start on base.
-        City.Facility base = city.nearestFacility(City.FACILITY_BASE, 0, 0);
+        City.Facility base = city.mainBase();
         int stations = 0;
         for (City.Facility f : city.facilities) if (f.kind == City.FACILITY_POLICE) stations++;
         int cops = cfg.cops(city.totalResidents), soldiers = cfg.soldiers(city.totalResidents);
@@ -567,12 +567,27 @@ final class World {
         // (About one patrol car to every fifty tiles of highway, four at the least.)
         if (city.hwyAxis >= 0) for (int i = 0, n = Math.max(4, (city.hwyAxis == 0 ? city.w : city.h) / 50); i < n; i++) fleet.startAgencyPatrol(1);
         if (city.country.ruralName != null && city.townX0 > 0) for (int i = 0; i < (city.w > 300 ? 3 : 2); i++) fleet.startAgencyPatrol(2);
+        // (10.30) Soldiers on the country base's checkpoints (first: a crowded city could fill up before them).
+        if (soldiers > 0)
+            for (float[] s : city.checkpointPosts) {
+                Entity g = spawnSoldier(Entity.ROLE_GUARD, s[0], s[1]);
+                if (g == null) continue;
+                g.task = Dispatch.T_POST;
+                g.postX = g.x;
+                g.postY = g.y;
+            }
         int firstSoldier = entities.size();
         if (base != null) {
             for (int i = 0; i < soldiers; i++)
                 spawn(Entity.SOLDIER, base.x + rnd.nextFloat() * base.r - base.r / 2, base.y + rnd.nextFloat() * base.r - base.r / 2);
         } else {
             spawnRandom(Entity.SOLDIER, soldiers);
+        }
+        // (10.30) The big base out in the country has a garrison of its own, and soldiers on its checkpoints.
+        for (City.Facility f : city.facilities) {
+            if (f.kind != City.FACILITY_BASE || !f.satellite || f == base || soldiers <= 0) continue;
+            int n = Math.max(12, soldiers / 2) + f.posts.size();
+            for (int i = 0; i < n; i++) spawn(Entity.SOLDIER, f.x + rnd.nextFloat() * f.r - f.r / 2, f.y + rnd.nextFloat() * f.r - f.r / 2);
         }
         // Every fourth soldier carries the squad's machine gun, big garrisons have snipers, and a
         // commander runs the show.
@@ -2935,7 +2950,7 @@ final class World {
     /** Every precinct and base starts with a limited supply of ammunition. */
     /** The army base's kind makes its own difference to the war (only if the city has reserves at all). */
     private void baseStrengths() {
-        City.Facility base = city.nearestFacility(City.FACILITY_BASE, 0, 0);
+        City.Facility base = city.mainBase();
         if (base == null) return;
         switch (base.baseType) {
             case City.BT_AIR: if (dispatch.airSorties > 0) dispatch.airSorties++; break;
@@ -6251,7 +6266,7 @@ final class World {
      */
     void callNationalGuard() {
         // (A Guard headquarters at the base: the governor doesn't wait so long.)
-        City.Facility hq = city.nearestFacility(City.FACILITY_BASE, 0, 0);
+        City.Facility hq = city.mainBase();
         boolean local = hq != null && hq.baseType == City.BT_GUARD;
         // (The Mayor asks the governor; with City Hall gone, the governor takes a lot longer to hear. With the
         // town's own armory overrun, the Guard has to come from out of town, which takes longer still.)
@@ -6976,7 +6991,7 @@ final class World {
 
     private void escalate() {
         if (!outbreak) return;
-        boolean army = city.nearestFacility(City.FACILITY_BASE, 0, 0) != null || counts[Entity.SOLDIER] > 0;
+        boolean army = city.mainBase() != null || counts[Entity.SOLDIER] > 0;
         if (!army) return;
         if (escalation == 0 && outbreakTime > 240 && warBalance < 0.42f) {
             int d = worstDistrict();
@@ -7308,7 +7323,7 @@ final class World {
         if (t >= 15 && (afterSaid & 4) == 0 && (afterSaid |= 4) != 0)
             dispatch.say(Dispatch.WHO_INFO, null, "News: The city has fallen. If you're still out there, stay hidden and stay quiet.",
                     city.worldW() / 2, city.worldH() / 2);
-        boolean army = city.nearestFacility(City.FACILITY_BASE, 0, 0) != null;
+        boolean army = city.mainBase() != null;
         if (!army || retakeSent) return;
         if (t >= 100 && !retakeWarned) {
             retakeWarned = true;

@@ -2,11 +2,19 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.29";
-    static final int VERSION_CODE = 67;
+    static final String VERSION = "10.30";
+    static final int VERSION_CODE = 68;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.30  -  Country towns and the army base",
+                    "Massive and Huge maps have much more going on outside the city: more room round it, and twice the places out there. Five small towns on a Massive map (seven on Huge), each with a main street, two cross streets, houses all along, and its own police and fire station, plus more hamlets and farms.",
+                    "The small towns keep their paved streets and are joined to the rest by a paved road, instead of turning into dirt lanes in a field.",
+                    "A big army base out in the country on every Massive and Huge map (as well as any base in town), with its own garrison, barracks, vehicles and the rest. A paved road runs from its gate to the nearest road.",
+                    "Army checkpoints on the road to the base, one by the gate and one where it joins the road: a red and white barrier across the road, sandbags, a guard hut and a sign, with soldiers on guard either side.",
+                    "The town's own base stays the army's headquarters; the two bases never share a name.",
+            },
             {
                     "10.29  -  Interchanges",
                     "The highway has proper interchanges in new cities: the road from town stops short of it and curving slip roads lead on and off the near side, the way off before the junction and the way on after it. Nothing cuts across the highway any more, so there are no traffic lights or stop lines on it.",

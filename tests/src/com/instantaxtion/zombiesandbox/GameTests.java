@@ -2053,6 +2053,52 @@ public final class GameTests {
                         "the highway still has traffic after a while (" + w.fleet.throughTraffic() + " of " + w.fleet.throughTarget() + ")");
             }
         });
+        test("10.30: Massive maps have more towns and a big army base out in the country with checkpoints", new Check() {
+            public void run() throws Exception {
+                CityConfig c = new CityConfig();
+                c.v[CityConfig.OPT_PRESET] = 1;
+                c.v[CityConfig.OPT_SIZE] = CityConfig.MASSIVE;
+                c.v[CityConfig.OPT_ZOMBIES] = 0;
+                c.seed = 5;
+                c.normalize();
+                c.seed = 5;
+                check(c.outskirtsBase(), "a Massive map gets a base out in the country");
+                World w = new World(c);
+                w.populate(c);
+                City city = w.city;
+                City.Facility base = null;
+                int towns = 0;
+                for (City.Facility f : city.facilities) {
+                    if (f.kind == City.FACILITY_BASE && f.satellite) base = f;
+                    if (f.kind == City.FACILITY_POLICE && f.satellite) towns++;
+                }
+                check(base != null, "the big base out in the country");
+                check(towns >= 4, "four or more small towns with their own police (" + towns + ")");
+                check(!city.inTown(base.x, base.y), "the base is out of town");
+                check(!city.checkpoints.isEmpty() && !city.checkpointPosts.isEmpty(), "checkpoints on the road to the base");
+                // Its gate is on the road network: trucks can drive from it into town.
+                int[] f = new int[city.w * city.h];
+                float[] mid = city.nearestDrivable((city.townX0 + city.townX1) / 2f * City.T, (city.townY0 + city.townY1) / 2f * City.T);
+                city.driveField(f, mid[0], mid[1]);
+                float[] gate = city.nearestDrivable(base.gateX, base.gateY);
+                check(gate != null && f[city.tileIndex(gate[0], gate[1])] < City.FAR, "the base's road leads into town");
+                for (float[] cp : city.checkpoints) {
+                    int guards = 0, soldiers = 0;
+                    for (Entity e : w.entities)
+                        if (e.type == Entity.SOLDIER && Math.hypot(e.x - cp[0], e.y - cp[1]) < 80) guards++;
+                    for (Entity e : w.entities)
+                        if (e.type == Entity.SOLDIER && Math.hypot(e.x - base.x, e.y - base.y) < 600) soldiers++;
+                    check(guards >= 1, "soldiers on the checkpoint");
+                    check(soldiers >= 10, "the base has a garrison (" + soldiers + ")");
+                }
+                // A Large map is as it was: no base out in the country.
+                CityConfig l = new CityConfig();
+                l.v[CityConfig.OPT_PRESET] = 1;
+                l.v[CityConfig.OPT_SIZE] = CityConfig.LARGE;
+                l.normalize();
+                check(!l.outskirtsBase(), "no country base on a Large map");
+            }
+        });
         test("every screen draws", new Check() {
             public void run() throws Exception {
                 GameView v = new GameView(new android.app.Activity());

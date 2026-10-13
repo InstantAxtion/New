@@ -381,9 +381,10 @@ public final class GameTests {
                         && Math.hypot(e.x - city.cityHall.doorX, e.y - city.cityHall.doorY) < 600) near = e;
                 if (near == null) for (Entity e : w.entities) if (e.type == Entity.CIVILIAN && !e.hidden && !e.dead) near = e;
                 int teams = w.dispatch.swatTeams;
-                for (int k = 0; k < 14; k++) w.spawn(Entity.ZOMBIE, near.x + 40 + (k % 7) * 3, near.y + (k / 7) * 4);
+                // (The 911 call depends on who sees them first: a big enough horde, and long enough, that it always comes.)
+                for (int k = 0; k < 20; k++) w.spawn(Entity.ZOMBIE, near.x + 40 + (k % 7) * 3, near.y + (k / 7) * 4);
                 boolean sent = false;
-                for (int f = 0; f < 30 * 60 && !sent; f++) {
+                for (int f = 0; f < 30 * 150 && !sent; f++) {
                     w.update(1 / 30f);
                     if (w.dispatch.swatTeams < teams) sent = true;
                 }
@@ -969,7 +970,8 @@ public final class GameTests {
                 w.dispatch.damageWall(z, k, 1000);
                 check(!z.up[k] && !w.city.solid[z.wall[k]], "a section broken down is a gap in the wall");
                 boolean mended = false;
-                for (int f = 0; f < 30 * 60 && !mended; f++) {
+                // (A guard has to walk over to it first, from wherever on the wall they were.)
+                for (int f = 0; f < 30 * 150 && !mended; f++) {
                     w.update(1 / 30f);
                     w.evCount = 0;
                     mended = z.up[k];
@@ -2148,6 +2150,88 @@ public final class GameTests {
                 inc.age = 90;
                 inc.zombiesNear = 12;
                 check((Boolean) need.invoke(w.dispatch, inc), "but there is for a big one the police haven't stopped");
+            }
+        });
+        test("10.32: bridges over the highway, a big map saves and loads, fuel, evacuation, fallback bases", new Check() {
+            public void run() throws Exception {
+                // Bridges at the interchanges: the road goes over, the highway runs on under it untouched.
+                CityConfig c = new CityConfig();
+                c.v[CityConfig.OPT_PRESET] = 2;
+                c.seed = 7;
+                c.normalize();
+                c.seed = 7;
+                City city = new City(c, 0.05f);
+                check(!city.overpasses.isEmpty(), "bridges over the highway (" + city.overpasses.size() + ")");
+                check(!city.bridgeLink.isEmpty(), "their ends linked for routes");
+                int bad = 0;
+                for (java.util.Map.Entry<Integer, Integer> e : city.bridgeLink.entrySet())
+                    if (city.bridgeTo(e.getValue()) != e.getKey() || city.tiles[e.getKey()] != City.ROAD) bad++;
+                check(bad == 0, "every bridge is a road both ways (" + bad + " not)");
+                // From town over a bridge to the far carriageway, and from the highway into town.
+                boolean ew = city.hwyAxis == 0;
+                int len = ew ? city.w : city.h;
+                int[] f = new int[city.w * city.h];
+                float[] mid = city.nearestDrivable((city.townX0 + city.townX1) / 2f * City.T, (city.townY0 + city.townY1) / 2f * City.T);
+                city.driveField(f, mid[0], mid[1]);
+                for (int a : new int[]{1, 5}) {
+                    int x = ew ? len / 2 : city.hwyAt + a, y = ew ? city.hwyAt + a : len / 2;
+                    check(f[y * city.w + x] < City.FAR, "into town from carriageway " + a);
+                }
+                // A Massive city, its bases, checkpoints and thousands of people, saves and loads back.
+                CityConfig m = new CityConfig();
+                m.v[CityConfig.OPT_PRESET] = 8;
+                m.v[CityConfig.OPT_SIZE] = CityConfig.HUGE;
+                m.v[CityConfig.OPT_ZOMBIES] = 0;
+                m.seed = 5;
+                m.normalize();
+                m.seed = 5;
+                World w = new World(m);
+                w.populate(m);
+                check(!w.city.checkpoints.isEmpty(), "the country base has its checkpoints");
+                int bases = 0;
+                for (City.Facility fa : w.city.facilities) if (fa.kind == City.FACILITY_BASE) bases++;
+                check(bases >= 2, "two army bases (" + bases + ")");
+                for (int i = 0; i < 30 * 20; i++) {
+                    w.update(1 / 30f);
+                    w.evCount = 0;
+                }
+                // Cars burn fuel as they go.
+                int burned = 0;
+                for (Fleet.Vehicle v : w.fleet.vehicles) if (v.type == Fleet.CAR && !v.parked && v.fuel < 0.999f) burned++;
+                check(burned > 5, "cars burn fuel (" + burned + ")");
+                // The town's base falls: command moves to the one still standing.
+                City.Facility main = w.city.mainBase();
+                main.fallen = true;
+                City.Facility next = w.city.mainBase();
+                check(next != null && next != main && !next.fallen, "a fallen base hands over to the next");
+                Entity z = w.spawn(Entity.ZOMBIE, mid[0], mid[1]);
+                z.armored = true;
+                w.timeline("Test moment");
+                w.fleet.pumpFuel()[0] = 2.5f;
+                File file = File.createTempFile("zcs", ".dat");
+                SaveGame.save(w, file);
+                World l = SaveGame.load(file);
+                file.delete();
+                check(l.city.cfg.code().equals(w.city.cfg.code()) && l.city.w == w.city.w, "the same Massive city");
+                check(l.entities.size() > w.entities.size() * 9 / 10, "its people come back (" + l.entities.size() + " of " + w.entities.size() + ")");
+                check(l.city.checkpoints.size() == w.city.checkpoints.size(), "and its checkpoints");
+                boolean armored = false;
+                for (Entity e : l.entities) if (e.isZombie() && e.armored) armored = true;
+                check(armored, "armoured dead stay armoured");
+                boolean moment = false;
+                for (World.Moment mo : l.timeline) if (mo.text.equals("Test moment")) moment = true;
+                check(moment, "the timeline is kept");
+                int fallen = 0;
+                for (City.Facility fa : l.city.facilities) if (fa.fallen) fallen++;
+                check(fallen == 1 && l.city.mainBase() != null && !l.city.mainBase().fallen, "the fallen base stays fallen");
+                check(l.fleet.pumpFuel != null && Math.abs(l.fleet.pumpFuel[0] - 2.5f) < 0.01f, "the pumps keep what fuel they had");
+                // On the emergency broadcast, people get in their cars and leave.
+                l.alert = 2;
+                for (int i = 0; i < 30 * 10 && !l.fleet.evacStarted; i++) {
+                    l.update(1 / 30f);
+                    l.evCount = 0;
+                }
+                check(l.fleet.evacStarted, "the evacuation starts");
             }
         });
         test("every screen draws", new Check() {

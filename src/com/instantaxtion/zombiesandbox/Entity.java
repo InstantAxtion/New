@@ -64,6 +64,8 @@ final class Entity {
     float spotX, spotY;
     /** Police or soldiers who came in from outside the city (10.27): they go home again once it's over. */
     boolean outsider;
+    /** (10.32) One of the dead still in a police or army vest and helmet: harder to put down. */
+    boolean armored;
     float phoneTimer, talkTimer, callCd, taskTimer;
     /** A spot to stand at: guard posts and player orders. */
     float postX, postY;

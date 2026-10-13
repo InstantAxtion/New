@@ -52,6 +52,9 @@ final class City {
         float patrolCd = 30, quietFor;
         /** A small town's own police or fire station out in the country (10.20). */
         boolean satellite;
+        /** (10.32) An army base the dead have overrun: command moves elsewhere. And how long it's been going. */
+        boolean fallen;
+        float fallingFor;
 
         Facility(int kind, float x, float y, float r, float gateX, float gateY, String name) {
             this.kind = kind;
@@ -496,7 +499,17 @@ final class City {
     }
 
     /** A city; with a detail below 1 the map bitmap is drawn smaller (for the New Game preview). */
+    /** (10.32) How far along building the city is (0 to 1) and what it's doing, for the loading screen. */
+    static volatile float progress;
+    static volatile String stage = "";
+
+    static void progress(float p, String what) {
+        progress = p;
+        stage = what;
+    }
+
     City(CityConfig cfg, float detail) {
+        progress(0.03f, "Laying out the streets");
         this.cfg = cfg;
         this.detail = detail;
         w = h = cfg.tiles();
@@ -518,6 +531,7 @@ final class City {
         buildingAt = new int[w * h];
         Arrays.fill(buildingAt, -1);
         generate();
+        progress(0.4f, "Putting up the buildings");
         if (cfg.driveways()) {
             // The city as generated, its driveways, and only then the Build tool's edits on top (as they were
             // made on it), so a city rebuilt from its code comes out the same as the one that was edited.
@@ -547,6 +561,7 @@ final class City {
         clearDoorways();
         Arrays.fill(humanDist, FAR);
         Arrays.fill(zombieDist, FAR);
+        progress(0.5f, "Painting the map");
         // The big map uses 16-bit colour to keep memory down.
         bitmap = Bitmap.createBitmap((int) (w * T * detail), (int) (h * T * detail),
                 w * detail > 140 ? Bitmap.Config.RGB_565 : Bitmap.Config.ARGB_8888);
@@ -2022,13 +2037,15 @@ final class City {
 
     /** The town's own army base (not the big one out in the country), or any base. */
     Facility mainBase() {
-        Facility any = null;
+        Facility any = null, standing = null;
         for (Facility f : facilities) {
             if (f.kind != FACILITY_BASE) continue;
-            if (!f.satellite) return f;
+            if (!f.satellite && !f.fallen) return f;
             if (any == null) any = f;
+            if (standing == null && !f.fallen) standing = f;
         }
-        return any;
+        // (10.32) The town's base overrun: the one out in the country takes over.
+        return standing != null ? standing : any;
     }
 
     /**
@@ -4907,6 +4924,8 @@ final class City {
         int at = before ? lo / 2 - 3 : hi + (len - hi) / 2 - 3;
         // (Since 10.29 well clear of town, with room for the slip roads in between.)
         if (cfg.civic >= 13) at = before ? Math.min(at, lo - 18) : Math.max(at, hi + 11);
+        // (Since 10.32 with room the far side for the slip roads off the bridges, where there's room to spare.)
+        if (cfg.civic >= 16) at = before ? Math.max(at, Math.min(8, lo - 12)) : Math.min(at, Math.max(len - 15, hi + 12));
         at = Math.max(3, Math.min(len - 10, at));
         hwyAt = at;
         String[] hn = country.highways[rnd.nextInt(country.highways.length)];
@@ -5059,6 +5078,61 @@ final class City {
         int ow = oneWay[ew ? la * w : la];
         int flow = ow == 1 || ow == 3 ? 1 : -1;
         float kc = k0 + width / 2f, reach = 18;
+        // (10.32) Where there's room the other side: a diamond interchange, the road crossing over the highway on a
+        // bridge, with slip roads on and off both carriageways. Nothing crosses the highway on the level.
+        int farRoom = side < 0 ? at : (ew ? h : w) - (at + 7);
+        if (cfg.civic >= 16 && farRoom >= 7) {
+            // The road on up to the highway, and over it.
+            int nearEdge = side < 0 ? at + 7 : at - 1;
+            for (int r = nearEdge; (r - nearEdge) * -side <= 6 && r >= 0 && r < (ew ? h : w); r -= side) {
+                boolean open = true;
+                for (int q = 0; q < width; q++) {
+                    int x = ew ? k0 + q : r, y = ew ? r : k0 + q;
+                    if (tiles[y * w + x] == ROAD) open = false;
+                }
+                if (!open) break;
+                for (int q = 0; q < width; q++) {
+                    int x = ew ? k0 + q : r, y = ew ? r : k0 + q;
+                    tiles[y * w + x] = ROAD;
+                    roadDir[y * w + x] = (byte) (ew ? 1 : 2);
+                    mainRoad[y * w + x] = true;
+                }
+            }
+            // (The highway runs on under it untouched: the bridge's two ends are linked over the top, for routes.)
+            for (int q = 0; q < width; q++) {
+                int[] ends = new int[2];
+                for (int e = 0; e < 2; e++) {
+                    int a = e == 0 ? -1 : 7;
+                    int x = ew ? k0 + q : at + a, y = ew ? at + a : k0 + q;
+                    ends[e] = x < 0 || y < 0 || x >= w || y >= h ? -1 : y * w + x;
+                    if (ends[e] < 0) continue;
+                    tiles[ends[e]] = ROAD;
+                    solid[ends[e]] = false;
+                    roadDir[ends[e]] = (byte) (ew ? 1 : 2);
+                    mainRoad[ends[e]] = true;
+                }
+                if (ends[0] >= 0 && ends[1] >= 0) {
+                    bridgeLink.put(ends[0], ends[1]);
+                    bridgeLink.put(ends[1], ends[0]);
+                }
+            }
+            // A short stub the far side, for the slip roads there.
+            // (The slip roads there run in along the bridge's end itself: traffic off them turns straight onto it.)
+            int s0 = side < 0 ? at - 3 : at + 8, s1 = side < 0 ? at - 1 : at + 10;
+            carve(ew ? new Street(k0, s0, k0 + width, s1, true, true) : new Street(s0, k0, s1, k0 + width, false, true));
+            float farA = side < 0 ? at - 1.5f : at + 8.5f;
+            overpasses.add(ew ? new float[]{k0 * T, (at - 1) * T, (k0 + width) * T, (at + 8) * T}
+                    : new float[]{(at - 1) * T, k0 * T, (at + 8) * T, (k0 + width) * T});
+            for (int r = 0; r < 2; r++) {
+                int dir = r == 0 ? -flow : flow;
+                float k1 = kc + dir * (width / 2f - 1.5f);
+                slipRoad(ew, k1, startA, dir, dir == flow, side, at);
+                // The far carriageway runs the other way: on after the bridge, off before it.
+                slipRoad(ew, k1, farA, dir, dir == -flow, -side, at);
+            }
+            hwyExits.add(new int[]{k0, width, side, Math.round(kc - flow * SLIP_LEN), flow});
+            return;
+        }
         // (10.31) One-way slip roads that run in alongside the highway before they join it.
         if (cfg.civic >= 15) {
             for (int r = 0; r < 2; r++) {
@@ -5109,10 +5183,45 @@ final class City {
         slipZone(ew, kc - reach - 2, kc + reach + 2, side < 0 ? at + 7 : startA - 1, side < 0 ? startA + 1 : at - 1);
     }
 
+    /** (10.32) Road bridges over the highway at the interchanges: {x0, y0, x1, y1} in world units. */
+    final List<float[]> overpasses = new ArrayList<float[]>();
+
+    /** The bridge over the highway at (x, y), or -1. */
+    /** (10.32) Each end of a bridge's lanes, and the tile at the other end of it. */
+    final java.util.HashMap<Integer, Integer> bridgeLink = new java.util.HashMap<Integer, Integer>();
+
+    /** The other end of the bridge from tile i, or -1. */
+    int bridgeTo(int i) {
+        if (bridgeLink.isEmpty()) return -1;
+        Integer o = bridgeLink.get(i);
+        return o == null ? -1 : o;
+    }
+
+    int overpassAt(float x, float y) {
+        for (int i = 0; i < overpasses.size(); i++) {
+            float[] o = overpasses.get(i);
+            if (x >= o[0] && x < o[2] && y >= o[1] && y < o[3]) return i;
+        }
+        return -1;
+    }
+
     /** (10.31) How far along the highway a slip road reaches from the road it leaves, to where it merges. */
     static final int SLIP_LEN = 28;
-    /** One-way slip roads: which way along each tile traffic may go (as oneWay). */
+    /** One-way slip roads: which way along each tile traffic may go (as oneWay), and (10.32) its exact heading. */
     byte[] slipWay;
+    float[] slipAng;
+
+    /** (10.32) A step from tile n to tile t (dx, dy) that doesn't go against a slip road's way, at either end. */
+    private boolean slipOk(int n, int t, int dx, int dy) {
+        return slipStep(n, dx, dy) && slipStep(t, dx, dy);
+    }
+
+    private boolean slipStep(int i, int dx, int dy) {
+        if (slipWay[i] <= 0) return true;
+        if (slipAng == null) return wayOk(slipWay, i, dx, dy);
+        float a = slipAng[i];
+        return dx * (float) Math.cos(a) + dy * (float) Math.sin(a) > -0.35f;
+    }
 
     /**
      * (10.31) A slip road from a road at (k0, a0) (along and across the highway) to the near carriageway, dir
@@ -5149,6 +5258,22 @@ final class City {
             pts[i * 2] = ew ? k : a;
             pts[i * 2 + 1] = ew ? a : k;
         }
+        // (10.32) Roads already there (a frontage road it crosses) stay two way.
+        int bx0 = Integer.MAX_VALUE, by0 = Integer.MAX_VALUE, bx1 = Integer.MIN_VALUE, by1 = Integer.MIN_VALUE;
+        for (int i = 0; i < n; i++) {
+            bx0 = Math.min(bx0, (int) pts[i * 2] - 3);
+            bx1 = Math.max(bx1, (int) pts[i * 2] + 3);
+            by0 = Math.min(by0, (int) pts[i * 2 + 1] - 3);
+            by1 = Math.max(by1, (int) pts[i * 2 + 1] + 3);
+        }
+        bx0 = Math.max(0, bx0);
+        by0 = Math.max(0, by0);
+        bx1 = Math.min(w - 1, bx1);
+        by1 = Math.min(h - 1, by1);
+        boolean[] was = new boolean[(bx1 - bx0 + 1) * (by1 - by0 + 1)];
+        for (int y = by0; y <= by1; y++)
+            for (int x = bx0; x <= bx1; x++)
+                was[(y - by0) * (bx1 - bx0 + 1) + x - bx0] = tiles[y * w + x] == ROAD && (curveTile == null || !curveTile[y * w + x]);
         curveOnGrass = true;
         curveRoad(pts, false);
         curveOnGrass = false;
@@ -5159,6 +5284,9 @@ final class City {
                 if (x >= 0 && y >= 0 && x < w && y < h && tiles[y * w + x] == ROAD) roadDir[y * w + x] = (byte) (ew ? 2 : 1);
             }
         markSlipWay(pts);
+        for (int y = by0; y <= by1; y++)
+            for (int x = bx0; x <= bx1; x++)
+                if (was[(y - by0) * (bx1 - bx0 + 1) + x - bx0]) slipWay[y * w + x] = 0;
         slipZone(ew, Math.min(k0, kEnd) - 2, Math.max(k0, kEnd) + 2, side < 0 ? at + 7 : a0 - 1, side < 0 ? a0 + 1 : at - 1);
         return true;
     }
@@ -5182,9 +5310,13 @@ final class City {
                         int i = y * w + x;
                         if (tiles[i] != ROAD || (oneWay != null && oneWay[i] != 0) || curveTile == null || !curveTile[i]) continue;
                         byte had = slipWay[i];
-                        // (Where two slip roads meet, the one going the other way: both ways there.)
-                        if (had == 0) slipWay[i] = code;
-                        else if (had != code && (had + code == 3 || had + code == 7)) slipWay[i] = -1;
+                        if (slipAng == null) slipAng = new float[w * h];
+                        float ang = (float) Math.atan2(dy, dx);
+                        // (Where two slip roads meet going different ways: both ways there.)
+                        if (had == 0) {
+                            slipWay[i] = code;
+                            slipAng[i] = ang;
+                        } else if (had > 0 && Math.cos(ang - slipAng[i]) < 0.3f) slipWay[i] = -1;
                     }
             }
         }
@@ -10429,17 +10561,31 @@ final class City {
             int tx = t % w, ty = t / w;
             // Back at the vehicle: finish off the lanes round it, then stop.
             if (stopAt == Integer.MAX_VALUE && (fromRoad ? t == from : Math.abs(tx - fx) <= 1 && Math.abs(ty - fy) <= 1)) stopAt = d + 160;
-            for (int k = 0; k < 4; k++) {
+            int link = bridgeTo(t);
+            for (int k = 0; k < (link >= 0 ? 5 : 4); k++) {
+                if (k == 4) {
+                    // (10.32) Over the bridge, from its other end.
+                    int c = driveCost(link) + 8;
+                    if (driveCost(link) >= 0 && d + c < dist[link]) {
+                        dist[link] = d + c;
+                        dialPush(link, d + c);
+                        left++;
+                    }
+                    continue;
+                }
                 int nx = tx + (k == 0 ? 1 : k == 1 ? -1 : 0), ny = ty + (k == 2 ? 1 : k == 3 ? -1 : 0);
                 if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
                 int n = ny * w + nx, c = driveCost(n);
                 if (strict && c > 4) continue;
+                // (Nothing on or off the highway at a bridge's end: it goes over.)
+                if (link >= 0 && oneWay != null && oneWay[n] != 0) continue;
+                if (oneWay != null && oneWay[t] != 0 && bridgeTo(n) >= 0) continue;
                 // One way only on the highway (a car here would drive from n to t).
                 if (oneWay != null && c >= 0 && (!oneWayOk(n, tx - nx, ty - ny) || !oneWayOk(t, tx - nx, ty - ny))) continue;
                 // (And down each side of a boulevard.)
                 if (divided != null && c >= 0 && (!wayOk(divided, n, tx - nx, ty - ny) || !wayOk(divided, t, tx - nx, ty - ny))) continue;
                 // (And down the slip roads, since 10.31.)
-                if (slipWay != null && c >= 0 && (!wayOk(slipWay, n, tx - nx, ty - ny) || !wayOk(slipWay, t, tx - nx, ty - ny))) continue;
+                if (slipWay != null && c >= 0 && !slipOk(n, t, tx - nx, ty - ny)) continue;
                 // A step across the road (from lane to lane) outside a junction is a last resort: routes keep
                 // to their row of the road and only change rows at the junctions, so cars don't swerve over.
                 // (Emergencies too: lights and sirens still keep to their own side.)

@@ -437,6 +437,7 @@ final class Dispatch {
     /** A civilian who saw a zombie calls 911. */
     void call(Entity caller, Entity zombie) {
         calls++;
+        if (calls == 1) w.timeline("First 911 call, from " + city.placeName(caller.x, caller.y));
         caller.phoneTimer = 3f;
         w.emit(Sfx.PHONE, caller.x, caller.y);
         // With the call centre overrun, most calls just ring out.
@@ -1162,6 +1163,7 @@ final class Dispatch {
 
     /** The army comes in: one column of trucks, Humvees, APCs and tanks along the highway, to the worst of it. */
     private void armyConvoy() {
+        w.timeline("Army convoy sent in from outside");
         armyArrived = true;
         // Where the dead are thickest.
         Incident target = null;
@@ -1397,6 +1399,7 @@ final class Dispatch {
         a.y = inc.y;
         a.place = inc.place;
         arrivals.add(a);
+        w.timeline("Outside police called in: " + a.label);
         say(WHO_POLICE, null, "Dispatch: All our units are committed. Requesting outside help for " + inc.place + ". "
                 + String.format(sentence, a.count) + ", less than a minute out." + (policeReserve == 0 ? " That's the last of the help from outside." : ""), inc.x, inc.y);
         callout(inc.x, inc.y, "OUTSIDE BACKUP", WHO_COLORS[WHO_POLICE]);

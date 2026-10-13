@@ -536,6 +536,19 @@ final class Menu {
                     hr[3] + " kills"};
         }
         totals = withHeroes;
+        // (10.32) The outbreak as it happened: the key moments, with when.
+        if (!world.timeline.isEmpty()) {
+            int show = Math.min(world.timeline.size(), 10);
+            String[][] withTimeline = new String[totals.length + show + 1][];
+            System.arraycopy(totals, 0, withTimeline, 0, totals.length);
+            withTimeline[totals.length] = new String[]{"Timeline", ""};
+            for (int i = 0; i < show; i++) {
+                World.Moment m = world.timeline.get(world.timeline.size() <= 10 ? i : (i == 0 ? 0 : world.timeline.size() - show + i));
+                int mt = (int) m.time;
+                withTimeline[totals.length + 1 + i] = new String[]{"   " + m.text, String.format("%d:%02d", mt / 60, mt % 60)};
+            }
+            totals = withTimeline;
+        }
         float tx0 = landscape ? chart.right + 24 * dp : side, tx1 = w - side;
         float ty = landscape ? top + 26 * dp : chart.bottom + 30 * dp, lh = Math.min(26 * dp, (h - ty - 10 * dp) / totals.length);
         plain.setTextSize(14 * dp);
@@ -1074,7 +1087,28 @@ final class Menu {
                 y += 17 * dp;
             }
             y += 14 * dp;
-        } else y = segRow(c, CityConfig.OPT_SIZE, "Map size", lx, y, lw);
+        } else {
+            y = segRow(c, CityConfig.OPT_SIZE, "Map size", lx, y, lw);
+            // (10.32) The biggest maps: how long they take to build, and whether this phone has the memory.
+            int size = config.v[CityConfig.OPT_SIZE];
+            if (size >= 5) {
+                int needMb = size >= 6 ? 480 : 256;
+                long haveMb = Runtime.getRuntime().maxMemory() / 1048576;
+                boolean low = haveMb < needMb;
+                String note = low ? "Warning: this phone gives the game " + haveMb + " MB and a " + (size >= 6 ? "Gigantic" : "Massive")
+                        + " city needs about " + needMb + " MB. It may run out of memory - try a smaller size."
+                        : (size >= 6 ? "Gigantic" : "Massive") + " maps take a while to build (up to a minute on a slower phone) and need a recent phone to run smoothly.";
+                plain.setTextAlign(Paint.Align.LEFT);
+                plain.setTextSize(12.5f * dp);
+                plain.setColor(low ? 0xFFFF9A7A : 0xFF9AA0A8);
+                y -= 6 * dp;
+                for (String line : wrap(note, lw - 4 * dp, plain)) {
+                    c.drawText(line, lx + 2 * dp, y + 10 * dp, plain);
+                    y += 16 * dp;
+                }
+                y += 12 * dp;
+            }
+        }
         if (!real) {
         y = segRow(c, CityConfig.OPT_COUNTRY, "Country: how the city looks and what it's called", lx, y, lw);
         plain.setTextSize(12.5f * dp);

@@ -449,6 +449,7 @@ final class World {
 
     World(CityConfig cfg) {
         city = new City(cfg);
+        City.progress(0.72f, "Traffic and services");
         Country.current = city.country;
         rollStrain();
         dispatch = new Dispatch(this, cfg.reinforcements());
@@ -499,6 +500,7 @@ final class World {
     }
 
     void populate(CityConfig cfg) {
+        City.progress(0.82f, "Moving everyone in");
         scatterWeapons();
         stockArmouries();
         baseStrengths();
@@ -1663,6 +1665,12 @@ final class World {
             if (r[3] > 1.4f) noiseRings.remove(i);
         }
         updateWildlife(dt);
+        if (lodFrame % 15 == 0) checkpointGuards();
+        if (lodFrame % 150 == 0) watchBases(dt * 150);
+        if (fightHeat != null && lodFrame % 30 == 0) {
+            float keep = (float) Math.pow(0.98, dt * 30);
+            for (int i = 0; i < fightHeat.length; i++) fightHeat[i] *= keep;
+        }
         updateTowers(dt);
         updateCordon(dt);
         updateDanger(dt);
@@ -1795,6 +1803,7 @@ final class World {
             if (clear && time - clearSince >= 4) {
                 outbreak = false;
                 warResult = 1;
+                timeline("The outbreak is over: the city survives");
                 int t = (int) outbreakTime;
                 banner(h < startHumans * 0.35f ? "THE CITY SURVIVES, BARELY" : "THE CITY SURVIVES", "The outbreak is over after "
                         + t / 60 + ":" + (t % 60 < 10 ? "0" : "") + t % 60 + ". " + zombiesKilled + " zombies destroyed, "
@@ -1803,6 +1812,7 @@ final class World {
             } else if (h == 0 || (h <= startHumans * FALLEN && z > h) || (armed == 0 && h <= Math.max(5, startHumans / 12) && z > h)) {
                 outbreak = false;
                 warResult = 2;
+                timeline("The city has fallen");
                 banner("THE CITY HAS FALLEN", h == 0 ? "Nobody is left alive." : "Only " + h + (h == 1 ? " survivor is" : " survivors are")
                         + " left, hiding in the ruins.");
                 if (h > 0) startAftermath(AFTER_FALLEN);
@@ -2001,6 +2011,10 @@ final class World {
     /** Makes zombies within a radius head for a noise (gunfire, explosions, a screamer). */
     void noise(float x, float y, float radius) {
         scareBirds(x, y, radius);
+        // (10.32) How loud the fighting has been round here lately, for hordes further off to come to.
+        if (fightHeat == null) fightHeat = new float[heatW() * heatW()];
+        int hx = Math.min(heatW() - 1, Math.max(0, (int) (x / HEAT_CELL))), hy = Math.min(heatW() - 1, Math.max(0, (int) (y / HEAT_CELL)));
+        fightHeat[hy * heatW() + hx] += radius / 200f;
         boolean near = false;
         for (int i = 0; i < noiseRings.size() && !near; i++) {
             float[] r = noiseRings.get(i);
@@ -2681,9 +2695,51 @@ final class World {
         return best;
     }
 
-    private float hordeLaneSaid;
+    private float hordeLaneSaid, hordeHeatSaid;
+    /** (10.32) The noise of fighting, in big squares of the map: it dies away over a minute or two. */
+    float[] fightHeat;
+    static final float HEAT_CELL = 400;
+
+    int heatW() {
+        return (int) Math.ceil(city.worldW() / HEAT_CELL);
+    }
+
+    /** The loudest fighting within reach of (x, y): {x, y} of its square, or null if it's been quiet. */
+    float[] loudestFight(float x, float y, float reach) {
+        if (fightHeat == null) return null;
+        int n = heatW();
+        float best = 25;
+        float[] at = null;
+        for (int j = 0; j < n; j++)
+            for (int i = 0; i < n; i++) {
+                float v = fightHeat[j * n + i];
+                if (v <= best) continue;
+                float cx = (i + 0.5f) * HEAT_CELL, cy = (j + 0.5f) * HEAT_CELL;
+                if (Math.hypot(cx - x, cy - y) > reach) continue;
+                best = v;
+                at = new float[]{cx, cy};
+            }
+        return at;
+    }
 
     private void pickRoam(Entity z) {
+        // (10.32) A horde hears a big fight a long way off, and goes to it.
+        if (z.leadsHorde && rnd.nextFloat() < 0.6f) {
+            float[] f = loudestFight(z.x, z.y, 3200);
+            if (f != null && Math.hypot(f[0] - z.x, f[1] - z.y) > 300) {
+                float[] p = city.findWalkable(f[0] + rnd.nextFloat() * 120 - 60, f[1] + rnd.nextFloat() * 120 - 60);
+                if (p != null) {
+                    z.roamX = p[0];
+                    z.roamY = p[1];
+                    if (z.hordeSize >= 8 && time > hordeHeatSaid) {
+                        hordeHeatSaid = time + 60;
+                        dispatch.say(Dispatch.WHO_INFO, null, "A horde of about " + Math.max(5, z.hordeSize / 5 * 5)
+                                + " is heading for the sound of the fighting at " + city.placeName(p[0], p[1]) + ".", z.x, z.y);
+                    }
+                    return;
+                }
+            }
+        }
         if (z.leadsHorde && city.settlements.size() > 1 && rnd.nextFloat() < 0.5f) {
             // Off down the lanes to another settlement.
             float[] here = null, there;
@@ -2723,12 +2779,14 @@ final class World {
         if (city.fieldAt(city.humanDist, z.x, z.y) < SCENT * 1.7f && followField(z, city.humanDist, z.speed * 0.55f)) return;
         float ddx = z.roamX - z.x, ddy = z.roamY - z.y;
         float d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
-        if (d < 30 || z.blocked) {
+        if (d < 30 || (z.blocked && z.path == null)) {
             z.blocked = false;
             pickRoam(z);
             return;
         }
-        steer(z, ddx / d, ddy / d, z.speed * 0.5f);
+        // ((10.32) A horde on the move goes round things, by the streets and lanes, not straight into them.)
+        if (z.leadsHorde && d > 150) zombieWalkTo(z, z.roamX, z.roamY, z.speed * 0.5f);
+        else steer(z, ddx / d, ddy / d, z.speed * 0.5f);
     }
 
     /** A body that isn't about to get up, for a zombie to feed on. */
@@ -3610,12 +3668,18 @@ final class World {
         boolean seen = dispatch.calls > 0 || bites > 0;
         // (10.28) Slow to dawn on anyone: a few strange calls first, then the news, and only well into it the
         // emergency broadcast that sends everyone indoors.
-        if (alert < 1 && (dispatch.calls >= 4 || bites >= 6 || (outbreakTime > 60 && seen))) alert = 1;
+        if (alert < 1 && (dispatch.calls >= 4 || bites >= 6 || (outbreakTime > 60 && seen))) {
+            alert = 1;
+            timeline("It's on the news");
+        }
         // (City Hall puts out the emergency broadcast sooner; with City Hall lost it's left to the news.)
         boolean hall = city.cityHall != null, hallUp = hall && !hallLost;
         float t2 = hallUp ? 150 : hall ? 240 : 190;
         int z2 = hallUp ? 20 : hall ? 35 : 26, c2 = hallUp ? 14 : hall ? 24 : 18;
-        if (alert < 2 && seen && (outbreakTime > t2 || zombies >= z2 || dispatch.calls >= c2)) alert = 2;
+        if (alert < 2 && seen && (outbreakTime > t2 || zombies >= z2 || dispatch.calls >= c2)) {
+            alert = 2;
+            timeline("Emergency broadcast: everyone indoors");
+        }
         if (alert == was) return;
         String where = outbreakPlace != null ? outbreakPlace : "the city";
         if (alert == 1) {
@@ -4618,6 +4682,7 @@ final class World {
         patientZero = e;
         patientZeroSeed = e.nameSeed;
         outbreakPlace = city.placeName(e.x, e.y);
+        timeline("First infection: " + Names.person(e.nameSeed) + " at " + outbreakPlace);
         highlight("Patient zero: " + Names.person(e.nameSeed), e.x, e.y);
     }
 
@@ -6199,6 +6264,87 @@ final class World {
      * The army checks everyone coming into its safe zones for bites. Most bites are found, and there's no
      * treating a bite: the person is turned away. Returns true if they were stopped at the gate.
      */
+    private float checkpointSaid;
+
+    /** (10.32) Something that happened in the outbreak, and when (seconds of game time). */
+    static final class Moment {
+        float time;
+        String text;
+    }
+
+    /** The outbreak as it happened, for the summary. */
+    final ArrayList<Moment> timeline = new ArrayList<Moment>();
+
+    void timeline(String text) {
+        if (timeline.size() >= 40) return;
+        Moment m = new Moment();
+        m.time = time;
+        m.text = text;
+        timeline.add(m);
+    }
+
+    /**
+     * (10.32) An army base with the dead all over it and next to no soldiers left holding it, for half a minute,
+     * has fallen: command moves to the next base (the big one out in the country, if the town's goes).
+     */
+    private void watchBases(float dt) {
+        if (zombies == 0) return;
+        for (City.Facility f : city.facilities) {
+            if (f.kind != City.FACILITY_BASE || f.fallen) continue;
+            int z = countZombiesNear(f.x, f.y, f.r * 1.3f), s = 0;
+            for (int i = 0, n = gatherLiving(f.x, f.y, f.r * 1.3f); i < n; i++)
+                if (gathered[i].type == Entity.SOLDIER && !gathered[i].dead) s++;
+            if (z >= 12 && s <= 2) f.fallingFor += dt;
+            else f.fallingFor = Math.max(0, f.fallingFor - dt);
+            if (f.fallingFor < 30) continue;
+            f.fallen = true;
+            City.Facility next = city.mainBase();
+            dispatch.say(Dispatch.WHO_MILITARY, null, "Military: " + f.name + " has been overrun."
+                    + (next != null && next != f && !next.fallen ? " Command moves to " + next.name + "." : " There's nowhere left to fall back to."), f.x, f.y);
+            timeline("Army base overrun: " + f.name);
+        }
+    }
+
+    /**
+     * (10.32) The soldiers on the country base's checkpoints, and police at their roadblocks, look over everyone on
+     * foot who comes past: someone bitten is mostly spotted and sent back the way they came.
+     */
+    private void checkpointGuards() {
+        if (zombies == 0) return;
+        for (int k = 0; k < city.checkpoints.size(); k++) {
+            float[] cp = city.checkpoints.get(k);
+            boolean manned = false;
+            for (int i = 0, n = gatherLiving(cp[0], cp[1], 70); i < n && !manned; i++)
+                if (gathered[i].type == Entity.SOLDIER && !gathered[i].dead) manned = true;
+            if (!manned) continue;
+            screenAt(cp[0], cp[1], Dispatch.WHO_MILITARY, "Checkpoint");
+        }
+        for (int i = 0, n = fleet.vehicles.size(); i < n; i++) {
+            Fleet.Vehicle v = fleet.vehicles.get(i);
+            if (v.block != null && v.state == Fleet.BLOCK) screenAt(v.x, v.y, Dispatch.WHO_POLICE, "Roadblock");
+        }
+    }
+
+    private void screenAt(float x, float y, int who, String what) {
+        for (int i = 0, n = gatherLiving(x, y, 55); i < n; i++) {
+            Entity e = gathered[i];
+            if (e.type != Entity.CIVILIAN || e.dead || !e.infected || e.screened) continue;
+            e.screened = true;
+            if (rnd.nextFloat() < 0.25f) continue;
+            turnedAway++;
+            e.refused = true;
+            e.task = Dispatch.T_NONE;
+            e.talkTimer = 2;
+            float dx = e.x - x, dy = e.y - y, d = (float) Math.sqrt(dx * dx + dy * dy) + 0.001f;
+            e.fleeTimer = 3;
+            flee(e, dx / d, dy / d, e.runSpeed);
+            if (time > checkpointSaid) {
+                checkpointSaid = time + 20;
+                dispatch.say(who, null, what + ": Bite found on someone at " + city.placeName(x, y) + ". Turned away.", x, y);
+            }
+        }
+    }
+
     private boolean checkpoint(Entity e, Dispatch.SafeZone z) {
         if (!e.infected || e.screened) return false;
         e.screened = true;
@@ -7753,7 +7899,24 @@ final class World {
                     + city.placeName(f.x, f.y) + " is on fire!", f.x, f.y);
     }
 
-    private float spreadTimer;
+    private float spreadTimer, blockFireSaid;
+    private final java.util.ArrayList<City.Building> spreadNear = new java.util.ArrayList<City.Building>();
+
+    /** (10.32) Several buildings alight close together: a block fire, on the radio once in a while. */
+    private void burningNear(City.Building b) {
+        if (time < blockFireSaid) return;
+        int n = 0;
+        float cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2;
+        for (int i = 0; i < fires.size(); i++) {
+            Fire f = fires.get(i);
+            if (f.building != null && Math.hypot(f.x - cx, f.y - cy) < 260) n++;
+        }
+        if (n < 4) return;
+        blockFireSaid = time + 50;
+        timeline("Fire spreading through the block at " + city.placeName(cx, cy));
+        dispatch.say(Dispatch.WHO_FIRE, null, "Fire Dept: The fire is spreading through the block at " + city.placeName(cx, cy)
+                + ": " + n + " buildings alight. All engines, all engines.", cx, cy);
+    }
 
     private void updateBuildingFires(float dt) {
         spreadTimer -= dt;
@@ -7788,14 +7951,30 @@ final class World {
                 collapseBuilding(b);
                 continue;
             }
-            if (spread && heat > 0.4f) {
-                // Sparks catch the buildings next door.
-                for (int k = 0; k < n; k++) {
-                    City.Building o = city.buildings.get(k);
-                    if (o == b || o.fire != null || o.collapsed) continue;
+            if (spread && heat > 0.35f) {
+                // Sparks and heat catch the buildings next door, and (since 10.32) across an alley or a narrow
+                // street once it's really going: a fire left alone takes the block. (Looked for round its walls,
+                // not through every building in the city.)
+                float reach = heat > 0.8f ? 40 : 22;
+                spreadNear.clear();
+                for (int k = 0; k < 16; k++) {
+                    float t = k / 16f;
+                    float px, py;
+                    if (k < 4) { px = b.x0 + (b.x1 - b.x0) * t * 4; py = b.y0 - reach; }
+                    else if (k < 8) { px = b.x1 + reach; py = b.y0 + (b.y1 - b.y0) * (t * 4 - 1); }
+                    else if (k < 12) { px = b.x1 - (b.x1 - b.x0) * (t * 4 - 2); py = b.y1 + reach; }
+                    else { px = b.x0 - reach; py = b.y1 - (b.y1 - b.y0) * (t * 4 - 3); }
+                    City.Building o = city.buildingAt(px, py);
+                    if (o == null) o = city.buildingAt((px + (b.x0 + b.x1) / 2) / 2, (py + (b.y0 + b.y1) / 2) / 2);
+                    if (o != null && o != b && o.fire == null && !o.collapsed && !spreadNear.contains(o)) spreadNear.add(o);
+                }
+                for (City.Building o : spreadNear) {
                     float gx = Math.max(0, Math.max(o.x0 - b.x1, b.x0 - o.x1)), gy = Math.max(0, Math.max(o.y0 - b.y1, b.y0 - o.y1));
-                    if (gx > 20 || gy > 20) continue;
-                    if (rnd.nextFloat() < 0.05f * heat) igniteBuilding(o);
+                    float gap = Math.max(gx, gy);
+                    if (rnd.nextFloat() < (gap <= 20 ? 0.06f : 0.025f) * heat) {
+                        igniteBuilding(o);
+                        burningNear(o);
+                    }
                 }
             }
         }
@@ -8088,7 +8267,7 @@ final class World {
         if (t.type == Entity.CRAWLER) hit *= 0.6f;
         if (rnd.nextFloat() < hit) {
             // Only a hit to the head really stops a zombie; body shots just wear it down.
-            boolean headshot = t.isZombie() && t.type != Entity.BRUTE && rnd.nextFloat() < headshotChance(e, t, d, range);
+            boolean headshot = t.isZombie() && t.type != Entity.BRUTE && rnd.nextFloat() < headshotChance(e, t, d, range) * (t.armored ? 0.6f : 1);
             if (headshot) {
                 t.hp = 0;
                 t.gibbed = rnd.nextFloat() < 0.3f;
@@ -8096,7 +8275,8 @@ final class World {
                     particle(t.x, t.y, rnd.nextFloat() * 70 - 35, rnd.nextFloat() * 70 - 35, 0.4f, 1.1f, 0xFF7A1010, P_DOT);
                 if (gore) decal(t.x + rnd.nextFloat() * 6 - 3, t.y + rnd.nextFloat() * 6 - 3, 2.5f + rnd.nextFloat() * 2, 0xAA5A0808);
             } else {
-                t.hp -= t.isZombie() ? dmg * GUN_DAMAGE : dmg;
+                // ((10.32) Body armour on one of the dead takes most of a body shot.)
+                t.hp -= t.isZombie() ? dmg * GUN_DAMAGE * (t.armored ? 0.5f : 1) : dmg;
             }
             t.hurt = 1;
             if (t.hp <= 0 && t.isZombie()) {
@@ -9013,7 +9193,11 @@ final class World {
             for (int i = 0, n = list.size(); i < n; i++) {
                 float[] g = list.get(i);
                 float r = (pass == 0 ? g[2] : 8) + e.radius + 4;
-                float ox = e.x - g[0], oy = e.y - g[1], od = (float) Math.sqrt(ox * ox + oy * oy) + 0.001f;
+                float ox = e.x - g[0], oy = e.y - g[1];
+                // ((10.32) Nowhere near: no square root for it.)
+                float far = r + Math.max(40, e.want * 1.5f) + r;
+                if (ox > far || ox < -far || oy > far || oy < -far) continue;
+                float od = (float) Math.sqrt(ox * ox + oy * oy) + 0.001f;
                 if (od < r) {
                     // Caught in it: straight out.
                     e.mx = ox / od;
@@ -9290,6 +9474,8 @@ final class World {
                     if (entities.size() >= maxEntities) continue;
                     Entity z = make(c.riseType, c.x, c.y, c.origin, c.body);
                     z.angle = c.angle;
+                    // (10.32) A police officer or soldier comes back still in their body armour (and helmet).
+                    z.armored = (c.origin == Entity.COP || c.origin == Entity.SOLDIER) && rnd.nextFloat() < 0.75f;
                     // Same person, now one of them: who bit them gets the credit.
                     z.nameSeed = c.nameSeed;
                     Integer by = bitBy.get(c.nameSeed);

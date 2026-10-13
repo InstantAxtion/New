@@ -2,11 +2,28 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.31";
-    static final int VERSION_CODE = 69;
+    static final String VERSION = "10.32";
+    static final int VERSION_CODE = 70;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.32  -  Bridges, fuel and the tactical map",
+                    "Bridges over the highway at the interchanges in new cities: the road from town goes up and over on a bridge, with slip roads on and off both carriageways, so traffic can join the highway either way. Cars on the bridge and on the highway under it pass without touching, and nobody gets off the highway where there's no slip road.",
+                    "The army's checkpoints do their job: civilian cars stop at the barrier and wait to be waved through (turned back once it's on the news), and the soldiers there and police at their roadblocks look over everyone on foot and send back anyone who's been bitten.",
+                    "Fuel: cars burn it as they go and pull in at gas stations to fill up. Once the emergency broadcast goes out everyone tops up at once and the pumps run dry; a car that runs out is left where it stops.",
+                    "On the emergency broadcast, people get in their cars and make for the highway: the roads out jam up, and panicked drivers crash into each other.",
+                    "If the army base is overrun (the dead all over it and next to no soldiers left), command falls back to the next base, out in the country on the big maps.",
+                    "The dead: police and soldiers who rise again keep their body armour, and take more to put down. Hordes drift towards the sound of a big fight and follow the roads when they move.",
+                    "Fires spread from building to building through a block, faster as they get hotter, and the radio calls it when a whole block is burning.",
+                    "A tactical map: tap the square button on the minimap to see the whole city at once, with where the dead and the living are, the towns, bases and checkpoints, open calls, safe zones and help coming in. Tap anywhere on it to go there.",
+                    "An outbreak timeline on the stats screen: patient zero, the first 911 call, the news, outside help, the army, block fires, bases overrun and how it ended, with the time of each.",
+                    "Sounds carry as far as they would: explosions, cannon and helicopters a long way, sirens and rifles further than pistols, groans only close by.",
+                    "Zoomed out, the map shows the army checkpoints and any overrun base by name, as well as the towns and districts.",
+                    "A progress bar while a city is built (the biggest maps take a while), and a warning on the New Game screen if a Massive or Gigantic city needs more memory than the phone gives the game.",
+                    "Lighter on the biggest maps: fewer new car routes worked out each frame on Massive and Gigantic, and people only check hazards close enough to matter.",
+                    "Fixed a crash when a car was turned back at a checkpoint while driving.",
+            },
             {
                     "10.31  -  Gigantic",
                     "A new map size, Gigantic: over a thousand tiles across, with a city of over twenty thousand people on most maps (around twenty-six thousand on Downtown, more on the sea and river maps), and more small towns round it.",

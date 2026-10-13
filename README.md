@@ -423,6 +423,11 @@ big army base out in the country with army checkpoints on its road.
 roads that run in alongside the highway, outside help only when the local police can't cope, and fewer
 response lines on the map.
 
+**Bridges, fuel and the tactical map (10.32):** bridges over the highway with slip roads on both sides,
+working army checkpoints, fuel and gas stations, evacuation traffic jams, fallback army bases, armoured dead,
+hordes drawn to fights, fires spreading through blocks, a full-screen tactical map, an outbreak timeline,
+sounds that carry with distance, a loading progress bar and a low-memory warning for the biggest maps.
+
 **Countryside:** Villages, small towns and every Massive map are surrounded by open country:
 winding dirt lanes out to the edge of the map, farms and lonely cabins along them, woods, and
 hamlets (a short street of cottages with a lane back to town). A town out in the country is never a

@@ -458,6 +458,8 @@ final class GameView extends View implements Menu.Host {
         loadingSave = save;
         loadingFile = f;
         loadingTime = 0;
+        shownProgress = 0;
+        City.progress(0, save ? "Loading the save" : "");
         built = null;
         buildError = null;
         loader = new Thread(new Runnable() {
@@ -551,6 +553,11 @@ final class GameView extends View implements Menu.Host {
     /** System back button. Returns false when the app should close. */
     boolean onBack() {
         if (loading) return true;
+        if (tactical && !menu.isOpen()) {
+            tactical = false;
+            click();
+            return true;
+        }
         boolean handled = menu.back();
         if (handled) click();
         return handled;
@@ -771,7 +778,10 @@ final class GameView extends View implements Menu.Host {
 
         drawWorld(c);
         if (menu.isOpen()) menu.draw(c, getWidth(), getHeight(), dt);
-        else if (!hudHidden) drawUi(c);
+        else if (!hudHidden) {
+            drawUi(c);
+            if (tactical) drawTactical(c);
+        }
         if (loadFailed != null) {
             loadFailedTime -= dt;
             if (loadFailedTime <= 0) loadFailed = null;
@@ -825,15 +835,24 @@ final class GameView extends View implements Menu.Host {
         c.drawText("Building the city…", cx, cy - 18 * dp, text);
         text.setTextSize(13 * dp);
         text.setColor(0xFF9AA0A8);
-        c.drawText("Streets, homes, traffic and everyone in them", cx, cy + 8 * dp, text);
+        String stage = City.stage;
+        c.drawText(stage == null || stage.isEmpty() ? "Streets, homes, traffic and everyone in them" : stage + "…", cx, cy + 8 * dp, text);
         fill.setStyle(Paint.Style.FILL);
-        for (int k = 0; k < 8; k++) {
-            double a = loadingTime * 5 + k * Math.PI / 4;
-            int alpha = 60 + (int) (195 * ((k + (int) (loadingTime * 8)) % 8) / 7f);
-            fill.setColor((Math.min(255, alpha) << 24) | 0x9BE070);
-            c.drawCircle(cx + (float) Math.cos(a) * 14 * dp, cy + 44 * dp + (float) Math.sin(a) * 14 * dp, 3 * dp, fill);
-        }
+        // (10.32) A bar that fills as the city goes up (the biggest maps take a while).
+        shownProgress += (Math.max(shownProgress, City.progress) - shownProgress) * 0.2f;
+        float bw = Math.min(getWidth() - 60 * dp, 280 * dp), by = cy + 34 * dp;
+        oval.set(cx - bw / 2, by, cx + bw / 2, by + 8 * dp);
+        fill.setColor(0xFF2A2E35);
+        c.drawRoundRect(oval, 4 * dp, 4 * dp, fill);
+        oval.set(cx - bw / 2, by, cx - bw / 2 + bw * Math.min(1, shownProgress), by + 8 * dp);
+        fill.setColor(0xFF9BE070);
+        c.drawRoundRect(oval, 4 * dp, 4 * dp, fill);
+        text.setTextSize(11 * dp);
+        text.setColor(0xFF7A8088);
+        c.drawText((int) (Math.min(1, shownProgress) * 100) + "%   " + (int) loadingTime + "s", cx, by + 26 * dp, text);
     }
+
+    private float shownProgress;
 
     /** A message across the bottom of the screen. */
     private void drawBanner(Canvas c, String msg) {
@@ -961,6 +980,7 @@ final class GameView extends View implements Menu.Host {
         // While you're controlling someone, the attack button goes where the minimap was.
         miniX.setEmpty();
         mapChip.setEmpty();
+        tacBtn.setEmpty();
         if (!settings.minimap() || world.controlled != null || miniClosed) {
             miniRect.setEmpty();
         } else {
@@ -1041,6 +1061,16 @@ final class GameView extends View implements Menu.Host {
             stroke.setStrokeWidth(1 * dp);
             c.drawRect(miniRect.left + camX * sx, miniRect.top + camY * sy, miniRect.left + (camX + getWidth() / scale) * sx,
                     miniRect.top + (camY + barTop / scale) * sy, stroke);
+            // (10.32) And a button in the other corner opens the tactical map.
+            tacBtn.set(miniRect.left - 2 * dp, miniRect.top - 2 * dp, miniRect.left + 16 * dp, miniRect.top + 16 * dp);
+            fill.setColor(0xE0101216);
+            c.drawCircle(tacBtn.centerX(), tacBtn.centerY(), 8 * dp, fill);
+            stroke.setColor(0xFFC8CCD2);
+            stroke.setStrokeWidth(1.4f * dp);
+            float bx = tacBtn.centerX(), by = tacBtn.centerY(), bu = 3.6f * dp;
+            c.drawRect(bx - bu, by - bu, bx + bu, by + bu, stroke);
+            c.drawLine(bx - bu, by, bx + bu, by, stroke);
+            c.drawLine(bx, by - bu, bx, by + bu, stroke);
             // A little x in the corner closes it.
             miniX.set(miniRect.right - 16 * dp, miniRect.top - 2 * dp, miniRect.right + 2 * dp, miniRect.top + 16 * dp);
             fill.setColor(0xE0101216);
@@ -1076,6 +1106,208 @@ final class GameView extends View implements Menu.Host {
             text.setColor(0xFFF2F2F2);
             c.drawText("Map", mapChip.centerX(), mapChip.centerY() + 4 * dp, text);
         }
+    }
+
+    // ------------------------------------------------------------------ (10.32) tactical map
+
+    /** The whole map full screen: where the dead are, the towns, bases, checkpoints, calls and help coming in. */
+    private boolean tactical;
+    private final RectF tacBtn = new RectF(), tacRect = new RectF(), tacClose = new RectF();
+    private android.graphics.Bitmap tacMap;
+    private World tacWorld;
+    private int tacCollapsed = -1;
+    private int[] tacZ, tacH;
+    private float tacTimer;
+    private static final int TAC_GRID = 64;
+
+    private void drawTactical(Canvas c) {
+        City city = world.city;
+        fill.setColor(0xFA101216);
+        c.drawRect(0, 0, getWidth(), getHeight(), fill);
+        tacUsed.clear();
+        float top = 46 * dp, size = Math.min(getWidth() - 24 * dp, getHeight() - top - 70 * dp);
+        float aspect = city.worldW() / city.worldH();
+        float mw = aspect >= 1 ? size : size * aspect, mh = aspect >= 1 ? size / aspect : size;
+        tacRect.set((getWidth() - mw) / 2, top, (getWidth() + mw) / 2, top + mh);
+        int collapsed = 0;
+        for (int i = 0; i < city.buildings.size(); i++) if (city.buildings.get(i).collapsed) collapsed++;
+        if (tacMap == null || tacWorld != world || tacCollapsed != collapsed) {
+            tacWorld = world;
+            tacCollapsed = collapsed;
+            int bw = 512, bh = Math.max(64, Math.round(512 / aspect));
+            if (tacMap == null || tacMap.getWidth() != bw || tacMap.getHeight() != bh)
+                tacMap = android.graphics.Bitmap.createBitmap(bw, bh, android.graphics.Bitmap.Config.ARGB_8888);
+            Canvas mc = new Canvas(tacMap);
+            Paint p = new Paint(Paint.FILTER_BITMAP_FLAG);
+            miniSrc.set(0, 0, city.bitmap.getWidth(), city.bitmap.getHeight());
+            roofDst.set(0, 0, bw, bh);
+            mc.drawBitmap(city.bitmap, miniSrc, roofDst, p);
+            // Dimmed, so what's on it stands out.
+            p.setColor(0x70000000);
+            mc.drawRect(0, 0, bw, bh, p);
+        }
+        miniSrc.set(0, 0, tacMap.getWidth(), tacMap.getHeight());
+        c.drawBitmap(tacMap, miniSrc, tacRect, bmpPaint);
+        float sx = tacRect.width() / city.worldW(), sy = tacRect.height() / city.worldH();
+        // The dead (red) and the living (blue), counted on a grid a couple of times a second.
+        tacTimer -= frameDt;
+        if (tacZ == null || tacTimer <= 0) {
+            tacTimer = 0.5f;
+            if (tacZ == null) {
+                tacZ = new int[TAC_GRID * TAC_GRID];
+                tacH = new int[TAC_GRID * TAC_GRID];
+            }
+            java.util.Arrays.fill(tacZ, 0);
+            java.util.Arrays.fill(tacH, 0);
+            for (int i = 0, n = world.entities.size(); i < n; i++) {
+                Entity e = world.entities.get(i);
+                if (e.dead) continue;
+                int gx = Math.min(TAC_GRID - 1, Math.max(0, (int) (e.x / city.worldW() * TAC_GRID)));
+                int gy = Math.min(TAC_GRID - 1, Math.max(0, (int) (e.y / city.worldH() * TAC_GRID)));
+                if (e.isZombie()) tacZ[gy * TAC_GRID + gx]++;
+                else tacH[gy * TAC_GRID + gx]++;
+            }
+        }
+        float cw = tacRect.width() / TAC_GRID, ch = tacRect.height() / TAC_GRID;
+        for (int k = 0; k < tacZ.length; k++) {
+            int z = tacZ[k], hu = tacH[k];
+            if (z == 0 && hu == 0) continue;
+            float x0 = tacRect.left + (k % TAC_GRID) * cw, y0 = tacRect.top + (k / TAC_GRID) * ch;
+            if (z > 0) fill.setColor(alpha(0xFFFF3A20, Math.min(0.8f, 0.25f + z * 0.05f)));
+            else fill.setColor(alpha(0xFF4F8FE0, Math.min(0.55f, 0.18f + hu * 0.015f)));
+            c.drawRect(x0, y0, x0 + cw, y0 + ch, fill);
+        }
+        // Safe zones.
+        for (int i = 0, n = world.dispatch.zones.size(); i < n; i++) {
+            Dispatch.SafeZone z = world.dispatch.zones.get(i);
+            stroke.setColor(z.military ? 0xFF8FDF5F : 0xFF6FAFFF);
+            stroke.setStrokeWidth(2 * dp);
+            c.drawCircle(tacRect.left + z.x * sx, tacRect.top + z.y * sy, Math.max(5 * dp, z.r * sx), stroke);
+        }
+        // Calls: a ring at each open one.
+        for (int i = 0, n = world.dispatch.incidents.size(); i < n; i++) {
+            Dispatch.Incident inc = world.dispatch.incidents.get(i);
+            if (inc.resolved || inc.cordonPost >= 0) continue;
+            stroke.setColor(0xFFFFC24A);
+            stroke.setStrokeWidth(1.6f * dp);
+            c.drawCircle(tacRect.left + inc.x * sx, tacRect.top + inc.y * sy, (5 + 2 * (float) Math.abs(Math.sin(world.time * 4))) * dp, stroke);
+        }
+        // Help coming in.
+        for (int i = 0; i < world.dispatch.convoys.size(); i++) {
+            Dispatch.Convoy cv = world.dispatch.convoys.get(i);
+            int col = convoyColor(cv);
+            stroke.setColor(col);
+            stroke.setStrokeWidth(2 * dp);
+            float hx = tacRect.left + cv.x * sx, hy = tacRect.top + cv.y * sy;
+            c.drawLine(hx, hy, tacRect.left + cv.toX * sx, tacRect.top + cv.toY * sy, stroke);
+            fill.setColor(col);
+            c.drawCircle(hx, hy, 4 * dp, fill);
+        }
+        float dot = 1.6f * dp;
+        for (int i = 0, n = world.fleet.vehicles.size(); i < n; i++) {
+            Fleet.Vehicle v = world.fleet.vehicles.get(i);
+            if (v.type == Fleet.CAR || v.type == Fleet.TRAIN) continue;
+            fill.setColor(v.type == Fleet.HELI || v.type == Fleet.TANK || v.type == Fleet.TRUCK ? 0xFFFFE27A
+                    : v.type == Fleet.FIRE_ENGINE ? 0xFFFF6A4A : 0xFFE0E0E0);
+            c.drawCircle(tacRect.left + v.x * sx, tacRect.top + v.y * sy, dot, fill);
+        }
+        text.setTextAlign(Paint.Align.CENTER);
+        // Checkpoints.
+        for (int i = 0; i < city.checkpoints.size(); i++) {
+            float[] cp = city.checkpoints.get(i);
+            float x = tacRect.left + cp[0] * sx, y = tacRect.top + cp[1] * sy;
+            fill.setColor(0xFF55623A);
+            c.drawRect(x - 3.5f * dp, y - 3.5f * dp, x + 3.5f * dp, y + 3.5f * dp, fill);
+            stroke.setColor(0xFFE8E2C0);
+            stroke.setStrokeWidth(1 * dp);
+            c.drawRect(x - 3.5f * dp, y - 3.5f * dp, x + 3.5f * dp, y + 3.5f * dp, stroke);
+        }
+        // Bases, police and fire stations, hospitals.
+        text.setTextSize(9 * dp);
+        for (int i = 0; i < city.facilities.size(); i++) {
+            City.Facility f = city.facilities.get(i);
+            float x = tacRect.left + f.x * sx, y = tacRect.top + f.y * sy;
+            int col = f.kind == City.FACILITY_BASE ? (f.fallen ? 0xFF8A3A30 : 0xFF6F8F3F) : f.kind == City.FACILITY_POLICE ? 0xFF3A6EC5
+                    : f.kind == City.FACILITY_FIRE ? 0xFFD0402A : 0xFFE8E8E8;
+            fill.setColor(col);
+            float r = (f.kind == City.FACILITY_BASE ? 5 : 3) * dp;
+            c.drawCircle(x, y, r, fill);
+            if (f.kind == City.FACILITY_HOSPITAL) {
+                fill.setColor(0xFFD03030);
+                c.drawRect(x - r * 0.7f, y - r * 0.2f, x + r * 0.7f, y + r * 0.2f, fill);
+                c.drawRect(x - r * 0.2f, y - r * 0.7f, x + r * 0.2f, y + r * 0.7f, fill);
+            }
+            if (f.kind == City.FACILITY_BASE) {
+                String label = f.fallen ? "BASE (OVERRUN)" : "ARMY BASE";
+                if (!tacClaim(label, x, y + r + 10 * dp)) continue;
+                text.setColor(0xFF000000);
+                c.drawText(label, x + 1, y + r + 11 * dp + 1, text);
+                text.setColor(f.fallen ? 0xFFFF8A7A : 0xFFD8E8B0);
+                c.drawText(label, x, y + r + 11 * dp, text);
+            }
+        }
+        // The towns and districts by name.
+        text.setTextSize(9.5f * dp);
+        for (int i = 0, n = city.districts.size(); i < n; i++) {
+            City.District d = city.districts.get(i);
+            if (d.tiles < 40) continue;
+            float x = tacRect.left + d.cx * sx, y = tacRect.top + d.cy * sy;
+            if (!tacClaim(d.name, x, y)) continue;
+            text.setColor(0xC0000000);
+            c.drawText(d.name, x + 1, y + 1, text);
+            text.setColor(0xFFF4EED8);
+            c.drawText(d.name, x, y, text);
+        }
+        // Where the camera is.
+        stroke.setColor(0xFFFFFFFF);
+        stroke.setStrokeWidth(1.2f * dp);
+        c.drawRect(tacRect.left + camX * sx, tacRect.top + camY * sy, tacRect.left + (camX + getWidth() / scale) * sx,
+                tacRect.top + (camY + barTop / scale) * sy, stroke);
+        // Title, key and close.
+        text.setTextSize(15 * dp);
+        text.setColor(0xFFF2F2F2);
+        c.drawText(city.name + " - tactical map", getWidth() / 2f, 30 * dp, text);
+        text.setTextSize(11 * dp);
+        text.setColor(0xFFB8BCC4);
+        int dead = 0, living = 0;
+        for (int k = 0; k < tacZ.length; k++) {
+            dead += tacZ[k];
+            living += tacH[k];
+        }
+        c.drawText("Dead " + dead + "   Living (outdoors) " + living + "   Rings: calls   Tap to go there",
+                getWidth() / 2f, tacRect.bottom + 20 * dp, text);
+        tacClose.set(getWidth() - 44 * dp, 8 * dp, getWidth() - 8 * dp, 40 * dp);
+        fill.setColor(0xE0303238);
+        c.drawRoundRect(tacClose, 9 * dp, 9 * dp, fill);
+        stroke.setColor(0xFFE0E0E0);
+        stroke.setStrokeWidth(2 * dp);
+        float mx = tacClose.centerX(), my = tacClose.centerY(), u = 6 * dp;
+        c.drawLine(mx - u, my - u, mx + u, my + u, stroke);
+        c.drawLine(mx - u, my + u, mx + u, my - u, stroke);
+    }
+
+    private final java.util.ArrayList<RectF> tacUsed = new java.util.ArrayList<RectF>();
+
+    /** Room for a label centred on (x, y) on the tactical map, without running into one already there. */
+    private boolean tacClaim(String label, float x, float y) {
+        float tw = text.measureText(label) / 2 + 2 * dp;
+        RectF r = new RectF(x - tw, y - text.getTextSize(), x + tw, y + 3 * dp);
+        for (int i = 0; i < tacUsed.size(); i++) if (RectF.intersects(tacUsed.get(i), r)) return false;
+        tacUsed.add(r);
+        return true;
+    }
+
+    private void tacticalTap(float x, float y) {
+        click();
+        if (tacRect.contains(x, y)) {
+            follow = null;
+            followV = null;
+            director = false;
+            camX = (x - tacRect.left) / tacRect.width() * world.city.worldW() - getWidth() / scale / 2;
+            camY = (y - tacRect.top) / tacRect.height() * world.city.worldH() - barTop / scale / 2;
+            clampCamera();
+        }
+        tactical = false;
     }
 
     /** Where things sitting on the tool bar go down to (above its fold tab). */
@@ -1206,6 +1438,19 @@ final class GameView extends View implements Menu.Host {
                 : android.view.HapticFeedbackConstants.LONG_PRESS);
     }
 
+    /** How far a sound carries, compared with the usual (most of a screen). */
+    private static float carry(int type) {
+        switch (type) {
+            case Sfx.EXPLOSION: case Sfx.CANNON: case Sfx.COLLAPSE: return 3.2f;
+            case Sfx.ROTOR: case Sfx.JET: return 2.6f;
+            case Sfx.SIREN: case Sfx.AMB_SIREN: case Sfx.ALARM: return 2.2f;
+            case Sfx.MG: case Sfx.RIFLE: case Sfx.SHOTGUN: case Sfx.SNIPER: case Sfx.HUNTING: case Sfx.BURST: return 1.9f;
+            case Sfx.PISTOL: case Sfx.REVOLVER: case Sfx.CRASH: case Sfx.HORN: return 1.4f;
+            case Sfx.GROAN: case Sfx.GROAN_DEEP: case Sfx.BITE: case Sfx.SPIT: return 0.7f;
+            default: return 1f;
+        }
+    }
+
     private void playSounds(float master) {
         haptics();
         float vw = getWidth() / scale, vh = getHeight() / scale;
@@ -1213,9 +1458,13 @@ final class GameView extends View implements Menu.Host {
         for (int i = 0; i < world.evCount; i++) {
             float ddx = world.evX[i] - cx, ddy = world.evY[i] - cy;
             float d = (float) Math.sqrt(ddx * ddx + ddy * ddy);
-            if (d > reach) continue;
-            float vol = master * (1 - 0.7f * d / reach);
             int type = world.evType[i];
+            // (10.32) Loud things carry: a battle, an explosion or a helicopter is heard a long way off, faintly;
+            // a groan only close by.
+            float r = reach * carry(type);
+            if (d > r) continue;
+            float f = d / r;
+            float vol = master * (1 - 0.85f * f) * (1 - 0.15f * f * f);
             if (type == Sfx.GROAN || type == Sfx.GROAN_DEEP || type == Sfx.SCREAM) vol *= 0.6f;
             sound.play(type, vol, Math.max(-1, Math.min(1, ddx / (vw / 2))) * 0.8f);
         }
@@ -1778,6 +2027,7 @@ final class GameView extends View implements Menu.Host {
             }
         }
         drawRailBridge(c, vx0, vx1, vy0, vy1);
+        drawOverpasses(c, vx0, vx1, vy0, vy1);
 
         if (detailed) {
             for (int i = 0, n = world.entities.size(); i < n; i++) {
@@ -3924,6 +4174,50 @@ final class GameView extends View implements Menu.Host {
      * Where the railway crosses the highway it's on a bridge: the deck is drawn over the traffic underneath
      * (with its shadow on the road), and any train on it over the deck.
      */
+    /**
+     * (10.32) The road bridges over the highway: drawn over the traffic going underneath, with a shadow below,
+     * concrete parapets and the road across; then whatever is driving over them, on top.
+     */
+    private void drawOverpasses(Canvas c, float vx0, float vx1, float vy0, float vy1) {
+        City city = world.city;
+        if (city.overpasses.isEmpty()) return;
+        boolean ew = city.hwyAxis == 0;
+        for (float[] o : city.overpasses) {
+            if (o[2] < vx0 || o[0] > vx1 || o[3] < vy0 || o[1] > vy1) continue;
+            // The shadow it throws on the highway.
+            fill.setColor(0x48000000);
+            if (ew) c.drawRect(o[2], o[1] + 4, o[2] + 7, o[3] - 4, fill);
+            else c.drawRect(o[0] + 4, o[3], o[2] - 4, o[3] + 7, fill);
+            // Deck and road.
+            fill.setColor(0xFF8E8A82);
+            c.drawRect(o[0] - (ew ? 2 : 0), o[1] - (ew ? 0 : 2), o[2] + (ew ? 2 : 0), o[3] + (ew ? 0 : 2), fill);
+            fill.setColor(0xFF3A3C40);
+            c.drawRect(o[0] + (ew ? 1.5f : 0), o[1] + (ew ? 0 : 1.5f), o[2] - (ew ? 1.5f : 0), o[3] - (ew ? 0 : 1.5f), fill);
+            // Parapets along both sides.
+            fill.setColor(0xFFC4C0B6);
+            if (ew) {
+                c.drawRect(o[0] - 2, o[1], o[0] + 1.5f, o[3], fill);
+                c.drawRect(o[2] - 1.5f, o[1], o[2] + 2, o[3], fill);
+            } else {
+                c.drawRect(o[0], o[1] - 2, o[2], o[1] + 1.5f, fill);
+                c.drawRect(o[0], o[3] - 1.5f, o[2], o[3] + 2, fill);
+            }
+            // A line down the middle.
+            fill.setColor(0xD0E8C440);
+            float mid = ew ? (o[0] + o[2]) / 2 : (o[1] + o[3]) / 2;
+            for (float t = ew ? o[1] + 3 : o[0] + 3; t < (ew ? o[3] : o[2]) - 3; t += 9) {
+                if (ew) c.drawRect(mid - 0.5f, t, mid + 0.5f, t + 5, fill);
+                else c.drawRect(t, mid - 0.5f, t + 5, mid + 0.5f, fill);
+            }
+            for (int i = 0, n = world.fleet.vehicles.size(); i < n; i++) {
+                Fleet.Vehicle v = world.fleet.vehicles.get(i);
+                if (Fleet.airborne(v) || v.type == Fleet.TRAIN || !world.fleet.onBridge(v)) continue;
+                if (v.x < o[0] - 10 || v.x > o[2] + 10 || v.y < o[1] - 10 || v.y > o[3] + 10) continue;
+                drawVehicle(c, v);
+            }
+        }
+    }
+
     private void drawRailBridge(Canvas c, float vx0, float vx1, float vy0, float vy1) {
         City city = world.city;
         if (city.railY0 < 0 || city.hwyAxis != 1) return;
@@ -4705,6 +4999,35 @@ final class GameView extends View implements Menu.Host {
                 text.setColor(alpha(0xFFF4EED8, districtAlpha * 0.85f));
                 c.drawText(label, sx, sy, text);
             }
+            // (10.32) The army's checkpoints, and a base that's been overrun.
+            text.setTextSize(10 * dp);
+            for (int i = 0; i < world.city.checkpoints.size(); i++) {
+                float[] cp = world.city.checkpoints.get(i);
+                float sx = screenX(cp[0]), sy = screenY(cp[1]) - 14 * dp;
+                if (sx < -60 * dp || sx > getWidth() + 60 * dp || sy < 0 || sy > barTop) continue;
+                String label = "CHECKPOINT";
+                float tw = text.measureText(label);
+                oval.set(sx - tw / 2 - 4 * dp, sy - 10 * dp, sx + tw / 2 + 4 * dp, sy + 3 * dp);
+                if (!claim(oval)) continue;
+                fill.setColor(alpha(0xFF3C4A2A, districtAlpha * 0.8f));
+                c.drawRoundRect(oval, 4 * dp, 4 * dp, fill);
+                text.setColor(alpha(0xFFE8E2C0, districtAlpha));
+                c.drawText(label, sx, sy, text);
+            }
+            for (int i = 0; i < world.city.facilities.size(); i++) {
+                City.Facility f = world.city.facilities.get(i);
+                if (f.kind != City.FACILITY_BASE || !f.fallen) continue;
+                float sx = screenX(f.x), sy = screenY(f.y) + 20 * dp;
+                if (sx < -80 * dp || sx > getWidth() + 80 * dp || sy < 0 || sy > barTop) continue;
+                String label = "BASE OVERRUN";
+                float tw = text.measureText(label);
+                oval.set(sx - tw / 2 - 4 * dp, sy - 10 * dp, sx + tw / 2 + 4 * dp, sy + 3 * dp);
+                if (!claim(oval)) continue;
+                fill.setColor(alpha(0xFF6A2018, districtAlpha * 0.85f));
+                c.drawRoundRect(oval, 4 * dp, 4 * dp, fill);
+                text.setColor(alpha(0xFFFFD8D0, districtAlpha));
+                c.drawText(label, sx, sy, text);
+            }
         }
     }
 
@@ -5097,6 +5420,13 @@ final class GameView extends View implements Menu.Host {
         if (e.type == Entity.CRAWLER) oval.set(-r * 1.2f, -r * 0.7f, r * 0.62f, r * 0.7f);
         else oval.set(-r * 0.62f, -r, r * 0.62f, r);
         c.drawOval(oval, fill);
+        if (e.armored) {
+            // (10.32) The dead in body armour: the vest over the torso, dark and torn.
+            fill.setColor(0xFF2A3038);
+            c.drawRect(-r * 0.5f, -r * 0.78f, r * 0.42f, r * 0.78f, fill);
+            fill.setColor(0xFF3E4652);
+            c.drawRect(-r * 0.36f, -r * 0.6f, r * 0.28f, r * 0.6f, fill);
+        }
         if (e.type == Entity.FIREFIGHTER) {
             // Reflective stripes on the turnout coat, and an air tank on the back.
             fill.setColor(0xFFE8D84A);
@@ -5751,7 +6081,7 @@ final class GameView extends View implements Menu.Host {
         String title;
         if (e.type == Entity.DOG) title = Names.dog(e.nameSeed) + "  -  Dog";
         else if (e.type == Entity.ZOMBIE_DOG) title = Names.dog(e.nameSeed) + "  -  Zombie dog";
-        else if (e.isZombie()) title = Entity.NAMES[e.type] + (e.origin >= 0 ? "  -  was " + Names.person(e.nameSeed) : "");
+        else if (e.isZombie()) title = (e.armored ? "Armored " : "") + Entity.NAMES[e.type] + (e.origin >= 0 ? "  -  was " + Names.person(e.nameSeed) : "");
         else if (e.type == Entity.COP && e.role == Entity.ROLE_SWAT)
             title = Country.swat(world.city.country.id)[1] + " " + Names.person(e.nameSeed) + "  -  " + Dispatch.name(e);
         else if (e.type == Entity.COP && e.role == Entity.ROLE_SAR) title = "Rescue specialist " + Names.person(e.nameSeed) + "  -  " + Dispatch.name(e);
@@ -6607,7 +6937,15 @@ final class GameView extends View implements Menu.Host {
             mode = MODE_NONE;
             return menu.onTouch(ev);
         }
-        if (world.controlled != null) return controlTouch(ev);
+        if (world.controlled != null) {
+            tactical = false;
+            return controlTouch(ev);
+        }
+        if (tactical) {
+            mode = MODE_NONE;
+            if (ev.getActionMasked() == MotionEvent.ACTION_UP) tacticalTap(ev.getX(), ev.getY());
+            return true;
+        }
         int action = ev.getActionMasked();
         switch (action) {
             case MotionEvent.ACTION_DOWN: {
@@ -6745,6 +7083,12 @@ final class GameView extends View implements Menu.Host {
                     }
                     return true;
                 }
+        }
+        if (!tacBtn.isEmpty() && tacBtn.contains(x, y)) {
+            click();
+            tactical = true;
+            tacTimer = 0;
+            return true;
         }
         if (!miniX.isEmpty() && miniX.contains(x, y) || !mapChip.isEmpty() && mapChip.contains(x, y)) {
             click();

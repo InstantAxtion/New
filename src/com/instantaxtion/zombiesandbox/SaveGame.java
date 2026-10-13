@@ -17,7 +17,7 @@ import java.util.ArrayList;
  * damaged or collapsed buildings.
  */
 final class SaveGame {
-    private static final int VERSION = 35;
+    private static final int VERSION = 36;
 
     private SaveGame() {
     }
@@ -283,6 +283,17 @@ final class SaveGame {
             out.writeInt(d.riotVans);
             out.writeInt(d.policeAir);
             out.writeInt(w.guardWave);
+            // Version 36: the outbreak's timeline, and army bases overrun.
+            out.writeInt(w.timeline.size());
+            for (World.Moment m : w.timeline) {
+                out.writeFloat(m.time);
+                out.writeUTF(m.text);
+            }
+            for (City.Facility f : w.city.facilities) out.writeBoolean(f.fallen);
+            float[] pf = w.fleet.pumpFuel();
+            out.writeInt(pf.length);
+            for (float f : pf) out.writeFloat(f);
+            out.writeBoolean(w.fleet.evacStarted);
         } finally {
             out.close();
         }
@@ -352,6 +363,8 @@ final class SaveGame {
         out.writeByte(e.job == Entity.J_LOOKOUT || e.job == Entity.J_RELIEF ? e.jobStep : -1);
         // Version 31: came in from outside the city.
         out.writeBoolean(e.outsider);
+        // Version 36: the dead in body armour.
+        out.writeBoolean(e.armored);
     }
 
     /** Each building's place in the city's list, while saving. */
@@ -376,7 +389,7 @@ final class SaveGame {
             if (version >= 15) cfg.setEdits(in.readUTF());
             if (version >= 26) cfg.outskirts = in.readInt();
             // (Cities saved before 10.4 were built without their government quarter.)
-            cfg.civic = version >= 35 ? 15 : version >= 34 ? 14 : version >= 33 ? 13 : version >= 32 ? 12 : version >= 31 ? 11 : version >= 30 ? 11 : version >= 29 ? 10 : version >= 28 ? 9 : version >= 27 ? 8 : version >= 26 ? 7 : version >= 25 ? 6 : version >= 24 ? 5 : version >= 23 ? 4 : version >= 22 ? 3 : version >= 20 ? 2 : version >= 19 ? 1 : 0;
+            cfg.civic = version >= 36 ? 16 : version >= 35 ? 15 : version >= 34 ? 14 : version >= 33 ? 13 : version >= 32 ? 12 : version >= 31 ? 11 : version >= 30 ? 11 : version >= 29 ? 10 : version >= 28 ? 9 : version >= 27 ? 8 : version >= 26 ? 7 : version >= 25 ? 6 : version >= 24 ? 5 : version >= 23 ? 4 : version >= 22 ? 3 : version >= 20 ? 2 : version >= 19 ? 1 : 0;
             // (Version 20 and later all build the same city.)
             World w = new World(cfg);
 
@@ -621,6 +634,23 @@ final class SaveGame {
                 d.policeAir = in.readInt();
                 w.guardWave = in.readInt();
             }
+            if (version >= 36) {
+                int moments = in.readInt();
+                for (int i = 0; i < moments; i++) {
+                    World.Moment m = new World.Moment();
+                    m.time = in.readFloat();
+                    m.text = in.readUTF();
+                    w.timeline.add(m);
+                }
+                for (City.Facility f : w.city.facilities) f.fallen = in.readBoolean();
+                float[] pf = w.fleet.pumpFuel();
+                int pn = in.readInt();
+                for (int i = 0; i < pn; i++) {
+                    float f = in.readFloat();
+                    if (i < pf.length) pf[i] = f;
+                }
+                w.fleet.evacStarted = in.readBoolean();
+            }
             d.copCount = copCount;
             d.soldierCount = soldierCount;
             w.afterLoad();
@@ -688,6 +718,7 @@ final class SaveGame {
             else if (e.job == Entity.J_LOOKOUT || e.job == Entity.J_RELIEF) e.job = Entity.J_HOMEBODY;
         }
         if (version >= 31) e.outsider = in.readBoolean();
+        if (version >= 36) e.armored = in.readBoolean();
         if (zone >= 0 && zone < d.zones.size()) e.zone = d.zones.get(zone);
         return e;
     }

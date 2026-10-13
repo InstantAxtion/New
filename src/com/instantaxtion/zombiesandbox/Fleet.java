@@ -179,6 +179,13 @@ final class Fleet {
         }
 
         /** Whether the roof lights are going (not on a quiet patrol, or parked at the station). */
+        /** (10.32) The checkpoint it was last waved through, and how long it's waited at one. */
+        int cleared = -1;
+        float cpWait;
+        /** (10.32) Fuel in the tank (0 to 1); the pump it's heading for (-1 none), and time there. */
+        float fuel = 1, refuelT, refuelCd;
+        int pumpAt = -1;
+
         boolean lightsOn() {
             if (broken) return false;
             if (type == FIRE_ENGINE) return state != IDLE && state != MUSTER;
@@ -359,7 +366,103 @@ final class Fleet {
         Vehicle v = new Vehicle();
         v.type = type;
         v.hp = v.maxHp = MAX_HP[type];
+        // (10.32) Ordinary cars set off with anything from a third of a tank to a full one.
+        v.fuel = type == CAR ? 0.3f + w.rnd.nextFloat() * 0.7f : 1;
         return v;
+    }
+
+    /** (10.32) How far a full tank takes an ordinary car (world units). */
+    static final float CAR_RANGE = 22000;
+    /** Fuel left in each gas pump (in full tanks), and the radio about pumps running dry. */
+    float[] pumpFuel;
+    private boolean drySaid;
+    int ranDry;
+
+    float[] pumpFuel() {
+        if (pumpFuel == null) {
+            pumpFuel = new float[city.pumps.size()];
+            java.util.Arrays.fill(pumpFuel, 6);
+        }
+        return pumpFuel;
+    }
+
+    /**
+     * (10.32) Ordinary cars burn fuel as they go. Running low, a driver pulls in at the nearest pump that has any
+     * (once things are bad, everyone tops up, and the pumps run dry); run out and the car is left where it stops.
+     * Returns true while it's stopped at a pump filling up (or has just run dry).
+     */
+    private boolean fuel(Vehicle v, float dt) {
+        if (v.type != CAR || v.player != null || v.model == M_BUS) return false;
+        v.fuel -= Math.abs(v.speed) * dt / CAR_RANGE;
+        v.refuelCd -= dt;
+        // (Before the emergency nobody runs dry: they fill up somewhere along the way.)
+        if (v.fuel <= 0.05f && w.alert < 2) v.fuel = 0.6f;
+        if (v.fuel <= 0) {
+            v.fuel = 0;
+            ranDry++;
+            dropRiders(v, false);
+            v.parked = true;
+            v.speed = 0;
+            v.field = null;
+            v.pumpAt = -1;
+            pullOver(v);
+            return true;
+        }
+        float[] pf = pumpFuel();
+        if (v.pumpAt >= 0 && v.pumpAt < pf.length) {
+            float[] p = city.pumps.get(v.pumpAt);
+            if (Math.hypot(p[0] - v.x, p[1] - v.y) < 30) {
+                v.speed = Math.max(0, v.speed - dt * 160);
+                v.refuelT += dt;
+                if (v.refuelT > 3.5f) {
+                    float take = Math.min(1 - v.fuel, pf[v.pumpAt]);
+                    v.fuel += take;
+                    pf[v.pumpAt] -= take;
+                    v.pumpAt = -1;
+                    v.refuelT = 0;
+                    v.field = null;
+                    v.destCd = 0;
+                    if (!newDestination(v)) v.stuckTimer = Math.max(v.stuckTimer, 5);
+                    if (!drySaid) {
+                        float left = 0, all = 0;
+                        for (float f : pf) left += f;
+                        all = pf.length * 6;
+                        if (pf.length > 0 && left < all * 0.25f) {
+                            drySaid = true;
+                            w.dispatch.say(Dispatch.WHO_INFO, null, "Gas stations across town are running dry.", v.x, v.y);
+                            w.timeline("The gas stations are running dry");
+                        }
+                    }
+                }
+                return true;
+            }
+            if (pf[v.pumpAt] < 0.05f) v.pumpAt = -1;
+            return false;
+        }
+        float want = w.alert >= 2 ? 0.55f : 0.12f;
+        if (v.fuel < want && v.refuelCd <= 0 && !v.through) {
+            v.refuelCd = 25;
+            int best = -1;
+            float bd = 2600;
+            for (int i = 0; i < pf.length; i++) {
+                if (pf[i] < 0.3f || city.pumps.get(i)[2] <= 0) continue;
+                float[] p = city.pumps.get(i);
+                float d = (float) Math.hypot(p[0] - v.x, p[1] - v.y);
+                if (d < bd) {
+                    bd = d;
+                    best = i;
+                }
+            }
+            if (best >= 0) {
+                float[] p = city.pumps.get(best);
+                float[] at = city.nearestDrivable(p[0], p[1]);
+                if (at != null && route(v, at[0], at[1])) {
+                    v.pumpAt = best;
+                    v.refuelT = 0;
+                }
+            }
+        }
+        return false;
     }
 
     /** Makes a truck, police car or helicopter into one of its other kinds (K_APC...). */
@@ -432,6 +535,34 @@ final class Fleet {
      * A car on the highway: anywhere along its carriageway (at the start), or coming on at the far end of it.
      * Most carry on through and off the other end; some come off at an interchange, into town.
      */
+    /** (10.32) The evacuation: cars still coming, and whether it has started. */
+    int evacLeft;
+    boolean evacStarted;
+    private float evacTimer;
+
+    /** A family car leaving town for the highway (and off the end of it), out of sight when it sets off. */
+    private void spawnEvacuee() {
+        float[] start = null;
+        for (int k = 0; k < 12; k++) {
+            float[] s = randomRoad();
+            if (s != null && city.inTown(s[0], s[1]) && !inView(s[0], s[1])) {
+                start = s;
+                break;
+            }
+        }
+        float[] run = city.highwayRun(w.rnd);
+        if (start == null || run == null) return;
+        Vehicle v = make(CAR);
+        v.state = CRUISE;
+        v.x = start[0];
+        v.y = start[1];
+        pickModel(v, false);
+        v.angle = w.rnd.nextInt(4) * (float) Math.PI / 2;
+        v.fleeing = true;
+        v.through = true;
+        if (route(v, run[2], run[3])) vehicles.add(v);
+    }
+
     private void spawnThrough(boolean anywhere) {
         float[] run = city.highwayRun(w.rnd);
         if (run == null) return;
@@ -1648,6 +1779,22 @@ final class Fleet {
             trainTimer = 70 + w.rnd.nextFloat() * 50;
             spawnTrain();
         }
+        // (10.32) The emergency broadcast: everyone with a car and somewhere to go makes for the highway at once.
+        if (w.alert >= 2 && !evacStarted) {
+            evacStarted = true;
+            evacLeft = city.hwyAxis >= 0 ? Math.max(10, trafficTarget / 2) : 0;
+            if (evacLeft > 0) w.timeline("People fleeing the city: the roads out are jammed");
+        }
+        if (evacLeft > 0) {
+            evacTimer -= dt;
+            if (evacTimer <= 0) {
+                evacTimer = 1.2f + w.rnd.nextFloat();
+                evacLeft--;
+                spawnEvacuee();
+            }
+        }
+        // (Tankers keep the pumps topped up while things are normal.)
+        if (w.alert < 2 && pumpFuel != null) for (int i = 0; i < pumpFuel.length; i++) pumpFuel[i] = Math.min(6, pumpFuel[i] + dt * 0.01f);
         // (10.29) The highway has traffic of its own, coming on at the ends, so it doesn't empty out.
         hwyTimer -= dt;
         if (hwyTimer <= 0) {
@@ -1668,7 +1815,9 @@ final class Fleet {
             }
         }
         buildGrid();
-        routeBudget = 6;
+        // (10.32) A route on the biggest maps searches a lot more road: fewer of them a frame there.
+        int area = city.w * city.h;
+        routeBudget = area > 600000 ? 2 : area > 300000 ? 3 : 6;
         // Who's out with lights and sirens: everyone else gives way to them.
         sirens.clear();
         for (int i = 0; i < vehicles.size(); i++) {
@@ -1914,6 +2063,7 @@ final class Fleet {
             for (int j = gridStart[gy * gridW + gx], je = gridStart[gy * gridW + gx + 1]; j < je; j++) {
                 if (j <= i) continue;
                 Vehicle b = gridV[j];
+                if (levels(a, b)) continue;
                 float dx = b.x - a.x, dy = b.y - a.y, reach = (a.length() + b.length()) * 0.62f;
                 float d2 = dx * dx + dy * dy;
                 if (d2 >= reach * reach) continue;
@@ -2086,6 +2236,9 @@ final class Fleet {
                 bt = ny * W + nx;
             }
         }
+        // (10.32) Or over a bridge.
+        int link = city.bridgeTo(t);
+        if (link >= 0 && field.get(link) < here && field.get(link) < best) bt = link;
         return bt;
     }
 
@@ -2106,6 +2259,9 @@ final class Fleet {
                 bt = ny * W + nx;
             }
         }
+        // (10.32) Or over a bridge.
+        int link = city.bridgeTo(t);
+        if (link >= 0 && field[link] < here && field[link] < best) bt = link;
         return bt;
     }
 
@@ -2149,7 +2305,7 @@ final class Fleet {
         for (int cx = c0x; cx <= c1x; cx++)
         for (int i = gridStart[cy * gridW + cx], ie = gridStart[cy * gridW + cx + 1]; i < ie; i++) {
             Vehicle o = gridV[i];
-            if (o == v || o.removedFromFleet) continue;
+            if (o == v || o.removedFromFleet || levels(v, o)) continue;
             float dx = o.x - v.x, dy = o.y - v.y;
             float ahead = dx * fx + dy * fy;
             if (ahead <= 0 || ahead > look) continue;
@@ -2158,6 +2314,14 @@ final class Fleet {
             // How fast it's going our way (oncoming or crossing counts as standing still).
             float lead = Math.max(0, o.speed * ((float) Math.cos(o.angle) * fx + (float) Math.sin(o.angle) * fy));
             float gap = ahead - (v.length() + o.length()) * 0.5f - 5;
+            // (10.32) In the panic, now and then someone runs right into the car in front.
+            if (gap < -3 && w.alert >= 2 && v.type == CAR && o.type == CAR && v.player == null && v.speed > 30 && !o.broken
+                    && w.rnd.nextFloat() < 0.04f) {
+                damage(v, v.maxHp * 0.7f, false);
+                damage(o, o.maxHp * 0.5f, false);
+                w.emit(Sfx.CRASH, v.x, v.y);
+                w.noise(v.x, v.y, 160);
+            }
             // Something stopped for good in the lane (parked, wrecked, or stood there a while and not just
             // queueing): pull out and go round it, slowly, rather than wait behind it for ever.
             boolean stuckThere = o.parked || o.broken || (o.stillT > 5 && !o.held && !o.queued)
@@ -2707,6 +2871,58 @@ final class Fleet {
         return new float[]{best.x, best.y};
     }
 
+    /**
+     * (10.32) The army's checkpoints on the road to the country base: anyone else pulls up at the line and waits
+     * to be waved through (and once things are bad, civilians are turned back). The army's own vehicles, and
+     * anything on lights and sirens, go straight through.
+     */
+    private float checkpointLimit(Vehicle v, float dt) {
+        if (v.player != null || v.type == TRUCK || v.type == TANK || v.lightsOn() || emergency(v)) return Float.MAX_VALUE;
+        float fx = (float) Math.cos(v.angle), fy = (float) Math.sin(v.angle);
+        for (int k = 0; k < city.checkpoints.size(); k++) {
+            if (v.cleared == k) continue;
+            float[] cp = city.checkpoints.get(k);
+            float rx = (float) Math.cos(cp[2]), ry = (float) Math.sin(cp[2]);
+            if (Math.abs(fx * rx + fy * ry) < 0.6f) continue;
+            float dx = cp[0] - v.x, dy = cp[1] - v.y;
+            float ahead = dx * fx + dy * fy, side = Math.abs(dx * -fy + dy * fx);
+            if (ahead < 0 || ahead > 140 || side > 26) continue;
+            float gap = ahead - 40 - v.length() * 0.5f;
+            if (gap > 3) return Math.max(6, (float) Math.sqrt(2 * 220 * gap));
+            v.cpWait += dt;
+            if (v.cpWait > 2.5f) {
+                v.cpWait = 0;
+                v.cleared = k;
+                // (Once it's on the news, the army turns civilians back.)
+                if (w.alert >= 2 && v.type == CAR && !v.fleeing) {
+                    v.field = null;
+                    v.destCd = 0;
+                    newDestination(v);
+                }
+            }
+            return 0;
+        }
+        return Float.MAX_VALUE;
+    }
+
+    /** (10.32) On a bridge over the highway and crossing it: up on the deck, above the traffic underneath. */
+    private boolean onDeck(Vehicle v) {
+        if (city.overpassAt(v.x, v.y) < 0) return false;
+        float along = city.hwyAxis == 0 ? Math.abs((float) Math.cos(v.angle)) : Math.abs((float) Math.sin(v.angle));
+        return along < 0.6f;
+    }
+
+    /** One on a bridge and the other on the highway under it: they pass without touching. */
+    private boolean levels(Vehicle a, Vehicle b) {
+        if (city.overpasses.isEmpty()) return false;
+        if (city.overpassAt(a.x, a.y) < 0 && city.overpassAt(b.x, b.y) < 0) return false;
+        return onDeck(a) != onDeck(b);
+    }
+
+    boolean onBridge(Vehicle v) {
+        return !city.overpasses.isEmpty() && onDeck(v);
+    }
+
     /** Running zombies over dents the car. */
     private void hit(Vehicle v, float impact) {
         if (impact > 0) damage(v, impact, false);
@@ -2725,10 +2941,16 @@ final class Fleet {
         if (city.rough(v.x, v.y)) max *= 0.65f;
         // Keep a safe distance behind whatever is ahead in the lane.
         max = Math.min(max, followLimit(v));
+        // (10.32) And stop at an army checkpoint.
+        if (!city.checkpoints.isEmpty()) max = Math.min(max, checkpointLimit(v, dt));
+        // (Turned back there: it has a new way to go, or none yet.)
+        if (v.field == null) return false;
         int W = city.w;
         // Follow the route tile by tile (the "path tile"), and drive in the lane beside it.
+        // (10.32) Crossing a bridge, the route steps from one end of it to the other.
+        boolean crossing = v.pathT >= 0 && city.bridgeTo(v.pathT) >= 0 && city.overpassAt(v.x, v.y) >= 0;
         if (v.pathField != v.field || v.pathT < 0 || v.field.get(v.pathT) >= City.FAR
-                || Math.hypot((v.pathT % W + 0.5f) * City.T - v.x, (v.pathT / W + 0.5f) * City.T - v.y) > 44) {
+                || (!crossing && Math.hypot((v.pathT % W + 0.5f) * City.T - v.x, (v.pathT / W + 0.5f) * City.T - v.y) > 44)) {
             v.pathField = v.field;
             v.pathT = -1;
             int ti = city.tileIndex(v.x, v.y), tx0 = ti % W, ty0 = ti / W, bestV = City.FAR;
@@ -2754,12 +2976,13 @@ final class Fleet {
         }
         // Pushed over onto the far side of a barrier (or a kerb) from its route tile: carry on from where it is
         // instead of driving along the barrier towards a lane it can't reach (the wrong way, on the highway).
-        {
+        if (!crossing) {
             int own = city.tileIndex(v.x, v.y);
             if (own != v.pathT) {
                 int mid = city.tileIndex(((v.pathT % W + 0.5f) * City.T + v.x) / 2, ((v.pathT / W + 0.5f) * City.T + v.y) / 2);
                 if (v.field.get(mid) >= City.FAR) {
-                    if (v.field.get(own) < City.FAR) v.pathT = own;
+                    // (10.32) Not a slip road running the other way, though: back onto the route beside it.
+                    if (v.field.get(own) < City.FAR && v.field.get(own) <= v.field.get(v.pathT) + 30) v.pathT = own;
                     // (Only a real barrier between: a kerb corner cut in a junction is nothing to plan round.)
                     else if (v.rerouteCd <= 0 && (city.solidTile(mid % W, mid / W) || city.onHighway(v.x, v.y))
                             && route(v, v.tx, v.ty)) {
@@ -2775,7 +2998,7 @@ final class Fleet {
         if (cur <= 4) return false;
         int tx = v.pathT % W, ty = v.pathT / W, nt = downhill(v.field, v.pathT), bx = nt % W, by = nt / W;
         if (bx == tx && by == ty) return false;
-        int ddx = bx - tx, ddy = by - ty;
+        int ddx = Integer.signum(bx - tx), ddy = Integer.signum(by - ty);
         // Keep to your own side of the road (left in Australia and Japan), in the middle of the lane.
         float off = city.laneOffset(bx, by, ddx, ddy);
         if (v.careful > 0) v.careful -= dt;
@@ -2833,7 +3056,7 @@ final class Fleet {
             for (; steps < look; steps++) {
                 int n = downhill(v.field, t);
                 if (n == t) break;
-                int sx = n % W - t % W, sy = n / W - t / W;
+                int sx = Integer.signum(n % W - t % W), sy = Integer.signum(n / W - t / W);
                 if (sx != ddx || sy != ddy) {
                     max = Math.min(max, round + steps * City.T * 0.75f);
                     break;
@@ -2849,7 +3072,7 @@ final class Fleet {
             for (int s = 0; s < 10; s++) {
                 int n = downhill(v.field, t);
                 if (n == t) break;
-                int sx = n % W - t % W, sy = n / W - t / W;
+                int sx = Integer.signum(n % W - t % W), sy = Integer.signum(n / W - t / W);
                 if (city.junctionIdAt((n % W + 0.5f) * City.T, (n / W + 0.5f) * City.T) < 0) {
                     float o2 = city.laneOffset(bx, by, sx, sy);
                     gx = bx * City.T + City.T / 2f - sy * o2;
@@ -2898,6 +3121,7 @@ final class Fleet {
      */
     private boolean updateTraffic(Vehicle v, float dt) {
         if (v.parked) return false;
+        if (fuel(v, dt)) return false;
         if (v.pulled) {
             // (Waiting for the officer: not stuck, not a jam.)
             v.stuckTimer = 0;

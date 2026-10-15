@@ -1903,6 +1903,7 @@ final class Dispatch {
             if (occupied(z.wall[k])) continue;
             z.up[k] = true;
             city.solid[z.wall[k]] = true;
+            city.solidChanged(z.wall[k]);
         }
         if (z.built >= 1)
             for (int g = 0; g < z.gateTiles.length; g++) setGate(z, g, z.gateOpen[g]);
@@ -1979,7 +1980,10 @@ final class Dispatch {
 
     private void setGate(SafeZone z, int g, boolean open) {
         z.gateOpen[g] = open;
-        for (int t : z.gateTiles[g]) city.solid[t] = !open;
+        for (int t : z.gateTiles[g]) {
+            city.solid[t] = !open;
+            city.markGate(t);
+        }
     }
 
     /** The dead clawing at a section of wall (or a gate). */
@@ -1991,6 +1995,7 @@ final class Dispatch {
             z.hp[seg] = 0;
             z.up[seg] = false;
             city.solid[z.wall[seg]] = false;
+            city.solidChanged(z.wall[seg]);
             z.breaches++;
             float[] p = z.innerOf(z.wall[seg], city.w);
             if (z.breachCd <= 0) {
@@ -2340,11 +2345,13 @@ final class Dispatch {
         for (int t : z.wall) {
             if (wallOwner != null && wallOwner[t] == z) wallOwner[t] = null;
             city.solid[t] = false;
+            city.solidChanged(t);
         }
         for (int[] g : z.gateTiles)
             for (int t : g) {
                 if (wallOwner != null && wallOwner[t] == z) wallOwner[t] = null;
                 city.solid[t] = false;
+                city.solidChanged(t);
             }
     }
 

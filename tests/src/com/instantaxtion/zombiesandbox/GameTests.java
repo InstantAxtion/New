@@ -2448,6 +2448,56 @@ public final class GameTests {
                 check(outposts >= 2, "ranger outposts as well as the station (" + outposts + ")");
             }
         });
+        test("10.36: walking routes right across a big map, straightened; vehicle routes aimed, the same cost", new Check() {
+            public void run() throws Exception {
+                CityConfig c = new CityConfig();
+                c.v[CityConfig.OPT_PRESET] = 1;
+                c.v[CityConfig.OPT_SIZE] = CityConfig.HUGE;
+                c.seed = 5;
+                c.normalize();
+                c.seed = 5;
+                City city = new City(c, 0.02f);
+                java.util.Random r = new java.util.Random(3);
+                int tried = 0, found = 0, oldFound = 0, straight = 0;
+                for (int k = 0; k < 60; k++) {
+                    float[] s = city.randomWalkable(r), g = city.randomWalkable(r);
+                    if (s == null || g == null) continue;
+                    tried++;
+                    int[] p = city.findPath(s[0], s[1], g[0], g[1], 9000);
+                    if (p != null) {
+                        found++;
+                        // Straightened: far fewer corners than tiles walked.
+                        if (p.length * 4 < Math.max(4, Math.abs(g[0] - s[0]) / City.T + Math.abs(g[1] - s[1]) / City.T)) straight++;
+                        // Every leg is a clear line over open ground.
+                        int at = city.tileIndex(s[0], s[1]);
+                        for (int t : p) {
+                            check(!city.solid[t] || city.gateTile(t), "a route corner on open ground");
+                            at = t;
+                        }
+                        check(at == city.tileIndex(g[0], g[1]), "the route ends where it was going");
+                    }
+                    if (city.oldFindPath(s[0], s[1], g[0], g[1], 9000) != null) oldFound++;
+                }
+                check(found * 10 >= tried * 9, "a walking route nearly every time, however far (" + found + " of " + tried + ")");
+                check(found > oldFound, "more than the old search found (" + found + " against " + oldFound + ")");
+                check(straight * 2 > found, "straightened into a few long legs (" + straight + " of " + found + ")");
+                // A vehicle's route aimed at it comes out just as short as searching everywhere.
+                int[] f1 = new int[city.w * city.h], f2 = new int[city.w * city.h];
+                int same = 0, both = 0;
+                for (int k = 0; k < 120 && both < 15; k++) {
+                    float[] s = city.nearestDrivable(city.randomWalkable(r)[0], city.randomWalkable(r)[1]);
+                    float[] q = city.randomWalkable(r), g = q == null ? null : city.nearestDrivable(q[0], q[1]);
+                    if (s == null || g == null) continue;
+                    int from = city.tileIndex(s[0], s[1]);
+                    city.driveField(f1, g[0], g[1], false, from);
+                    city.driveField(f2, g[0], g[1], false, -1);
+                    if (f2[from] >= City.FAR) continue;
+                    both++;
+                    if (f1[from] == f2[from]) same++;
+                }
+                check(both >= 5 && same == both, "aimed vehicle routes are as short as a full search (" + same + " of " + both + ")");
+            }
+        });
         test("every screen draws", new Check() {
             public void run() throws Exception {
                 GameView v = new GameView(new android.app.Activity());

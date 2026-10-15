@@ -191,6 +191,9 @@ final class Entity {
     transient int lodStep = 1;
     /** (10.34) Until a fleeing civilian looks round for a cop or soldier again. */
     transient float protectorCd;
+    /** (10.36) Following a route: the closest yet to the point it's heading for, and how long since that improved. */
+    transient float pathBest = Float.MAX_VALUE, pathStall;
+    transient int[] pathSeen;
     /** Which way (1 or -1) this one steps round obstacles it walks straight into. */
     float slideSide = 1;
     /** Breath for sprinting (0 to 1): the living tire, the dead don't. */

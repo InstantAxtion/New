@@ -2,11 +2,18 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.35";
-    static final int VERSION_CODE = 73;
+    static final String VERSION = "10.36";
+    static final int VERSION_CODE = 74;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.36  -  New pathfinding (AI rebuild, part 1)",
+                    "A new way of finding the way on foot, for the living and the dead: the map is divided into blocks, a route is planned across the blocks first and then filled in step by step, so a route is found however far it is (the old search gave up on long trips on the big maps, and people fell back to walking straight at walls). Routes are straightened into a few long lines instead of a staircase of tiles, and keep a step back from walls and corners.",
+                    "Someone who stops getting any closer on their route (stuck on a corner or in a crowd) steps aside and plans it again; one pushed off their line plans it again from where they are. Safe zone gates count as doors on the route, and the routes know at once when a barricade, a wall or a fallen building changes the way.",
+                    "About three times as many new walking routes can be planned each second, since the new search is quicker.",
+                    "Vehicles' routes are searched towards the vehicle instead of spreading out evenly from where it's going: the same routes, two to three times quicker to work out.",
+            },
             {
                     "10.35  -  More police than soldiers",
                     "A city always has far more police than soldiers: every soldier on the map (the town's base, the base out in the country and the checkpoints together) comes to no more than two in five of its police officers. A Massive city has around 460 officers to under 180 soldiers.",

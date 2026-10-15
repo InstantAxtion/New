@@ -1594,7 +1594,8 @@ final class World {
     private int lodCalm = 3, lodBusy = 2;
 
     void update(float dt) {
-        pathBudget = Math.min(6, pathBudget + dt * 12);
+        // ((10.36) The walking router is quick enough for far more routes than before: about forty a second.)
+        pathBudget = Math.min(12, pathBudget + dt * 40);
         time += dt;
         shake = Math.max(0, shake - dt * 3);
         if (messageTime > 0) messageTime -= dt;
@@ -4802,6 +4803,7 @@ final class World {
         float[] b = {tx * City.T + City.T / 2f, ty * City.T + City.T / 2f, 220, i, t};
         city.tiles[i] = City.FENCE;
         city.solid[i] = true;
+        city.solidChanged(i);
         barriers.add(b);
         fieldTimer = 0;
         return b;
@@ -4812,6 +4814,7 @@ final class World {
         int i = (int) b[3];
         city.tiles[i] = (byte) b[4];
         city.solid[i] = false;
+        city.solidChanged(i);
         fieldTimer = 0;
     }
 
@@ -6213,28 +6216,68 @@ final class World {
         int[] p = e.path;
         if (p == null || p.length == 0) return false;
         int w = city.w;
+        if (e.pathSeen != p) {
+            e.pathSeen = p;
+            e.pathBest = Float.MAX_VALUE;
+            e.pathStall = 0;
+        }
+        // (10.36) The routes are straight lines from corner to corner now (see Nav): on to the next corner once
+        // this one is reached, or once it can be seen past and the one after is clear to walk to.
         while (e.pathIdx < p.length) {
             int t = p[e.pathIdx];
             float px = (t % w + 0.5f) * City.T, py = (t / w + 0.5f) * City.T;
             float dx = px - e.x, dy = py - e.y, dd = (float) Math.sqrt(dx * dx + dy * dy) + 0.001f;
-            if (dd > 60) {
-                // Pushed well off the route: plan it again.
+            if (dd < 8 && e.pathIdx < p.length - 1) {
+                e.pathIdx++;
+                e.pathBest = Float.MAX_VALUE;
+                continue;
+            }
+            // Pushed well off the line it was walking: plan it again from here.
+            float ax, ay;
+            if (e.pathIdx > 0) {
+                int q = p[e.pathIdx - 1];
+                ax = (q % w + 0.5f) * City.T;
+                ay = (q / w + 0.5f) * City.T;
+            } else {
+                ax = px;
+                ay = py;
+            }
+            if (distToSegment(e.x, e.y, ax, ay, px, py) > 40) {
                 e.path = null;
                 return false;
             }
-            if (dd < 7 && e.pathIdx < p.length - 1) {
-                e.pathIdx++;
-                continue;
+            // Getting no closer (stuck on a corner, in a crowd): give it a moment, then plan again.
+            if (dd < e.pathBest - 2) {
+                e.pathBest = dd;
+                e.pathStall = 0;
+            } else if ((e.pathStall += 1 / 30f) > 2.5f) {
+                e.pathStall = 0;
+                e.pathBest = Float.MAX_VALUE;
+                e.path = null;
+                e.unstick = 0.4f;
+                e.unstickAngle = (float) Math.atan2(dy, dx) + (rnd.nextBoolean() ? 1.2f : -1.2f);
+                return false;
             }
-            int cur = city.tileIndex(e.x, e.y);
-            if (keepsRules(e) && city.tiles[t] == City.ROAD && city.tiles[cur] != City.ROAD && carComing(px, py)) {
-                steer(e, 0, 0, 0);
-                return true;
+            // Waiting at the kerb for traffic before stepping into the road.
+            if (keepsRules(e)) {
+                int ahead = city.tileIndex(e.x + dx / dd * 12, e.y + dy / dd * 12), cur = city.tileIndex(e.x, e.y);
+                if (ahead >= 0 && cur >= 0 && city.tiles[ahead] == City.ROAD && city.tiles[cur] != City.ROAD
+                        && carComing((ahead % w + 0.5f) * City.T, (ahead / w + 0.5f) * City.T)) {
+                    steer(e, 0, 0, 0);
+                    return true;
+                }
             }
             steer(e, dx / dd, dy / dd, speed);
             return true;
         }
         return false;
+    }
+
+    private static float distToSegment(float x, float y, float ax, float ay, float bx, float by) {
+        float vx = bx - ax, vy = by - ay, l2 = vx * vx + vy * vy;
+        float t = l2 < 0.001f ? 0 : Math.max(0, Math.min(1, ((x - ax) * vx + (y - ay) * vy) / l2));
+        float dx = x - (ax + vx * t), dy = y - (ay + vy * t);
+        return (float) Math.sqrt(dx * dx + dy * dy);
     }
 
     /** A pharmacy with stock left, if one is closer than the hospital. */

@@ -700,6 +700,7 @@ final class City {
             for (int y = ty; y < ty + lh; y++)
                 for (int x = tx; x < tx + lw; x++) {
                     solid[y * w + x] = true;
+                    solidChanged(y * w + x);
                     opaque[y * w + x] = true;
                     roadDir[y * w + x] = 0;
                 }
@@ -721,7 +722,10 @@ final class City {
         roadDir[i] = (byte) (nt == ROAD ? 3 : 0);
         if (live) {
             solid[i] = nt == TREE || nt == FENCE;
+            solidChanged(i);
             opaque[i] = false;
+            // (The walking costs of the pavement and road change too.)
+            if (walkCost != null) walkCost[i] = (byte) (nt != ROAD ? 1 : 8);
         }
         return null;
     }
@@ -1368,6 +1372,7 @@ final class City {
     }
 
     private void computeSolid() {
+        nav = null;
         for (int i = 0; i < tiles.length; i++) {
             byte t = tiles[i];
             solid[i] = t == BUILDING || t == TREE || t == CAR || t == STATUE || t == FENCE || t == PUMP || (t == WATER && !isFord(i)) || t == ROCK;
@@ -7309,6 +7314,7 @@ final class City {
                 if (tiles[k] != BUILDING) continue;
                 tiles[k] = RUBBLE;
                 solid[k] = false;
+                solidChanged(k);
                 opaque[k] = false;
             }
         drawRubble(b);
@@ -10742,31 +10748,38 @@ final class City {
         if (p == null) return false;
         // Dial's algorithm: step costs are small whole numbers, so a ring of buckets (one per distance) does
         // the priority queue's job without the boxing.
-        for (int b = 0; b < 32; b++) {
+        // ((10.36) And towards the vehicle, when there is one: A*, each tile ranked by its distance to the target
+        // plus at least the cost of the rest of the way to the vehicle, so the search heads for it instead of
+        // spreading out evenly over half the map. The distances it leaves are the same.)
+        for (int b = 0; b < DIAL; b++) {
             if (dialB[b] == null) dialB[b] = new int[256];
             dialN[b] = 0;
         }
+        boolean aim = from >= 0;
         int s0 = tileIndex(p[0], p[1]);
         dist[s0] = 0;
-        dialPush(s0, 0);
+        int k0 = aim ? 2 * (Math.abs(s0 % w - fx) + Math.abs(s0 / w - fy)) : 0;
+        dialPush(s0, k0);
         int left = 1;
-        for (int d = 0; left > 0 && d <= stopAt; d++) {
-          int bk = d & 31;
+        for (int d = k0; left > 0 && d <= stopAt; d++) {
+          int bk = d & (DIAL - 1);
           while (dialN[bk] > 0) {
             int t = dialB[bk][--dialN[bk]];
             left--;
-            if (dist[t] != d) continue;
             int tx = t % w, ty = t / w;
+            int ht = aim ? 2 * (Math.abs(tx - fx) + Math.abs(ty - fy)) : 0;
+            if (dist[t] + ht != d) continue;
+            int gt = dist[t];
             // Back at the vehicle: finish off the lanes round it, then stop.
-            if (stopAt == Integer.MAX_VALUE && (fromRoad ? t == from : Math.abs(tx - fx) <= 1 && Math.abs(ty - fy) <= 1)) stopAt = d + 160;
+            if (stopAt == Integer.MAX_VALUE && (fromRoad ? t == from : Math.abs(tx - fx) <= 1 && Math.abs(ty - fy) <= 1)) stopAt = d + (aim ? 60 : 160);
             int link = bridgeTo(t);
             for (int k = 0; k < (link >= 0 ? 5 : 4); k++) {
                 if (k == 4) {
-                    // (10.32) Over the bridge, from its other end.
-                    int c = driveCost(link) + 8;
-                    if (driveCost(link) >= 0 && d + c < dist[link]) {
-                        dist[link] = d + c;
-                        dialPush(link, d + c);
+                    // (10.32) Over the bridge, from its other end. ((10.36) Costed as the eight tiles it spans.)
+                    int c = driveCost(link) + 16;
+                    if (driveCost(link) >= 0 && gt + c < dist[link]) {
+                        dist[link] = gt + c;
+                        dialPush(link, gt + c + (aim ? 2 * (Math.abs(link % w - fx) + Math.abs(link / w - fy)) : 0));
                         left++;
                     }
                     continue;
@@ -10791,22 +10804,24 @@ final class City {
                     byte rd = roadDir[n];
                     if ((rd == 1 && k < 2) || (rd == 2 && k >= 2)) c += 14;
                 }
-                if (c < 0 || d + c >= dist[n]) continue;
-                dist[n] = d + c;
-                dialPush(n, d + c);
+                if (c < 0 || gt + c >= dist[n]) continue;
+                dist[n] = gt + c;
+                dialPush(n, gt + c + (aim ? 2 * (Math.abs(nx - fx) + Math.abs(ny - fy)) : 0));
                 left++;
             }
           }
         }
-        for (int b = 0; b < 32; b++) dialN[b] = 0;
+        for (int b = 0; b < DIAL; b++) dialN[b] = 0;
         return true;
     }
 
-    private final int[][] dialB = new int[32][];
-    private final int[] dialN = new int[32];
+    /** Buckets in the ring: more than the biggest step a search's ranking can take (a bridge, 40). */
+    private static final int DIAL = 64;
+    private final int[][] dialB = new int[DIAL][];
+    private final int[] dialN = new int[DIAL];
 
     private void dialPush(int t, int d) {
-        int b = d & 31;
+        int b = d & (DIAL - 1);
         if (dialN[b] == dialB[b].length) dialB[b] = Arrays.copyOf(dialB[b], dialB[b].length * 2);
         dialB[b][dialN[b]++] = t;
     }
@@ -11211,7 +11226,39 @@ final class City {
      * A walking route from (sx, sy) to (tx, ty) as tile indices (start excluded), keeping to pavements and
      * crossings like walkFieldFromPoints, or null if there's none within maxExpand tiles searched.
      */
+    /** (10.36) The walking router (see Nav), made when it's first needed. */
+    private Nav nav;
+    /** Gates in the safe zones' walls: doors, open or shut, never walls to route round. */
+    private boolean[] gates;
+
+    void solidChanged(int i) {
+        if (nav != null) nav.touch(i);
+    }
+
+    void markGate(int i) {
+        if (gates == null) gates = new boolean[w * h];
+        if (!gates[i]) {
+            gates[i] = true;
+            solidChanged(i);
+        }
+    }
+
+    boolean gateTile(int i) {
+        return gates != null && gates[i];
+    }
+
+    /**
+     * (10.36) A walking route from (sx, sy) to (tx, ty): the tiles to head for in turn (the corners of a
+     * straightened route, the last one the destination), or null if there's no way there. By the hierarchical
+     * router, however far it is (maxExpand only matters to the old search, kept as oldFindPath).
+     */
     int[] findPath(float sx, float sy, float tx, float ty, int maxExpand) {
+        if (walkCost == null) computeWalkCost();
+        if (nav == null) nav = new Nav(this);
+        return nav.path(sx, sy, tx, ty);
+    }
+
+    int[] oldFindPath(float sx, float sy, float tx, float ty, int maxExpand) {
         if (walkCost == null) computeWalkCost();
         if (astarG == null) {
             astarG = new int[w * h];

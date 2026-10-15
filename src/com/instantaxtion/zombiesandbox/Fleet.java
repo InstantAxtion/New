@@ -601,6 +601,18 @@ final class Fleet {
         v.color = m == M_TAXI ? c.taxiColor : m == M_BUS ? c.busColor : c.carColors[w.rnd.nextInt(c.carColors.length)];
     }
 
+    /** (10.33) A road somewhere in town (for an army patrol through the streets), or null. */
+    float[] randomTownRoad() {
+        int x0 = city.townX0, y0 = city.townY0, x1 = Math.max(x0 + 1, city.townX1), y1 = Math.max(y0 + 1, city.townY1);
+        for (int k = 0; k < 100; k++) {
+            int tx = x0 + w.rnd.nextInt(x1 - x0), ty = y0 + w.rnd.nextInt(y1 - y0);
+            if (tx < 0 || ty < 0 || tx >= city.w || ty >= city.h) continue;
+            if (city.tiles[ty * city.w + tx] == City.ROAD && (city.oneWay == null || city.oneWay[ty * city.w + tx] == 0))
+                return new float[]{tx * City.T + City.T / 2f, ty * City.T + City.T / 2f};
+        }
+        return null;
+    }
+
     private float[] randomRoad() {
         for (int k = 0; k < 200; k++) {
             int tx = w.rnd.nextInt(city.w), ty = w.rnd.nextInt(city.h);

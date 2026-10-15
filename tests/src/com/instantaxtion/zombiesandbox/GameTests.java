@@ -1831,7 +1831,9 @@ public final class GameTests {
                 City.Facility base = w.city.nearestFacility(City.FACILITY_BASE, w.city.worldW() / 2, w.city.worldH() / 2);
                 java.util.ArrayList<Entity> squad = new java.util.ArrayList<Entity>();
                 for (Entity e : w.entities)
-                    if (squad.size() < 4 && e.type == Entity.SOLDIER && !e.dead && Math.hypot(e.x - base.x, e.y - base.y) < 400) squad.add(e);
+                    // (Free ones: since 10.33 a patrol may already be mounting up.)
+                    if (squad.size() < 4 && e.type == Entity.SOLDIER && !e.dead && e.task == Dispatch.T_NONE && e.rig == null
+                            && Math.hypot(e.x - base.x, e.y - base.y) < 400) squad.add(e);
                 check(squad.size() >= 2, "soldiers at the base (" + squad.size() + ")");
                 // A call a long way off: they climb into a truck rather than walk.
                 float far = 0;
@@ -1849,6 +1851,8 @@ public final class GameTests {
                 inc.place = "the test";
                 inc.field = w.city.walkField16(inc.x, inc.y);
                 w.dispatch.incidents.add(inc);
+                // (Some of the dead there, so the first patrol car to look in doesn't close it as a false alarm.)
+                for (int k = 0; k < 4; k++) w.spawn(Entity.ZOMBIE, q[0] + k * 6, q[1]);
                 check(w.fleet.mountUp(squad, inc), "the squad mounts up");
                 boolean rolling = false;
                 for (int f = 0; f < 30 * 60 && !rolling; f++) {
@@ -1958,6 +1962,13 @@ public final class GameTests {
                 front.y = shooter.y;
                 zed.x = shooter.x + 90;
                 zed.y = shooter.y;
+                // (Nobody else about: since 10.33 the city is busier with police and soldiers.)
+                float[] away = w.city.findWalkable(w.city.worldW() * 0.9f, w.city.worldH() * 0.9f);
+                for (Entity o : w.entities)
+                    if (o != shooter && o != front && o != zed && !o.dead && !o.isZombie() && Math.hypot(o.x - shooter.x, o.y - shooter.y) < 200) {
+                        o.x = away[0];
+                        o.y = away[1];
+                    }
                 check(!(Boolean) fil.invoke(w, shooter, zed, 90f), "fires past the soldier right in front");
                 front.x = shooter.x + 45;
                 check((Boolean) fil.invoke(w, shooter, zed, 90f) || true, "someone square in the path further out");
@@ -1998,7 +2009,9 @@ public final class GameTests {
                         check(p != null && f[city.tileIndex(p[0], p[1])] < City.FAR, fa.name + " is on the road network");
                     }
                 }
-                // Nobody knows at first: a couple of calls aren't news yet.
+                // Nobody knows at first: a couple of calls aren't news yet. (None of the dead left from above to
+                // bring in more.)
+                w.clearZombies();
                 w.outbreak = true;
                 w.dispatch.calls = 2;
                 for (int f = 0; f < 30 * 5; f++) w.update(1 / 30f);
@@ -2232,6 +2245,102 @@ public final class GameTests {
                     l.evCount = 0;
                 }
                 check(l.fleet.evacStarted, "the evacuation starts");
+            }
+        });
+        test("10.33: nothing joins the highway, more police and army, fuller maps, several outbreaks shared out", new Check() {
+            public void run() throws Exception {
+                // Nothing but the slip roads and bridges (and the turn-round at each end of the map) meets the
+                // highway, and no house fronts onto it.
+                for (int[] ps : new int[][]{{9, 4}, {1, 5}, {8, 3}}) {
+                    CityConfig c = new CityConfig();
+                    c.v[CityConfig.OPT_PRESET] = ps[0];
+                    c.seed = ps[1];
+                    c.normalize();
+                    c.seed = ps[1];
+                    City city = new City(c, 0.02f);
+                    if (city.oneWay == null) continue;
+                    java.lang.reflect.Field sf = City.class.getDeclaredField("slipTile");
+                    sf.setAccessible(true);
+                    boolean[] slip = (boolean[]) sf.get(city);
+                    int len = city.hwyAxis == 0 ? city.w : city.h, touching = 0, doors = 0;
+                    for (int y = 0; y < city.h; y++)
+                        for (int x = 0; x < city.w; x++) {
+                            int i = y * city.w + x, along = city.hwyAxis == 0 ? x : y;
+                            if (city.oneWay[i] != 0 || along < 3 || along >= len - 3) continue;
+                            byte t = city.tiles[i];
+                            if (t != City.ROAD && t != City.DIRT && t != City.SIDEWALK && t != City.LOT) continue;
+                            if ((slip != null && slip[i]) || city.bridgeTo(i) >= 0) continue;
+                            boolean adj = false;
+                            for (int[] d : new int[][]{{1, 0}, {-1, 0}, {0, 1}, {0, -1}}) {
+                                int nx = x + d[0], ny = y + d[1];
+                                if (nx >= 0 && ny >= 0 && nx < city.w && ny < city.h && city.oneWay[ny * city.w + nx] != 0) adj = true;
+                            }
+                            if (adj) touching++;
+                        }
+                    for (City.Building b : city.buildings) {
+                        if (b.doorX <= 0) continue;
+                        int tx = (int) (b.doorX / City.T), ty = (int) (b.doorY / City.T);
+                        for (int dy = -2; dy <= 2; dy++)
+                            for (int dx = -2; dx <= 2; dx++) {
+                                int nx = tx + dx, ny = ty + dy;
+                                if (nx >= 0 && ny >= 0 && nx < city.w && ny < city.h && city.oneWay[ny * city.w + nx] != 0) {
+                                    doors++;
+                                    dx = dy = 3;
+                                }
+                            }
+                    }
+                    check(touching == 0, "map " + ps[0] + ": no road meets the highway but the slip roads (" + touching + ")");
+                    check(doors == 0, "map " + ps[0] + ": no front door on the highway (" + doors + ")");
+                }
+                // Fuller country: the city's own map is mostly town and towns now.
+                CityConfig g = new CityConfig();
+                g.v[CityConfig.OPT_PRESET] = 1;
+                g.seed = 5;
+                g.normalize();
+                g.seed = 5;
+                City full = new City(g, 0.02f);
+                int green = 0;
+                for (byte t : full.tiles) if (t == City.GRASS || t == City.TREE || t == City.ROCK || t == City.WATER) green++;
+                check(green * 100 / full.tiles.length < 40, "under 40% of the map is fields and woods (" + green * 100 / full.tiles.length + "%)");
+                // More police and soldiers.
+                CityConfig m = new CityConfig();
+                m.v[CityConfig.OPT_PRESET] = 8;
+                m.v[CityConfig.OPT_SIZE] = CityConfig.HUGE;
+                m.v[CityConfig.OPT_ZOMBIES] = 0;
+                m.seed = 3;
+                m.normalize();
+                m.seed = 3;
+                World w = new World(m);
+                w.setMaxPopulation(0);
+                w.populate(m);
+                int cops = 0, soldiers = 0;
+                for (Entity e : w.entities) {
+                    if (e.type == Entity.COP) cops++;
+                    if (e.type == Entity.SOLDIER) soldiers++;
+                }
+                check(cops >= 150, "plenty of police on a Massive map (" + cops + ")");
+                check(soldiers >= 120, "and plenty of soldiers (" + soldiers + ")");
+                // Three outbreaks at once round the city: every one of them gets officers.
+                City city = w.city;
+                float[][] spots = {{0.25f, 0.3f}, {0.75f, 0.35f}, {0.5f, 0.75f}};
+                float[][] at = new float[3][];
+                for (int s = 0; s < 3; s++) {
+                    float x = city.townX0 + (city.townX1 - city.townX0) * spots[s][0], y = city.townY0 + (city.townY1 - city.townY0) * spots[s][1];
+                    at[s] = city.nearestDrivable(x * City.T, y * City.T);
+                    for (int k = 0; k < 8 + s * 4; k++) w.spawn(Entity.ZOMBIE, at[s][0] + (k % 4) * 8, at[s][1] + (k / 4) * 8);
+                }
+                boolean[] served = new boolean[3];
+                for (int f = 0; f < 30 * 60; f++) {
+                    w.update(1 / 30f);
+                    w.evCount = 0;
+                    for (Dispatch.Incident inc : w.dispatch.incidents)
+                        for (int s = 0; s < 3; s++)
+                            if (Math.hypot(inc.x - at[s][0], inc.y - at[s][1]) < 400 && inc.cops + w.fleet.inbound(inc) > 0) served[s] = true;
+                    // (Or it's already been put down.)
+                    if (f > 30 * 5) for (int s = 0; s < 3; s++) if (w.countZombiesNear(at[s][0], at[s][1], 400) == 0) served[s] = true;
+                    if (served[0] && served[1] && served[2]) break;
+                }
+                for (int s = 0; s < 3; s++) check(served[s], "outbreak " + (s + 1) + " of 3 gets officers");
             }
         });
         test("every screen draws", new Check() {

@@ -2,11 +2,19 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.32";
-    static final int VERSION_CODE = 70;
+    static final String VERSION = "10.33";
+    static final int VERSION_CODE = 71;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.33  -  Fuller maps, more police and army",
+                    "Nothing joins the highway any more except its slip roads and bridges: no country lane runs up to it, no house has its drive onto it or fronts it, and there are no gaps in the median to cross over where there's a bridge to use instead (in new cities).",
+                    "Fuller maps: the town reaches further out on the big maps, the country round it has half as many towns and hamlets again (closer together, more of them proper small towns, the hamlets with a cross street of their own), deeper rows of houses round the edge of town, and the wild country is kept to the far edge of the map instead of a whole side.",
+                    "More police and soldiers: about half as many officers again (up to 360), more of them out in patrol cars, and bigger army garrisons (up to 120 at a base).",
+                    "The army is busier: a Humvee patrol goes out from each base even while all is quiet, and once the news is out up to three at a time, into town and round the calls as well as the roads near the base.",
+                    "Several outbreaks at once are handled better: the worst calls are served first, each call gets its fair share of the officers rather than the first one taking everyone, some are kept back for the next call (unless officers are down), and officers still on their way to a well-covered call are diverted to one with nobody at it.",
+            },
             {
                     "10.32  -  Bridges, fuel and the tactical map",
                     "Bridges over the highway at the interchanges in new cities: the road from town goes up and over on a bridge, with slip roads on and off both carriageways, so traffic can join the highway either way. Cars on the bridge and on the highway under it pass without touching, and nobody gets off the highway where there's no slip road.",

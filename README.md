@@ -428,6 +428,10 @@ working army checkpoints, fuel and gas stations, evacuation traffic jams, fallba
 hordes drawn to fights, fires spreading through blocks, a full-screen tactical map, an outbreak timeline,
 sounds that carry with distance, a loading progress bar and a low-memory warning for the biggest maps.
 
+**Fuller maps, more police and army (10.33):** nothing but slip roads and bridges joins the highway, fuller
+maps with more towns and hamlets and less empty country, more police and soldiers, army Humvee patrols, and
+officers shared out fairly between several outbreaks at once.
+
 **Countryside:** Villages, small towns and every Massive map are surrounded by open country:
 winding dirt lanes out to the edge of the map, farms and lonely cabins along them, woods, and
 hamlets (a short street of cottages with a lane back to town). A town out in the country is never a

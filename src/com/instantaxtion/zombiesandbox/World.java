@@ -539,7 +539,7 @@ final class World {
         // (A small town's own police station out in the country has its own officers, on top of the city's.)
         for (City.Facility f : city.facilities) if (f.kind == City.FACILITY_POLICE && f.satellite) cops += 6;
         // Most officers are out in patrol cars, two to a car; the rest are at their precinct.
-        int cars = stations > 0 ? Math.max(1, (int) (cops * 0.6f / 2)) : 0;
+        int cars = stations > 0 ? Math.max(1, (int) (cops * 0.65f / 2)) : 0;
         fleet.patrolTarget = cars;
         int made = 0;
         City.Facility[] precincts = new City.Facility[Math.max(1, stations)];

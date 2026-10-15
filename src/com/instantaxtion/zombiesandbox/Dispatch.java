@@ -520,7 +520,8 @@ final class Dispatch {
     private float baseCd = 5;
 
     /**
-     * The bases don't just wait to be called (cities built since 10.10): once the city knows, a Humvee patrol
+     * The bases don't just wait to be called (cities built since 10.10): a Humvee patrol (since 10.33 even before the
+     * city knows, and more of them into town after)
      * sweeps the roads near each base every few minutes; a call close by that has no soldiers gets a quick
      * reaction force in a Humvee straight away; and when the dead reach the wire the alarm goes up (and the
      * patrols wait until it's quiet again).
@@ -576,11 +577,22 @@ final class Dispatch {
                     continue;
                 }
             }
-            // A patrol round the roads near the base.
-            if (w.alert >= 1 && base.patrolCd <= 0 && free.size() >= 7 && w.fleet.basePatrols(base) == 0) {
-                base.patrolCd = 120 + w.rnd.nextFloat() * 60;
-                float a = w.rnd.nextFloat() * (float) Math.PI * 2, dist = 450 + w.rnd.nextFloat() * 350;
-                float[] to = city.nearestDrivable(base.x + (float) Math.cos(a) * dist, base.y + (float) Math.sin(a) * dist);
+            // A patrol round the roads near the base. (10.33: one out on the roads even while all's quiet, and
+            // once the news is out, more of them, into town and round the trouble.)
+            int patrols = w.alert >= 1 ? Math.min(3, 1 + free.size() / 14) : 1;
+            if (base.patrolCd <= 0 && free.size() >= 7 && w.fleet.basePatrols(base) < patrols) {
+                base.patrolCd = w.alert >= 1 ? 40 + w.rnd.nextFloat() * 30 : 150 + w.rnd.nextFloat() * 90;
+                float[] to = null;
+                if (w.alert >= 1 && w.rnd.nextFloat() < 0.6f) {
+                    // Into town: past a call, or anywhere in the streets.
+                    Incident hot = incidents.isEmpty() ? null : incidents.get(w.rnd.nextInt(incidents.size()));
+                    if (hot != null) to = city.nearestDrivable(hot.x + w.rnd.nextFloat() * 300 - 150, hot.y + w.rnd.nextFloat() * 300 - 150);
+                    else to = w.fleet.randomTownRoad();
+                }
+                if (to == null) {
+                    float a = w.rnd.nextFloat() * (float) Math.PI * 2, dist = 450 + w.rnd.nextFloat() * 350;
+                    to = city.nearestDrivable(base.x + (float) Math.cos(a) * dist, base.y + (float) Math.sin(a) * dist);
+                }
                 if (to != null) w.fleet.basePatrol(nearestOf(free, base.x, base.y, 3), base, to[0], to[1]);
             }
         }
@@ -923,10 +935,52 @@ final class Dispatch {
         e.orderField = null;
     }
 
+    /** How many officers a call wants (before any share-out between calls). */
+    private int needAt(Incident inc) {
+        int need = w.alert >= 2 ? Math.min(6, 2 + inc.zombiesNear / 3) : Math.min(4, 1 + inc.zombiesNear / 3);
+        if (inc.backupNeed > 0) need = Math.max(need, Math.min(12, inc.backupNeed));
+        return need;
+    }
+
+    /** How bad a call is: the dead there, and more so with officers down. */
+    private static int severity(Incident inc) {
+        return inc.zombiesNear + inc.officersDown * 4 + (inc.backupNeed > 0 ? 3 : 0);
+    }
+
+    private final ArrayList<Incident> byNeed = new ArrayList<Incident>();
+    private float rebalanceCd;
+
     private void updateIncidents(float step) {
         int open = incidents.size();
-        for (int i = incidents.size() - 1; i >= 0; i--) {
+        // (10.33) Several outbreaks at once: the worst calls are served first, each gets its fair share of the
+        // officers there are (rather than the first call seen taking everyone), some are kept back for the next
+        // call, and officers still on their way to a well-covered call are diverted to one with nobody.
+        int totalNeed = 0, live = 0;
+        for (int i = 0; i < incidents.size(); i++) {
             Incident inc = incidents.get(i);
+            if (inc.zombiesNear == 0 && inc.age > 20) continue;
+            totalNeed += needAt(inc);
+            live++;
+        }
+        int force = freeCops;
+        for (int i = 0; i < incidents.size(); i++) force += incidents.get(i).cops;
+        int reserve = live >= 2 ? force / 7 : 0;
+        int spare = Math.max(0, freeCops - reserve);
+        byNeed.clear();
+        byNeed.addAll(incidents);
+        java.util.Collections.sort(byNeed, new java.util.Comparator<Incident>() {
+            @Override
+            public int compare(Incident a, Incident b) {
+                return severity(b) - severity(a);
+            }
+        });
+        rebalanceCd -= step;
+        if (live >= 2 && rebalanceCd <= 0) {
+            rebalanceCd = 4;
+            rebalance();
+        }
+        for (int i = 0; i < byNeed.size(); i++) {
+            Incident inc = byNeed.get(i);
             inc.age += step;
             if (inc.onScene) inc.sceneTime += step;
             inc.zombiesNear = w.countZombiesNear(inc.x, inc.y, 140);
@@ -936,9 +990,11 @@ final class Dispatch {
                 resolve(inc);
                 continue;
             }
-            int need = w.alert >= 2 ? Math.min(6, 2 + inc.zombiesNear / 3) : Math.min(4, 1 + inc.zombiesNear / 3);
             // (Officers there asked for more: they get what they asked for, if it's to be had.)
-            if (inc.backupNeed > 0) need = Math.max(need, Math.min(12, inc.backupNeed));
+            int need = needAt(inc);
+            // (Its share of the force, with other calls going on: never less than two.)
+            if (live >= 2 && totalNeed > 0) need = Math.min(need, Math.max(2, Math.round((float) force * need / totalNeed)));
+            boolean severe = inc.officersDown > 0 || inc.zombiesNear >= 8;
             int have = inc.cops + inc.soldiers + w.fleet.inbound(inc);
             // The nearest patrol car takes the call first; officers on foot make up the rest.
             if (have < need) {
@@ -946,7 +1002,10 @@ final class Dispatch {
                 if (car != null && w.fleet.respond(car, inc)) have += car.crew.size();
             }
             if (have < need) {
-                int got = assign(inc, Entity.COP, need - have);
+                // (The ones kept back are for a bad call only.)
+                int want = severe ? need - have : Math.min(need - have, spare);
+                int got = want > 0 ? assign(inc, Entity.COP, want) : 0;
+                spare = Math.max(0, spare - got);
                 have += got;
                 // Nobody free in town to send (or far too few for a big one): help from outside.
                 if (outsideNeeded(inc) && ((got == 0 && have == 0) || (have < need / 2 && inc.zombiesNear >= 6) || (inc.backupNeed > have && got == 0))) policeBackup(inc);
@@ -987,6 +1046,46 @@ final class Dispatch {
                     || (open >= 4 && inc.zombiesNear >= 4))) {
                 requestMilitary(inc.x, inc.y, inc.place, inc, null);
             }
+        }
+    }
+
+    /**
+     * (10.33) A call with the dead at it and nobody going, while another has more on the way than it needs:
+     * a couple of the officers not there yet are sent on to the one with nobody.
+     */
+    private void rebalance() {
+        for (int i = 0; i < incidents.size(); i++) {
+            Incident starved = incidents.get(i);
+            if (starved.resolved || starved.zombiesNear == 0 || starved.cops + w.fleet.inbound(starved) > 0 || starved.age < 6) continue;
+            if (freeCops > 0) continue;
+            Incident donor = null;
+            int most = 1;
+            for (int j = 0; j < incidents.size(); j++) {
+                Incident d = incidents.get(j);
+                if (d == starved || d.resolved) continue;
+                int surplus = d.cops - needAt(d);
+                if (d.officersDown > 0) surplus -= 2;
+                if (surplus > most) {
+                    most = surplus;
+                    donor = d;
+                }
+            }
+            if (donor == null) continue;
+            int moved = 0;
+            Entity first = null;
+            for (int k = 0, n = w.entities.size(); k < n && moved < 2; k++) {
+                Entity e = w.entities.get(k);
+                if (e.dead || e.type != Entity.COP || e.task != T_RESPOND || e.incident != donor || e.onScene || e.rig != null) continue;
+                e.incident = starved;
+                e.orderField = null;
+                donor.cops--;
+                starved.cops++;
+                if (first == null) first = e;
+                moved++;
+            }
+            if (first != null)
+                say(WHO_POLICE, null, "Dispatch: " + name(first) + (moved > 1 ? " and partner" : "") + ", divert to " + starved.place
+                        + ". " + starved.zombiesNear + " hostiles and nobody on it.", starved.x, starved.y);
         }
     }
 

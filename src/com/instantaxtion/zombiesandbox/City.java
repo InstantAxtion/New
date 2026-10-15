@@ -531,6 +531,7 @@ final class City {
         buildingAt = new int[w * h];
         Arrays.fill(buildingAt, -1);
         generate();
+        clearHighwaySides();
         progress(0.4f, "Putting up the buildings");
         if (cfg.driveways()) {
             // The city as generated, its driveways, and only then the Build tool's edits on top (as they were
@@ -1096,7 +1097,7 @@ final class City {
             boolean reached = false;
             for (int dy = -1; dy <= 1 && !reached; dy++)
                 for (int dx = -1; dx <= 1; dx++)
-                    if (drivewayEnd(tiles[(ty + dy) * w + tx + dx])) reached = true;
+                    if (drivewayEnd(tx + dx, ty + dy)) reached = true;
             if (reached) continue;
             if (straightDrive(b)) continue;
             stamp++;
@@ -1114,13 +1115,14 @@ final class City {
                     int j = ny * w + nx;
                     if (seen[j] == stamp) continue;
                     byte t = tiles[j];
-                    if (drivewayEnd(t)) {
+                    if (drivewayEnd(nx, ny)) {
                         goal = c;
                         prev[j] = c;
                         break;
                     }
                     if (t != GRASS && t != TREE) continue;
                     if (bridge != null && bridge[j]) continue;
+                    if (byHighway(nx, ny, 1)) continue;
                     seen[j] = stamp;
                     prev[j] = c;
                     q[tail++] = j;
@@ -1173,10 +1175,11 @@ final class City {
                 int ax = sx + dx * k, ay = sy + dy * k, bx = ax + px, by = ay + py;
                 if (ax < 1 || ay < 1 || bx >= w - 1 || by >= h - 1 || ax >= w - 1 || ay >= h - 1) break;
                 byte ta = tiles[ay * w + ax], tb = tiles[by * w + bx];
-                if (drivewayEnd(ta) || drivewayEnd(tb)) {
+                if (drivewayEnd(ax, ay) || drivewayEnd(bx, by)) {
                     ok = true;
                     break;
                 }
+                if (byHighway(ax, ay, 1) || byHighway(bx, by, 1)) break;
                 if ((ta != GRASS && ta != TREE) || (tb != GRASS && tb != TREE)) break;
                 if (bridge != null && (bridge[ay * w + ax] || bridge[by * w + bx])) break;
                 len = k + 1;
@@ -1215,6 +1218,39 @@ final class City {
 
     private boolean drivewayEnd(byte t) {
         return t == ROAD || t == DIRT || t == LOT || t == SIDEWALK;
+    }
+
+    /** (10.33) Homes, shops and barns right beside the highway go: nothing fronts onto it. */
+    private void clearHighwaySides() {
+        if (cfg.civic < 17 || oneWay == null) return;
+        for (int i = buildingLots.size() - 1; i >= 0; i--) {
+            int[] l = buildingLots.get(i);
+            int k = l[6];
+            if (k != HOUSE && k != BARN && k != SHOP && k != WAREHOUSE && k != APARTMENT && k != KIOSK && k != GARAGE) continue;
+            boolean near = false;
+            for (int y = l[1]; y < l[1] + l[3] && !near; y++)
+                for (int x = l[0]; x < l[0] + l[2] && !near; x++) near = byHighway(x, y, 3);
+            if (!near) continue;
+            buildingLots.remove(i);
+            for (int y = Math.max(0, l[1]); y < Math.min(h, l[1] + l[3]); y++)
+                for (int x = Math.max(0, l[0]); x < Math.min(w, l[0] + l[2]); x++)
+                    if (tiles[y * w + x] == BUILDING || tiles[y * w + x] == LOT) tiles[y * w + x] = GRASS;
+        }
+    }
+
+    /** (10.33) The road at tile (x, y) is one a drive can join: not the highway, nor right beside it. */
+    private boolean drivewayEnd(int x, int y) {
+        return drivewayEnd(tiles[y * w + x]) && !byHighway(x, y, 1);
+    }
+
+    /**
+     * (10.33) Within margin tiles of the highway (across it), in a city built since 10.33: nothing joins it or
+     * fronts onto it there but the slip roads.
+     */
+    boolean byHighway(int x, int y, int margin) {
+        if (cfg.civic < 17 || oneWay == null || hwyAxis < 0) return false;
+        int a = (hwyAxis == 0 ? y : x) - hwyAt;
+        return a >= -margin && a <= 6 + margin;
     }
 
     private boolean nextToBuilding(int i) {
@@ -1515,6 +1551,8 @@ final class City {
             if (cfg.servicePads()) n = w >= 600 ? 7 + rnd.nextInt(3) : w >= 400 ? 5 + rnd.nextInt(2) : w >= 300 ? 3 + rnd.nextInt(2) : 1 + rnd.nextInt(2);
             // (Since 10.30 the Massive and Huge maps' country is much fuller: twice the places, more of them towns.)
             if (cfg.civic >= 14 && cfg.massive()) n = w >= 900 ? 22 + rnd.nextInt(4) : w >= 650 ? 15 + rnd.nextInt(3) : 11 + rnd.nextInt(3);
+            // (10.33) Fuller still: half as many places again, closer together (as many as there's room for).
+            if (cfg.civic >= 17) n = n * 3 / 2 + 1;
             // (10.30) A big army base of its own out in the country, on the Massive maps (laid out first, so the
             // towns and farms go round it).
             if (cfg.outskirtsBase()) outskirtsBase();
@@ -5458,6 +5496,8 @@ final class City {
                 float k = from[face] + span * (r == 0 ? 0.3f : 0.7f);
                 int dir = r == 0 ? -1 : 1;
                 if (!slipRoad(horiz, k, ringEdge, dir, dir == flow, nearIsHigh ? -1 : 1, hwyAt)) continue;
+                // ((10.33) No gap in the median to turn round where there's a bridge to cross on instead.)
+                if (cfg.civic >= 17 && !overpasses.isEmpty()) continue;
                 int kg = Math.round(k + dir * (SLIP_LEN + 14));
                 for (int q = -1; q <= 1; q++) {
                     int bx = horiz ? kg + q : hwyAt + 3, by = horiz ? hwyAt + 3 : kg + q;
@@ -6702,16 +6742,19 @@ final class City {
                 int cx = 30 + rnd.nextInt(Math.max(1, w - 60)), cy = 30 + rnd.nextInt(Math.max(1, h - 60));
                 // Clear of the town's own (eroded, irregular) edge rather than its bounding box.
                 if (!allOpen(cx - 28, cy - 28, 56, 56)) continue;
+                // ((10.33) And well back from the highway.)
+                if (byHighway(cx, cy, 34)) continue;
                 // (The wild side of the map is left to the hills and the park.)
                 if (inWildBand(cx, cy) || inWildBand(cx - 28, cy - 28) || inWildBand(cx + 28, cy + 28)) continue;
                 if (railY0 >= 0 && Math.abs(cy - railY0) < 30) continue;
                 boolean far = true;
-                for (float[] o : made) if (Math.hypot(o[0] - cx, o[1] - cy) < (cfg.civic >= 14 && cfg.massive() ? 75 : 90)) far = false;
+                for (float[] o : made) if (Math.hypot(o[0] - cx, o[1] - cy) < (cfg.civic >= 17 ? 64 : cfg.civic >= 14 && cfg.massive() ? 75 : 90)) far = false;
                 if (!far) continue;
                 boolean vertical = rnd.nextBoolean();
                 // (The first two or three, on a big map since 10.20, are small towns: a longer main street with a
                 // cross street, their own police and fire stations, and houses all along.)
-                boolean town = cfg.servicePads() && k < (cfg.civic >= 14 && cfg.massive() ? (w >= 900 ? 10 : w >= 650 ? 7 : 5) : w >= 600 ? 3 : w >= 300 ? 2 : 1);
+                boolean town = cfg.servicePads() && k < (cfg.civic >= 14 && cfg.massive() ? (w >= 900 ? 10 : w >= 650 ? 7 : 5) : w >= 600 ? 3 : w >= 300 ? 2 : 1)
+                        + (cfg.civic >= 17 ? (w >= 650 ? 4 : 2) : 0);
                 boolean big = town && cfg.civic >= 14 && cfg.massive();
                 int len = big ? 60 + rnd.nextInt(12) : town ? 46 + rnd.nextInt(10) : 30 + rnd.nextInt(20);
                 Street st = vertical ? new Street(cx - 1, cy - len / 2, cx + 2, cy + len / 2, true, false)
@@ -6738,6 +6781,12 @@ final class City {
                     }
                     plotsAlong(cross, cx - 32, cy - 32, cx + 32, cy + 32, 2);
                     plotsAlong(st, cx - 32, cy - 32, cx + 32, cy + 32, 2);
+                } else if (cfg.civic >= 17) {
+                    // (10.33) A hamlet is a proper little place too: a cross street with houses along it.
+                    Street cross = vertical ? new Street(cx - 12, cy + 4, cx + 13, cy + 6, false, false)
+                            : new Street(cx + 4, cy - 12, cx + 6, cy + 13, true, false);
+                    carve(cross);
+                    plotsAlong(cross, cx - 28, cy - 28, cx + 28, cy + 28, 2);
                 }
                 plotsAlong(st, cx - 25, cy - 25, cx + 25, cy + 25, 2);
                 made.add(new float[]{cx, cy});
@@ -6800,8 +6849,9 @@ final class City {
                     } else road = false;
                 }
                 if (edge == Integer.MIN_VALUE) continue;
-                for (int row = 0; row < 2; row++) {
-                    if (row == 1 && rnd.nextFloat() > 0.45f) break;
+                // ((10.33) Deeper rows of them since 10.33: less open field right up to town.)
+                for (int row = 0; row < (cfg.civic >= 17 ? 3 : 2); row++) {
+                    if (row >= 1 && rnd.nextFloat() > (cfg.civic >= 17 ? 0.8f : 0.45f)) break;
                     int out = edge + 1 + row * 8;
                     // (The 6x6 garden, its near edge `out` tiles from the edge of town.)
                     int x = horiz ? p : side == 2 ? sx - out - 5 : sx + out;
@@ -6832,6 +6882,8 @@ final class City {
             if (alongX) x += Integer.signum(dx);
             else y += Integer.signum(dy);
             boolean hit = false;
+            // ((10.33) Never on to the highway: a lane that runs up to it stops short.)
+            if (byHighway(x, y, 2) || byHighway(x + 1, y + 1, 2)) break;
             for (int j = y; j < y + 2; j++)
                 for (int i = x; i < x + 2; i++) {
                     if (i < 0 || j < 0 || i >= w || j >= h) continue;
@@ -10281,11 +10333,13 @@ final class City {
 
     /** In the wide band of country kept wild (see wildSide). */
     boolean inWildBand(int x, int y) {
+        // ((10.33) Only the outer half of it: towns and farms are allowed nearer town.)
+        boolean half = cfg.civic >= 17;
         switch (wildSide) {
-            case 0: return x < townX0;
-            case 1: return x >= townX1;
-            case 2: return y < townY0;
-            case 3: return y >= townY1;
+            case 0: return x < (half ? townX0 / 2 : townX0);
+            case 1: return x >= (half ? (townX1 + w) / 2 : townX1);
+            case 2: return y < (half ? townY0 / 2 : townY0);
+            case 3: return y >= (half ? (townY1 + h) / 2 : townY1);
             default: return false;
         }
     }

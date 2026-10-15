@@ -189,6 +189,8 @@ final class Entity {
     int followerFrame;
     /** (10.31) How many frames' worth this one moves this frame: 1, or for the calm off screen 3 every third frame (0 between). */
     transient int lodStep = 1;
+    /** (10.34) Until a fleeing civilian looks round for a cop or soldier again. */
+    transient float protectorCd;
     /** Which way (1 or -1) this one steps round obstacles it walks straight into. */
     float slideSide = 1;
     /** Breath for sprinting (0 to 1): the living tire, the dead don't. */

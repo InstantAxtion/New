@@ -1601,14 +1601,20 @@ final class Dispatch {
                 for (int a : new int[]{1, 5}) {
                     int along = end == 0 ? 1 : len - 2;
                     int x = city.hwyAxis == 0 ? along : city.hwyAt + a, y = city.hwyAxis == 0 ? city.hwyAt + a : along;
+                    // (10.34) Only the carriageway coming into the map: not the one on its way out of it.
+                    if (city.oneWay != null) {
+                        byte ow = city.oneWay[y * city.w + x];
+                        boolean inward = end == 0 ? ow == 1 || ow == 3 : ow == 2 || ow == 4;
+                        if (!inward) continue;
+                    }
                     out.add(new float[]{(x + 0.5f) * City.T, (y + 0.5f) * City.T});
                 }
         }
+        final int hw = out.size();
         float[] e = city.edgeSpawn(tx, ty);
         if (e != null) out.add(e);
         final float fx = tx, fy = ty;
         // (The highway first: that's the way into town, and the one people can watch for them on.)
-        final int hw = city.hwyAxis >= 0 ? 4 : 0;
         final java.util.List<float[]> all = out;
         java.util.Collections.sort(out, new java.util.Comparator<float[]>() {
             public int compare(float[] p, float[] q) {

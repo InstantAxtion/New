@@ -432,6 +432,10 @@ sounds that carry with distance, a loading progress bar and a low-memory warning
 maps with more towns and hamlets and less empty country, more police and soldiers, army Humvee patrols, and
 officers shared out fairly between several outbreaks at once.
 
+**Livelier maps, roads that join up (10.34):** every road joined to the rest, reinforcements on the right side
+of the highway, towns of different shapes, mountains spread about with lone hills, ranger outposts, faster
+mounting up, and lighter running with big populations.
+
 **Countryside:** Villages, small towns and every Massive map are surrounded by open country:
 winding dirt lanes out to the edge of the map, farms and lonely cabins along them, woods, and
 hamlets (a short street of cottages with a lane back to town). A town out in the country is never a

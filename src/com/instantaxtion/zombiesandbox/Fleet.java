@@ -787,6 +787,8 @@ final class Fleet {
         for (int tries = 0; tries < 12; tries++) {
             float[] d = randomRoad();
             if (d == null || Math.hypot(d[0] - v.x, d[1] - v.y) < (tries < 6 ? 400 : 160)) continue;
+            // ((10.34) On the biggest maps everyday trips stay local: a drive right across one is a long search.)
+            if ((v.type == CAR || v.patrol) && city.w >= 600 && tries < 10 && Math.hypot(d[0] - v.x, d[1] - v.y) > 3200) continue;
             // Somewhere on ahead, as a rule: a car doesn't spin round in the road for its next trip.
             float hx = (float) Math.cos(v.angle), hy = (float) Math.sin(v.angle);
             if (tries < 8 && (d[0] - v.x) * hx + (d[1] - v.y) * hy < 0) continue;
@@ -850,7 +852,8 @@ final class Fleet {
     private int routeBudget = Integer.MAX_VALUE;
 
     private boolean route(Vehicle v, float x, float y) {
-        if (v.type == CAR && v.player == null) {
+        // ((10.34) Patrol cars on their rounds share the budget too: there are a couple of hundred on a Gigantic map.)
+        if ((v.type == CAR || (v.patrol && v.state == PATROL && v.incident == null)) && v.player == null) {
             if (routeBudget <= 0) return false;
             routeBudget--;
         }
@@ -859,7 +862,8 @@ final class Fleet {
         boolean strict = v.type == CAR || (v.patrol && v.state != DRIVE);
         int from = city.tileIndex(v.x, v.y);
         // (10.27) Four-wheel drive on an emergency: across open country where that's quicker.
-        if (!strict && emergency(v) && allWheel(v) && city.offroadField(field, x, y, from) && nearField(field, v.x, v.y) < City.FAR) {
+        // ((10.34) Only when the call isn't by a road anyway: a search across open country is costly.)
+        if (!strict && emergency(v) && allWheel(v) && !city.roadNear(x, y, 5) && city.offroadField(field, x, y, from) && nearField(field, v.x, v.y) < City.FAR) {
             v.field = corridor(field, v.x, v.y);
             v.tx = x;
             v.ty = y;
@@ -2476,9 +2480,11 @@ final class Fleet {
             // A troop truck at the gate, waiting for its squad to climb aboard.
             v.speed = 0;
             v.timer += dt;
-            boolean ready = v.crew.size() >= v.crewWanted || (v.timer > 20 && !v.crew.isEmpty());
+            // (10.34: quicker off the mark: most of the squad aboard after a few seconds will do.)
+            boolean ready = v.crew.size() >= v.crewWanted || (v.timer > 6 && v.crew.size() * 3 >= v.crewWanted * 2)
+                    || (v.timer > 11 && !v.crew.isEmpty());
             if (!ready) {
-                if (v.timer > 35) {
+                if (v.timer > 22) {
                     dropCrew(v);
                     return true;
                 }
@@ -3323,7 +3329,8 @@ final class Fleet {
         float nx = v.x + (float) Math.cos(v.angle) * v.speed * dt, ny = v.y + (float) Math.sin(v.angle) * v.speed * dt;
         float r = v.type == TANK ? 8 : 5.5f;
         // (A car pulled over against the kerb may start out touching something: let it drive away.)
-        if (!city.circleBlocked(v.x, v.y, r) && city.circleBlocked(nx, ny, r)) {
+        // ((10.34) On a bridge it's over the highway's barrier, not up against it.)
+        if (!city.circleBlocked(v.x, v.y, r) && city.circleBlocked(nx, ny, r) && !(onBridge(v) && city.overpassAt(nx, ny) >= 0)) {
             if (Math.abs(v.speed) > 35 && v.crashCd <= 0) {
                 v.crashCd = 0.5f;
                 damage(v, Math.abs(v.speed) * (v.type == TANK ? 0.03f : 0.25f), false);
@@ -3904,11 +3911,11 @@ final class Fleet {
         if (v.state == MUSTER) {
             v.speed = 0;
             v.timer += dt;
-            if (v.crew.size() >= v.crewWanted || (v.timer > 15 && !v.crew.isEmpty())) {
+            if (v.crew.size() >= v.crewWanted || (v.timer > 8 && !v.crew.isEmpty())) {
                 dropCrew(v);
                 v.state = PATROL;
                 if (!newDestination(v)) v.stuckTimer = 99;
-            } else if (v.timer > 30) {
+            } else if (v.timer > 20) {
                 dropCrew(v);
                 v.parked = true;
             }
@@ -4037,8 +4044,8 @@ final class Fleet {
             // Waiting at the station for the crew to get aboard.
             v.speed = 0;
             v.timer += dt;
-            boolean ready = v.crew.size() >= v.crewWanted || (v.timer > 12 && !v.crew.isEmpty());
-            if (!ready && v.timer > 25) {
+            boolean ready = v.crew.size() >= v.crewWanted || (v.timer > 7 && !v.crew.isEmpty());
+            if (!ready && v.timer > 18) {
                 for (int i = 0, n = w.entities.size(); i < n; i++) {
                     Entity e = w.entities.get(i);
                     if (e.rig == v) {
@@ -4221,7 +4228,7 @@ final class Fleet {
                 v.refuel = 5;
                 return false;
             }
-            if (pilotIn && (v.crew.size() >= v.crewWanted || v.timer > 25)) {
+            if (pilotIn && (v.crew.size() >= v.crewWanted || v.timer > 15)) {
                 // Anyone who didn't make it in time stays behind.
                 for (int i = 0, n = w.entities.size(); i < n; i++) {
                     Entity e = w.entities.get(i);
@@ -4232,7 +4239,7 @@ final class Fleet {
                 }
                 if (v.kind != K_POLICE_HELI && v.kind != K_RESCUE_HELI) v.troops = Math.max(0, v.crew.size() - 3);
                 v.state = SPOOL;
-                v.spoolTime = v.timer = 7;
+                v.spoolTime = v.timer = 4.5f;
             }
             return false;
         }

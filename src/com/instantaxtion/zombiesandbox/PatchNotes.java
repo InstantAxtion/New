@@ -2,11 +2,21 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.33";
-    static final int VERSION_CODE = 71;
+    static final String VERSION = "10.34";
+    static final int VERSION_CODE = 72;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.34  -  Livelier maps, roads that join up",
+                    "Every road joins up (in new cities): a lane or street that stopped at a pavement, a park or a field is carried on to the rest of the roads, the far side of the highway joined to its bridges, so no car is stuck on a bit of road it can't drive out of.",
+                    "A car you drive yourself goes over the bridges: the highway's barrier underneath no longer stops it on the deck.",
+                    "Help from outside comes onto the map on the carriageway coming into town at each end of the highway, not the one on its way out.",
+                    "Livelier maps: the town is a different shape every time (rounder or squarer, narrower one way, off-centre, with bays and bulges round its edge), the mountains are a different number and size each map and spread out across the country instead of side by side, and lone hills are dotted about.",
+                    "Ranger outposts by the other mountains on the bigger maps: each with two rangers, their truck, a rescue helicopter pad and another rescue team.",
+                    "Police, soldiers and crews mount up much faster: they run to the vehicle the quickest way round whatever's in the way, climb in from a little further off, and it leaves once most of them are aboard instead of waiting for the last one (helicopters spin up quicker too).",
+                    "Faster with big populations: patrol cars and everyday traffic keep to local trips on the biggest maps and share the route budget, the city's sense of where the dead are is worked out half as often (and not so far out) in a crowded city, people far from trouble and out of sight think and move less often still with over twelve thousand about, and fleeing people look round for a cop every half second instead of every frame.",
+            },
             {
                     "10.33  -  Fuller maps, more police and army",
                     "Nothing joins the highway any more except its slip roads and bridges: no country lane runs up to it, no house has its drive onto it or fronts it, and there are no gaps in the median to cross over where there's a bridge to use instead (in new cities).",

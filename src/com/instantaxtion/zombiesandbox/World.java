@@ -1582,6 +1582,9 @@ final class World {
 
     // ------------------------------------------------------------------ update
 
+    /** (10.34) How many frames' worth at a time the calm off screen, and the busy off screen, move and think. */
+    private int lodCalm = 3, lodBusy = 2;
+
     void update(float dt) {
         pathBudget = Math.min(6, pathBudget + dt * 12);
         time += dt;
@@ -1593,6 +1596,8 @@ final class World {
         occTimer -= dt;
         if (fieldTimer <= 0) {
             fieldTimer = quality == Q_FULL ? 0.25f : quality == Q_REDUCED ? 0.4f : 0.6f;
+            // ((10.34) Half as often in a crowded city: it's a whole-map search, and nobody moves far in between.)
+            if (entities.size() > 12000) fieldTimer *= 2;
             city.computeFields(entities);
         }
         dispatch.update(dt);
@@ -1615,6 +1620,11 @@ final class World {
             Entity e = entities.get(i);
             e.lodStep = 1;
             if (e.dead) continue;
+            if (i == 0) {
+                boolean crowd = entities.size() > 12000;
+                lodCalm = crowd ? 4 : 3;
+                lodBusy = crowd ? 3 : 2;
+            }
             // Far from any zombie and just going about their day: they decide what to do a third as often
             // (but still move every frame), which lets a city of thousands run smoothly.
             // ((10.31) Families and friends out together too, while whoever they're with is calm as well.)
@@ -1624,24 +1634,25 @@ final class World {
                 boolean seen = onScreen(e);
                 // (10.31) Off screen they also only move, and get out of each other's way, every third frame, three
                 // frames' worth at a time: with tens of thousands in a Gigantic city, that's most of the work.
-                if (!seen) e.lodStep = (i + lodFrame) % 3 == 0 ? 3 : 0;
+                // ((10.34) A step further still with over twelve thousand people about.)
+                if (!seen) e.lodStep = (i + lodFrame) % lodCalm == 0 ? lodCalm : 0;
                 // (On a struggling phone, those off screen even less often.)
-                int every = quality == Q_FULL || seen ? 3 : quality == Q_REDUCED ? 5 : 8;
+                int every = quality == Q_FULL || seen ? lodCalm : quality == Q_REDUCED ? 5 : 8;
                 if ((i + lodFrame) % every != 0) continue;
                 think(e, dt * every);
             } else if (e.isZombie() && e.charge <= 0 && e.noiseTimer <= 0 && e != controlled && !onScreen(e)
                     && city.fieldAt(city.humanDist, e.x, e.y) > 40) {
                 // The same for the dead shuffling about off screen with nobody near (since 10.31 on any phone,
                 // and they move every other frame too).
-                e.lodStep = (i + lodFrame) % 2 == 0 ? 2 : 0;
-                int every = quality == Q_LOW ? 3 : 2;
+                e.lodStep = (i + lodFrame) % lodBusy == 0 ? lodBusy : 0;
+                int every = quality == Q_LOW ? 3 : lodBusy;
                 if ((i + lodFrame) % every != 0) continue;
                 think(e, dt * every);
             } else if (e.type == Entity.CIVILIAN && e != controlled && !onScreen(e) && city.fieldAt(city.zombieDist, e.x, e.y) > 30) {
                 // (10.31) And people off screen who know what's going on but have none of the dead near them:
                 // every other frame (a Gigantic city in a panic is tens of thousands of them).
-                e.lodStep = (i + lodFrame) % 2 == 0 ? 2 : 0;
-                int every = quality == Q_FULL ? 2 : quality == Q_REDUCED ? 3 : 4;
+                e.lodStep = (i + lodFrame) % lodBusy == 0 ? lodBusy : 0;
+                int every = quality == Q_FULL ? lodBusy : quality == Q_REDUCED ? 3 : 4;
                 if ((i + lodFrame) % every != 0) continue;
                 think(e, dt * every);
             } else think(e, dt);
@@ -1907,7 +1918,7 @@ final class World {
 
     /** Any of the dead within radius? Quick when there's none within a walk of here (the usual case). */
     boolean zombieWithin(float x, float y, float radius) {
-        if (city.fieldAt(city.zombieDist, x, y) > radius / City.T + 3) return false;
+        if (radius / City.T + 3 < city.zombieLimit && city.fieldAt(city.zombieDist, x, y) > radius / City.T + 3) return false;
         return countZombiesNear(x, y, radius) > 0;
     }
 
@@ -3631,7 +3642,12 @@ final class World {
             float ax = e.x - e.threatX, ay = e.y - e.threatY;
             float d = (float) Math.sqrt(ax * ax + ay * ay) + 0.001f;
             // Run towards a cop or soldier if one is nearby and not back where the zombies are.
-            if (e.protector == null || e.protector.dead || rnd.nextFloat() < dt) e.protector = nearestArmed(e, 180);
+            // ((10.34) Looked for every half second or so, not every frame, by everyone running.)
+            e.protectorCd -= dt;
+            if (((e.protector == null || e.protector.dead) && e.protectorCd <= 0) || rnd.nextFloat() < dt) {
+                e.protector = nearestArmed(e, 180);
+                e.protectorCd = 0.4f + rnd.nextFloat() * 0.4f;
+            }
             Entity p = e.protector;
             if (p != null && !p.dead) {
                 float px = p.x - e.x, py = p.y - e.y, pd = (float) Math.sqrt(px * px + py * py) + 0.001f;
@@ -3757,13 +3773,18 @@ final class World {
             return false;
         }
         float ddx = v.x - e.x, ddy = v.y - e.y, d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
-        if (d < 14) {
+        // (10.34) Climbing in from a little further off, at a run, and round whatever's in the way.
+        if (d < 20) {
             fleet.board(v, e);
             return true;
         }
         e.paused = false;
         e.aiming = false;
-        steer(e, ddx / d, ddy / d, e.runSpeed * 0.85f);
+        if (d > 48) {
+            walkToSpot(e, v.x, v.y, e.runSpeed);
+            return true;
+        }
+        steer(e, ddx / d, ddy / d, e.runSpeed);
         if (e.blocked) {
             e.blocked = false;
             e.unstick = 0.5f;
@@ -5644,15 +5665,22 @@ final class World {
     private Entity nearestArmedCivilian(Entity e, float radius) {
         Entity best = null;
         float bd = radius * radius;
-        for (int i = 0, n = entities.size(); i < n; i++) {
-            Entity o = entities.get(i);
-            if (o.dead || o.type != Entity.CIVILIAN || !o.hasGun) continue;
-            float d = (o.x - e.x) * (o.x - e.x) + (o.y - e.y) * (o.y - e.y);
-            if (d < bd) {
-                bd = d;
-                best = o;
+        // ((10.34) From the grid, not the whole city.)
+        int cx0 = Math.max(0, (int) ((e.x - radius) / CELL)), cx1 = Math.min(gw - 1, (int) ((e.x + radius) / CELL));
+        int cy0 = Math.max(0, (int) ((e.y - radius) / CELL)), cy1 = Math.min(gh - 1, (int) ((e.y + radius) / CELL));
+        for (int cy = cy0; cy <= cy1; cy++)
+            for (int cx = cx0; cx <= cx1; cx++) {
+                int c = cy * gw + cx;
+                for (int k = cellStart[c] + zCount[c], end = cellStart[c] + cellCount[c]; k < end; k++) {
+                    Entity o = sorted[k];
+                    if (o.dead || o.type != Entity.CIVILIAN || !o.hasGun) continue;
+                    float d = (o.x - e.x) * (o.x - e.x) + (o.y - e.y) * (o.y - e.y);
+                    if (d < bd) {
+                        bd = d;
+                        best = o;
+                    }
+                }
             }
-        }
         return best;
     }
 
@@ -9306,6 +9334,8 @@ final class World {
         for (int i = 0, n = entities.size(); i < n; i++) {
             Entity e = entities.get(i);
             if (e.dead || e.lodStep == 0) continue;
+            // ((10.34) Someone standing still is left be: whoever walks into them steps aside themselves.)
+            if (e.want <= 0.5f && e.stun <= 0 && e.vx == 0 && e.vy == 0 && entities.size() > 6000) continue;
             // Only the cells within touching distance (the biggest body is under 8 across, plus a little for
             // movement since the grid was built).
             float reach = e.radius + 10;
@@ -10026,6 +10056,17 @@ final class World {
             }
             fleet.startRangerPatrol(rangerStation);
         }
+        // (10.34) The outposts by the other mountains: two rangers and a truck each, and another rescue team.
+        if (rangers)
+            for (City.Building b : city.buildings) {
+                if (b.name == null || !city.outpostNames.contains(b.name)) continue;
+                for (int i = 0; i < 2; i++) {
+                    Entity r = spawn(Entity.COP, b.doorX + rnd.nextFloat() * 20 - 10, b.doorY + rnd.nextFloat() * 20 - 10);
+                    if (r != null) makeRanger(r);
+                }
+                fleet.startRangerPatrol(b);
+                rescueTeams++;
+            }
         for (int k = 0; k < city.fireTowers.size(); k++) {
             float[] t = city.fireTowers.get(k);
             Entity e = spawn(Entity.CIVILIAN, t[0], t[1]);

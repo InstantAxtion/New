@@ -532,6 +532,7 @@ final class City {
         Arrays.fill(buildingAt, -1);
         generate();
         clearHighwaySides();
+        joinRoads();
         progress(0.4f, "Putting up the buildings");
         if (cfg.driveways()) {
             // The city as generated, its driveways, and only then the Build tool's edits on top (as they were
@@ -934,6 +935,9 @@ final class City {
     final List<float[]> trailCrossings = new ArrayList<float[]>();
     float trailheadX, trailheadY;
     String rangerStationName;
+    /** (10.34) Ranger outposts by the other mountains: where their trucks park, and their names. */
+    final List<float[]> outposts = new ArrayList<float[]>();
+    final List<String> outpostNames = new ArrayList<String>();
     /** Where the rangers' truck parks. */
     float[] rangerLot;
     /** Fire lookout towers: {x, y}, and their names. */
@@ -1220,6 +1224,106 @@ final class City {
         return t == ROAD || t == DIRT || t == LOT || t == SIDEWALK;
     }
 
+    /**
+     * (10.34) Every road joins up: a lane or street left on its own (one that stopped at a pavement, a park or a
+     * field) is carried on, the shortest way across open ground or pavement, to the rest of the roads.
+     */
+    private void joinRoads() {
+        if (cfg.civic < 18) return;
+        int n = w * h;
+        int[] comp = new int[n];
+        Arrays.fill(comp, -1);
+        List<Integer> sizes = new ArrayList<Integer>();
+        int[] q = new int[n];
+        for (int i = 0; i < n; i++) {
+            if (comp[i] >= 0 || !roadish(i)) continue;
+            int id = sizes.size(), head = 0, tail = 0;
+            q[tail++] = i;
+            comp[i] = id;
+            while (head < tail) {
+                int c = q[head++], x = c % w, y = c / w;
+                // (Over a bridge counts as joined.)
+                int link = bridgeTo(c);
+                for (int k = 0; k < (link >= 0 ? 5 : 4); k++) {
+                    int nx = k == 4 ? link % w : x + (k == 0 ? 1 : k == 1 ? -1 : 0), ny = k == 4 ? link / w : y + (k == 2 ? 1 : k == 3 ? -1 : 0);
+                    if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+                    int j = ny * w + nx;
+                    if (comp[j] >= 0 || !roadish(j)) continue;
+                    comp[j] = id;
+                    q[tail++] = j;
+                }
+            }
+            sizes.add(tail);
+        }
+        if (sizes.size() < 2) return;
+        int main = 0;
+        for (int k = 1; k < sizes.size(); k++) if (sizes.get(k) > sizes.get(main)) main = k;
+        int[] prev = new int[n], seen = new int[n];
+        int stamp = 0;
+        boolean[] joined = new boolean[sizes.size()];
+        joined[main] = true;
+        for (int id = 0; id < sizes.size(); id++) {
+            if (joined[id] || sizes.get(id) < 4) continue;
+            stamp++;
+            int head = 0, tail = 0, goal = -1;
+            for (int i = 0; i < n; i++)
+                if (comp[i] == id) {
+                    q[tail++] = i;
+                    seen[i] = stamp;
+                    prev[i] = -1;
+                }
+            int levelEnd = tail, depth = 0;
+            // (A long way, if need be: across the fields the far side of the highway to a bridge.)
+            while (head < tail && goal < 0 && depth <= 240) {
+                int c = q[head++], x = c % w, y = c / w;
+                for (int k = 0; k < 4 && goal < 0; k++) {
+                    int nx = x + (k == 0 ? 1 : k == 1 ? -1 : 0), ny = y + (k == 2 ? 1 : k == 3 ? -1 : 0);
+                    if (nx < 1 || ny < 1 || nx >= w - 1 || ny >= h - 1) continue;
+                    int j = ny * w + nx;
+                    if (seen[j] == stamp) continue;
+                    seen[j] = stamp;
+                    prev[j] = c;
+                    if (comp[j] >= 0 && joined[comp[j]]) {
+                        goal = j;
+                        break;
+                    }
+                    byte t = tiles[j];
+                    boolean open = t == GRASS || t == TREE || t == SIDEWALK || t == PLAZA || t == SAND || t == TRAIL || t == RAIL;
+                    if (!open || byHighway(nx, ny, 1) || (bridge != null && bridge[j])) continue;
+                    q[tail++] = j;
+                }
+                if (head == levelEnd) {
+                    depth++;
+                    levelEnd = tail;
+                }
+            }
+            if (goal < 0) continue;
+            // Lay it, two tiles wide, from the road it reached back to this one.
+            for (int c = prev[goal]; c >= 0 && comp[c] != id; c = prev[c]) {
+                int p = prev[c];
+                int dx = p >= 0 ? p % w - c % w : 0, dy = p >= 0 ? p / w - c / w : 0;
+                pave(c, dx, dy);
+                int sx = c % w - dy, sy = c / w + dx;
+                if (sx >= 1 && sy >= 1 && sx < w - 1 && sy < h - 1 && !byHighway(sx, sy, 1)) pave(sy * w + sx, dx, dy);
+            }
+            joined[id] = true;
+        }
+    }
+
+    private boolean roadish(int i) {
+        return (tiles[i] == ROAD || tiles[i] == DIRT) && (oneWay == null || oneWay[i] == 0);
+    }
+
+    /** One tile of a joining road: dirt over open ground, road over pavement and the tracks. */
+    private void pave(int i, int dx, int dy) {
+        byte t = tiles[i];
+        if (t == GRASS || t == TREE || t == SAND || t == TRAIL) tiles[i] = DIRT;
+        else if (t == SIDEWALK || t == PLAZA || t == RAIL) {
+            tiles[i] = ROAD;
+            roadDir[i] = (byte) (dx != 0 ? 2 : 1);
+        }
+    }
+
     /** (10.33) Homes, shops and barns right beside the highway go: nothing fronts onto it. */
     private void clearHighwaySides() {
         if (cfg.civic < 17 || oneWay == null) return;
@@ -1485,6 +1589,24 @@ final class City {
             shiftX = dx;
             shiftY = dy;
             wildSide = side == 0 ? 1 : side == 1 ? 0 : side == 2 ? 3 : 2;
+            // (10.34) Every map its own shape: the town longer one way than the other, and off-centre the
+            // other way too.
+            if (cfg.civic >= 18 && waterKind == CityConfig.W_NONE && real == null) {
+                // (Only ever narrower than the square, so there's still room round it for the highway and the ring road.)
+                float squeeze = 0.78f + sr.nextFloat() * 0.22f;
+                boolean across = sr.nextBoolean();
+                int cx = (bx0 + bx1) / 2, cy = (by0 + by1) / 2;
+                int hx = Math.round((bx1 - bx0) / 2f * (across ? squeeze : 1)), hy = Math.round((by1 - by0) / 2f * (across ? 1 : squeeze));
+                int jitter = (int) ((sr.nextFloat() * 2 - 1) * m * 0.35f);
+                if (side < 2) cy += jitter;
+                else cx += jitter;
+                bx0 = Math.max(6, cx - hx);
+                bx1 = Math.min(w - 6, cx + hx);
+                by0 = Math.max(6, cy - hy);
+                by1 = Math.min(h - 6, cy + hy);
+                shiftX = (bx0 + bx1) / 2 - w / 2;
+                shiftY = (by0 + by1) / 2 - h / 2;
+            }
         }
         townX0 = bx0;
         townY0 = by0;
@@ -6347,16 +6469,21 @@ final class City {
      * of it, and the town bounds shrink to fit.
      */
     private void erodeTown(int bx0, int by0, int bx1, int by1) {
-        float cx = (bx0 + bx1) / 2f, cy = (by0 + by1) / 2f, rad = (bx1 - bx0) / 2f;
+        float cx = (bx0 + bx1) / 2f, cy = (by0 + by1) / 2f, rad = (bx1 - bx0) / 2f, radY = cfg.civic >= 18 ? (by1 - by0) / 2f : rad;
         // (Since 10.10 every town but a small one fills its square out to a ragged edge: the country round it
         // is the extra room the bigger maps have.)
         boolean square = cfg.nature() ? cfg.preset() != 6 && cfg.preset() != 9 : w >= 400;
         float[] amp = new float[4], ph = new float[4];
+        // (10.34) Livelier outlines: rounder or squarer from one map to the next, lopsided, with bays and bulges.
+        boolean lively = cfg.civic >= 18;
         for (int k = 0; k < 4; k++) {
-            amp[k] = square ? 0.01f + rnd.nextFloat() * 0.025f : 0.04f + rnd.nextFloat() * (k == 0 ? 0.14f : 0.08f);
+            amp[k] = square ? (lively ? 0.02f + rnd.nextFloat() * 0.06f : 0.01f + rnd.nextFloat() * 0.025f)
+                    : 0.04f + rnd.nextFloat() * (k == 0 ? 0.14f : 0.08f);
             ph[k] = rnd.nextFloat() * (float) Math.PI * 2;
         }
         float stretch = square ? 1f : 0.8f + rnd.nextFloat() * 0.4f;
+        double power = lively && square ? 2.6 + rnd.nextFloat() * 4 : 6;
+        float lobe = lively ? 0.04f + rnd.nextFloat() * 0.08f : 0, lobePh = rnd.nextFloat() * (float) Math.PI * 2;
         List<int[]> kept = new ArrayList<int[]>();
         for (int[] b : blocks) {
             float x = (b[0] + b[2]) / 2f - cx, y = ((b[1] + b[3]) / 2f - cy) * stretch;
@@ -6364,11 +6491,13 @@ final class City {
             // A massive town fills its square out to a ragged edge (rounded corners, not a circle in a field);
             // a small town just loses its corners.
             if (square) {
-                float ax = Math.abs(x) / rad, ay = Math.abs(y) / rad;
-                d = (float) Math.pow(Math.pow(ax, 6) + Math.pow(ay, 6), 1 / 6.0);
+                float ax = Math.abs(x) / rad, ay = Math.abs(y) / radY;
+                d = (float) Math.pow(Math.pow(ax, power) + Math.pow(ay, power), 1 / power);
             }
-            float r = square ? 1.06f : 1.02f;
+            float r = square ? (lively ? 1.1f : 1.06f) : 1.02f;
             for (int k = 0; k < 4; k++) r += amp[k] * (float) Math.sin((k + 2) * a + ph[k]);
+            // (One side bulging out, the other pulled in.)
+            r += lobe * (float) Math.cos(a - lobePh);
             boolean keep = d < r && !(d > r - 0.14f && rnd.nextFloat() < (square ? 0.12f : 0.3f));
             if (keep) kept.add(b);
             else fill(b[0], b[1], b[2] - b[0], b[3] - b[1], GRASS);
@@ -7107,6 +7236,7 @@ final class City {
         if (hospital != null) addServicePad(hospital.x, hospital.y, PAD_RESCUE);
         else if (hq != null) addServicePad(hq.x, hq.y, PAD_RESCUE);
         if (rangerLot != null) addServicePad(rangerLot[0], rangerLot[1], PAD_RESCUE);
+        for (float[] o : outposts) addServicePad(o[0], o[1], PAD_RESCUE);
     }
 
     /** A pad on the nearest clear 4x4 tiles of open ground (car park, square or grass) to (x, y). */
@@ -9719,7 +9849,7 @@ final class City {
             label(sign, (x0 + x1) / 2, (y0 + y1) / 2 + 2.5f, ts, 0xFFF2E2B8);
             return;
         }
-        if (own != null && own.name != null && own.name.equals(rangerStationName)) {
+        if (own != null && own.name != null && (own.name.equals(rangerStationName) || outpostNames.contains(own.name))) {
             // The ranger station: a green metal roof, a brown trim and the sign on top.
             p.setColor(0xFF3A4A30);
             c.drawRect(x0, y0, x1, y1, p);
@@ -10479,6 +10609,9 @@ final class City {
 
     // ------------------------------------------------------------------ flow fields
 
+    /** How far out (tiles) the distance to the nearest of the dead is known. */
+    int zombieLimit = 70;
+
     void computeFields(List<Entity> entities) {
         // Only near distances matter (how far the nearest zombie or person is, within smelling range), so
         // the searches stop spreading after a while instead of covering a whole massive map.
@@ -10491,7 +10624,9 @@ final class City {
             if (e.isZombie()) hunters = true;
             if (e.type == Entity.RAIDER) raiders = true;
         }
-        bfs(zombieDist, entities, true, 70);
+        // ((10.34) Not so far out in a crowded city: that search covered most of a Gigantic map.)
+        zombieLimit = entities.size() > 12000 ? 48 : 70;
+        bfs(zombieDist, entities, true, zombieLimit);
         // (And with only the dead to smell them, only the living within reach of one count: the rest of the city
         // can't be smelled from anywhere a zombie is.)
         nearZombiesOnly = !raiders;
@@ -10508,6 +10643,15 @@ final class City {
         if (t == SIDEWALK || t == PLAZA) return 8;
         if (offroad && (t == GRASS || t == SAND || t == TRAIL) && !solid[i] && !steepAt(i)) return 6;
         return -1;
+    }
+
+    /** (10.34) A road or lane within r tiles of (x, y). */
+    boolean roadNear(float x, float y, int r) {
+        int tx = (int) (x / T), ty = (int) (y / T);
+        for (int j = Math.max(0, ty - r); j <= Math.min(h - 1, ty + r); j++)
+            for (int i = Math.max(0, tx - r); i <= Math.min(w - 1, tx + r); i++)
+                if (tiles[j * w + i] == ROAD || tiles[j * w + i] == DIRT) return true;
+        return false;
     }
 
     /** Open ground (not a road, lot or pavement): an off-road vehicle takes it slower. */
@@ -11208,7 +11352,7 @@ final class City {
         spread(dist, tail, limit);
     }
 
-    private void spread(int[] dist, int tail, int limit) {
+    private int spread(int[] dist, int tail, int limit) {
         int head = 0;
         while (head < tail) {
             int t = queue[head++];
@@ -11219,6 +11363,7 @@ final class City {
             if (ty > 0) tail = visit(dist, t - w, nd, tail);
             if (ty < h - 1) tail = visit(dist, t + w, nd, tail);
         }
+        return tail;
     }
 
     private int visit(int[] dist, int n, int nd, int tail) {

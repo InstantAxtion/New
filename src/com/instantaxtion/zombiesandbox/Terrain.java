@@ -121,6 +121,8 @@ final class Terrain {
             if (c.cfg.wilds()) {
                 // (Since 10.14: trails that wind and cross the lanes, a ranger station and fire lookouts.)
                 if (parkR > 0 && trailhead >= 0) rangerStation();
+                // (10.34) And a ranger outpost by each of the other mountains, on the big maps.
+                if (c.cfg.civic >= 18) outposts();
                 fireTowers();
                 wildTrails();
             } else if (parkR > 0) trails();
@@ -280,6 +282,9 @@ final class Terrain {
         int want = size() >= CityConfig.HUGE ? 3 : size() >= CityConfig.LARGE ? 2 : size() >= CityConfig.MEDIUM ? 1 : 0;
         // (Some countries have more and bigger mountains, flat ones none at all.)
         want = land.mountains <= 0 ? 0 : Math.max(want > 0 ? 1 : 0, Math.round(want * Math.min(1.4f, land.mountains)));
+        // (10.34) Livelier: a different number each map, spread about the country rather than side by side.
+        boolean lively = c.cfg.civic >= 18;
+        if (lively && want > 0) want = Math.max(1, want - 1 + rnd.nextInt(3));
         for (int k = 0; k < want; k++) {
             int best = -1;
             float score = -1;
@@ -288,9 +293,9 @@ final class Terrain {
                 if (wild[i] < 10) continue;
                 float x = i % w, y = i / w;
                 boolean clear = true;
-                for (float[] p : peaks) if (Math.hypot(p[0] - x, p[1] - y) < p[2] * 2.2f) clear = false;
+                for (float[] p : peaks) if (Math.hypot(p[0] - x, p[1] - y) < p[2] * (lively ? 4.5f : 2.2f)) clear = false;
                 if (!clear) continue;
-                float sc = wild[i] + rnd.nextFloat() * 3;
+                float sc = wild[i] + rnd.nextFloat() * (lively ? 26 : 3);
                 if (sc > score) {
                     score = sc;
                     best = i;
@@ -299,7 +304,8 @@ final class Terrain {
             if (best < 0) break;
             float cx = best % w, cy = best / w;
             float r = Math.max(16, Math.min(54, wild[best] * 1.7f));
-            float height = (34 + r * 1.4f) * (0.6f + 0.4f * land.mountains);
+            if (lively) r = Math.max(12, r * (0.55f + rnd.nextFloat() * 0.6f));
+            float height = (34 + r * 1.4f) * (0.6f + 0.4f * land.mountains) * (lively ? 0.7f + rnd.nextFloat() * 0.6f : 1);
             float ang = rnd.nextFloat() * (float) Math.PI, stretch = 1.3f + rnd.nextFloat() * 0.6f;
             float ca = (float) Math.cos(ang), sa = (float) Math.sin(ang);
             int reach = (int) (r * stretch) + 2;
@@ -318,6 +324,31 @@ final class Terrain {
                     mount[y * w + x] = Math.max(mount[y * w + x], add / height);
                 }
             peaks.add(new float[]{cx, cy, r, height});
+        }
+        if (lively) loneHills();
+    }
+
+    /** (10.34) Lone hills dotted about the country: rounded, grassy, some big and some hardly there. */
+    private void loneHills() {
+        int want = (size() >= CityConfig.HUGE ? 6 : size() >= CityConfig.LARGE ? 4 : 2) + rnd.nextInt(3);
+        for (int k = 0; k < want; k++) {
+            int i = -1;
+            for (int s = 0; s < 300 && i < 0; s++) {
+                int j = rnd.nextInt(w * h);
+                if (wild[j] >= 6) i = j;
+            }
+            if (i < 0) return;
+            float cx = i % w, cy = i / w, r = 8 + rnd.nextFloat() * Math.min(26, wild[i] * 1.4f), height = 10 + rnd.nextFloat() * 22;
+            float ang = rnd.nextFloat() * (float) Math.PI, stretch = 1 + rnd.nextFloat() * 0.8f;
+            float ca = (float) Math.cos(ang), sa = (float) Math.sin(ang);
+            int reach = (int) (r * stretch) + 2;
+            for (int y = Math.max(0, (int) cy - reach); y < Math.min(h, (int) cy + reach); y++)
+                for (int x = Math.max(0, (int) cx - reach); x < Math.min(w, (int) cx + reach); x++) {
+                    float dx = x - cx, dy = y - cy, u = (dx * ca + dy * sa) / stretch, v = -dx * sa + dy * ca;
+                    float d = (float) Math.sqrt(u * u + v * v) / r;
+                    if (d >= 1) continue;
+                    e[y * w + x] += height * smooth(1 - d) * (0.35f + 0.65f * smooth(wild[y * w + x] / 6f));
+                }
         }
     }
 
@@ -1018,6 +1049,28 @@ final class Terrain {
         c.rangerStationName = name;
         int[] lot = cell(s0, 1, 4);
         c.rangerLot = new float[]{(lot[0] + 0.5f) * City.T, (lot[1] + 0.5f) * City.T};
+    }
+
+    private void outposts() {
+        int most = size() >= CityConfig.HUGE ? 3 : size() >= CityConfig.LARGE ? 2 : 1;
+        for (float[] p : peaks) {
+            if (c.outposts.size() >= most) return;
+            if (parkR > 0 && Math.hypot(p[0] - parkX, p[1] - parkY) < parkR + p[2] + 30) continue;
+            int[] s0 = siteBeside(p[0], p[1], 8, 9, p[2] * 2.6f + 30);
+            if (s0 == null) continue;
+            c.clearDecorIn(s0[0], s0[1], s0[2], s0[3]);
+            for (int u = 0; u < 8; u++)
+                for (int v = 0; v < 9; v++) setTile(cell(s0, u, v), City.GRASS);
+            for (int u = 0; u < 3; u++)
+                for (int v = 1; v < 8; v++) setTile(cell(s0, u, v), City.LOT);
+            int[] a = cell(s0, 4, 2), b = cell(s0, 7, 6);
+            String name = (c.country.rangerStationName(word() + " Peak")).replace("Station", "Outpost");
+            c.natureLot(Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.abs(a[0] - b[0]) + 1, Math.abs(a[1] - b[1]) + 1,
+                    City.OFFICE, 1, 0xFF4E5A3A, 0xFFA88C62, name, 0);
+            int[] lot = cell(s0, 1, 4);
+            c.outposts.add(new float[]{(lot[0] + 0.5f) * City.T, (lot[1] + 0.5f) * City.T});
+            c.outpostNames.add(name);
+        }
     }
 
     /** Fire lookout towers up on the wooded high ground, each with a path out to it. */

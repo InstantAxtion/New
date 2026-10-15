@@ -2343,6 +2343,97 @@ public final class GameTests {
                 for (int s = 0; s < 3; s++) check(served[s], "outbreak " + (s + 1) + " of 3 gets officers");
             }
         });
+        test("10.34: every road joins up, help comes in the right way, livelier maps, outposts, quick to mount up", new Check() {
+            public void run() throws Exception {
+                // Every bit of road a car can reach from town (a few driveway ends apart).
+                for (int[] ps : new int[][]{{9, 4, CityConfig.LARGE}, {8, 3, CityConfig.HUGE}}) {
+                    CityConfig c = new CityConfig();
+                    c.v[CityConfig.OPT_PRESET] = ps[0];
+                    c.v[CityConfig.OPT_SIZE] = ps[2];
+                    c.seed = ps[1];
+                    c.normalize();
+                    c.seed = ps[1];
+                    City city = new City(c, 0.02f);
+                    int[] f = new int[city.w * city.h];
+                    java.util.Random r = new java.util.Random(1);
+                    int sx, sy;
+                    do {
+                        sx = city.townX0 + r.nextInt(city.townX1 - city.townX0);
+                        sy = city.townY0 + r.nextInt(city.townY1 - city.townY0);
+                    } while (city.tiles[sy * city.w + sx] != City.ROAD);
+                    city.driveField(f, (sx + 0.5f) * City.T, (sy + 0.5f) * City.T, true);
+                    int roads = 0, cut = 0;
+                    for (int i = 0; i < f.length; i++) {
+                        if (city.tiles[i] != City.ROAD && city.tiles[i] != City.DIRT) continue;
+                        roads++;
+                        if (f[i] >= City.FAR) cut++;
+                    }
+                    check(cut * 200 < roads, "map " + ps[0] + ": hardly any road cut off (" + cut + " of " + roads + ")");
+                }
+                // Help from outside comes in on the carriageway into the map, not the one leaving it.
+                CityConfig wc = new CityConfig();
+                wc.v[CityConfig.OPT_PRESET] = 2;
+                wc.v[CityConfig.OPT_ZOMBIES] = 0;
+                wc.seed = 7;
+                wc.normalize();
+                wc.seed = 7;
+                World w = new World(wc);
+                w.populate(wc);
+                City city = w.city;
+                int len = city.hwyAxis == 0 ? city.w : city.h, wrong = 0, hwy = 0;
+                for (float[] p : w.dispatch.entries(city.worldW() / 2, city.worldH() / 2)) {
+                    int i = city.tileIndex(p[0], p[1]);
+                    if (city.oneWay == null || city.oneWay[i] == 0) continue;
+                    hwy++;
+                    int along = city.hwyAxis == 0 ? i % city.w : i / city.w;
+                    byte ow = city.oneWay[i];
+                    boolean in = along < len / 2 ? ow == 1 || ow == 3 : ow == 2 || ow == 4;
+                    if (!in) wrong++;
+                }
+                check(hwy >= 2 && wrong == 0, "help comes in on the inbound carriageway at both ends (" + hwy + " ways in, " + wrong + " the wrong way)");
+                // A squad mounts up and is away in seconds.
+                City.Facility base = city.nearestFacility(City.FACILITY_BASE, city.worldW() / 2, city.worldH() / 2);
+                if (base != null) {
+                    java.util.ArrayList<Entity> squad = new java.util.ArrayList<Entity>();
+                    for (Entity e : w.entities)
+                        if (squad.size() < 4 && e.type == Entity.SOLDIER && !e.dead && e.task == Dispatch.T_NONE && e.rig == null
+                                && Math.hypot(e.x - base.x, e.y - base.y) < 400) squad.add(e);
+                    float[] q = city.findWalkable(base.x > city.worldW() / 2 ? city.worldW() * 0.15f : city.worldW() * 0.85f, city.worldH() / 2);
+                    Dispatch.Incident inc = new Dispatch.Incident();
+                    inc.x = q[0];
+                    inc.y = q[1];
+                    inc.place = "the test";
+                    inc.field = city.walkField16(inc.x, inc.y);
+                    w.dispatch.incidents.add(inc);
+                    for (int k = 0; k < 4; k++) w.spawn(Entity.ZOMBIE, q[0] + k * 6, q[1]);
+                    if (squad.size() >= 2 && w.fleet.mountUp(squad, inc)) {
+                        float took = -1;
+                        for (int fr = 0; fr < 30 * 25 && took < 0; fr++) {
+                            w.update(1 / 30f);
+                            w.evCount = 0;
+                            for (Fleet.Vehicle v : w.fleet.vehicles) if (v.incident == inc && v.state == Fleet.DRIVE) took = fr / 30f;
+                        }
+                        check(took >= 0 && took < 15, "the squad is mounted up and away in under 15 seconds (" + took + ")");
+                    }
+                }
+                // Livelier maps: not every town the same square, and ranger outposts by the other mountains.
+                java.util.HashSet<String> shapes = new java.util.HashSet<String>();
+                int outposts = 0;
+                for (int seed : new int[]{5, 6, 7}) {
+                    CityConfig c = new CityConfig();
+                    c.v[CityConfig.OPT_PRESET] = 1;
+                    c.v[CityConfig.OPT_SIZE] = CityConfig.HUGE;
+                    c.seed = seed;
+                    c.normalize();
+                    c.seed = seed;
+                    City m = new City(c, 0.02f);
+                    shapes.add((m.townX1 - m.townX0) + "x" + (m.townY1 - m.townY0));
+                    outposts += m.outposts.size();
+                }
+                check(shapes.size() >= 2, "towns of different shapes (" + shapes + ")");
+                check(outposts >= 2, "ranger outposts as well as the station (" + outposts + ")");
+            }
+        });
         test("every screen draws", new Check() {
             public void run() throws Exception {
                 GameView v = new GameView(new android.app.Activity());

@@ -2,11 +2,18 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.38";
-    static final int VERSION_CODE = 76;
+    static final String VERSION = "10.39";
+    static final int VERSION_CODE = 77;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.39  -  Hordes and hunting (AI rebuild, part 3)",
+                    "The dead drawn to a noise, or to where they last saw someone, now share one route there round the buildings, worked out once for all of them, instead of each planning their own. More of them get there round corners, a little quicker, and it leaves more of the route planning for the living. They go straight for the furthest bit of the way they can see, instead of zig-zagging along it.",
+                    "Hordes walk as a horde: each zombie keeps its place behind the one in front, in a column along the way it's going (the bigger the horde, the longer its tail), not in a ring round it. Stragglers cut off round a corner follow the trail the leader left instead of walking into the wall between, and a leader with too many strung out behind slows down to let them catch up. Hordes no longer shed zombies at every corner.",
+                    "Tracking: one of the dead that loses sight of someone carries on the way they were going for a while, before casting about for them.",
+                    "Civilians think again the moment one of the dead first comes into sight, even in the middle of an errand, instead of finishing the thought they were on (up to a second).",
+            },
             {
                     "10.38  -  Police and soldiers think for themselves (AI rebuild, part 2 continued)",
                     "Police officers and soldiers weigh up what's in front of them the same new way civilians do: shoot it, pull back hurt, fall back from more of the dead than they can hold, go and look where the last one was seen, or carry on with their orders. They stick to a decision for a moment and think again at once when one of the dead comes into sight or drops out of it.",

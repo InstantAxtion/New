@@ -437,6 +437,10 @@ mounting up, and lighter running with big populations.
 
 **More police than soldiers (10.35):** the army on the map is never more than two in five of the police force.
 
+**Hordes and hunting (10.39):** the last part of the AI rebuild: the dead share routes to noises and to where
+they last saw someone, hordes walk in a column behind their leader and follow its trail round corners (the leader
+waits for stragglers), and a zombie that loses sight of someone follows the way they were going.
+
 **Police and soldiers' brain (10.38):** the rest of part 2: officers and soldiers choose between fighting,
 pulling back hurt, falling back when outnumbered and alone, searching, and their orders; they fight back on the way
 to a vehicle and when heading back to restock. No more crawlers; about one in eleven of the bitten comes back as

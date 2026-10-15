@@ -105,6 +105,14 @@ final class Entity {
     Fleet.Vehicle ride;
     /** Zombies: where the prey was last seen, how long they remember it, and time left searching there. */
     float lastX, lastY, memory, searchTimer, moanCd;
+    /** (10.39) The way the one they were after was going when last seen; a horde leader's trail (World.TRAIL
+     * points, newest at trailHead - 1) and whether it's slowed to let stragglers catch up. */
+    transient float trackX, trackY;
+    transient float[] trail;
+    transient int trailHead, trailN;
+    transient boolean hordeWait;
+    /** (10.39) Had one of the dead in sight last time they thought about it. */
+    transient boolean sawThreat;
     /** Where this one last left a footprint or a drop of blood, and how long their feet stay wet after wading. */
     float markX = -1, markY, wet;
     boolean markLeft;

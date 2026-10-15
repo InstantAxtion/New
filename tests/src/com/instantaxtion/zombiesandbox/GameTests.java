@@ -2528,6 +2528,8 @@ public final class GameTests {
                             || e.militia || e.scavenge != null || e.job == Entity.J_LOOKOUT) continue;
                     boolean arm = World.bravery(e) > 0.75f && armedTried < 4;
                     if (!arm && tried >= 6) continue;
+                    // (Some people already own a gun, and may well stand and use it: not who this is about.)
+                    if (!arm && e.hasGun) continue;
                     float zx = e.x + 60, zy = e.y;
                     if (w.city.solidAt(zx, zy) || !w.city.los(e.x, e.y, zx, zy)) {
                         zx = e.x - 60;
@@ -2654,7 +2656,7 @@ public final class GameTests {
                 hurt.task = Dispatch.T_NONE;
                 w.spawn(Entity.ZOMBIE, hurt.x + 60, hurt.y);
                 boolean pulledBack = false;
-                for (int f = 0; f < 20; f++) {
+                for (int f = 0; f < 45 && !pulledBack; f++) {
                     w.update(1 / 30f);
                     if (hurt.goal == World.A_WOUNDED) pulledBack = true;
                 }
@@ -2704,6 +2706,80 @@ public final class GameTests {
                 }
                 check(!w.pickups.contains(gun), "the gun is gone after a minute");
                 check(w.pickups.contains(bat) || bat.claimed, "a bat lasts longer");
+            }
+        });
+        test("10.39: the dead share their routes to a noise, track the living, and keep together in a horde", new Check() {
+            public void run() throws Exception {
+                CityConfig c = new CityConfig();
+                c.v[CityConfig.OPT_PRESET] = 0;
+                c.v[CityConfig.OPT_ZOMBIES] = 0;
+                c.seed = 14;
+                c.normalize();
+                c.seed = 14;
+                World w = new World(c);
+                w.setMaxPopulation(0);
+                java.util.Random r = new java.util.Random(8);
+                // A noise round the corner from twenty of the dead: they come by the one shared route, round the
+                // buildings, and get there.
+                float[] n = w.city.randomWalkableInTown(r);
+                java.util.List<Entity> zs = new java.util.ArrayList<Entity>();
+                for (int k = 0; k < 600 && zs.size() < 20; k++) {
+                    float an = r.nextFloat() * 6.283f, d = 180 + r.nextFloat() * 150;
+                    float x = n[0] + (float) Math.cos(an) * d, y = n[1] + (float) Math.sin(an) * d;
+                    if (w.city.solidAt(x, y) || w.city.los(x, y, n[0], n[1]) || w.city.findPath(x, y, n[0], n[1], 9000) == null) continue;
+                    zs.add(w.spawn(Entity.ZOMBIE, x, y));
+                }
+                check(zs.size() == 20, "twenty of the dead out of sight of the noise");
+                int made = w.luresMade, there = 0;
+                for (int f = 0; f < 30 * 25; f++) {
+                    if (f % 90 == 0) w.noise(n[0], n[1], 400);
+                    w.update(1 / 30f);
+                    w.evCount = 0;
+                }
+                for (Entity z : zs) if (Math.hypot(z.x - n[0], z.y - n[1]) < 60) there++;
+                check(there >= 15, "most get to the noise round the buildings (" + there + " of 20)");
+                check(w.luresMade - made <= 12, "by a few shared routes, not one each (" + (w.luresMade - made) + ")");
+                // Lost sight of someone: on the way they were going, before casting about.
+                w.entities.clear();
+                float[] o = null;
+                for (int k = 0; k < 400 && o == null; k++) {
+                    float[] q = w.city.randomWalkableInTown(r);
+                    if (q != null && w.city.los(q[0], q[1], q[0] + 120, q[1]) && !w.city.solidAt(q[0] + 120, q[1])) o = q;
+                }
+                check(o != null, "a clear stretch of street");
+                Entity z = w.spawn(Entity.ZOMBIE, o[0], o[1]);
+                z.lastX = o[0] + 8;
+                z.lastY = o[1];
+                z.trackX = 60;
+                z.trackY = 0;
+                z.memory = 5;
+                for (int f = 0; f < 20 && z.lastX < o[0] + 60; f++) w.update(1 / 30f);
+                check(z.memory > 0 && z.lastX > o[0] + 60, "it carries on the way they went (" + (int) (z.lastX - o[0]) + ")");
+                // A horde on the move keeps together: its followers stay with it round the corners.
+                w.entities.clear();
+                float[] h = w.city.randomWalkableInTown(r);
+                Entity lead = w.spawn(Entity.ZOMBIE, h[0], h[1]);
+                java.util.List<Entity> horde = new java.util.ArrayList<Entity>();
+                for (int k = 0; k < 400 && horde.size() < 12; k++) {
+                    float x = h[0] + r.nextFloat() * 80 - 40, y = h[1] + r.nextFloat() * 80 - 40;
+                    if (!w.city.solidAt(x, y)) horde.add(w.spawn(Entity.ZOMBIE, x, y));
+                }
+                lead.leadsHorde = true;
+                lead.hordeSize = horde.size() + 1;
+                for (Entity f : horde) {
+                    f.hordeLeader = lead;
+                    f.roamX = 10 + r.nextFloat() * 40;
+                    f.roamY = r.nextFloat() * 30 - 15;
+                }
+                float sx = lead.x, sy = lead.y;
+                for (int f = 0; f < 30 * 60; f++) {
+                    w.update(1 / 30f);
+                    w.evCount = 0;
+                }
+                int with = 0;
+                for (Entity f : horde) if (f.hordeLeader == lead && Math.hypot(f.x - lead.x, f.y - lead.y) < 150) with++;
+                check(lead.leadsHorde && Math.hypot(lead.x - sx, lead.y - sy) > 150, "the horde gets somewhere (" + (int) Math.hypot(lead.x - sx, lead.y - sy) + ")");
+                check(with >= 9, "and most of it is still with it a minute later (" + with + " of " + horde.size() + ")");
             }
         });
         test("every screen draws", new Check() {

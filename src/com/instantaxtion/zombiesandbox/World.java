@@ -2186,6 +2186,8 @@ final class World {
             }
             z.lastX = t.x + t.vx * 0.8f;
             z.lastY = t.y + t.vy * 0.8f;
+            z.trackX = t.vx;
+            z.trackY = t.vy;
             z.memory = 7;
             z.searchTimer = 0;
             // The moan: other zombies nearby hear it and come to join the hunt.
@@ -2261,11 +2263,21 @@ final class World {
                 z.memory = 0;
                 z.path = null;
             } else if (d < 14 || (z.blocked && d < 40)) {
+                z.blocked = false;
+                // (10.39) On the trail: on the way they were going, a little further, before casting about.
+                float tl = (float) Math.sqrt(z.trackX * z.trackX + z.trackY * z.trackY);
+                float nx = z.lastX + z.trackX / (tl + 0.001f) * 80, ny = z.lastY + z.trackY / (tl + 0.001f) * 80;
+                if (tl > 5 && !city.solidAt(nx, ny) && city.los(z.x, z.y, nx, ny)) {
+                    z.lastX = nx;
+                    z.lastY = ny;
+                    z.trackX = z.trackY = 0;
+                    z.memory = 3;
+                    return;
+                }
                 z.memory = 0;
                 z.searchTimer = 5 + rnd.nextFloat() * 4;
-                z.blocked = false;
             } else {
-                if (!followField(z, city.humanDist, z.speed * 1.2f)) zombieWalkTo(z, z.lastX, z.lastY, z.speed * 1.25f);
+                if (!followField(z, city.humanDist, z.speed * 1.2f)) zombieLure(z, z.lastX, z.lastY, z.speed * 1.25f);
                 return;
             }
         }
@@ -2410,8 +2422,9 @@ final class World {
             float d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
             if (d < 25) z.noiseTimer = 0;
             else {
-                // (Round the buildings in the way, not into their walls: the noise is often a fight indoors.)
-                zombieWalkTo(z, z.noiseX, z.noiseY, z.speed * 1.2f);
+                // (Round the buildings in the way, not into their walls: the noise is often a fight indoors. (10.39)
+                // All the dead drawn by one noise share the one route there.)
+                zombieLure(z, z.noiseX, z.noiseY, z.speed * 1.2f);
                 if (z.stuckTime > 3) {
                     z.noiseTimer = 0;
                     z.path = null;
@@ -2435,16 +2448,7 @@ final class World {
         }
         Entity lead = z.hordeLeader;
         if (lead != null) {
-            float gx = lead.x + z.roamX - z.x, gy = lead.y + z.roamY - z.y;
-            float d = (float) Math.sqrt(gx * gx + gy * gy) + 0.001f;
-            if (d > 260 || (z.blocked && d > 60)) {
-                z.blocked = false;
-                z.hordeLeader = null;
-            } else if (d > 8) {
-                steer(z, gx / d, gy / d, Math.min(z.speed * (d > 40 ? 1.3f : 1f), lead.want + d * 0.4f));
-            } else {
-                steer(z, lead.mx, lead.my, lead.want);
-            }
+            hordeFollow(z, lead);
             return;
         }
         wander(z, z.speed * 0.45f);
@@ -2505,9 +2509,16 @@ final class World {
         if (z.type == Entity.CRAWLER) return;
         if (z.hordeLeader != null && (z.hordeLeader.dead || !z.hordeLeader.leadsHorde)) z.hordeLeader = null;
         if (z.leadsHorde) {
-            int size = 1;
-            for (int i = 0, n = entities.size(); i < n; i++) if (entities.get(i).hordeLeader == z) size++;
+            int size = 1, behind = 0;
+            for (int i = 0, n = entities.size(); i < n; i++) {
+                Entity o = entities.get(i);
+                if (o.hordeLeader != z) continue;
+                size++;
+                if ((o.x - z.x) * (o.x - z.x) + (o.y - z.y) * (o.y - z.y) > (o.roamX + 70) * (o.roamX + 70)) behind++;
+            }
             z.hordeSize = size;
+            // (10.39) Too many strung out behind: it slows to let them catch up.
+            z.hordeWait = behind * 3 > size;
             biggestHorde = Math.max(biggestHorde, size);
             Entity other = nearestHordeLeader(z, 140);
             if (size < 3 || (other != null && other.hordeSize >= size)) {
@@ -2694,9 +2705,72 @@ final class World {
 
     private void join(Entity z, Entity lead) {
         z.hordeLeader = lead;
-        float a = rnd.nextFloat() * TAU, r = 8 + rnd.nextFloat() * 30;
-        z.roamX = (float) Math.cos(a) * r;
-        z.roamY = (float) Math.sin(a) * r;
+        // (10.39) A place in the horde: how far back behind the one in front, and how far to the side. The
+        // bigger the horde, the longer its tail.
+        z.roamX = 10 + rnd.nextFloat() * (20 + Math.min(60, lead.hordeSize * 2.5f));
+        z.roamY = (rnd.nextFloat() - 0.5f) * (24 + Math.min(30, lead.hordeSize));
+    }
+
+    /**
+     * (10.39) Walking with a horde: in its place behind the one in front (back along the way it's heading,
+     * not a ring round it), and when that place is round a corner or the horde has pulled ahead, along the
+     * trail the leader left, instead of straight into the wall between.
+     */
+    private void hordeFollow(Entity z, Entity lead) {
+        float hx = lead.mx, hy = lead.my, hl = (float) Math.sqrt(hx * hx + hy * hy);
+        if (hl < 0.1f) {
+            hx = (float) Math.cos(lead.angle);
+            hy = (float) Math.sin(lead.angle);
+        } else {
+            hx /= hl;
+            hy /= hl;
+        }
+        float sx = lead.x - hx * z.roamX - hy * z.roamY, sy = lead.y - hy * z.roamX + hx * z.roamY;
+        if (city.solidAt(sx, sy)) {
+            // (Their place is in a wall just now: straight behind instead.)
+            sx = lead.x - hx * z.roamX;
+            sy = lead.y - hy * z.roamX;
+        }
+        float gx = sx - z.x, gy = sy - z.y;
+        float d = (float) Math.sqrt(gx * gx + gy * gy) + 0.001f;
+        float ld = (float) Math.hypot(lead.x - z.x, lead.y - z.y);
+        if (ld > 420) {
+            z.hordeLeader = null;
+            return;
+        }
+        if ((d > 50 || z.blocked) && (ld > 60 || !city.los(z.x, z.y, sx, sy))) {
+            // Catching up: the newest bit of the leader's trail they can see from here.
+            float[] tr = lead.trail;
+            if (tr != null) {
+                for (int k = 0; k < lead.trailN; k++) {
+                    int i = ((lead.trailHead - 1 - k) % TRAIL + TRAIL) % TRAIL;
+                    float px = tr[i * 2], py = tr[i * 2 + 1];
+                    float pd = (float) Math.hypot(px - z.x, py - z.y);
+                    if (pd < 220 && pd > 6 && city.los(z.x, z.y, px, py)) {
+                        steer(z, (px - z.x) / pd, (py - z.y) / pd, z.speed * 1.3f);
+                        z.blocked = false;
+                        return;
+                    }
+                }
+            }
+            zombieLure(z, lead.x, lead.y, z.speed * 1.3f);
+            return;
+        }
+        if (d > 8) steer(z, gx / d, gy / d, Math.min(z.speed * (d > 40 ? 1.3f : 1f), lead.want + d * 0.4f));
+        else steer(z, lead.mx, lead.my, lead.want);
+    }
+
+    static final int TRAIL = 16;
+
+    /** A horde leader marks its way every twenty steps or so, for the stragglers to follow. */
+    private void markTrail(Entity z) {
+        if (z.trail == null) z.trail = new float[TRAIL * 2];
+        int last = ((z.trailHead - 1) % TRAIL + TRAIL) % TRAIL;
+        if (z.trailN > 0 && Math.hypot(z.trail[last * 2] - z.x, z.trail[last * 2 + 1] - z.y) < 22) return;
+        z.trail[z.trailHead * 2] = z.x;
+        z.trail[z.trailHead * 2 + 1] = z.y;
+        z.trailHead = (z.trailHead + 1) % TRAIL;
+        z.trailN = Math.min(TRAIL, z.trailN + 1);
     }
 
     private Entity nearestHordeLeader(Entity z, float radius) {
@@ -2801,6 +2875,7 @@ final class World {
 
     /** A horde leader shambles towards a far-off spot, or towards people it can smell. */
     private void roam(Entity z) {
+        markTrail(z);
         if (city.fieldAt(city.humanDist, z.x, z.y) < SCENT * 1.7f && followField(z, city.humanDist, z.speed * 0.55f)) return;
         float ddx = z.roamX - z.x, ddy = z.roamY - z.y;
         float d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
@@ -2810,8 +2885,9 @@ final class World {
             return;
         }
         // ((10.32) A horde on the move goes round things, by the streets and lanes, not straight into them.)
-        if (z.leadsHorde && d > 150) zombieWalkTo(z, z.roamX, z.roamY, z.speed * 0.5f);
-        else steer(z, ddx / d, ddy / d, z.speed * 0.5f);
+        float pace = z.speed * (z.hordeWait ? 0.25f : 0.5f);
+        if (z.leadsHorde && d > 150) zombieWalkTo(z, z.roamX, z.roamY, pace);
+        else steer(z, ddx / d, ddy / d, pace);
     }
 
     /** A body that isn't about to get up, for a zombie to feed on. */
@@ -3584,7 +3660,9 @@ final class World {
         e.goalTime += dt;
         // (Thought again at once when a zombie gets close, or the one being fought is gone, but not every frame.)
         boolean urgent = threat != null && threatDist < 25 && e.goal != G_FLEE && e.goal != G_FIGHT && e.goalCd < 0.4f;
-        boolean lost = (threat == null && e.goal == G_FIGHT) || (threat != null && e.goal == G_ROUTINE);
+        // (10.39) ... and the moment one of the dead first comes into sight, whatever they were doing.
+        boolean lost = (threat == null && e.goal == G_FIGHT) || (threat != null && (e.goal == G_ROUTINE || !e.sawThreat));
+        e.sawThreat = threat != null;
         if (e.goalCd > 0 && !urgent && !lost) return e.goal;
         e.goalCd = 0.5f + rnd.nextFloat() * 0.4f;
         java.util.Arrays.fill(goalScore, -1);
@@ -6359,10 +6437,15 @@ final class World {
 
     /** Follows a door route downhill; false if this one is off its patch or cut off. */
     private boolean followDoor(Entity e, DoorRoute f, float speed) {
+        return followPatch(e, f.x0, f.y0, DOOR_S, f.d, speed, false);
+    }
+
+    /** Follows a route patch ({@code s} tiles square from x0, y0) downhill; false if off it or cut off. */
+    private boolean followPatch(Entity e, int x0, int y0, int s, int[] dd, float speed, boolean ahead) {
         int tx = (int) (e.x / City.T), ty = (int) (e.y / City.T);
-        int lx = tx - f.x0, ly = ty - f.y0;
-        if (lx < 1 || ly < 1 || lx >= DOOR_S - 1 || ly >= DOOR_S - 1) return false;
-        int cur = f.d[ly * DOOR_S + lx];
+        int lx = tx - x0, ly = ty - y0;
+        if (lx < 1 || ly < 1 || lx >= s - 1 || ly >= s - 1) return false;
+        int cur = dd[ly * s + lx];
         if (cur >= City.FAR || cur == 0) return false;
         int best = cur, bx = -1, by = -1;
         for (int oy = -1; oy <= 1; oy++)
@@ -6370,7 +6453,7 @@ final class World {
                 if (ox == 0 && oy == 0) continue;
                 if (city.solidTile(tx + ox, ty + oy)) continue;
                 if (ox != 0 && oy != 0 && (city.solidTile(tx + ox, ty) || city.solidTile(tx, ty + oy))) continue;
-                int v = f.d[(ly + oy) * DOOR_S + lx + ox];
+                int v = dd[(ly + oy) * s + lx + ox];
                 if (v < best) {
                     best = v;
                     bx = tx + ox;
@@ -6378,10 +6461,144 @@ final class World {
                 }
             }
         if (bx < 0) return false;
+        if (ahead) {
+            // (10.39) On down the route a few tiles more, and straight for the furthest of those in sight,
+            // rather than zig-zagging tile to tile.
+            int cx = bx, cy = by, v = best, fx = -1, fy = -1;
+            for (int step = 1; step <= 6 && v > 0; step++) {
+                int nb = v, nx = -1, ny = -1;
+                for (int oy = -1; oy <= 1; oy++)
+                    for (int ox = -1; ox <= 1; ox++) {
+                        int qx = cx + ox - x0, qy = cy + oy - y0;
+                        if ((ox == 0 && oy == 0) || qx < 0 || qy < 0 || qx >= s || qy >= s) continue;
+                        int q = dd[qy * s + qx];
+                        if (q < nb && !city.solidTile(cx + ox, cy + oy)) {
+                            nb = q;
+                            nx = cx + ox;
+                            ny = cy + oy;
+                        }
+                    }
+                if (nx < 0) break;
+                cx = nx;
+                cy = ny;
+                v = nb;
+                if (step == 3 || step == 6) {
+                    float px = cx * City.T + City.T / 2f, py = cy * City.T + City.T / 2f;
+                    if (city.los(e.x, e.y, px, py)) {
+                        fx = cx;
+                        fy = cy;
+                    } else break;
+                }
+            }
+            if (fx >= 0) {
+                bx = fx;
+                by = fy;
+            }
+        }
         float gx = bx * City.T + City.T / 2f - e.x, gy = by * City.T + City.T / 2f - e.y;
         float d = (float) Math.sqrt(gx * gx + gy * gy) + 0.001f;
         steer(e, gx / d, gy / d, speed);
         return true;
+    }
+
+    /**
+     * (10.39) A route patch round a spot the dead are drawn to (a noise, where someone was last seen): every one
+     * of them heading there shares it, instead of each planning a route of their own. Kept for twenty seconds
+     * (things change: barricades, wrecks), the last few dozen of them.
+     */
+    static final class Lure {
+        int x0, y0;
+        float made;
+        final int[] d = new int[LURE_S * LURE_S];
+    }
+
+    static final int LURE_R = 40, LURE_S = LURE_R * 2 + 1;
+    private final java.util.LinkedHashMap<Integer, Lure> lures = new java.util.LinkedHashMap<Integer, Lure>(16, 0.75f, true) {
+        @Override
+        protected boolean removeEldestEntry(java.util.Map.Entry<Integer, Lure> eldest) {
+            return size() > 40;
+        }
+    };
+    private int[][] lureBuckets;
+    int luresMade;
+
+    /** The shared route patch to (x, y) (spots within a few steps of each other share one), or null. */
+    Lure lureField(float x, float y) {
+        int tx = Math.max(0, Math.min(city.w - 1, (int) (x / City.T))), ty = Math.max(0, Math.min(city.h - 1, (int) (y / City.T)));
+        int key = (ty / 3) * 65536 + tx / 3;
+        Lure f = lures.get(key);
+        if (f != null && time - f.made < 20) return f;
+        if (pathBudget < 0.1f) return f;
+        pathBudget -= 0.1f;
+        if (city.solid[ty * city.w + tx]) {
+            float[] p = city.findWalkable(x, y);
+            if (p == null) return f;
+            tx = (int) (p[0] / City.T);
+            ty = (int) (p[1] / City.T);
+        }
+        if (f == null) f = new Lure();
+        f.made = time;
+        f.x0 = tx - LURE_R;
+        f.y0 = ty - LURE_R;
+        java.util.Arrays.fill(f.d, City.FAR);
+        if (lureBuckets == null) lureBuckets = new int[9][LURE_S * LURE_S * 4];
+        if (city.walkCost == null) city.computeWalkCost();
+        int[] sizes = new int[9];
+        int start = LURE_R * LURE_S + LURE_R;
+        f.d[start] = 0;
+        sizes[0] = 1;
+        lureBuckets[0][0] = start;
+        int pending = 1;
+        for (int d = 0; pending > 0 && d < 900; d++) {
+            int bi = d % 9;
+            int[] bk = lureBuckets[bi];
+            int size = sizes[bi];
+            sizes[bi] = 0;
+            pending -= size;
+            for (int k = 0; k < size; k++) {
+                int t = bk[k];
+                if (f.d[t] != d) continue;
+                int lx = t % LURE_S, ly = t / LURE_S;
+                for (int q = 0; q < 4; q++) {
+                    int nx = lx + (q == 0 ? -1 : q == 1 ? 1 : 0), ny = ly + (q == 2 ? -1 : q == 3 ? 1 : 0);
+                    if (nx < 0 || ny < 0 || nx >= LURE_S || ny >= LURE_S) continue;
+                    int wx = f.x0 + nx, wy = f.y0 + ny;
+                    if (wx < 0 || wy < 0 || wx >= city.w || wy >= city.h) continue;
+                    int wi = wy * city.w + wx;
+                    if (city.solid[wi]) continue;
+                    int nl = ny * LURE_S + nx, nd = d + city.walkCost[wi];
+                    if (nd >= f.d[nl]) continue;
+                    f.d[nl] = nd;
+                    int b2 = nd % 9;
+                    if (sizes[b2] >= lureBuckets[b2].length) continue;
+                    lureBuckets[b2][sizes[b2]++] = nl;
+                    pending++;
+                }
+            }
+        }
+        lures.put(key, f);
+        luresMade++;
+        return f;
+    }
+
+    /** One of the dead heading for a spot by the shared route there; by a route of its own when off it. */
+    private void zombieLure(Entity z, float x, float y, float speed) {
+        float dx = x - z.x, dy = y - z.y;
+        // (Close and in plain sight: straight there.)
+        if (dx * dx + dy * dy < 40 * 40 && !z.blocked) {
+            float d = (float) Math.sqrt(dx * dx + dy * dy) + 0.001f;
+            steer(z, dx / d, dy / d, speed);
+            return;
+        }
+        if (Math.abs(dx) < (LURE_R - 2) * City.T && Math.abs(dy) < (LURE_R - 2) * City.T) {
+            Lure f = lureField(x, y);
+            if (f != null && followPatch(z, f.x0, f.y0, LURE_S, f.d, speed, true)) {
+                z.blocked = false;
+                z.path = null;
+                return;
+            }
+        }
+        zombieWalkTo(z, x, y, speed);
     }
 
     /**

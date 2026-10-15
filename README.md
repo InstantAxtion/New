@@ -438,6 +438,10 @@ mounting up, and lighter running with big populations.
 
 **More police than soldiers (10.35):** the army on the map is never more than two in five of the police force.
 
+**A civilian's brain (10.37):** the second part of the AI rebuild: civilians weigh up everything they could do
+(run, hide, shoot, safe zone, get a gun, heal, evacuate, follow family, carry on) and pick the best, each with their
+own bravery and caution, sticking to a decision for a moment instead of dithering, and keeping their routes.
+
 **New pathfinding (10.36):** the first part of the AI rebuild: hierarchical walking routes that are found however
 far, straightened and kept off walls, re-planned when someone gets stuck, and vehicle routes searched towards the
 vehicle.

@@ -1713,8 +1713,9 @@ public final class GameTests {
                     if (v.type == Fleet.TRUCK && !v.broken && !v.standby && !v.pickup && !v.restock) collecting++;
                 check(parked + collecting >= 3, "drop-off trucks parked back at a base or back out on duty (" + parked + " + " + collecting + ")");
                 if (one != null) check(w.fleet.status(one).contains("Parked"), "shown as parked: " + w.fleet.status(one));
+                // (Every truck may be out on duty just now: then there's no parked one to take.)
                 int before = w.fleet.vehicles.size();
-                check(w.fleet.send(Entity.SOLDIER, 6, one.x, one.y, q[0], q[1], null, null, "the test") && one.removedFromFleet
+                if (one != null) check(w.fleet.send(Entity.SOLDIER, 6, one.x, one.y, q[0], q[1], null, null, "the test") && one.removedFromFleet
                         && w.fleet.vehicles.size() == before, "the next call takes a parked truck");
             }
         });
@@ -2496,6 +2497,99 @@ public final class GameTests {
                     if (f1[from] == f2[from]) same++;
                 }
                 check(both >= 5 && same == both, "aimed vehicle routes are as short as a full search (" + same + " of " + both + ")");
+            }
+        });
+        test("10.37: a civilian's brain - runs or hides from the dead, the brave stand and shoot, sticks to a plan", new Check() {
+            public void run() throws Exception {
+                CityConfig c = new CityConfig();
+                c.v[CityConfig.OPT_PRESET] = 0;
+                c.v[CityConfig.OPT_ZOMBIES] = 0;
+                c.seed = 9;
+                c.normalize();
+                c.seed = 9;
+                World w = new World(c);
+                w.populate(c);
+                for (int f = 0; f < 30 * 3; f++) w.update(1 / 30f);
+                // Who someone is decides how brave they are: always the same for the same person, and not
+                // everyone alike.
+                int brave = 0, timid = 0;
+                for (Entity e : w.entities) {
+                    if (e.type != Entity.CIVILIAN) continue;
+                    check(World.bravery(e) == World.bravery(e) && World.bravery(e) >= 0 && World.bravery(e) <= 1, "bravery from 0 to 1");
+                    if (World.bravery(e) > 0.7f) brave++;
+                    else if (World.bravery(e) < 0.3f) timid++;
+                }
+                check(brave > 5 && timid > 5, "some brave, some not (" + brave + " brave, " + timid + " timid)");
+                // An unarmed civilian with one of the dead coming: running or hiding within a moment, not carrying on.
+                int tried = 0, reacted = 0, armedTried = 0, fought = 0;
+                for (Entity e : new java.util.ArrayList<Entity>(w.entities)) {
+                    if (tried >= 6 && armedTried >= 4) break;
+                    if (e.type != Entity.CIVILIAN || e.dead || e.hidden || e.ride != null || e.leader != null || e.task != Dispatch.T_NONE
+                            || e.militia || e.scavenge != null || e.job == Entity.J_LOOKOUT) continue;
+                    boolean arm = World.bravery(e) > 0.75f && armedTried < 4;
+                    if (!arm && tried >= 6) continue;
+                    float zx = e.x + 60, zy = e.y;
+                    if (w.city.solidAt(zx, zy) || !w.city.los(e.x, e.y, zx, zy)) {
+                        zx = e.x - 60;
+                        if (w.city.solidAt(zx, zy) || !w.city.los(e.x, e.y, zx, zy)) continue;
+                    }
+                    w.clearZombies();
+                    if (arm) w.armCivilian(e, 30);
+                    Entity z = w.spawn(Entity.ZOMBIE, zx, zy);
+                    z.stun = 2;
+                    int ammo = e.ammo + e.reserve;
+                    boolean ran = false, shot = false;
+                    for (int f = 0; f < 30 && !e.dead; f++) {
+                        w.update(1 / 30f);
+                        if (e.goal == World.G_FLEE || e.goal == World.G_HIDE || e.goal == World.G_ZONE || e.hidden) ran = true;
+                        if (e.goal == World.G_FIGHT) shot = true;
+                    }
+                    if (arm) {
+                        armedTried++;
+                        if (shot && e.ammo + e.reserve < ammo) fought++;
+                    } else {
+                        tried++;
+                        if (ran) reacted++;
+                    }
+                    w.clearZombies();
+                    for (int f = 0; f < 30 * 2; f++) w.update(1 / 30f);
+                }
+                check(tried >= 4 && reacted == tried, "the unarmed run or hide from the dead (" + reacted + " of " + tried + ")");
+                check(armedTried >= 2 && fought * 2 >= armedTried, "the brave with a gun stand and shoot (" + fought + " of " + armedTried + ")");
+                // With no guns lying about, nobody sets off to pick one up.
+                w.pickups.clear();
+                // An outbreak: everyone sticks to what they decide for a while, rather than flipping between two
+                // things every moment.
+                java.util.Random r = new java.util.Random(4);
+                for (int k = 0; k < 25; k++) {
+                    float[] q = w.city.randomWalkableInTown(r);
+                    if (q != null) w.spawn(Entity.ZOMBIE, q[0], q[1]);
+                }
+                java.util.IdentityHashMap<Entity, int[]> seen = new java.util.IdentityHashMap<Entity, int[]>();
+                int pick = 0;
+                for (int f = 0; f < 30 * 20; f++) {
+                    w.update(1 / 30f);
+                    w.evCount = 0;
+                    for (Entity e : w.entities) {
+                        if (e.type != Entity.CIVILIAN || e.dead || e.hidden) continue;
+                        int[] g = seen.get(e);
+                        if (g == null) seen.put(e, g = new int[]{e.goal, 0});
+                        else if (g[0] != e.goal) {
+                            g[0] = e.goal;
+                            g[1]++;
+                        }
+                        if (e.goal == World.G_PICKUP && w.pickups.isEmpty()) pick++;
+                    }
+                }
+                int people = 0, switches = 0, flighty = 0;
+                for (int[] g : seen.values()) {
+                    people++;
+                    switches += g[1];
+                    if (g[1] > 10) flighty++;
+                }
+                check(people > 50 && switches < people * 2, "a few changes of mind in twenty seconds, not constant (" + switches + " over " + people + " people)");
+                check(flighty * 50 <= people, "hardly anyone changes their mind more than every few seconds (" + flighty + " of " + people + ")");
+                check(pick == 0, "nobody goes for a gun that isn't there (" + pick + ")");
             }
         });
         test("every screen draws", new Check() {

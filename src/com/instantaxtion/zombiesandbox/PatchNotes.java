@@ -2,11 +2,19 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.36";
-    static final int VERSION_CODE = 74;
+    static final String VERSION = "10.37";
+    static final int VERSION_CODE = 75;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.37  -  A civilian's brain (AI rebuild, part 2)",
+                    "Civilians decide what to do in a new way: instead of running down a fixed list of special cases every moment, each person weighs up everything they could do (run, hide indoors, stand and shoot, make for a safe zone, get a gun, see to their wounds, get out of a part of town that's been overrun, stick with their family, or carry on with their day) and picks the one that makes most sense right now, from what's around them and the sort of person they are.",
+                    "Everyone has a character: some are brave and will stand their ground with a gun while others run, some are cautious and head indoors sooner. The same person always behaves the same way.",
+                    "People stick to what they've decided for a moment instead of flipping between two things (running, then hiding, then running again), and think again at once when one of the dead gets close. A plan that can't work out (a building they can't reach, a gun that's gone) is dropped for something else instead of pacing back and forth.",
+                    "Nobody sets off for a gun lying in the street, or a gun store, unless there is one to go to. People hiding no longer chase a door they can't get to for ever, and people getting out of an overrun area give up on a spot they can't walk to.",
+                    "Walking routes are kept: someone pushed off their route by a crowd gets back onto it where they can see it, and someone stuck steps aside and carries on, before planning a whole new route. Fewer new routes need planning, so the ones that do are planned sooner. People running to hide share one route to the door.",
+            },
             {
                     "10.36  -  New pathfinding (AI rebuild, part 1)",
                     "A new way of finding the way on foot, for the living and the dead: the map is divided into blocks, a route is planned across the blocks first and then filled in step by step, so a route is found however far it is (the old search gave up on long trips on the big maps, and people fell back to walking straight at walls). Routes are straightened into a few long lines instead of a staircase of tiles, and keep a step back from walls and corners.",

@@ -3455,18 +3455,6 @@ final class World {
 
         // Waved down a car: run for it and jump in.
         if (boardRide(e)) return;
-        if (cleanup(e, threat)) return;
-        if (supplyRun(e, threat)) return;
-        // Running for their life past an abandoned car with the keys still in it.
-        if (e.fleeTimer > 0 && e.ride == null && rnd.nextFloat() < dt * 2) {
-            Fleet.Vehicle car = abandonedCarNear(e.x, e.y, 40);
-            if (car != null) {
-                e.dead = true;
-                e.removed = true;
-                fleet.takeCar(car, e);
-                return;
-            }
-        }
 
         // Family members pull zombies off each other.
         Entity kin = e.leader;
@@ -3483,198 +3471,390 @@ final class World {
             }
         }
 
-        // Armed civilians shoot, backing off if the zombie gets too close.
-        if (e.hasGun && threat != null && threatDist > 14 && threatDist < 90 && (e.ammo > 0 || e.reserve > 0)
-                && e.task != Dispatch.T_SHELTER) {
-            aimAndFire(e, threat, threatDist, 120, dt);
-            if (threatDist < 38) {
-                float ax = e.x - threat.x, ay = e.y - threat.y;
-                flee(e, ax / threatDist, ay / threatDist, e.speed * 1.2f);
-            } else {
-                steer(e, 0, 0, 0);
-            }
-            return;
-        }
-        e.aiming = false;
-
-        // Scared and unarmed, with a gun store round the corner: go and get a gun. Once everyone knows the dead are
-        // walking, some people (about one in three) set off across town to raid one.
-        boolean raider = e.aware && e.nameSeed % 3 == 0;
-        if (!e.hasGun && e.task == Dispatch.T_NONE && (e.fear > 0 || raider) && threatDist > 40 && e.taskTimer <= 0 && e.leader == null) {
-            e.taskTimer = 2;
-            City.Building g = gunStoreNear(e, raider ? 700 : 220);
-            if (g != null && rnd.nextFloat() < (raider ? 0.7f : 0.5f)) {
-                e.task = Dispatch.T_RESUPPLY;
-                e.building = g;
-            }
-        }
-        // Out of bullets and it's quiet: restock at a supermarket or gun store.
-        if ((e.hasGun || e.task == Dispatch.T_RESUPPLY) && marketRun(e, threat)) return;
-
-        // Someone dropped a gun nearby and it's quiet: go get it.
-        if (!e.hasGun && e.task == Dispatch.T_NONE && threat == null && e.taskTimer <= 0) {
-            e.taskTimer = 1;
-            Pickup p = nearestPickup(e.x, e.y, 110);
-            if (p != null && countZombiesNear(p.x, p.y, 50) == 0) {
-                if (p.uses == 0) p.claimed = true;
-                e.pickup = p;
-                e.task = Dispatch.T_PICKUP;
-            }
-        }
-        if (e.task == Dispatch.T_PICKUP) {
-            Pickup p = e.pickup;
-            if (p == null || !pickups.contains(p) || threatDist < 40) {
-                if (p != null) p.claimed = false;
-                e.task = Dispatch.T_NONE;
-                e.pickup = null;
-            } else {
-                float ddx = p.x - e.x, ddy = p.y - e.y;
-                float d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
-                if (d < 6 && p.drop <= 0) {
-                    armCivilian(e, p.rounds);
-                    if (p.weapon != Entity.W_STD) setGun(e, p.weapon, p.rounds);
-                    if (p.uses > 0) {
-                        if (--p.uses <= 0) pickups.remove(p);
-                    } else pickups.remove(p);
-                    e.task = Dispatch.T_NONE;
-                    e.pickup = null;
-                } else {
-                    steer(e, ddx / d, ddy / d, e.speed * 1.6f);
-                }
-                return;
-            }
-        }
-
-        // Badly hurt and it's quiet: walk to the hospital.
-        if (healSeeking(e, threat, dt)) return;
-
-        // Hide indoors: run to a nearby building with room if the zombie isn't too close.
-        if (e.task == Dispatch.T_NONE && threat != null && threatDist > 30 && !e.hasGun && e.taskTimer <= 0
-                && (readiness != 2 || rnd.nextFloat() < 0.3f)) {
-            e.taskTimer = 1.5f;
-            City.Building b = shelterNear(e);
-            // Home is where people run first, if it is close enough to reach.
-            City.Building home = homeOf(e);
-            if (home != null && home.occupants.size() < home.capacity && home.barricade >= 40 && !home.collapsed
-                    && (home.doorX - e.x) * (home.doorX - e.x) + (home.doorY - e.y) * (home.doorY - e.y) < 220 * 220
-                    && countZombiesNear(home.doorX, home.doorY, 35) == 0) b = home;
-            if (b != null && (b == home || rnd.nextFloat() < 0.6f)) {
-                e.task = Dispatch.T_HIDE;
-                e.building = b;
-            }
-        }
-        if (e.task == Dispatch.T_HIDE) {
-            City.Building b = e.building;
-            if (b == null || b.occupants.size() >= b.capacity || b.barricade <= 0) {
-                e.task = Dispatch.T_NONE;
-                e.building = null;
-            } else {
-                float ddx = b.doorX - e.x, ddy = b.doorY - e.y;
-                float d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
-                if (d < 8) {
-                    enterBuilding(e, b);
-                } else if (!walkTo(e, b, ddx, ddy, d, e.runSpeed) && e.blocked && rnd.nextFloat() < 0.1f) {
-                    e.task = Dispatch.T_NONE;
-                    e.building = null;
-                }
-                return;
-            }
-        }
-
-        // Safe zones: scared people head for one, and some go as soon as they hear it on the news.
+        // (10.37) The rest is the civilian's brain: what to do now, chosen by weighing up everything they could do
+        // (see decideCivilian), held to for a while, then carried out.
+        // Plans that can't happen any more are let go.
         boolean room = dispatch.hasRoom();
-        if (e.task == Dispatch.T_SHELTER && dispatch.zones.isEmpty()) e.task = Dispatch.T_NONE;
         if (e.task == Dispatch.T_SEEK && (!room || e.refused)) e.task = Dispatch.T_NONE;
+        if (e.task == Dispatch.T_SHELTER && dispatch.zones.isEmpty()) e.task = Dispatch.T_NONE;
         // With the power out, nobody hears the broadcasts about safe zones any more.
-        if (e.task == Dispatch.T_NONE && room && !e.refused && (e.fleeTimer > 0 || (broadcasting() && readiness != 2 && rnd.nextFloat() < dt * 0.03f)))
-            e.task = Dispatch.T_SEEK;
-        if (e.task == Dispatch.T_SEEK && threatDist > 28) {
-            e.paused = false;
-            float speed = e.fleeTimer > 0 ? e.runSpeed : e.speed * 1.7f;
-            // The nearest zone taking people (still going up, perhaps).
-            Dispatch.SafeZone z = null;
-            float bd = Float.MAX_VALUE;
-            for (int i = 0; i < dispatch.zones.size(); i++) {
-                Dispatch.SafeZone q = dispatch.zones.get(i);
-                if (q.removed || q.full || q.gateOut.length == 0) continue;
-                float d = (q.x - e.x) * (q.x - e.x) + (q.y - e.y) * (q.y - e.y);
-                if (d < bd) {
-                    bd = d;
-                    z = q;
-                }
-            }
-            if (z == null) {
-                e.task = Dispatch.T_NONE;
-                getToSafety(e, homeOf(e));
-                return;
-            }
-            // In through the gate: they're in.
-            if (z.open && z.inside(e.x, e.y)) {
-                if (dispatch.admit(e, z)) return;
-                e.task = Dispatch.T_NONE;
-                return;
-            }
-            int g = z.gateNear(e.x, e.y);
-            float[] out = z.gateOut[g], in = z.gateIn[g];
-            float ox = out[0] - e.x, oy = out[1] - e.y, od = (float) Math.sqrt(ox * ox + oy * oy) + 0.001f;
-            boolean atGate = od < 22 || (z.gateOpen[g] && Math.hypot(in[0] - e.x, in[1] - e.y) < od);
-            if (!atGate) {
-                if (!z.open || !followField(e, dispatch.zoneField, speed)) walkToSpot(e, out[0], out[1], speed);
-                return;
-            }
-            if (!z.open) {
-                // A queue outside the gate, waiting for the wall to be finished.
-                float a = (e.nameSeed & 0xFF) / 256f * TAU;
-                standAt(e, out[0] + (float) Math.cos(a) * 18, out[1] + (float) Math.sin(a) * 18, 0.5f);
-                return;
-            }
-            // At the gate: checked for bites, then through when it opens.
-            if (checkpoint(e, z)) return;
-            if (z.gateOpen[g]) {
-                float ix = in[0] - e.x, iy = in[1] - e.y, id = (float) Math.sqrt(ix * ix + iy * iy) + 0.001f;
-                steer(e, ix / id, iy / id, e.speed * 1.2f);
-            } else standAt(e, out[0], out[1], 0.4f);
-            return;
-        }
-        if (e.task == Dispatch.T_SHELTER && threatDist > 28 && e.zone != null) {
-            shelterLife(e, e.zone, dt);
-            return;
-        }
-        if (e.leader == null && evacuate(e, dt)) return;
-        if (followLeader(e)) return;
-        if (patrol(e)) return;
+        if (!e.heardZone && broadcasting() && readiness != 2 && rnd.nextFloat() < dt * 0.03f) e.heardZone = true;
         // Out of sight isn't out of mind: keep going until well clear of where it was last seen.
         if (e.fleeTimer <= 0 && e.fear > 20 && e.task == Dispatch.T_NONE
                 && (e.x - e.threatX) * (e.x - e.threatX) + (e.y - e.threatY) * (e.y - e.threatY) < 170 * 170) e.fleeTimer = 1.5f;
+        int goal = decideCivilian(e, threat, threatDist, room, dt);
+        if (goal != G_FIGHT) e.aiming = false;
+        switch (goal) {
+            case G_FIGHT:
+                if (threat == null || !e.hasGun) break;
+                fightStep(e, threat, threatDist, dt);
+                return;
+            case G_FLEE:
+                fleeStep(e, dt);
+                return;
+            case G_HIDE:
+                if (hideStep(e)) return;
+                break;
+            case G_ZONE:
+                if (seekZoneStep(e, threatDist)) return;
+                break;
+            case G_SHELTER:
+                if (e.task != Dispatch.T_SHELTER || e.zone == null) break;
+                shelterLife(e, e.zone, dt);
+                return;
+            case G_GUNSTORE:
+            case G_RESTOCK:
+                if (marketRun(e, threat)) return;
+                break;
+            case G_PICKUP:
+                if (pickupStep(e, threatDist)) return;
+                break;
+            case G_HEAL:
+                if (healSeeking(e, threat, dt)) return;
+                break;
+            case G_EVAC:
+                if (evacuate(e, dt)) return;
+                break;
+            case G_FOLLOW:
+                if (followLeader(e)) return;
+                break;
+            case G_PATROL:
+                if (patrol(e)) return;
+                break;
+            case G_SUPPLY:
+                if (cleanup(e, threat) || supplyRun(e, threat)) return;
+                break;
+            default:
+                break;
+        }
+        // The chosen thing had nothing to do after all (or it's an ordinary moment): get on with the day.
+        if (goal != G_ROUTINE) e.goalCd = 0;
         if (e.fleeTimer > 0) {
-            e.paused = false;
-            float ax = e.x - e.threatX, ay = e.y - e.threatY;
-            float d = (float) Math.sqrt(ax * ax + ay * ay) + 0.001f;
-            // Run towards a cop or soldier if one is nearby and not back where the zombies are.
-            // ((10.34) Looked for every half second or so, not every frame, by everyone running.)
-            e.protectorCd -= dt;
-            if (((e.protector == null || e.protector.dead) && e.protectorCd <= 0) || rnd.nextFloat() < dt) {
-                e.protector = nearestArmed(e, 180);
-                e.protectorCd = 0.4f + rnd.nextFloat() * 0.4f;
-            }
-            Entity p = e.protector;
-            if (p != null && !p.dead) {
-                float px = p.x - e.x, py = p.y - e.y, pd = (float) Math.sqrt(px * px + py * py) + 0.001f;
-                if (pd > 25 && (px * ax + py * ay) / (pd * d) > -0.2f) {
-                    steer(e, ax / d * 0.4f + px / pd * 0.6f, ay / d * 0.4f + py / pd * 0.6f, e.runSpeed);
-                    float l = (float) Math.sqrt(e.mx * e.mx + e.my * e.my) + 0.001f;
-                    e.mx /= l;
-                    e.my /= l;
-                    return;
-                }
-            }
-            flee(e, ax / d, ay / d, e.runSpeed);
-        } else if (!routine(e, dt)) {
+            fleeStep(e, dt);
+            return;
+        }
+        if (cleanup(e, threat) || supplyRun(e, threat)) return;
+        if (!routine(e, dt)) {
             // A moment between things (or nothing doing): stand about, or stroll a little, not drift for ever.
             if (e.aware) getToSafety(e, homeOf(e));
             else if (e.errandTimer > 0 && e.errandTimer < 6) steer(e, 0, 0, 0);
             else wander(e, e.speed * 0.6f);
         }
+    }
+
+    // ------------------------------------------------------------------ (10.37) the civilian's brain
+
+    static final int G_ROUTINE = 0, G_FLEE = 1, G_FIGHT = 2, G_HIDE = 3, G_ZONE = 4, G_SHELTER = 5, G_GUNSTORE = 6,
+            G_RESTOCK = 7, G_PICKUP = 8, G_HEAL = 9, G_EVAC = 10, G_FOLLOW = 11, G_PATROL = 12, G_SUPPLY = 13, G_COUNT = 14;
+    private final float[] goalScore = new float[G_COUNT];
+
+    /** How brave someone is (0 to 1), from who they are: the same person is always the same. */
+    static float bravery(Entity e) {
+        int hsh = e.nameSeed * 0x9E3779B1;
+        return ((hsh >>> 8) & 0xFF) / 255f;
+    }
+
+    /** How cautious (0 to 1): the careful head for cover sooner, and stay longer. */
+    static float caution(Entity e) {
+        int hsh = (e.nameSeed + 77) * 0x85EBCA6B;
+        return ((hsh >>> 8) & 0xFF) / 255f;
+    }
+
+    /**
+     * Weighs up everything a civilian could be doing and picks one: running from the dead, standing and
+     * shooting, hiding indoors, making for a safe zone, getting a gun, seeing to their wounds, getting out of a
+     * part of town that's been taken over, sticking with their family, or just carrying on with their day. Each
+     * gets a score from what's going on round them and the sort of person they are; what they're already doing
+     * gets a bonus and is held to for a moment, so nobody dithers between two things. A threat coming close
+     * makes them think again at once.
+     */
+    private int decideCivilian(Entity e, Entity threat, float threatDist, boolean room, float dt) {
+        e.goalCd -= dt;
+        e.goalTime += dt;
+        // (Thought again at once when a zombie gets close, or the one being fought is gone, but not every frame.)
+        boolean urgent = threat != null && threatDist < 25 && e.goal != G_FLEE && e.goal != G_FIGHT && e.goalCd < 0.4f;
+        boolean lost = (threat == null && e.goal == G_FIGHT) || (threat != null && e.goal == G_ROUTINE);
+        if (e.goalCd > 0 && !urgent && !lost) return e.goal;
+        e.goalCd = 0.5f + rnd.nextFloat() * 0.4f;
+        java.util.Arrays.fill(goalScore, -1);
+        float brave = bravery(e), careful = caution(e);
+        float near = threat == null ? 0 : Math.max(0, Math.min(1, 1 - threatDist / 100f));
+        boolean armed = e.hasGun && (e.ammo > 0 || e.reserve > 0);
+        // Fight: armed, a target in range, and not right on top of them.
+        if (armed && threat != null && threatDist > 14 && threatDist < 90 && e.task != Dispatch.T_SHELTER)
+            goalScore[G_FIGHT] = 0.55f + 0.35f * brave + 0.15f * near;
+        // Flee: from the dead in sight, or still shaken from the last one.
+        if (threat != null) goalScore[G_FLEE] = 0.3f + 0.65f * near + (armed ? 0 : 0.15f) + 0.1f * (1 - brave);
+        else if (e.fleeTimer > 0) goalScore[G_FLEE] = 0.25f + 0.3f * Math.min(1, e.fleeTimer / 7f);
+        // Hide indoors: unarmed, a building with room close by, and the dead not already at its door.
+        if (!armed && ((threat != null && e.taskTimer <= 0) || e.task == Dispatch.T_HIDE) && threatDist > 30 && e.leader == null) {
+            City.Building b = e.task == Dispatch.T_HIDE ? e.building : null;
+            if (b == null || b.occupants.size() >= b.capacity || b.barricade <= 0 || b.collapsed) b = hidingPlace(e);
+            if (b != null && countZombiesNear(b.doorX, b.doorY, 35) == 0) {
+                float dd = (float) Math.hypot(b.doorX - e.x, b.doorY - e.y);
+                // (Not if the way to it runs past the dead.)
+                float tx = threat != null ? threat.x - e.x : 0, ty = threat != null ? threat.y - e.y : 0;
+                float toward = threat == null ? 0 : ((b.doorX - e.x) * tx + (b.doorY - e.y) * ty) / ((dd + 0.001f) * (threatDist + 0.001f));
+                goalScore[G_HIDE] = 0.5f + 0.3f * careful + 0.25f * (1 - Math.min(1, dd / 220f)) - (toward > 0.5f ? 0.6f : 0)
+                        - (readiness == 2 ? 0.25f : 0);
+                e.hideCandidate = b;
+            }
+        }
+        // A safe zone: living in one, on the way to one, or heading for one now it's on the news.
+        if (e.task == Dispatch.T_SHELTER && e.zone != null) goalScore[G_SHELTER] = threat != null && threatDist < 28 ? 0.2f : 0.95f;
+        if (room && !e.refused) {
+            // (Once on the way, the way to the zone is the way out: kept to unless the dead are right there.)
+            if (e.task == Dispatch.T_SEEK) goalScore[G_ZONE] = 0.8f;
+            else if (e.fleeTimer > 0 || (broadcasting() && readiness != 2 && e.heardZone)) goalScore[G_ZONE] = 0.42f + 0.2f * careful;
+            if (threat != null && threatDist < 28) goalScore[G_ZONE] = Math.min(goalScore[G_ZONE], 0.15f);
+        }
+        // A gun: from a gun store (scared, or one of the third who'd go and raid one once it's on the news)...
+        if (e.task == Dispatch.T_RESUPPLY) goalScore[G_RESTOCK] = 0.5f;
+        else if (!e.hasGun && e.leader == null && threatDist > 40 && (e.fear > 0 || (e.aware && e.nameSeed % 3 == 0))) {
+            City.Building g = gunStoreNear(e, e.aware && e.nameSeed % 3 == 0 ? 700 : 220);
+            e.storeCandidate = g;
+            if (g != null) goalScore[G_GUNSTORE] = 0.25f + 0.25f * brave;
+        }
+        // ... or out of rounds, when it's quiet: restock.
+        if (e.hasGun && threat == null && e.ammo + e.reserve <= 2) goalScore[G_RESTOCK] = 0.45f;
+        // ... or one lying in the street.
+        if (e.task == Dispatch.T_PICKUP) goalScore[G_PICKUP] = threatDist < 40 ? -1 : 0.55f;
+        else if (!e.hasGun && threat == null) {
+            Pickup p = nearestPickup(e.x, e.y, 110);
+            e.pickCandidate = p != null && countZombiesNear(p.x, p.y, 50) == 0 ? p : null;
+            if (e.pickCandidate != null) goalScore[G_PICKUP] = 0.38f + 0.15f * brave;
+        }
+        // Hurt: the hospital (or a pharmacy), once it's quiet.
+        if (threat == null && (e.task == Dispatch.T_HEAL || e.hp < e.maxHp * 0.45f)) goalScore[G_HEAL] = 0.35f + 0.5f * (1 - e.hp / e.maxHp);
+        // Out of a part of town that's been overrun.
+        if (e.leader == null && alert >= 1 && danger != null && e.fleeTimer <= 0
+                && (e.task == Dispatch.T_EVACUATE || (e.taskTimer <= 0 && dangerDistAt(e.x, e.y) <= 1))) goalScore[G_EVAC] = 0.5f + 0.2f * careful;
+        // Family and friends together.
+        if (e.leader != null && !e.leader.dead) goalScore[G_FOLLOW] = 0.5f + (threat != null ? 0.15f : 0);
+        if (e.task == Dispatch.T_PATROL) goalScore[G_PATROL] = 0.5f;
+        if (e.task == Dispatch.T_CLEANUP || e.task == Dispatch.T_LOOT) goalScore[G_SUPPLY] = threat == null ? 0.48f : 0.1f;
+        goalScore[G_ROUTINE] = 0.15f;
+        // What they're already doing counts for more: they see it through unless something's clearly better.
+        if (e.goal >= 0 && e.goal < G_COUNT && goalScore[e.goal] > 0) goalScore[e.goal] += 0.15f;
+        int best = G_ROUTINE;
+        for (int g = 0; g < G_COUNT; g++) if (goalScore[g] > goalScore[best]) best = g;
+        switchGoal(e, best, threatDist);
+        return best;
+    }
+
+    /** Moving on to a new goal: what the old one had them committed to is let go (fleeing and fighting are only interruptions). */
+    private void switchGoal(Entity e, int goal, float threatDist) {
+        int was = e.goal;
+        e.goal = goal;
+        if (goal == was) return;
+        e.goalTime = 0;
+        if (goal == G_FLEE || goal == G_FIGHT) return;
+        switch (goal) {
+            case G_HIDE:
+                if (e.task != Dispatch.T_HIDE || e.building != e.hideCandidate) {
+                    dropTask(e);
+                    e.task = Dispatch.T_HIDE;
+                    e.building = e.hideCandidate;
+                }
+                break;
+            case G_ZONE:
+                if (e.task != Dispatch.T_SEEK) {
+                    dropTask(e);
+                    e.task = Dispatch.T_SEEK;
+                }
+                break;
+            case G_GUNSTORE:
+                if (e.task != Dispatch.T_RESUPPLY) {
+                    City.Building g = e.storeCandidate;
+                    if (g != null) {
+                        dropTask(e);
+                        e.task = Dispatch.T_RESUPPLY;
+                        e.building = g;
+                    }
+                }
+                break;
+            case G_PICKUP:
+                if (e.task != Dispatch.T_PICKUP) {
+                    Pickup p = e.pickCandidate;
+                    if (p != null && !p.claimed && pickups.contains(p)) {
+                        dropTask(e);
+                        if (p.uses == 0) p.claimed = true;
+                        e.pickup = p;
+                        e.task = Dispatch.T_PICKUP;
+                    }
+                }
+                break;
+            case G_EVAC:
+                if (e.task != Dispatch.T_EVACUATE) dropTask(e);
+                break;
+            case G_ROUTINE:
+                // (Only their own plans are dropped: a lift, a patrol or a place in a zone stay theirs.)
+                if (e.task == Dispatch.T_HIDE || e.task == Dispatch.T_PICKUP || e.task == Dispatch.T_RESUPPLY) dropTask(e);
+                break;
+            default:
+                break;
+        }
+    }
+
+    /** Lets go of the plan they had (the gun they'd claimed, the building they were going to). */
+    private void dropTask(Entity e) {
+        if (e.task == Dispatch.T_PICKUP && e.pickup != null) e.pickup.claimed = false;
+        if (e.task == Dispatch.T_HIDE || e.task == Dispatch.T_PICKUP || e.task == Dispatch.T_RESUPPLY || e.task == Dispatch.T_SEEK) {
+            e.task = Dispatch.T_NONE;
+            e.building = null;
+            e.pickup = null;
+        }
+    }
+
+    /** Somewhere to hide: home first if it's close, has room and is shut up, else the nearest with room. */
+    private City.Building hidingPlace(Entity e) {
+        City.Building home = homeOf(e);
+        if (home != null && home.occupants.size() < home.capacity && home.barricade >= 40 && !home.collapsed
+                && (home.doorX - e.x) * (home.doorX - e.x) + (home.doorY - e.y) * (home.doorY - e.y) < 220 * 220
+                && countZombiesNear(home.doorX, home.doorY, 35) == 0) return home;
+        return shelterNear(e);
+    }
+
+    private void fightStep(Entity e, Entity threat, float threatDist, float dt) {
+        // Armed civilians shoot, backing off if the zombie gets too close.
+        aimAndFire(e, threat, threatDist, 120, dt);
+        if (threatDist < 38) {
+            float ax = e.x - threat.x, ay = e.y - threat.y;
+            flee(e, ax / threatDist, ay / threatDist, e.speed * 1.2f);
+        } else steer(e, 0, 0, 0);
+    }
+
+    private void fleeStep(Entity e, float dt) {
+        e.paused = false;
+        if (e.fleeTimer <= 0) e.fleeTimer = 1.5f;
+        float ax = e.x - e.threatX, ay = e.y - e.threatY;
+        float d = (float) Math.sqrt(ax * ax + ay * ay) + 0.001f;
+        // Running for their life past an abandoned car with the keys still in it.
+        if (e.ride == null && rnd.nextFloat() < dt * 2) {
+            Fleet.Vehicle car = abandonedCarNear(e.x, e.y, 40);
+            if (car != null) {
+                e.dead = true;
+                e.removed = true;
+                fleet.takeCar(car, e);
+                return;
+            }
+        }
+        // Run towards a cop or soldier if one is nearby and not back where the zombies are.
+        // ((10.34) Looked for every half second or so, not every frame, by everyone running.)
+        e.protectorCd -= dt;
+        if (((e.protector == null || e.protector.dead) && e.protectorCd <= 0) || rnd.nextFloat() < dt) {
+            e.protector = nearestArmed(e, 180);
+            e.protectorCd = 0.4f + rnd.nextFloat() * 0.4f;
+        }
+        Entity p = e.protector;
+        if (p != null && !p.dead) {
+            float px = p.x - e.x, py = p.y - e.y, pd = (float) Math.sqrt(px * px + py * py) + 0.001f;
+            if (pd > 25 && (px * ax + py * ay) / (pd * d) > -0.2f) {
+                steer(e, ax / d * 0.4f + px / pd * 0.6f, ay / d * 0.4f + py / pd * 0.6f, e.runSpeed);
+                float l = (float) Math.sqrt(e.mx * e.mx + e.my * e.my) + 0.001f;
+                e.mx /= l;
+                e.my /= l;
+                return;
+            }
+        }
+        flee(e, ax / d, ay / d, e.runSpeed);
+    }
+
+    private boolean hideStep(Entity e) {
+        City.Building b = e.building;
+        if (e.task != Dispatch.T_HIDE || b == null || b.occupants.size() >= b.capacity || b.barricade <= 0) {
+            dropTask(e);
+            return false;
+        }
+        // Too long getting there (the way's blocked, or it was further than it looked): something else, for now.
+        if (e.goalTime > 25) {
+            dropTask(e);
+            e.taskTimer = 8;
+            e.goalCd = 0;
+            return false;
+        }
+        float ddx = b.doorX - e.x, ddy = b.doorY - e.y;
+        float d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
+        if (d < 8) enterBuilding(e, b);
+        else if (!walkTo(e, b, ddx, ddy, d, e.runSpeed) && e.blocked && rnd.nextFloat() < 0.1f) {
+            // No way in from here: think again.
+            dropTask(e);
+            e.goalCd = 0;
+            return false;
+        }
+        return true;
+    }
+
+    private boolean pickupStep(Entity e, float threatDist) {
+        Pickup p = e.pickup;
+        if (e.task != Dispatch.T_PICKUP || p == null || !pickups.contains(p) || threatDist < 40) {
+            dropTask(e);
+            return false;
+        }
+        float ddx = p.x - e.x, ddy = p.y - e.y;
+        float d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
+        if (d < 6 && p.drop <= 0) {
+            armCivilian(e, p.rounds);
+            if (p.weapon != Entity.W_STD) setGun(e, p.weapon, p.rounds);
+            if (p.uses > 0) {
+                if (--p.uses <= 0) pickups.remove(p);
+            } else pickups.remove(p);
+            e.task = Dispatch.T_NONE;
+            e.pickup = null;
+        } else if (d > 40) walkToSpot(e, p.x, p.y, e.speed * 1.6f);
+        else steer(e, ddx / d, ddy / d, e.speed * 1.6f);
+        return true;
+    }
+
+    /** On the way to a safe zone, queueing at its gate, and in. */
+    private boolean seekZoneStep(Entity e, float threatDist) {
+        if (e.task != Dispatch.T_SEEK || threatDist <= 28) return false;
+        e.paused = false;
+        float speed = e.fleeTimer > 0 ? e.runSpeed : e.speed * 1.7f;
+        // The nearest zone taking people (still going up, perhaps).
+        Dispatch.SafeZone z = null;
+        float bd = Float.MAX_VALUE;
+        for (int i = 0; i < dispatch.zones.size(); i++) {
+            Dispatch.SafeZone q = dispatch.zones.get(i);
+            if (q.removed || q.full || q.gateOut.length == 0) continue;
+            float d = (q.x - e.x) * (q.x - e.x) + (q.y - e.y) * (q.y - e.y);
+            if (d < bd) {
+                bd = d;
+                z = q;
+            }
+        }
+        if (z == null) {
+            e.task = Dispatch.T_NONE;
+            getToSafety(e, homeOf(e));
+            return true;
+        }
+        // In through the gate: they're in.
+        if (z.open && z.inside(e.x, e.y)) {
+            if (dispatch.admit(e, z)) return true;
+            e.task = Dispatch.T_NONE;
+            return true;
+        }
+        int g = z.gateNear(e.x, e.y);
+        float[] out = z.gateOut[g], in = z.gateIn[g];
+        float ox = out[0] - e.x, oy = out[1] - e.y, od = (float) Math.sqrt(ox * ox + oy * oy) + 0.001f;
+        boolean atGate = od < 22 || (z.gateOpen[g] && Math.hypot(in[0] - e.x, in[1] - e.y) < od);
+        if (!atGate) {
+            if (!z.open || !followField(e, dispatch.zoneField, speed)) walkToSpot(e, out[0], out[1], speed);
+            return true;
+        }
+        if (!z.open) {
+            // A queue outside the gate, waiting for the wall to be finished.
+            float a = (e.nameSeed & 0xFF) / 256f * TAU;
+            standAt(e, out[0] + (float) Math.cos(a) * 18, out[1] + (float) Math.sin(a) * 18, 0.5f);
+            return true;
+        }
+        // At the gate: checked for bites, then through when it opens.
+        if (checkpoint(e, z)) return true;
+        if (z.gateOpen[g]) {
+            float ix = in[0] - e.x, iy = in[1] - e.y, id = (float) Math.sqrt(ix * ix + iy * iy) + 0.001f;
+            steer(e, ix / id, iy / id, e.speed * 1.2f);
+        } else standAt(e, out[0], out[1], 0.4f);
+        return true;
     }
 
     /** Once a second: word of the outbreak gets round. */
@@ -6074,7 +6254,7 @@ final class World {
     private final java.util.LinkedHashMap<City.Building, DoorRoute> doorFields = new java.util.LinkedHashMap<City.Building, DoorRoute>(16, 0.75f, true) {
         @Override
         protected boolean removeEldestEntry(java.util.Map.Entry<City.Building, DoorRoute> eldest) {
-            return size() > 48;
+            return size() > 160;
         }
     };
     private int[][] doorBuckets;
@@ -6188,6 +6368,16 @@ final class World {
             steer(e, ddx / d, ddy / d, speed);
             return true;
         }
+        // (10.37) Running for a door in a hurry (to hide, say), not too far off: everyone heading for that door
+        // shares one route round the buildings to it, instead of each planning their own.
+        if ((e.task == Dispatch.T_HIDE || e.fleeTimer > 0) && d < DOOR_R * City.T * 0.9f
+                && (e.pathDest != b || e.path == null || e.path.length == 0)) {
+            DoorRoute route = doorField(b);
+            if (route != null && followDoor(e, route, speed)) {
+                e.blocked = false;
+                return true;
+            }
+        }
         if (e.pathDest != b || e.path == null) {
             if (pathBudget < 0.25f) {
                 // Too many new routes this second: plan properly in a moment
@@ -6218,6 +6408,7 @@ final class World {
         int w = city.w;
         if (e.pathSeen != p) {
             e.pathSeen = p;
+            e.pathRetries = 0;
             e.pathBest = Float.MAX_VALUE;
             e.pathStall = 0;
         }
@@ -6243,8 +6434,25 @@ final class World {
                 ay = py;
             }
             if (distToSegment(e.x, e.y, ax, ay, px, py) > 40) {
-                e.path = null;
-                return false;
+                // (10.37) Back onto the route where it can be seen from here, rather than a whole new plan.
+                int back = -1;
+                for (int k = Math.max(0, e.pathIdx - 1); k < Math.min(p.length, e.pathIdx + 6) && back < 0; k++) {
+                    int q = p[k];
+                    float qx = (q % w + 0.5f) * City.T, qy = (q / w + 0.5f) * City.T;
+                    if ((qx - e.x) * (qx - e.x) + (qy - e.y) * (qy - e.y) < 160 * 160 && city.los(e.x, e.y, qx, qy)) back = k;
+                }
+                if (back < 0 || e.pathRetries >= 3) {
+                    e.path = null;
+                    return false;
+                }
+                e.pathRetries++;
+                e.pathIdx = back;
+                e.pathBest = Float.MAX_VALUE;
+                // (The corner before it is behind them now: straight for this one.)
+                float bx = (p[back] % w + 0.5f) * City.T, by = (p[back] / w + 0.5f) * City.T;
+                float bdx = bx - e.x, bdy = by - e.y, bd = (float) Math.sqrt(bdx * bdx + bdy * bdy) + 0.001f;
+                steer(e, bdx / bd, bdy / bd, speed);
+                return true;
             }
             // Getting no closer (stuck on a corner, in a crowd): give it a moment, then plan again.
             if (dd < e.pathBest - 2) {
@@ -6253,7 +6461,8 @@ final class World {
             } else if ((e.pathStall += 1 / 30f) > 2.5f) {
                 e.pathStall = 0;
                 e.pathBest = Float.MAX_VALUE;
-                e.path = null;
+                // (10.37) A step aside and on along the same route the first time or two; a new plan only after that.
+                if (e.pathRetries++ >= 2) e.path = null;
                 e.unstick = 0.4f;
                 e.unstickAngle = (float) Math.atan2(dy, dx) + (rnd.nextBoolean() ? 1.2f : -1.2f);
                 return false;
@@ -10542,6 +10751,15 @@ final class World {
                 // The dead got there first: somewhere else.
                 e.task = Dispatch.T_NONE;
             } else if (d > 30) {
+                // (10.37) No way there on foot (over water, walled off): give it up for a while rather than push
+                // against a wall towards it.
+                if (e.path != null && e.path.length == 0 && e.pathDest == null && e.planX == e.postX && e.planY == e.postY && d > 60) {
+                    e.task = Dispatch.T_NONE;
+                    e.path = null;
+                    e.taskTimer = 6;
+                    e.goalCd = 0;
+                    return false;
+                }
                 walkToSpot(e, e.postX, e.postY, e.fear > 0 ? e.runSpeed * 0.85f : e.speed * 1.6f);
                 return true;
             } else {

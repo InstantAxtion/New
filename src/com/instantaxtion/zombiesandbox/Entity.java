@@ -194,6 +194,14 @@ final class Entity {
     /** (10.36) Following a route: the closest yet to the point it's heading for, and how long since that improved. */
     transient float pathBest = Float.MAX_VALUE, pathStall;
     transient int[] pathSeen;
+    transient int pathRetries;
+    /** (10.37) What the brain has them doing (World.G_*), until it thinks again, and the building it had in mind. */
+    int goal;
+    transient float goalCd, goalTime;
+    transient City.Building hideCandidate, storeCandidate;
+    transient World.Pickup pickCandidate;
+    /** Heard the safe zones on the news and means to go. */
+    boolean heardZone;
     /** Which way (1 or -1) this one steps round obstacles it walks straight into. */
     float slideSide = 1;
     /** Breath for sprinting (0 to 1): the living tire, the dead don't. */

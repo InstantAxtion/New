@@ -1698,15 +1698,21 @@ public final class GameTests {
                     w.update(1 / 30f);
                     w.evCount = 0;
                 }
-                int parked = 0;
+                int parked = 0, collecting = 0;
                 Fleet.Vehicle one = null;
-                for (Fleet.Vehicle v : w.fleet.vehicles)
-                    if (v.standby && v.type == Fleet.TRUCK && v.depot != null && Math.hypot(v.x - v.depot.x, v.y - v.depot.y) < v.depot.r + 250) {
+                for (Fleet.Vehicle v : w.fleet.vehicles) {
+                    if (v.type != Fleet.TRUCK || v.depot == null) continue;
+                    if (v.standby && Math.hypot(v.x - v.depot.x, v.y - v.depot.y) < v.depot.r + 250) {
                         parked++;
                         one = v;
-                    }
-                check(parked >= 3, "drop-off trucks parked back at a base (" + parked + ")");
-                check(w.fleet.status(one).contains("Parked"), "shown as parked: " + w.fleet.status(one));
+                    } else if (v.pickup) collecting++;
+                }
+                // (Or out again already: collecting their squad, or since 10.33 taken out again on a patrol or a
+                // call from the base. What matters is they stay in service.)
+                for (Fleet.Vehicle v : w.fleet.vehicles)
+                    if (v.type == Fleet.TRUCK && !v.broken && !v.standby && !v.pickup && !v.restock) collecting++;
+                check(parked + collecting >= 3, "drop-off trucks parked back at a base or back out on duty (" + parked + " + " + collecting + ")");
+                if (one != null) check(w.fleet.status(one).contains("Parked"), "shown as parked: " + w.fleet.status(one));
                 int before = w.fleet.vehicles.size();
                 check(w.fleet.send(Entity.SOLDIER, 6, one.x, one.y, q[0], q[1], null, null, "the test") && one.removedFromFleet
                         && w.fleet.vehicles.size() == before, "the next call takes a parked truck");
@@ -2318,8 +2324,16 @@ public final class GameTests {
                     if (e.type == Entity.COP) cops++;
                     if (e.type == Entity.SOLDIER) soldiers++;
                 }
-                check(cops >= 150, "plenty of police on a Massive map (" + cops + ")");
-                check(soldiers >= 120, "and plenty of soldiers (" + soldiers + ")");
+                // (Counting the officers out in their patrol cars too.)
+                for (Fleet.Vehicle v : w.fleet.vehicles)
+                    for (Entity e : v.crew) {
+                        if (e.type == Entity.COP) cops++;
+                        if (e.type == Entity.SOLDIER) soldiers++;
+                    }
+                check(cops >= 300, "plenty of police on a Massive map (" + cops + ")");
+                check(soldiers >= 80, "and soldiers (" + soldiers + ")");
+                // (10.35) Always more police than soldiers, by a long way.
+                check(cops >= soldiers * 2, "far more police than soldiers (" + cops + " against " + soldiers + ")");
                 // Three outbreaks at once round the city: every one of them gets officers.
                 City city = w.city;
                 float[][] spots = {{0.25f, 0.3f}, {0.75f, 0.35f}, {0.5f, 0.75f}};

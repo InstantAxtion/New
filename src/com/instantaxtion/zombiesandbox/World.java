@@ -538,6 +538,14 @@ final class World {
         int cops = cfg.cops(city.totalResidents), soldiers = cfg.soldiers(city.totalResidents);
         // (A small town's own police station out in the country has its own officers, on top of the city's.)
         for (City.Facility f : city.facilities) if (f.kind == City.FACILITY_POLICE && f.satellite) cops += 6;
+        // (10.35) The police always outnumber the army: every soldier on the map (both bases and the checkpoints)
+        // comes to no more than two in five of the police force, the town's base taking most of it.
+        int satBases = 0;
+        for (City.Facility f : city.facilities) if (f.kind == City.FACILITY_BASE && f.satellite && f != base) satBases++;
+        int military = Math.max(6, Math.round(cops * 0.4f) - city.checkpointPosts.size());
+        int townShare = satBases > 0 && base != null ? military * 3 / 5 : military;
+        int satEach = satBases > 0 ? Math.max(6, (military - (base != null ? townShare : 0)) / satBases) : 0;
+        if (soldiers > 0) soldiers = Math.min(soldiers, Math.max(6, townShare));
         // Most officers are out in patrol cars, two to a car; the rest are at their precinct.
         int cars = stations > 0 ? Math.max(1, (int) (cops * 0.65f / 2)) : 0;
         fleet.patrolTarget = cars;
@@ -586,7 +594,7 @@ final class World {
         // (10.30) The big base out in the country has a garrison of its own, and soldiers on its checkpoints.
         for (City.Facility f : city.facilities) {
             if (f.kind != City.FACILITY_BASE || !f.satellite || f == base || soldiers <= 0) continue;
-            int n = Math.max(12, soldiers / 2) + f.posts.size();
+            int n = satEach;
             for (int i = 0; i < n; i++) spawn(Entity.SOLDIER, f.x + rnd.nextFloat() * f.r - f.r / 2, f.y + rnd.nextFloat() * f.r - f.r / 2);
         }
         // Every fourth soldier carries the squad's machine gun, big garrisons have snipers, and a

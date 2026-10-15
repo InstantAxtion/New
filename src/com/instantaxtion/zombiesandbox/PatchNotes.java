@@ -2,11 +2,15 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.34";
-    static final int VERSION_CODE = 72;
+    static final String VERSION = "10.35";
+    static final int VERSION_CODE = 73;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.35  -  More police than soldiers",
+                    "A city always has far more police than soldiers: every soldier on the map (the town's base, the base out in the country and the checkpoints together) comes to no more than two in five of its police officers. A Massive city has around 460 officers to under 180 soldiers.",
+            },
             {
                     "10.34  -  Livelier maps, roads that join up",
                     "Every road joins up (in new cities): a lane or street that stopped at a pavement, a park or a field is carried on to the rest of the roads, the far side of the highway joined to its bridges, so no car is stuck on a bit of road it can't drive out of.",

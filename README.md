@@ -436,6 +436,8 @@ officers shared out fairly between several outbreaks at once.
 of the highway, towns of different shapes, mountains spread about with lone hills, ranger outposts, faster
 mounting up, and lighter running with big populations.
 
+**More police than soldiers (10.35):** the army on the map is never more than two in five of the police force.
+
 **Countryside:** Villages, small towns and every Massive map are surrounded by open country:
 winding dirt lanes out to the edge of the map, farms and lonely cabins along them, woods, and
 hamlets (a short street of cottages with a lane back to town). A town out in the country is never a

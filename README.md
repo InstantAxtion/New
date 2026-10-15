@@ -214,11 +214,10 @@ counts), and wherever the dead gather the ground glows red. Labels go most impor
 - **Militias**: armed residents band together, take over a building, hold the street and shelter their
   neighbours inside.
 - **Stampedes**: panicking crowds knock people down. Families and groups following someone stay together.
-- **Zombies**: brutes charge, bowling people over and smashing barricades and cars; crawlers lie in wait
-  beside cars and in the grass (hard to spot until you're close); screamers that hear gunfire bring the
+- **Zombies**: brutes charge, bowling people over and smashing barricades and cars; screamers that hear gunfire bring the
   neighbourhood's dead with them; on big maps hordes travel the lanes between the town and the hamlets.
-- **Turning**: most of the bitten rise as ordinary zombies, but a few come back as runners, crawlers,
-  screamers, spitters, bloaters or brutes.
+- **Turning**: nearly all of the bitten rise as ordinary zombies; about one in eleven comes back as a
+  runner, screamer, spitter or brute.
 - **Wildlife**: deer and foxes live in the countryside. Deer bolting out of the woods mean something is
   coming; a fox caught by the dead can come back as a zombie dog.
 - **Seeing what's going on**: 911 calls are small tags on the map ("911 12" for twelve of the dead, a blue
@@ -355,7 +354,7 @@ attacked. The ranger station is on the map and always has a ranger at it. A bunc
 perimeter round it, officers driven out to empty posts. Every kind of police can be spawned.
 
 **Scars of the fight (10.17):** footprints in sand, dirt and mud, blood trails behind the wounded, drag marks
-behind crawlers, spent cases piling up and gunsmoke drifting over firefights, all fading with time. Buildings
+behind the dead too hurt to walk, spent cases piling up and gunsmoke drifting over firefights, all fading with time. Buildings
 show their damage in stages: shot-out windows, broken-in doors, soot after a fire, a caved-in roof.
 Reinforcements are bigger, carry spare ammo and come in from outside the city along the highway, marked on the
 map, the minimap and the edge of the screen. Large is the smallest map size; a few maps and countries were
@@ -438,6 +437,11 @@ mounting up, and lighter running with big populations.
 
 **More police than soldiers (10.35):** the army on the map is never more than two in five of the police force.
 
+**Police and soldiers' brain (10.38):** the rest of part 2: officers and soldiers choose between fighting,
+pulling back hurt, falling back when outnumbered and alone, searching, and their orders; they fight back on the way
+to a vehicle and when heading back to restock. No more crawlers; about one in eleven of the bitten comes back as
+a special zombie; guns left on the ground disappear after a minute.
+
 **A civilian's brain (10.37):** the second part of the AI rebuild: civilians weigh up everything they could do
 (run, hide, shoot, safe zone, get a gun, heal, evacuate, follow family, carry on) and pick the best, each with their
 own bravery and caution, sticking to a decision for a moment instead of dithering, and keeping their routes.
@@ -517,7 +521,7 @@ a Guard Headquarters (the National Guard comes sooner).
   - **Military**: soldiers (3-round bursts, grenades), commanders, snipers, gunners and the National
     Guard.
   - **Zombies**: zombie (slow shambler), runner (fast, fragile), brute (huge, knocks people back),
-    crawler (low and hard to hit), screamer (calls the horde), zombie dog, spitter and bloater.
+    screamer (calls the horde), zombie dog and spitter.
   - **Bomb**: explosion at the tap point.
   - **Erase**: removes people, zombies and corpses under your finger. Tap a safe zone's centre to
     close it.

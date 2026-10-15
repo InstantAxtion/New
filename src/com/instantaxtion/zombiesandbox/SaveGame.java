@@ -306,7 +306,9 @@ final class SaveGame {
 
     /** Version 1 saves came before dogs, which took entity type 4. */
     private static int type(int t, int version) {
-        return version < 2 && t >= Entity.DOG ? t + 1 : t;
+        t = version < 2 && t >= Entity.DOG ? t + 1 : t;
+        // (No crawlers since 10.38: any in an old save get back up as ordinary zombies.)
+        return t == Entity.CRAWLER ? Entity.ZOMBIE : t;
     }
 
     private static void writeEntity(DataOutputStream out, Entity e, Dispatch d) throws IOException {

@@ -2,11 +2,22 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.37";
-    static final int VERSION_CODE = 75;
+    static final String VERSION = "10.38";
+    static final int VERSION_CODE = 76;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.38  -  Police and soldiers think for themselves (AI rebuild, part 2 continued)",
+                    "Police officers and soldiers weigh up what's in front of them the same new way civilians do: shoot it, pull back hurt, fall back from more of the dead than they can hold, go and look where the last one was seen, or carry on with their orders. They stick to a decision for a moment and think again at once when one of the dead comes into sight or drops out of it.",
+                    "Outnumbered and on their own (an officer against four or more of the dead per gun round them, a soldier against five, or seven when sent in close), they fall back towards others holding nearby, or towards somewhere to restock when low on rounds, turning to shoot the nearest as it closes. The careful go sooner; with others beside them they stand and fight. Posts, cordons and safe zone guards hold their ground as before.",
+                    "Officers and soldiers on their way to a car, van, truck or helicopter now stop to deal with one of the dead that gets close, instead of walking on while it bites them (the most common way they died before). On the way back to restock, they shoot back if they have rounds left.",
+                    "Someone sent to look where one of the dead was last seen gives up when the way there is blocked, instead of walking into a wall.",
+                    "No more crawlers: the bitten never come back as one, and a zombie blown apart stays down. (Any in an old save get back up as ordinary zombies.)",
+                    "Far fewer of the bitten come back as anything special: about one in eleven now (runners, screamers, spitters and the odd brute), down from about one in four. The rest are ordinary zombies.",
+                    "A gun left lying on the ground is gone after a minute. (Bats and axes last three minutes, supply crates ten, as before.)",
+                    "Fixed (from 10.37): someone let into a safe zone could be sent straight back out to queue at its gate again, over and over, and a plan to hide or pick up a gun could cancel someone's place in the queue for a zone.",
+            },
             {
                     "10.37  -  A civilian's brain (AI rebuild, part 2)",
                     "Civilians decide what to do in a new way: instead of running down a fixed list of special cases every moment, each person weighs up everything they could do (run, hide indoors, stand and shoot, make for a safe zone, get a gun, see to their wounds, get out of a part of town that's been overrun, stick with their family, or carry on with their day) and picks the one that makes most sense right now, from what's around them and the sort of person they are.",

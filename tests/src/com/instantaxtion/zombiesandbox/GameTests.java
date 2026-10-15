@@ -2592,6 +2592,120 @@ public final class GameTests {
                 check(pick == 0, "nobody goes for a gun that isn't there (" + pick + ")");
             }
         });
+        test("10.38: police and soldiers - fall back when overrun, stand when backed up, fight on the way to a ride, pull back hurt", new Check() {
+            public void run() throws Exception {
+                CityConfig c = new CityConfig();
+                c.v[CityConfig.OPT_PRESET] = 0;
+                c.v[CityConfig.OPT_ZOMBIES] = 0;
+                c.seed = 12;
+                c.normalize();
+                c.seed = 12;
+                World w = new World(c);
+                w.populate(c);
+                for (int f = 0; f < 30 * 2; f++) w.update(1 / 30f);
+                // Somewhere open in town, well away from the stations.
+                java.util.Random r = new java.util.Random(6);
+                float[] spot = null;
+                for (int k = 0; k < 400 && spot == null; k++) {
+                    float[] q = w.city.randomWalkableInTown(r);
+                    if (q == null || w.armedNear(q[0], q[1], 400) > 0) continue;
+                    boolean open = true;
+                    for (int a = 0; a < 16 && open; a++) {
+                        double an = a * Math.PI / 8;
+                        for (int d = 20; d <= 120 && open; d += 20)
+                            if (w.city.solidAt(q[0] + (float) Math.cos(an) * d, q[1] + (float) Math.sin(an) * d)) open = false;
+                    }
+                    if (open) spot = q;
+                }
+                check(spot != null, "an open square to test in");
+                // Alone with a crowd of the dead coming from one side: an officer falls back from it, shooting.
+                Entity cop = w.spawn(Entity.COP, spot[0], spot[1]);
+                for (int k = 0; k < 14; k++) {
+                    double an = (k - 7) * 0.12;
+                    w.spawn(Entity.ZOMBIE, spot[0] + (float) Math.cos(an) * (70 + (k % 3) * 12), spot[1] + (float) Math.sin(an) * (70 + (k % 3) * 12));
+                }
+                boolean fellBack = false;
+                for (int f = 0; f < 45 && !cop.dead; f++) {
+                    w.update(1 / 30f);
+                    if (cop.goal == World.A_FALLBACK) fellBack = true;
+                }
+                check(fellBack && cop.x < spot[0] - 15, "alone against fourteen, the officer falls back (" + (int) (cop.x - spot[0]) + " px)");
+                // The same crowd with a line of officers: they stand and shoot.
+                w.clearZombies();
+                for (Entity e : w.entities) if (e.isArmed() && Math.hypot(e.x - spot[0], e.y - spot[1]) < 300) e.dead = e.removed = true;
+                for (int f = 0; f < 3; f++) w.update(1 / 30f);
+                java.util.List<Entity> line = new java.util.ArrayList<Entity>();
+                for (int k = 0; k < 6; k++) line.add(w.spawn(Entity.COP, spot[0], spot[1] - 50 + k * 20));
+                for (int k = 0; k < 14; k++) {
+                    double an = (k - 7) * 0.12;
+                    w.spawn(Entity.ZOMBIE, spot[0] + (float) Math.cos(an) * (90 + (k % 3) * 12), spot[1] + (float) Math.sin(an) * (90 + (k % 3) * 12));
+                }
+                int fallBacks = 0;
+                for (int f = 0; f < 30; f++) {
+                    w.update(1 / 30f);
+                    for (Entity e : line) if (e.goal == World.A_FALLBACK) fallBacks++;
+                }
+                check(fallBacks == 0, "six officers together hold against fourteen (" + fallBacks + ")");
+                // Badly hurt with one in sight: pulls back. (On their own, so nobody else shoots it first.)
+                w.clearZombies();
+                for (int k = 1; k < line.size(); k++) line.get(k).dead = line.get(k).removed = true;
+                Entity hurt = line.get(0);
+                hurt.hp = hurt.maxHp * 0.2f;
+                hurt.task = Dispatch.T_NONE;
+                w.spawn(Entity.ZOMBIE, hurt.x + 60, hurt.y);
+                boolean pulledBack = false;
+                for (int f = 0; f < 20; f++) {
+                    w.update(1 / 30f);
+                    if (hurt.goal == World.A_WOUNDED) pulledBack = true;
+                }
+                check(hurt.dead || pulledBack, "a badly hurt officer pulls back");
+                // On the way to a vehicle with one of the dead right there: deals with it first.
+                w.clearZombies();
+                Fleet.Vehicle ride = null;
+                for (Fleet.Vehicle v : w.fleet.vehicles)
+                    if (!v.broken && !v.parked && Math.hypot(v.x - spot[0], v.y - spot[1]) > 500) {
+                        ride = v;
+                        break;
+                    }
+                check(ride != null, "a vehicle to board");
+                hurt.dead = hurt.removed = true;
+                Entity boarder = w.spawn(Entity.COP, spot[0], spot[1]);
+                boarder.task = Dispatch.T_BOARD;
+                boarder.rig = ride;
+                int ammo = boarder.ammo + boarder.reserve;
+                w.spawn(Entity.ZOMBIE, boarder.x + 30, boarder.y);
+                for (int f = 0; f < 60 && boarder.ammo + boarder.reserve >= ammo; f++) w.update(1 / 30f);
+                check(boarder.ammo + boarder.reserve < ammo, "shoots the one in the way before going on to the vehicle");
+                // No crawlers any more, and far fewer of the bitten come back as anything but an ordinary zombie.
+                int special = 0;
+                for (int k = 0; k < 10000; k++) {
+                    int t = w.turnType(k % 2 == 0 ? Entity.CIVILIAN : Entity.COP);
+                    check(t != Entity.CRAWLER, "nobody comes back a crawler");
+                    if (t != Entity.ZOMBIE) special++;
+                }
+                check(special > 500 && special < 1300, "about one in eleven comes back as a special kind (" + special + " in 10000)");
+                // A gun left on the ground is gone after a minute; a bat stays a while longer.
+                w.pickups.clear();
+                World.Pickup gun = new World.Pickup(), bat = new World.Pickup();
+                gun.x = bat.x = spot[0];
+                gun.y = bat.y = spot[1] + 200;
+                gun.rounds = 10;
+                bat.melee = Entity.M_BAT;
+                w.pickups.add(gun);
+                w.pickups.add(bat);
+                for (int f = 0; f < 30 * 55; f++) {
+                    w.update(1 / 30f);
+                    w.evCount = 0;
+                }
+                check(w.pickups.contains(gun) || gun.claimed, "the gun is still there after 55 seconds");
+                for (int f = 0; f < 30 * 7; f++) {
+                    w.update(1 / 30f);
+                    w.evCount = 0;
+                }
+                check(!w.pickups.contains(gun), "the gun is gone after a minute");
+                check(w.pickups.contains(bat) || bat.claimed, "a bat lasts longer");
+            }
+        });
         test("every screen draws", new Check() {
             public void run() throws Exception {
                 GameView v = new GameView(new android.app.Activity());

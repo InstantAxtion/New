@@ -2,11 +2,23 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.51";
-    static final int VERSION_CODE = 89;
+    static final String VERSION = "10.52";
+    static final int VERSION_CODE = 90;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.52  -  The beltway, more police and army, shaped buildings",
+                    "New land maps have a beltway: four lanes right round the map near its edge, the sides meeting at the corners, crossing the highway on a bridge (or joining it where the highway runs along that edge), going over ponds on bridges and across the railway, and driven at nearly highway speed. The country lanes and the ring road's spokes join it.",
+                    "On the water maps the roads round the edge of town and along the shore, and the bridges at the map's edge (and between the Islands), are the beltway, named and driven the same way.",
+                    "People leaving the city on foot cross the beltway to the edge of the map.",
+                    "Another police station on every map from Default up, and the first is the police headquarters: the biggest block it can have, with a second wing and a helipad.",
+                    "An army base out in the country on every map from Default up (it kept to the Massive maps before), and bigger from Large up. Two bases on one map are never the same kind.",
+                    "Not every building is a box: some of the bigger homes, office and apartment blocks and warehouses are L-shaped round a yard or a paved court, and the biggest blocks U-shaped round a courtyard.",
+                    "Country lanes that only touched another lane or a road corner to corner are joined up.",
+                    "Outside police and soldiers going home drive out on the carriageway leaving the map (they were sent down the one coming in, against the traffic), by the way nearest by road, and their car waits longer for them to walk to it.",
+                    "Saved games keep the city they had; new games get all of this.",
+            },
             {
                     "10.51  -  Smarter people, better traffic",
                     "People running from the dead shout a warning as they go: anyone about who hasn't seen them yet learns where the danger is and turns away instead of walking into it.",

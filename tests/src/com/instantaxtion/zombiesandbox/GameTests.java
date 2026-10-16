@@ -2879,7 +2879,10 @@ public final class GameTests {
                                     int nx = x + dx, ny = y + dy;
                                     if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
                                     int j = ny * w + nx, bi = city.buildingAt[j];
-                                    if (bi >= 0 && (city.buildings.get(bi).kind == City.HOUSE || city.buildings.get(bi).kind == City.BARN)) hs.add(bi);
+                                    // ((10.52) A house's wing is the same house.)
+                                    City.Building hb = bi >= 0 ? city.buildings.get(bi) : null;
+                                    if (hb != null && hb.main != null) hb = hb.main;
+                                    if (hb != null && (hb.kind == City.HOUSE || hb.kind == City.BARN)) hs.add(city.buildings.indexOf(hb));
                                     if ((dx != 0 && dy != 0) || dc[j] >= 0 || !city.drive[j] || t[j] != City.LOT) continue;
                                     dc[j] = i;
                                     q[tl++] = j;
@@ -3395,6 +3398,10 @@ public final class GameTests {
                 w.outbreak = true;
                 int bus = 0, train = 0, onFoot = 0;
                 for (int f = 0; f < 30 * 150 && (bus == 0 || train == 0 || w.fledByTransit == 0); f++) {
+                    // ((10.52) Kept going: with the police that much stronger the dead can all be down before the
+                    // train comes in, and the city calms down.)
+                    w.alert = 2;
+                    w.outbreak = true;
                     w.update(1 / 30f);
                     if (f % 30 != 0) continue;
                     for (Fleet.Vehicle v : w.fleet.vehicles) {
@@ -3405,7 +3412,7 @@ public final class GameTests {
                 }
                 check(!w.evacStops.isEmpty(), "evacuation bus stops around town (" + w.evacStops.size() + ")");
                 check(bus > 0, "people get on an evacuation bus");
-                check(train > 0, "and on an evacuation train at the station");
+                check(train > 0, "and on an evacuation train at the station (" + bus + " on a bus, " + w.fledByTransit + " gone, " + w.alert + "/" + w.outbreak + ")");
                 check(w.fledByTransit > 0 && w.fled == w.fledByTransit, "and leave the city aboard (" + w.fledByTransit + " of " + w.fled + ")");
                 check(onFoot == 0, "nobody walks out with only buses and trains chosen (" + onFoot + ")");
             }

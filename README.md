@@ -424,14 +424,22 @@ mounting up, and lighter running with big populations.
 
 **More police than soldiers (10.35):** the army on the map is never more than two in five of the police force.
 
+**The beltway, more police and army, shaped buildings (10.52):** new land maps have a four-lane beltway right
+round them near the edge, joined at the corners, over the highway on a bridge, over ponds and across the railway,
+driven at nearly highway speed (on the water maps the roads round the edge of town and along the shore, and the
+bridges, are the beltway); people leaving on foot cross it. Another police station on every map from Default up, and
+the first is the police headquarters (the biggest block, a second wing, a helipad). An army base out in the country
+on every map from Default up (bigger from Large up), never the same kind as the town's. Some bigger homes, blocks
+and warehouses are L-shaped round a yard, and the biggest U-shaped round a courtyard. Outside help going home
+drives out on the carriageway leaving the map, by the nearest way by road. Saved games keep the city they had.
+
 **Smarter people, better traffic (10.51):** people fleeing shout warnings so others turn away, keep running
 until well clear, sprint flat out while their breath lasts, and climb fences and the highway barrier (the dead
 can't); strollers keep off the grass; the hurt go home to rest. Bigger cities hold more 911 calls; police and
 soldiers share sightings further, report them, and call each other in. Police lights only on a call; traffic pulls
 over for army trucks and tanks too (and oncoming cars as well); vehicles on a call drive faster; cars go round
 roundabouts and walkers use their crossings. Every other army wave flies in by helicopter (and the helicopters fly
-back out); three pieces of music for each mood, rotated. New cities
-have more police stations, and Large maps an army base out in the country; roof signs sit centred on a plate.
+back out); three pieces of music for each mood, rotated; roof signs sit centred on a plate.
 
 **A leaner game, and a better screen (10.50):** gone are fires, the Auto cam, spitter and screamer zombies,
 raiders, medics, ambulances and hospital care, the Downtown, Village and Lakeside maps, Switzerland and China, and

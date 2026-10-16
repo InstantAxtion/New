@@ -105,6 +105,8 @@ final class City {
         int shopType;
         /** What kind of building it is beyond its basic kind (see {@link Variants}), or -1. */
         int variant = -1;
+        /** (10.52) A wing of a building that isn't a box: the building it's part of (null for the building itself). */
+        Building main;
 
         /** "Café", "Factory", "Bank"... or null for a plain building. */
         String typeName() {
@@ -531,6 +533,8 @@ final class City {
         clearHighwaySides();
         joinRoads();
         progress(0.4f, "Putting up the buildings");
+        // (10.52) Map version 24: buildings of more shapes than a box.
+        if (cfg.civic >= 24) shapeLots();
         if (cfg.driveways()) {
             // The city as generated, its driveways, and only then the Build tool's edits on top (as they were
             // made on it), so a city rebuilt from its code comes out the same as the one that was edited.
@@ -666,11 +670,91 @@ final class City {
                     b.capacity = Math.max(b.capacity, Math.min(res, 40));
                 }
             }
+            int[] of = wingOf.get(l);
+            if (of != null) {
+                int mi = buildingAt[of[1] * w + of[0]];
+                if (mi >= 0) b.main = buildings.get(mi);
+            }
             for (int j = l[1]; j < l[1] + l[3]; j++)
                 for (int i = l[0]; i < l[0] + l[2]; i++) buildingAt[j * w + i] = buildings.size();
             buildings.add(b);
             return b;
         }
+    }
+
+    /**
+     * (10.52) Not every building a box: some of the bigger homes, office and apartment blocks and warehouses are
+     * L-shaped (a corner of the lot left as a yard or a paved court), and the biggest office and apartment blocks
+     * U-shaped round a courtyard on one side. Each is built of two or three wings (each a building of its own as
+     * far as the rest of the game goes), the same walls and roof, a wing now and then a floor lower.
+     */
+    private void shapeLots() {
+        int n = buildingLots.size();
+        for (int i = 0; i < n; i++) {
+            int[] l = buildingLots.get(i);
+            int k = l[6];
+            if (k != OFFICE && k != APARTMENT && k != HOUSE && k != WAREHOUSE) continue;
+            if (lotNames.containsKey(l) || lotLandmark.containsKey(l)) continue;
+            int x0 = l[0], y0 = l[1], lw = l[2], lh = l[3];
+            int min = k == HOUSE ? 4 : 6;
+            if (lw < min || lh < min) continue;
+            Random sr = new Random(l[5] * 131L + 24);
+            if (sr.nextFloat() > (k == HOUSE ? 0.3f : 0.45f)) continue;
+            byte yard = k == HOUSE ? GRASS : PLAZA;
+            boolean u = k != HOUSE && lw >= 10 && lh >= 10 && sr.nextFloat() < 0.4f;
+            if (!u) {
+                // An L: a corner cut out.
+                int cw = Math.max(2, lw * (35 + sr.nextInt(20)) / 100), ch = Math.max(2, lh * (35 + sr.nextInt(20)) / 100);
+                int corner = sr.nextInt(4);
+                boolean right = corner == 1 || corner == 3, bottom = corner >= 2;
+                int cx = right ? x0 + lw - cw : x0, cy = bottom ? y0 + lh - ch : y0;
+                fill(cx, cy, cw, ch, yard);
+                // The long wing: the full depth of the lot, beside the cut.
+                l[0] = right ? x0 : x0 + cw;
+                l[2] = lw - cw;
+                // The short one: the rest of the cut column.
+                addWing(l, cx, bottom ? y0 : y0 + ch, cw, lh - ch, sr);
+            } else {
+                // A U: a courtyard into the middle of one side.
+                int side = sr.nextInt(4);
+                boolean across = side < 2;
+                int len = across ? lw : lh, depth = across ? lh : lw;
+                int nw = Math.max(3, len / 3), nd = Math.max(3, depth * (40 + sr.nextInt(15)) / 100);
+                int a0 = (len - nw) / 2;
+                int far = side == 0 || side == 2 ? 0 : depth - nd;
+                if (across) fill(x0 + a0, y0 + far, nw, nd, yard);
+                else fill(x0 + far, y0 + a0, nd, nw, yard);
+                int back = side == 0 || side == 2 ? nd : 0;
+                // The first arm keeps the lot's own entry; the other arm and the back join it.
+                if (across) {
+                    l[2] = a0;
+                    addWing(l, x0 + a0 + nw, y0, lw - a0 - nw, lh, sr);
+                    addWing(l, x0 + a0, y0 + back, nw, lh - nd, sr);
+                } else {
+                    l[3] = a0;
+                    addWing(l, x0, y0 + a0 + nw, lw, lh - a0 - nw, sr);
+                    addWing(l, x0 + back, y0 + a0, lw - nd, nw, sr);
+                }
+            }
+        }
+    }
+
+    /** (10.52) Each wing's lot, and the lot of the building it's part of. */
+    private final java.util.IdentityHashMap<int[], int[]> wingOf = new java.util.IdentityHashMap<int[], int[]>();
+
+    /** One more wing of a shaped building: like the lot it's part of, without its name or sign. */
+    private void addWing(int[] l, int x, int y, int ww, int wh, Random sr) {
+        if (ww < 1 || wh < 1) return;
+        int[] wing = l.clone();
+        wing[0] = x;
+        wing[1] = y;
+        wing[2] = ww;
+        wing[3] = wh;
+        wing[5] = l[5] * 7 + 3 + buildingLots.size();
+        if (l[6] != HOUSE && wing[7] > 2 && sr.nextFloat() < 0.5f) wing[7]--;
+        if (wing.length > 9) wing[9] = -1;
+        wingOf.put(wing, l);
+        buildingLots.add(wing);
     }
 
     // ------------------------------------------------------------------ the Build tool

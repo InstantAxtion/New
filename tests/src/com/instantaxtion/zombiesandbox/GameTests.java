@@ -3203,7 +3203,9 @@ public final class GameTests {
                 }
                 // (Once they're on the map's grid.)
                 w.update(1 / 30f);
+                // (Not already fighting them: it's the shot heard that's being tried.)
                 helper.fear = 0;
+                helper.aiming = false;
                 w.heardShot(shooter, target, 260);
                 check(helper.fear >= 20 && Math.hypot(helper.threatX - target.x, helper.threatY - target.y) < 30,
                         "an officer who hears another in a fight with several of them goes to help (fear " + helper.fear + ")");
@@ -3361,17 +3363,18 @@ public final class GameTests {
                 }
             }
         });
-        test("10.48: an empty police car is taken by officers on foot nearby; people leave the city by car when that's the way chosen", new Check() {
+        test("10.48: an empty police car is taken by officers on foot nearby; (10.49) people leave by evacuation bus and train", new Check() {
             public void run() throws Exception {
                 CityConfig c = new CityConfig();
-                c.v[CityConfig.OPT_PRESET] = 0;
-                c.seed = 5;
-                c.v[CityConfig.OPT_SIZE] = CityConfig.MEDIUM;
+                // (A Metropolis with a railway station: buses and trains both.)
+                c.v[CityConfig.OPT_PRESET] = 8;
+                c.seed = 1;
+                c.v[CityConfig.OPT_SIZE] = CityConfig.LARGE;
                 c.v[CityConfig.OPT_ZOMBIES] = 0;
                 c.normalize();
-                c.seed = 5;
-                c.exodus = CityConfig.EXODUS_CAR;
-                check(c.values(CityConfig.OPT_EXODUS).length == 4, "four ways to leave (off, on foot, by car, both)");
+                c.seed = 1;
+                c.exodus = CityConfig.EXODUS_TRANSIT;
+                check(c.values(CityConfig.OPT_EXODUS).length == 4, "four ways to leave (off, on foot, bus & train, all)");
                 World w = new World(c);
                 w.rnd.setSeed(4);
                 w.populate(c);
@@ -3397,26 +3400,33 @@ public final class GameTests {
                     for (Entity e : cops) if (car.crew.contains(e)) taken = true;
                 }
                 check(taken, "they take the car (state " + car.state + ", crew " + car.crew.size() + ")");
-                // By car: once the news breaks, people walk to a parked car and drive out of the city.
+                // Bus and train: once the news breaks, people wait at the stops and on the platform, and get out of the
+                // city aboard.
+                check(w.city.stationX >= 0, "a station on this map");
                 java.util.Random r = new java.util.Random(7);
                 float[] q0 = w.city.randomWalkableInTown(r);
                 int sp = 0;
-                for (int i = 0; i < 1600 && sp < 40; i++) {
+                for (int i = 0; i < 1600 && sp < 50; i++) {
                     float[] q = w.city.findWalkable(q0[0] + (i % 40) * 8 - 160, q0[1] + (i / 40) * 8 - 160);
                     if (q != null && w.spawn(Entity.ZOMBIE, q[0], q[1]) != null) sp++;
                 }
                 w.alert = 2;
                 w.outbreak = true;
-                int driving = 0, onFoot = 0;
-                for (int f = 0; f < 30 * 120 && w.fledByCar == 0; f++) {
+                int bus = 0, train = 0, onFoot = 0;
+                for (int f = 0; f < 30 * 150 && (bus == 0 || train == 0 || w.fledByTransit == 0); f++) {
                     w.update(1 / 30f);
                     if (f % 30 != 0) continue;
-                    for (Fleet.Vehicle v : w.fleet.vehicles) if (v.exodus) driving = Math.max(driving, v.riders.size());
-                    for (Entity e : w.entities) if (!e.dead && e.task == Dispatch.T_LEAVE && e.exitCar == null) onFoot++;
+                    for (Fleet.Vehicle v : w.fleet.vehicles) {
+                        if (v.evacStop >= 0) bus = Math.max(bus, v.riders.size());
+                        if (v.type == Fleet.TRAIN) train = Math.max(train, v.riders.size());
+                    }
+                    for (Entity e : w.entities) if (!e.dead && e.task == Dispatch.T_LEAVE && e.exitStop == -1) onFoot++;
                 }
-                check(driving > 0, "people drive off in cars");
-                check(w.fledByCar > 0 && w.fled == w.fledByCar, "and leave the city in them (" + w.fledByCar + " of " + w.fled + ")");
-                check(onFoot == 0, "nobody walks out with only cars chosen (" + onFoot + ")");
+                check(!w.evacStops.isEmpty(), "evacuation bus stops around town (" + w.evacStops.size() + ")");
+                check(bus > 0, "people get on an evacuation bus");
+                check(train > 0, "and on an evacuation train at the station");
+                check(w.fledByTransit > 0 && w.fled == w.fledByTransit, "and leave the city aboard (" + w.fledByTransit + " of " + w.fled + ")");
+                check(onFoot == 0, "nobody walks out with only buses and trains chosen (" + onFoot + ")");
             }
         });
         test("every screen draws", new Check() {

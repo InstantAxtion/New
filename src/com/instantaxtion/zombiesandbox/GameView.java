@@ -30,7 +30,7 @@ final class GameView extends View implements Menu.Host {
     private static boolean hiddenTool(int t) {
         return t == 5 || t == TOOL_ORDER || t == TOOL_PLACE || t == TOOL_EVENT || t == TOOL_BUILD || t == TOOL_ZONE;
     }
-    private static final String[] PLACE_NAMES = {"Car", "Police car", "Tank", "Fire engine", "Barricade", "Crate", "Fire",
+    private static final String[] PLACE_NAMES = {"Car", "Police car", "Tank", "Barricade", "Crate", "Fire",
             "Medkit"};
     private static final String[] EVENT_NAMES = {"Horde", "Panic", "Outbreak", "Supply drop", "Raiders", "Airstrike",
             "City alarm", "Infect"};
@@ -43,7 +43,7 @@ final class GameView extends View implements Menu.Host {
     private static final String[] CLEAR_NAMES = {"Everyone", "Zombies only", "Bodies & blood", "Wrecks & fires",
             "Barricades"};
     private static final int[] ZOMBIE_VARIANTS = {Entity.ZOMBIE, Entity.RUNNER, Entity.BRUTE, Entity.SCREAMER, Entity.SPITTER};
-    private static final int[] CIV_VARIANTS = {Entity.CIVILIAN, Entity.MEDIC, Entity.FIREFIGHTER, Entity.RAIDER};
+    private static final int[] CIV_VARIANTS = {Entity.CIVILIAN, Entity.MEDIC, Entity.RAIDER};
     private static final int[] MIL_ROLES = {Entity.ROLE_RIFLE, Entity.ROLE_COMMANDER, Entity.ROLE_SNIPER, Entity.ROLE_GUNNER,
             Entity.ROLE_GUARD, Entity.ROLE_CORPSMAN, Entity.ROLE_GRENADIER};
     private static final String[] MIL_NAMES = {"Soldier", "Commander", "Sniper", "Machine gunner", "National Guard",
@@ -74,8 +74,8 @@ final class GameView extends View implements Menu.Host {
     private static final int[] SPEEDS = {1, 2, 4, 8};
     private static final int[] BRUSHES = {1, 5, 10};
     private static final int[] SHOP_AWNINGS = {0xFFD83A3A, 0xFF2E7D4F, 0xFF2E5FB0, 0xFFE8A21C, 0xFF8A2E6B};
-    private static final int[] ROW_COLORS = {0xFFF0AD4E, 0xFF4F7BE0, 0xFF8FA05A, 0xFFF2F2F2, 0xFFE8B84A, 0xFF7CC24E};
-    private static final String[] ROW_LABELS = {"Civilians", "Cops", "Military", "Medics", "Firefighters", "Zombies"};
+    private static final int[] ROW_COLORS = {0xFFF0AD4E, 0xFF4F7BE0, 0xFF8FA05A, 0xFFF2F2F2, 0xFF7CC24E};
+    private static final String[] ROW_LABELS = {"Civilians", "Cops", "Military", "Medics", "Zombies"};
 
     private World world;
     private final Random rnd = new Random();
@@ -173,7 +173,6 @@ final class GameView extends View implements Menu.Host {
     private final RectF[] topRects = new RectF[TOP_BUTTONS];
     /** The stats panel as drawn this frame (it shrinks when collapsed). */
     private final RectF statsShown = new RectF();
-    private final RectF labelRect = new RectF();
     private final RectF statsRect = new RectF();
     private float barTop;
     private boolean portrait;
@@ -924,8 +923,7 @@ final class GameView extends View implements Menu.Host {
             }
             for (int i = 0; i < world.fleet.vehicles.size(); i++) {
                 Fleet.Vehicle v = world.fleet.vehicles.get(i);
-                float sc = v.type == Fleet.HELI || v.type == Fleet.TANK ? 40 : v.type == Fleet.FIRE_ENGINE && v.spraying ? 30
-                        : v.type == Fleet.TRAIN ? 20 : 0;
+                float sc = v.type == Fleet.HELI || v.type == Fleet.TANK ? 40 : v.type == Fleet.TRAIN ? 20 : 0;
                 if (sc > best) {
                     best = sc;
                     bx = v.x;
@@ -1053,7 +1051,7 @@ final class GameView extends View implements Menu.Host {
             for (int i = 0, n = world.fleet.vehicles.size(); i < n; i++) {
                 Fleet.Vehicle v = world.fleet.vehicles.get(i);
                 if (v.type == Fleet.CAR && v.parked) continue;
-                fill.setColor(v.type == Fleet.HELI || v.type == Fleet.TANK ? 0xFFFFE27A : v.type == Fleet.FIRE_ENGINE ? 0xFFFF6A4A : 0xFFE0E0E0);
+                fill.setColor(v.type == Fleet.HELI || v.type == Fleet.TANK ? 0xFFFFE27A : 0xFFE0E0E0);
                 c.drawCircle(miniRect.left + v.x * sx, miniRect.top + v.y * sy, dot * 1.3f, fill);
             }
             stroke.setColor(0xFFFFFFFF);
@@ -1206,8 +1204,7 @@ final class GameView extends View implements Menu.Host {
         for (int i = 0, n = world.fleet.vehicles.size(); i < n; i++) {
             Fleet.Vehicle v = world.fleet.vehicles.get(i);
             if (v.type == Fleet.CAR || v.type == Fleet.TRAIN) continue;
-            fill.setColor(v.type == Fleet.HELI || v.type == Fleet.TANK || v.type == Fleet.TRUCK ? 0xFFFFE27A
-                    : v.type == Fleet.FIRE_ENGINE ? 0xFFFF6A4A : 0xFFE0E0E0);
+            fill.setColor(v.type == Fleet.HELI || v.type == Fleet.TANK || v.type == Fleet.TRUCK ? 0xFFFFE27A : 0xFFE0E0E0);
             c.drawCircle(tacRect.left + v.x * sx, tacRect.top + v.y * sy, dot, fill);
         }
         text.setTextAlign(Paint.Align.CENTER);
@@ -1930,10 +1927,9 @@ final class GameView extends View implements Menu.Host {
             else {
                 // Zoomed out: a dot in the colour of their side (the same colours as the counts), outlined so it
                 // stands out on any ground, and never smaller than a few pixels.
-                int side = e.isZombie() ? 5 : e.type == Entity.COP ? 1 : e.type == Entity.SOLDIER ? 2 : e.type == Entity.MEDIC ? 3
-                        : e.type == Entity.FIREFIGHTER ? 4 : 0;
-                if (e.type == Entity.RAIDER) side = 6;
-                else if (e.type == Entity.DOG) side = 7;
+                int side = e.isZombie() ? 4 : e.type == Entity.COP ? 1 : e.type == Entity.SOLDIER ? 2 : e.type == Entity.MEDIC ? 3 : 0;
+                if (e.type == Entity.RAIDER) side = 5;
+                else if (e.type == Entity.DOG) side = 6;
                 if (e != world.controlled && e != follow) {
                     int cell = (int) ((e.y - vy0) / patch) * pw + (int) ((e.x - vx0) / patch);
                     int mark = (dotFrame << 8) | (1 << side);
@@ -2002,7 +1998,7 @@ final class GameView extends View implements Menu.Host {
             if (v.broken || Fleet.airborne(v)) continue;
             if (!v.lightsOn() || v.x < vx0 - 30 || v.x > vx1 + 30 || v.y < vy0 - 30 || v.y > vy1 + 30) continue;
             boolean blink = ((int) (v.anim * 8)) % 2 == 0;
-            int col = blink ? 0xFFFF3A30 : v.type == Fleet.FIRE_ENGINE ? 0xFFFFB040 : 0xFF3A7BFF;
+            int col = blink ? 0xFFFF3A30 : 0xFF3A7BFF;
             float side = blink ? -1 : 1, ox = (float) -Math.sin(v.angle) * side * 4, oy = (float) Math.cos(v.angle) * side * 4;
             for (int k = 0; k < 3; k++) {
                 fill.setColor(alpha(col, 0.07f));
@@ -3711,7 +3707,7 @@ final class GameView extends View implements Menu.Host {
         }
     }
 
-    /** A car, police cruiser, army truck or fire engine, with its damage showing. */
+    /** A car, police cruiser, army truck or ambulance, with its damage showing. */
     private void drawVehicle(Canvas c, Fleet.Vehicle v) {
         if (v.type == Fleet.TANK) {
             drawTank(c, v);
@@ -3725,8 +3721,8 @@ final class GameView extends View implements Menu.Host {
             drawBike(c, v);
             return;
         }
-        boolean truck = v.type == Fleet.TRUCK, engine = v.type == Fleet.FIRE_ENGINE, amb = v.type == Fleet.AMBULANCE;
-        float hl = truck || engine || amb ? 9.5f : 8f, hw = truck ? 5.2f : engine || amb ? 4.9f : 4.4f;
+        boolean truck = v.type == Fleet.TRUCK, amb = v.type == Fleet.AMBULANCE;
+        float hl = truck || amb ? 9.5f : 8f, hw = truck ? 5.2f : amb ? 4.9f : 4.4f;
         if (v.kind == Fleet.K_APC) {
             hl = 11;
             hw = 5.6f;
@@ -3738,19 +3734,6 @@ final class GameView extends View implements Menu.Host {
         if (model >= 0) {
             hl = Fleet.MODEL_HL[model];
             hw = Fleet.MODEL_HW[model];
-        }
-        if (v.spraying) {
-            // The hose: an arc of water from the engine to the fire.
-            stroke.setColor(0x99A8D8FF);
-            stroke.setStrokeWidth(1.6f);
-            float px = v.x, py = v.y;
-            for (int k = 1; k <= 8; k++) {
-                float t = k / 8f;
-                float x = v.x + (v.sprayX - v.x) * t, y = v.y + (v.sprayY - v.y) * t - (float) Math.sin(t * Math.PI) * 8;
-                c.drawLine(px, py, x, y, stroke);
-                px = x;
-                py = y;
-            }
         }
         // Shadow, always down and to the right like everything else.
         c.save();
@@ -3768,7 +3751,7 @@ final class GameView extends View implements Menu.Host {
         if (!v.burnt && !speck) {
             // Tyres poking out at the corners.
             fill.setColor(0xFF111214);
-            float wx = hl * 0.62f, ww = truck || engine ? 1.8f : 1.5f;
+            float wx = hl * 0.62f, ww = truck ? 1.8f : 1.5f;
             for (int sx = -1; sx <= 1; sx += 2) {
                 c.drawRect(sx * wx - ww, -hw - 0.5f, sx * wx + ww, -hw + 1f, fill);
                 c.drawRect(sx * wx - ww, hw - 1f, sx * wx + ww, hw + 0.5f, fill);
@@ -3777,7 +3760,7 @@ final class GameView extends View implements Menu.Host {
         boolean civ = v.type == Fleet.CAR;
         Country land0 = world.city.country;
         int body = civ ? v.color : v.kind == Fleet.K_RIOT_VAN ? land0.cruiserBody
-                : truck ? (v.restock ? 0xFFE6E3DA : v.swat ? 0xFF1C2026 : v.guardUnit ? 0xFF8C8260 : v.kind == Fleet.K_APC ? 0xFF46512E : 0xFF4F5A33) : engine ? 0xFFC8302A : amb ? 0xFFF2F2F2
+                : truck ? (v.restock ? 0xFFE6E3DA : v.swat ? 0xFF1C2026 : v.guardUnit ? 0xFF8C8260 : v.kind == Fleet.K_APC ? 0xFF46512E : 0xFF4F5A33) : amb ? 0xFFF2F2F2
                 : v.agency == 1 ? land0.hpBody : v.agency == 2 ? land0.ruralBody : v.agency == 3 ? 0xFF3E5634 : v.agency == 4 ? 0xFF15171A : land0.cruiserBody;
         if (v.burnt) body = 0xFF2B2623;
         else if (v.broken) body = City.darken(body, 0.65f);
@@ -3893,21 +3876,6 @@ final class GameView extends View implements Menu.Host {
             c.drawRect(-hl + 0.2f, -hw + 0.2f, -hl + 1.2f, -hw + 1.2f, fill);
             fill.setColor(v.lightsOn() && blink ? 0xFFFF4A3A : 0xFF8A2A24);
             c.drawRect(-hl + 0.2f, hw - 1.2f, -hl + 1.2f, hw - 0.2f, fill);
-        } else if (engine) {
-            fill.setColor(0xFF1E2A33);
-            c.drawRect(hl * 0.5f, -hw + 1, hl * 0.75f, hw - 1, fill);
-            // Ladder along the top.
-            fill.setColor(0xFFD8D8D8);
-            c.drawRect(-hl + 1.5f, -1.6f, hl * 0.4f, -0.9f, fill);
-            c.drawRect(-hl + 1.5f, 0.9f, hl * 0.4f, 1.6f, fill);
-            for (float x = -hl + 2.5f; x < hl * 0.4f; x += 2.2f) c.drawRect(x, -1.6f, x + 0.5f, 1.6f, fill);
-            // (10.44) The crew cab: its roof, a seam where the body starts, the light bar, and a white band.
-            fill.setColor(City.darken(body, 0.75f));
-            c.drawRect(hl * 0.4f, -hw + 0.5f, hl * 0.43f, hw - 0.5f, fill);
-            fill.setColor(0xFFEDEDED);
-            c.drawRect(-hl + 0.6f, -hw + 0.1f, hl * 0.4f, -hw + 0.7f, fill);
-            c.drawRect(-hl + 0.6f, hw - 0.7f, hl * 0.4f, hw - 0.1f, fill);
-            lightBar(c, hl * 0.47f, hw, v.lightsOn(), v.anim);
         } else {
             // (10.44) A patrol car: a saloon in its force's colours, the doors marked out, and the light bar across
             // the roof just behind the windscreen.
@@ -3961,7 +3929,7 @@ final class GameView extends View implements Menu.Host {
             // A glint on the windscreen.
             stroke.setColor(0x66FFFFFF);
             stroke.setStrokeWidth(0.5f);
-            float wsx = civ ? 3f : truck ? hl * 0.57f : amb ? hl * 0.66f : engine ? hl * 0.62f : 3.7f;
+            float wsx = civ ? 3f : truck ? hl * 0.57f : amb ? hl * 0.66f : 3.7f;
             c.drawLine(wsx - 0.6f, -hw + 1.6f, wsx + 0.6f, -hw * 0.1f, stroke);
         }
         if (realistic && !v.burnt) {
@@ -5103,7 +5071,7 @@ final class GameView extends View implements Menu.Host {
             oval.set(sx - tw / 2 - 6 * dp, sy - 11 * dp, sx + tw / 2 + 6 * dp, sy + 4 * dp);
             if (!claim(oval)) continue;
             int col = v.type == Fleet.HELI || v.type == Fleet.TANK || v.type == Fleet.TRUCK ? 0xC8304A20
-                    : v.type == Fleet.FIRE_ENGINE ? 0xC8802018 : v.type == Fleet.AMBULANCE ? 0xC8A03030
+                    : v.type == Fleet.AMBULANCE ? 0xC8A03030
                     : v.type == Fleet.CRUISER ? 0xC8203A66 : 0xB0202226;
             fill.setColor(col);
             c.drawRoundRect(oval, 6 * dp, 6 * dp, fill);
@@ -5143,6 +5111,27 @@ final class GameView extends View implements Menu.Host {
                 c.drawRoundRect(oval, 4 * dp, 4 * dp, fill);
                 text.setColor(0xFFFFF0E8);
                 c.drawText(label, sx, sy, text);
+            }
+            // (10.49) Where the evacuation buses pick up (and the station, for the trains), while people are leaving.
+            if (world.exodusOn() && world.byTransit()) {
+                text.setTextSize(10 * dp);
+                for (int i = 0; i <= world.evacStops.size(); i++) {
+                    boolean train = i == world.evacStops.size();
+                    if (train && world.city.stationX < 0) break;
+                    World.EvacStop st = train ? null : world.evacStops.get(i);
+                    float wx = train ? world.city.stationX : st.x, wy = train ? world.city.stationY : st.y;
+                    float sx = screenX(wx), sy = screenY(wy) - 12 * dp;
+                    if (sx < -80 * dp || sx > getWidth() + 80 * dp || sy < 12 * dp || sy > barTop) continue;
+                    int n = world.waitingFor(train ? World.STOP_TRAIN : i, wx, wy, true);
+                    String label = (train ? "EVACUATION TRAINS" : st.closed ? "BUS STOP CLOSED" : "EVACUATION BUS") + (n > 0 ? " \u00b7 " + n : "");
+                    float tw = text.measureText(label);
+                    oval.set(sx - tw / 2 - 4 * dp, sy - 10 * dp, sx + tw / 2 + 4 * dp, sy + 3 * dp);
+                    if (!claim(oval)) continue;
+                    fill.setColor(st != null && st.closed ? 0xDD5A5A5A : 0xDD1F5A9A);
+                    c.drawRoundRect(oval, 4 * dp, 4 * dp, fill);
+                    text.setColor(0xFFF2F6FA);
+                    c.drawText(label, sx, sy, text);
+                }
             }
             // (10.32) The army's checkpoints, and a base that's been overrun.
             text.setTextSize(10 * dp);
@@ -5550,7 +5539,7 @@ final class GameView extends View implements Menu.Host {
             stroke.setColor(e.skin);
             stroke.setStrokeWidth(r * 0.34f);
             c.drawLine(0, r * 0.5f, hx * 0.6f, hy * 0.6f + r * 0.2f, stroke);
-            stroke.setColor(e.melee == Entity.M_AXE || e.type == Entity.FIREFIGHTER ? 0xFF8A2A1E : e.melee == Entity.M_BAT ? 0xFF9A7448
+            stroke.setColor(e.melee == Entity.M_AXE ? 0xFF8A2A1E : e.melee == Entity.M_BAT ? 0xFF9A7448
                     : e.melee == Entity.M_MACHETE ? 0xFFC8CCD0 : e.melee == Entity.M_CROWBAR ? 0xFF7A1E1A : 0xFF2A2A2A);
             stroke.setStrokeWidth(r * 0.28f);
             c.drawLine(hx * 0.55f, hy * 0.55f + r * 0.2f, hx * 1.2f, hy * 1.2f + r * 0.2f, stroke);
@@ -5571,15 +5560,6 @@ final class GameView extends View implements Menu.Host {
             c.drawRect(-r * 0.5f, -r * 0.78f, r * 0.42f, r * 0.78f, fill);
             fill.setColor(0xFF3E4652);
             c.drawRect(-r * 0.36f, -r * 0.6f, r * 0.28f, r * 0.6f, fill);
-        }
-        if (e.type == Entity.FIREFIGHTER) {
-            // Reflective stripes on the turnout coat, and an air tank on the back.
-            fill.setColor(0xFFE8D84A);
-            c.drawRect(-r * 0.5f, -r * 0.95f, -r * 0.32f, r * 0.95f, fill);
-            c.drawRect(r * 0.1f, -r * 0.95f, r * 0.28f, r * 0.95f, fill);
-            fill.setColor(0xFFB8BCC0);
-            oval.set(-r * 0.85f, -r * 0.35f, -r * 0.35f, r * 0.35f);
-            c.drawOval(oval, fill);
         }
         if (e.type == Entity.MEDIC) {
             fill.setColor(0xFFD83A3A);
@@ -5943,7 +5923,7 @@ final class GameView extends View implements Menu.Host {
         float lh = 17 * dp;
         Dispatch d = world.dispatch;
         int[] rows = {world.civilians, world.counts[Entity.COP], world.counts[Entity.SOLDIER],
-                world.counts[Entity.MEDIC], world.counts[Entity.FIREFIGHTER], world.zombieCount()};
+                world.counts[Entity.MEDIC], world.zombieCount()};
         text.setTextSize(12.5f * dp);
         if (statsCollapsed) {
             int at = (int) world.afterTime;
@@ -6444,21 +6424,6 @@ final class GameView extends View implements Menu.Host {
         c.drawText(label, x, y, text);
     }
 
-    /** A small coloured name tag centred on (x, y). */
-    private void tagAt(Canvas c, String label, float x, float y, int col) {
-        text.setTextAlign(Paint.Align.CENTER);
-        text.setTextSize(10.5f * dp);
-        float tw = text.measureText(label);
-        tmpRect.set(x - tw / 2 - 6 * dp, y - 11 * dp, x + tw / 2 + 6 * dp, y + 4 * dp);
-        fill.setColor(0xD0141619);
-        c.drawRoundRect(tmpRect, 5 * dp, 5 * dp, fill);
-        stroke.setColor(col);
-        stroke.setStrokeWidth(1.2f * dp);
-        c.drawRoundRect(tmpRect, 5 * dp, 5 * dp, stroke);
-        text.setColor(0xFFFFFFFF);
-        c.drawText(label, x, y, text);
-    }
-
     /** Stars over pinned people on screen, and arrows at the edge pointing to those off it. */
     private void drawPins(Canvas c) {
         pinCount = 0;
@@ -6616,7 +6581,7 @@ final class GameView extends View implements Menu.Host {
         Fleet.Vehicle car = world.controlledCar;
         String verb = car != null ? (car.type == Fleet.TANK ? "Fire" : car.type == Fleet.CRUISER ? "Siren" : "Horn")
                 : e.isZombie() ? "Bite" : e.canShoot() && e.ammo + e.reserve > 0 ? (e.reload > 0 ? "Reload" : "Shoot")
-                : e.melee > 0 || e.type == Entity.FIREFIGHTER ? "Swing" : "Shove";
+                : e.melee > 0 ? "Swing" : "Shove";
         text.setTextAlign(Paint.Align.CENTER);
         if (world.controlledIn == null) {
             fill.setColor(world.ctrlAttack ? 0xF0D9534F : 0xB0D9534F);
@@ -7502,7 +7467,7 @@ final class GameView extends View implements Menu.Host {
             case City.MALL: role = "Plenty of food and room; can become a safe zone"; break;
             case City.SCHOOL: case City.CHURCH: case City.STADIUM: role = "Can become a safe zone"; break;
             case City.PHARMACY: role = "Patches people up and sometimes stops a bite"; break;
-            case City.FIRE_STATION: role = "Sends fire engines to burning wrecks"; break;
+            case City.FIRE_STATION: role = "The fire station (no crews any more): the paramedics are based here"; break;
             case City.HOUSE: case City.APARTMENT: role = "Home: the people who live here run back to it"; break;
             case City.CITY_HALL: role = world.hallLost ? "FALLEN: no emergency broadcasts, no volunteers, no one to call the Guard"
                     : "Runs the emergency: broadcasts, calls for volunteers, asks for the National Guard"; break;
@@ -7611,13 +7576,9 @@ final class GameView extends View implements Menu.Host {
             case 0: made = world.fleet.placeCar(wx, wy); break;
             case 1: made = world.fleet.placePolice(wx, wy); break;
             case 2: made = world.fleet.placeTank(wx, wy); break;
-            case 3:
-                made = world.fleet.placeFireEngine(wx, wy);
-                if (made == null) world.say("Nothing is burning");
-                break;
-            case 4: made = world.placeBarricade(wx, wy); break;
-            case 5: made = world.placeCrate(wx, wy, 0); break;
-            case 6: world.ignite(wx, wy, 40); break;
+            case 3: made = world.placeBarricade(wx, wy); break;
+            case 4: made = world.placeCrate(wx, wy, 0); break;
+            case 5: world.ignite(wx, wy, 40); break;
             default: made = world.placeMedkit(wx, wy); break;
         }
         if (made != null) lastAction.add(made);

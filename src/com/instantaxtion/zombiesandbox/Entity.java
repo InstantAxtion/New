@@ -3,7 +3,9 @@ package com.instantaxtion.zombiesandbox;
 /** Someone in the city: a civilian, a cop, a soldier, a medic, a dog or one of the zombie kinds. */
 final class Entity {
     static final int CIVILIAN = 0, COP = 1, SOLDIER = 2, MEDIC = 3, DOG = 4, RAIDER = 5, ZOMBIE = 6, RUNNER = 7,
-            BRUTE = 8, CRAWLER = 9, SCREAMER = 10, ZOMBIE_DOG = 11, SPITTER = 12, BLOATER = 13, FIREFIGHTER = 14;
+            BRUTE = 8, CRAWLER = 9, SCREAMER = 10, ZOMBIE_DOG = 11, SPITTER = 12, BLOATER = 13,
+            /** (Firefighters went in 10.49: any in an old save load as civilians.) */
+            FIREFIGHTER = 14;
     static final int TYPE_COUNT = 15;
     static final String[] NAMES = {"Civilian", "Cop", "Soldier", "Medic", "Dog", "Raider", "Zombie", "Runner", "Brute",
             "Crawler", "Screamer", "Zombie dog", "Spitter", "Bloater", "Firefighter"};
@@ -66,8 +68,8 @@ final class Entity {
     boolean outsider;
     /** (10.48) Seconds an officer or soldier has stood about on foot with no car and nothing to do. */
     float strandedFor;
-    /** (10.48) The parked car someone fleeing the city is making for (or null: on foot). */
-    Fleet.Vehicle exitCar;
+    /** (10.49) The evacuation bus stop someone fleeing the city is waiting at (World.STOP_TRAIN: the train), or -1. */
+    int exitStop = -1;
     /** (10.48) Seconds before someone who couldn't leave (no car near) thinks about it again. */
     float exodusCd;
     /** (10.32) One of the dead still in a police or army vest and helmet: harder to put down. */

@@ -69,7 +69,7 @@ final class Menu {
 
     private static final String[][] TUTORIAL_PAGES = {
             {"Welcome to Zombie City", "A sandbox: set up a city, start an outbreak and watch what happens. There are no missions. Play however you like."},
-            {"Spawning", "Pick a unit in the bottom bar and tap the city. Drag to paint a line of them, or use Brush (top) to spawn 5 or 10 at once. Buttons with a dot open a picker: People (civilians, medics, firefighters, dogs, raiders), Police, Military (soldiers, snipers, gunners, the National Guard) and Zombies. Tap a choice, then tap the city."},
+            {"Spawning", "Pick a unit in the bottom bar and tap the city. Drag to paint a line of them, or use Brush (top) to spawn 5 or 10 at once. Buttons with a dot open a picker: People (civilians, medics, raiders), Police, Military (soldiers, snipers, gunners, the National Guard) and Zombies. Tap a choice, then tap the city."},
             {"Looking around", "Pinch to zoom and drag with two fingers. With Move selected you can drag with one finger, and tap anyone to follow them with the camera. Press Take control on their card to play them yourself: left thumb to move (push further to run), the red button to shoot, bite or shove. Zoom right in to see through roofs. The View button switches between 3D and bird's-eye."},
             {"The city fights back", "Civilians call 911, the police respond by car, and the military is called in when it gets bad. The radio feed shows what they say. Tap a message to jump there."},
             {"Safe zones and hiding", "Police and soldiers pick a spot well away from the dead and put up a sandbag line; the zone opens once it's built. Its border grows as people arrive and guards join, follows the streets, and pulls back where the dead push. Others barricade themselves in buildings until zombies break the door down. Where and when zones go up is up to them."},
@@ -1161,8 +1161,8 @@ final class Menu {
         y -= 6 * dp;
         String[] exodusInfo = {"Off: the people stay in town and sit it out (or don't).",
                 "On foot: once the news breaks, most people walk out of the city for the country. They come home once the outbreak is over.",
-                "By car: once the news breaks, everyone who can get to a parked car drives out of the city with their family; the rest stay. They come home once it's over.",
-                "Foot & car: once the news breaks, most people leave the city - by car if there's one near, on foot if not. They come home once it's over."};
+                "Bus & train: once the news breaks, evacuation buses pick people up at stops around town and trains leave from the station (if there is one). They come home once it's over.",
+                "All ways: once the news breaks, most people leave the city - by bus or train if a stop is near, on foot if not. They come home once it's over."};
         for (String line : wrap(exodusInfo[Math.max(0, Math.min(3, config.exodus))], lw - 4 * dp, plain)) {
             c.drawText(line, lx + 2 * dp, y + 10 * dp, plain);
             y += 16 * dp;

@@ -46,7 +46,6 @@ final class Synth {
             case Sfx.SNIPER: out = sniper(r); break;
             case Sfx.COLLAPSE: out = collapse(r); break;
             case Sfx.CRASH: out = crash(r); break;
-            case Sfx.HOSE: out = hose(r); break;
             case Sfx.AMB_SIREN: out = ambulance(); break;
             case Sfx.ENGINE: out = engine(r); break;
             case Sfx.JET: out = jet(r); break;
@@ -364,22 +363,6 @@ final class Synth {
             lp += (white - lp) * 0.15f;
             float glass = t > 0.05f ? (float) Math.sin(TAU * (2600 + r.nextFloat() * 1800) * t) * (float) Math.exp(-(t - 0.05f) * 14) * 0.25f : 0;
             o[i] = lp * 3 * (float) Math.exp(-t * 9) + (float) Math.sin(TAU * 80 * t) * (float) Math.exp(-t * 16) + glass;
-        }
-        return o;
-    }
-
-    /** Water from a fire hose: steady hiss. */
-    private static float[] hose(Random r) {
-        float dur = 1f;
-        int n = (int) (dur * RATE);
-        float[] o = new float[n];
-        float hp = 0, prev = 0;
-        for (int i = 0; i < n; i++) {
-            float t = i / (float) RATE;
-            float white = r.nextFloat() * 2 - 1;
-            hp = 0.9f * (hp + white - prev);
-            prev = white;
-            o[i] = hp * 0.35f * smooth(Math.min(1, t / 0.1f)) * smooth(Math.min(1, (dur - t) / 0.15f));
         }
         return o;
     }

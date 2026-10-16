@@ -49,7 +49,6 @@ on the phone, so the APK contains no audio files.
   gives limited air support. Vehicles drive on the roads and run over zombies. Cars take damage from
   zombies, crashes, gunfire and blasts, smoke when damaged and break down (sometimes burning) at zero.
 - **Traffic**: people fleeing wave down passing cars and get driven to a safe zone. Zombies chase cars.
-- **Fire engines** drive out from fire stations and hose down burning cars and gas pumps.
 - **Tanks** roll out for big hordes; **ambulances** fetch badly hurt people to the hospital.
 - **Air support takes time**: once approved, the crew is briefed and the aircraft readied (about a
   minute from a helipad in town, nearly two from outside the city). The helicopter spins up for
@@ -121,16 +120,13 @@ on the phone, so the APK contains no audio files.
   the road with the lights off. The nearest car takes each 911 call with lights and siren; officers who
   see one from the car pull up and get out, and drive on once it's quiet. Stations put new cars out when
   two officers are free.
-- **Firefighters drive their engine**: each station's engine waits outside until a crew runs out and
-  climbs aboard. They get down at the fire, climb back aboard when it's out (or too dangerous) and drive
-  back to the station.
 - **Highways**: wherever there's countryside round the town, a divided highway crosses the map with three
   lanes each way, a concrete barrier, route shields and green signs; roads from town join it at lights.
   Highway patrol drives it, and in the USA sheriff's deputies patrol the country roads. Where the railway
   meets the highway it crosses on a bridge, with the traffic running underneath.
 - **Emergency services grow with the city**: more officers for every resident and more police stations on
-  Large and Massive maps; more fire stations with five firefighters each; medics at the hospital and at the
-  fire stations.
+  Large and Massive maps; medics at the hospital and at the fire stations (which have no crews of their
+  own since 10.49).
 - **A sharp map up close**: zoomed in, the area on screen is drawn again in fine detail in the background
   and laid over the map picture.
 - **Loading**: cities are built (and saved games loaded) in the background behind a "Building the city"
@@ -210,7 +206,7 @@ counts), and wherever the dead gather the ground glows red. Labels go most impor
 - **Ammunition runs out**: precincts and the base have a limited armoury, safe zones keep their own
   stock, and army supply trucks carry ammo to zones running low. Zombies can wreck a truck.
 - **Fire spreads**: burning cars and explosions set buildings alight; fires grow, jump to the building
-  next door, and burn buildings down unless fire engines put them out. People inside get out.
+  next door, and burn until there's nothing left. People inside get out.
 - **Militias**: armed residents band together, take over a building, hold the street and shelter their
   neighbours inside.
 - **Stampedes**: panicking crowds knock people down. Families and groups following someone stay together.
@@ -437,6 +433,16 @@ mounting up, and lighter running with big populations.
 
 **More police than soldiers (10.35):** the army on the map is never more than two in five of the police force.
 
+**No firefighters; leaving by bus and train; quicker (10.49):** firefighters and fire engines are gone (fire
+stations stay, with the paramedics based there; fires burn out on their own, and the Up in Flames achievement is
+now for five buildings alight in one game). Fleeing citizens now leave On foot, by Bus & train (evacuation buses
+come to stops along the main roads - shown and named on the map, closed if the dead reach them - and evacuation
+trains call at the station) or All ways, instead of by car. Cars keep their speed on and off the slip roads;
+curved streets that end at a corner are filled in; a rare crash building some maps is fixed. Faster: people on
+foot no longer plan their route again every moment when the first stretch is long, cars reuse the line they're
+driving, the walking router no longer throws away its map of the city when a wall goes up, and the dead look for
+cars and people nearby more cheaply. Unused code removed.
+
 **Back in their vehicles; how people leave (10.48):** a police car or army truck whose crew is dead or gone is
 taken over by officers or soldiers standing about near it, who pick up the others nearby; those stranded far
 from their station or base get a car or truck sent out for them; patrol cars no longer wait for ever for officers
@@ -549,8 +555,6 @@ a Guard Headquarters (the National Guard comes sooner).
   the armory (two on the gate), and it's labelled on the map like the base.
 - **Army trucks**: trucks leaving the base or the armory are the ones parked there (the lot empties
   as the army goes out), and they park in their bays again when they get back.
-- **Firefighters** wait at the fire station and ride out on fire engines. They put out fires with
-  hoses, give first aid to the injured nearby, fight zombies off with an axe and back away from crowds.
 - Recent radio messages appear on screen. Tap one to jump the camera to where it happened.
 
 ## How to play
@@ -559,7 +563,7 @@ a Guard Headquarters (the National Guard comes sooner).
   - Buttons with a dot open a **picker** with a short description of each choice: tap one, then tap
     the city. Tap the button again (or anywhere else) to close it.
   - **People**: civilians (wander and run from zombies), medics (heal the hurt),
-    firefighters, dogs and raiders.
+    dogs and raiders.
   - **Police**: cops (15-round pistol and three spare magazines), riot cops, K9 units and SWAT.
   - **Military**: soldiers (3-round bursts, grenades), commanders, snipers, gunners and the National
     Guard.
@@ -573,12 +577,12 @@ a Guard Headquarters (the National Guard comes sooner).
 - Top buttons: **Pause/Play**, **Speed** (1x/2x/4x/8x), **Brush** (spawn 1/5/10 at a time),
   **View** (3D or bird's-eye), **Clear** (choose what to clear), **Menu**.
 - **Take control**: tap anyone with **Move**, then **Take control** on their card to play them yourself: a
-  civilian, cop, soldier, medic, firefighter, raider, dog or zombie. Put your left thumb down anywhere
+  civilian, cop, soldier, medic, raider, dog or zombie. Put your left thumb down anywhere
   on the left to move (push further to run; the living get out of breath), and hold the red button to
   act: armed people auto-aim at the zombie most in line with where they're facing, zombies bite, and
   anyone else shoves. **Stop controlling** (or picking another tool) hands them back to the AI.
   While you're in control, buttons above the red one offer what you can do there:
-  - **Get in / Get out**: drive any car, cruiser, truck, ambulance, fire engine or tank. The stick
+  - **Get in / Get out**: drive any car, cruiser, truck, ambulance, bus or tank. The stick
     steers (pull back to reverse), the red button sounds the horn (or the siren, or fires the tank's
     cannon). Run zombies over; crashes damage the vehicle. Your group rides with you.
   - **Weapons**: walk over a gun, bat or axe to pick it up (a gun you already have gives you its ammo;
@@ -632,7 +636,7 @@ Code layout (`src/com/instantaxtion/zombiesandbox/`):
 - `City.java`: city generation (building styles and heights, layouts, stations and bases), the pre-rendered map, line of sight, BFS flow fields and pedestrian routes that prefer pavements and crossings.
 - `World.java`: simulation (AI, shooting, infection, explosions, particles).
 - `Dispatch.java`: 911 calls, incidents, police/military radio, reinforcements, orders and safe zones.
-- `Fleet.java`: cruisers, army trucks, fire engines, traffic, vehicle damage and the helicopter.
+- `Fleet.java`: cruisers, army trucks, buses, trains, traffic, vehicle damage and the helicopter.
 - `SaveGame.java`: saving and loading.
 - `GameView.java`: rendering (including the leaning 3D buildings), camera, touch input and UI.
 - `Entity.java`: data for a single person or zombie.

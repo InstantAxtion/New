@@ -2,11 +2,22 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.48";
-    static final int VERSION_CODE = 86;
+    static final String VERSION = "10.49";
+    static final int VERSION_CODE = 87;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.49  -  Buses and trains out, no more firefighters, and quicker",
+                    "Firefighters and fire engines are gone. The fire stations stay (the paramedics are based there), and a fire now burns until there's nothing left of the building. The Up in Flames achievement is now for seeing five buildings catch fire in one game.",
+                    "Fleeing citizens no longer leave by car. Its settings are now Off, On foot, Bus & train and All ways. With buses and trains, evacuation bus stops are set up along the main roads when people start to leave (named on the radio and marked on the map), and buses come to fetch those waiting there and drive them out of the city. If the city has a railway station, evacuation trains call there and take everyone waiting on the platform.",
+                    "A bus stop the dead reach is closed (shown on the map), and those waiting there go to another. With All ways, people far from any stop walk out instead. When the outbreak ends, buses still coming to a stop let their passengers off and go back to being ordinary buses.",
+                    "Cars no longer slow to a crawl going onto or off the highway's slip roads.",
+                    "A curved street that ends where it meets another road at a corner is now filled in, instead of leaving a notch of grass.",
+                    "Faster: people on foot whose route started with a long straight stretch planned it again every moment (police and soldiers walking to a post most of all); vehicles reuse the line they're driving instead of working it out again every moment; the walking router keeps the parts of its map that didn't change when a wall or barricade goes up, instead of starting again and stalling the game on the next long walk; and the dead look for cars and people nearby more cheaply.",
+                    "Fixed: building some maps could crash when a house's driveway search ran off the edge of the map.",
+                    "Unused code removed.",
+            },
             {
                     "10.48  -  Back in their vehicles, and how people leave",
                     "A police car or army truck left with nobody to drive it - its crew dead, or gone off elsewhere - is taken over by an officer (or soldier) standing about near it with nothing to do, who picks up the others on foot nearby as well. A patrol car goes back out on patrol with its new crew; anything else takes them back to the station or base.",

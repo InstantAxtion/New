@@ -13,8 +13,8 @@ final class Dispatch {
             T_HOLD = 7, T_HIDE = 8, T_PICKUP = 9, T_RESUPPLY = 10, T_HEAL = 11, T_RIDE = 12, T_ENLIST = 13,
             T_CLEANUP = 14, T_LOOT = 15, T_PATROL = 16, T_BOARD = 17, T_RESCUE = 18, T_BORROW = 19, T_CORDON = 20, T_EVACUATE = 21,
             T_LEAVE = 22, T_HOMECOMING = 23;
-    static final int WHO_911 = 0, WHO_POLICE = 1, WHO_MILITARY = 2, WHO_INFO = 3, WHO_FIRE = 4;
-    static final int[] WHO_COLORS = {0xFFFFA64D, 0xFF7FB0FF, 0xFFA6DC72, 0xFFBDBDBD, 0xFFFF7A5C};
+    static final int WHO_911 = 0, WHO_POLICE = 1, WHO_MILITARY = 2, WHO_INFO = 3;
+    static final int[] WHO_COLORS = {0xFFFFA64D, 0xFF7FB0FF, 0xFFA6DC72, 0xFFBDBDBD};
     static final String[] SQUADS = {"Alpha", "Bravo", "Charlie", "Delta", "Echo", "Foxtrot", "Golf", "Hotel"};
 
     private static final String[] CALLS = {
@@ -115,25 +115,6 @@ final class Dispatch {
             return px > left() + City.T && px < right() - City.T && py > top() + City.T && py < bottom() - City.T;
         }
 
-        /** How far the wall is from the middle in the direction of (px, py). */
-        float reach(float px, float py) {
-            float dx = px - x, dy = py - y, l = (float) Math.sqrt(dx * dx + dy * dy);
-            if (l < 0.001f) return baseR;
-            dx /= l;
-            dy /= l;
-            float tx = dx > 0.0001f ? (right() - x) / dx : dx < -0.0001f ? (left() - x) / dx : Float.MAX_VALUE;
-            float ty = dy > 0.0001f ? (bottom() - y) / dy : dy < -0.0001f ? (top() - y) / dy : Float.MAX_VALUE;
-            return Math.min(tx, ty);
-        }
-
-        float edgeAt(float a) {
-            return reach(x + (float) Math.cos(a), y + (float) Math.sin(a));
-        }
-
-        float area() {
-            return (right() - left()) * (bottom() - top());
-        }
-
         /** The spot just inside a wall tile (where a guard stands at it). */
         float[] innerOf(int t, int w) {
             int tx = t % w, ty = t / w;
@@ -214,8 +195,6 @@ final class Dispatch {
 
     private static final int[] POLICE_RESERVE = {0, 2, 3, 5}, SQUAD_RESERVE = {0, 2, 4, 6}, AIR_SORTIES = {0, 1, 2, 3},
             TANKS = {0, 1, 2, 3};
-    /** Officers in each wave of police backup. */
-    static final int BACKUP_OFFICERS = 6;
 
     /**
      * Reinforcements on their way in from outside the city (10.17): where they came onto the map, where
@@ -408,8 +387,7 @@ final class Dispatch {
     }
 
     void say(int who, Entity speaker, String text, float x, float y) {
-        String label = who == WHO_911 ? "911" : who == WHO_POLICE ? "Police" : who == WHO_MILITARY ? "Military"
-                : who == WHO_FIRE ? "Fire Dept" : "Info";
+        String label = who == WHO_911 ? "911" : who == WHO_POLICE ? "Police" : who == WHO_MILITARY ? "Military" : "Info";
         if (speaker != null) {
             label = name(speaker);
             speaker.talkTimer = 2.5f;
@@ -926,11 +904,6 @@ final class Dispatch {
     float airDelay;
     private float airX, airY;
     private String airPlace;
-    private boolean airPad;
-
-    boolean airBusy() {
-        return airDelay > 0 || w.fleet.readyHeli(0, airX, airY) == null;
-    }
 
     /**
      * Air support takes time: the request goes up the chain, the crew is briefed and the aircraft is fuelled and
@@ -1452,25 +1425,6 @@ final class Dispatch {
         callout(p[0], p[1], "ARMY CONVOY", WHO_COLORS[WHO_MILITARY]);
     }
 
-    /** Calls in one of the limited reserve squads (before 10.20). Returns false if none are left. */
-    private boolean sendSmallReserve(float x, float y, String place, Incident inc, SafeZone zone) {
-        if (squadReserve <= 0) return false;
-        squadReserve--;
-        Arrival a = new Arrival();
-        a.time = 2;
-        a.type = Entity.SOLDIER;
-        a.count = 4;
-        a.incident = inc;
-        a.zone = zone;
-        a.x = x;
-        a.y = y;
-        a.place = place;
-        arrivals.add(a);
-        say(WHO_MILITARY, null, "Military: Copy. Reserve squad inbound from outside the city to " + place + "."
-                + (squadReserve == 0 ? " That's our last one." : " " + squadReserve + " left in reserve."), x, y);
-        return true;
-    }
-
     private int policeWaves, lastWave = -1;
     private final ArrayList<Integer> waveBag = new ArrayList<Integer>();
     /** Help from outside has been asked for once: from then on it keeps coming while the outbreak is serious. */
@@ -1711,11 +1665,6 @@ final class Dispatch {
         swatTeams++;
         inc.swatRequested = false;
         inc.swatWait = 20;
-    }
-
-    /** Where reinforcements come from: the base or nearest precinct, or else the edge of the map. */
-    private City.Facility origin(int type, float x, float y) {
-        return city.nearestFacility(type == Entity.SOLDIER ? City.FACILITY_BASE : City.FACILITY_POLICE, x, y);
     }
 
     /**
@@ -2590,15 +2539,6 @@ final class Dispatch {
         e.task = T_SHELTER;
         e.zone = z;
         return true;
-    }
-
-    /** The safe zone containing (x, y), if any. */
-    SafeZone zoneAt(float x, float y, float margin) {
-        for (int i = 0; i < zones.size(); i++) {
-            SafeZone z = zones.get(i);
-            if (z.open && z.contains(x, y, margin)) return z;
-        }
-        return null;
     }
 
     /** The way to the gates of the zones with room. */

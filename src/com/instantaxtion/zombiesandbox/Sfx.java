@@ -4,7 +4,7 @@ package com.instantaxtion.zombiesandbox;
 final class Sfx {
     static final int PISTOL = 0, RIFLE = 1, EXPLOSION = 2, BITE = 3, GROAN = 4, GROAN_DEEP = 5, SCREAM = 6,
             CLICK = 7, RADIO = 8, PHONE = 9, SHRIEK = 10, THUD = 11, SIREN = 12, ROTOR = 13, BARK = 14,
-            HORN = 15, CANNON = 16, MG = 17, SNIPER = 18, COLLAPSE = 19, CRASH = 20, HOSE = 21, AMB_SIREN = 22, ENGINE = 23,
+            HORN = 15, CANNON = 16, MG = 17, SNIPER = 18, COLLAPSE = 19, CRASH = 20, /* 21 was the fire hose (10.49) */ AMB_SIREN = 22, ENGINE = 23,
             JET = 24, SPIT = 25, BURST = 26, ALARM = 27, SHIELD = 28,
             // (10.24)
             SHOTGUN = 29, REVOLVER = 30, GLASS = 31, POUND = 32, HUNTING = 33;
@@ -20,7 +20,7 @@ final class Sfx {
 
     static {
         for (int id : new int[] {GROAN, GROAN_DEEP, SCREAM, RADIO, PHONE, SHRIEK, SIREN, ROTOR, BARK, HORN,
-                HOSE, AMB_SIREN, ENGINE, JET, SPIT, ALARM, COLLAPSE, POUND}) REPEATS[id] = true;
+                AMB_SIREN, ENGINE, JET, SPIT, ALARM, COLLAPSE, POUND}) REPEATS[id] = true;
     }
 
     /**

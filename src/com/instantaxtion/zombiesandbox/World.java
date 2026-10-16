@@ -37,8 +37,6 @@ final class World {
         float x, y, life;
         /** The building this fire is burning, if any. */
         City.Building building;
-        /** The fire engine on its way to (or fighting) this fire. */
-        Fleet.Vehicle engine;
     }
 
     /** A pigeon: pecks around on the ground and flies off when startled. */
@@ -104,7 +102,7 @@ final class World {
     /** How far the infection has evolved (0-5), how long the outbreak has run, and the recovery afterwards. */
     int mutation;
     /** Counters for records and achievements. */
-    int firesOut, tanksDeployed, collapsedCount, carsWrecked, biggestHorde;
+    int buildingsAlight, tanksDeployed, collapsedCount, carsWrecked, biggestHorde;
     float outbreakTime, calmTime;
     /**
      * How far word of the outbreak has got: 0 nobody knows, 1 the first reports (word spreads person to
@@ -272,7 +270,7 @@ final class World {
     float time, shake;
     /** What the player can see (world units), so cars aren't made to vanish or appear in plain view. */
     float viewX0, viewY0, viewX1 = -1, viewY1 = -1;
-    private float fieldTimer, engineTimer;
+    private float fieldTimer;
     final int[] counts = new int[Entity.TYPE_COUNT];
     int humans, zombies, turned, zombiesKilled, civiliansLost;
     /** People who got away on evacuation trains. */
@@ -333,7 +331,6 @@ final class World {
     /** How ready the city is: 0 normal, 1 unprepared, 2 panicking, 3 a gun town, 4 well prepared. */
     int readiness;
     boolean readinessKnown;
-    static final String[] READINESS = {"Normal", "Unprepared", "Panicking", "Gun town", "Well prepared"};
     private static final String[] READINESS_NEWS = {"",
             "Police: we weren't ready for this. Ammunition is short, and the towns around can spare only half the help.",
             "News: panic is sweeping the city. People are running instead of hiding.",
@@ -528,9 +525,6 @@ final class World {
             if (at == null) break;
             spawn(Entity.MEDIC, at.x + rnd.nextFloat() * 40 - 20, at.y + rnd.nextFloat() * 40 - 20);
         }
-        // A crew at every fire station: enough for the engine and a couple to spare.
-        for (City.Facility f : fireStations)
-            for (int i = 0; i < 5; i++) spawn(Entity.FIREFIGHTER, f.x + rnd.nextFloat() * 30 - 15, f.y + rnd.nextFloat() * 30 - 15);
         // Half the cops start at their precinct, the rest on patrol; soldiers start on base.
         City.Facility base = city.mainBase();
         int stations = 0;
@@ -579,7 +573,6 @@ final class World {
                 if (f.kind == City.FACILITY_POLICE) spawnCop(Entity.ROLE_MARKSMAN, f.x + rnd.nextFloat() * 20 - 10, f.y + rnd.nextFloat() * 20 - 10);
         dispatch.riotVans = cfg.nature() ? Math.min(3, stations) : 0;
         dispatch.policeAir = cfg.nature() && stations > 0 ? 2 : 0;
-        fleet.stationEngines();
         populateWilds(cops > 0);
         fleet.stationHelis();
         // Out of town: highway patrol on the highway, and (in the USA) sheriff's deputies on the country roads.
@@ -913,11 +906,6 @@ final class World {
 
     /** Burning wrecks: flames and smoke, and they hurt anyone standing in them. */
     private void updateFires(float dt) {
-        engineTimer -= dt;
-        if (engineTimer <= 0) {
-            engineTimer = 2;
-            dispatchEngines();
-        }
         for (int i = fires.size() - 1; i >= 0; i--) {
             Fire f = fires.get(i);
             f.life -= dt;
@@ -975,65 +963,6 @@ final class World {
         pendingBlasts.add(new float[]{x, y, radius, damage, delay});
     }
 
-    /** The nearest fire no fire engine is looking after. */
-    Fire nearestFire(float x, float y, float radius) {
-        Fire best = null;
-        float bd = radius * radius;
-        for (int i = 0, n = fires.size(); i < n; i++) {
-            Fire f = fires.get(i);
-            if (f.engine != null || f.life < 4) continue;
-            float d = (f.x - x) * (f.x - x) + (f.y - y) * (f.y - y);
-            if (d < bd) {
-                bd = d;
-                best = f;
-            }
-        }
-        return best;
-    }
-
-    /** Water from a fire hose: the fire dies down fast and anything about to blow up is made safe. */
-    void douse(Fire f, float dt) {
-        f.life -= 9 * dt;
-        if (f.life <= 0 && f.life > -9 * dt) firesOut++;
-        if (rnd.nextFloat() < dt * 1.5f)
-            decal(f.x + rnd.nextFloat() * 24 - 12, f.y + rnd.nextFloat() * 24 - 12, 4 + rnd.nextFloat() * 6, 0x3060A0D0, D_PUDDLE, 0);
-        if (rnd.nextFloat() < dt * 5)
-            particle(f.x, f.y - 3, rnd.nextFloat() * 8 - 4, -12, 1.5f, 3, 0xFFE8E8E8, P_SMOKE);
-        for (int i = pendingBlasts.size() - 1; i >= 0; i--) {
-            float[] b = pendingBlasts.get(i);
-            if ((b[0] - f.x) * (b[0] - f.x) + (b[1] - f.y) * (b[1] - f.y) < 25 * 25 && b[2] < 60) pendingBlasts.remove(i);
-        }
-    }
-
-    /** Fire stations send an engine to each fire that is burning for real. */
-    private void dispatchEngines() {
-        for (int i = 0, n = fires.size(); i < n; i++) {
-            Fire f = fires.get(i);
-            if (f.engine != null || f.life < 12) continue;
-            City.Facility best = null;
-            float bd = Float.MAX_VALUE;
-            for (City.Facility st : city.facilities) {
-                if (st.kind != City.FACILITY_FIRE || fleet.idleEngine(st) == null) continue;
-                // An overrun station can't send anyone.
-                if (countZombiesNear(st.x, st.y, 160) > 0) continue;
-                float d = (st.x - f.x) * (st.x - f.x) + (st.y - f.y) * (st.y - f.y);
-                if (d < bd) {
-                    bd = d;
-                    best = st;
-                }
-            }
-            if (best == null) return;
-            // One engine covers every fire close to this one.
-            Fleet.Vehicle v = fleet.sendFireEngine(best, f);
-            if (v == null) continue;
-            f.engine = v;
-            for (int k = 0; k < n; k++) {
-                Fire o = fires.get(k);
-                if (o.engine == null && (o.x - f.x) * (o.x - f.x) + (o.y - f.y) * (o.y - f.y) < 90 * 90) o.engine = v;
-            }
-        }
-    }
-
     void ignite(float x, float y, float life) {
         Fire f = new Fire();
         f.x = x;
@@ -1080,7 +1009,7 @@ final class World {
     }
 
     int humanCount() {
-        return counts[Entity.CIVILIAN] + counts[Entity.COP] + counts[Entity.SOLDIER] + counts[Entity.MEDIC] + counts[Entity.FIREFIGHTER];
+        return counts[Entity.CIVILIAN] + counts[Entity.COP] + counts[Entity.SOLDIER] + counts[Entity.MEDIC];
     }
 
     /** People sitting in cars right now. */
@@ -1227,15 +1156,6 @@ final class World {
                 e.runSpeed = 40;
                 e.body = 0xFFF2F2F2;
                 e.head = HAIR[rnd.nextInt(HAIR.length)];
-                break;
-            case Entity.FIREFIGHTER:
-                e.hp = 70;
-                e.radius = 3.9f;
-                e.speed = 20;
-                e.runSpeed = 38;
-                e.body = 0xFF8A6A34;
-                e.head = 0xFFC8302A;
-                e.mass = 1.2f;
                 break;
             case Entity.CRAWLER:
                 e.hp = 35;
@@ -1518,7 +1438,6 @@ final class World {
         spawnBirds();
         spawnWildlife();
         fleet.trafficTarget = Fleet.trafficFor(city);
-        fleet.stationEngines();
         fleet.stationHelis();
         int cops = 0;
         for (Entity e : entities) if (!e.dead && e.type == Entity.COP) cops++;
@@ -1607,6 +1526,8 @@ final class World {
     void update(float dt) {
         // ((10.36) The walking router is quick enough for far more routes than before: about forty a second.)
         pathBudget = Math.min(12, pathBudget + dt * 40);
+        // (10.49) The walking router's map, worked out a few clusters at a time instead of all at once mid-trip.
+        city.warmPaths(quality == Q_FULL ? 3 : 1);
         time += dt;
         shake = Math.max(0, shake - dt * 3);
         if (messageTime > 0) messageTime -= dt;
@@ -1909,15 +1830,41 @@ final class World {
                     if (o.dead || o.isZombie() != wantZombie || o == from) continue;
                     float ddx = o.x - from.x, ddy = o.y - from.y, d2 = ddx * ddx + ddy * ddy;
                     if (o.hidden && d2 > 22 * 22) continue;
-                    if (d2 < best && (!needLos || city.los(from.x, from.y, o.x, o.y))) {
-                        best = d2;
-                        res = o;
+                    if (d2 >= best) continue;
+                    if (needLos) {
+                        // (10.49) Seen or not is worked out after, nearest first: not for everyone nearer than the last.
+                        if (nearN == nearD.length) {
+                            nearD = Arrays.copyOf(nearD, nearN * 2);
+                            nearE = Arrays.copyOf(nearE, nearN * 2);
+                        }
+                        nearD[nearN] = d2;
+                        nearE[nearN++] = o;
+                        continue;
                     }
+                    best = d2;
+                    res = o;
                 }
             }
         }
+        while (nearN > 0) {
+            int bi = 0;
+            for (int i = 1; i < nearN; i++) if (nearD[i] < nearD[bi]) bi = i;
+            Entity o = nearE[bi];
+            nearD[bi] = nearD[--nearN];
+            nearE[bi] = nearE[nearN];
+            if (city.los(from.x, from.y, o.x, o.y)) {
+                res = o;
+                break;
+            }
+        }
+        while (nearN > 0) nearE[--nearN] = null;
         return res;
     }
+
+    /** Working space for nearest: those in range, still to be looked at. */
+    private float[] nearD = new float[64];
+    private Entity[] nearE = new Entity[64];
+    private int nearN;
 
     /** (10.31) The living in the grid cells within r of (x, y) (some a little further), into gathered[]. */
     private Entity[] gathered = new Entity[256];
@@ -2039,7 +1986,6 @@ final class World {
         if (e.isZombie()) thinkZombie(e, dt);
         else if (e.isArmed()) thinkArmed(e, dt);
         else if (e.type == Entity.MEDIC) thinkMedic(e, dt);
-        else if (e.type == Entity.FIREFIGHTER) thinkFirefighter(e, dt);
         else if (e.type == Entity.DOG) thinkDog(e, dt);
         else if (e.type == Entity.RAIDER) thinkRaider(e, dt);
         else thinkCivilian(e, dt);
@@ -2186,7 +2132,6 @@ final class World {
                             }
                             break;
                         case Entity.MEDIC:
-                        case Entity.FIREFIGHTER:
                             if (d2 < 150 * 150 && o.fleeTimer <= 0 && atDead) {
                                 o.fleeTimer = 2;
                                 o.threatX = dx;
@@ -2953,19 +2898,51 @@ final class World {
         return null;
     }
 
+    private static final int CAR_CELL = 128;
+    private float carGridTime = -1;
+    private int[] carHead, carNext = new int[0];
+    private Fleet.Vehicle[] carList = new Fleet.Vehicle[0];
+    private int carCount;
+
     /** A car worth going after: one driving by, or one with people in it. */
     private Fleet.Vehicle carFor(Entity z, float radius) {
-        Fleet.Vehicle best = null;
-        float bd = radius * radius;
-        for (int i = 0, n = fleet.vehicles.size(); i < n; i++) {
-            Fleet.Vehicle v = fleet.vehicles.get(i);
-            if (Fleet.airborne(v) || v.type == Fleet.TRAIN || !v.occupied()) continue;
-            float d = (v.x - z.x) * (v.x - z.x) + (v.y - z.y) * (v.y - z.y);
-            if (d < bd) {
-                bd = d;
-                best = v;
+        // (10.49) Looked up on a grid of the cars worth chasing, made once a moment, instead of going through
+        // every vehicle on the map for each of the dead.
+        if (carGridTime != time) {
+            carGridTime = time;
+            int gw = city.w * City.T / CAR_CELL + 1, gh = city.h * City.T / CAR_CELL + 1;
+            if (carHead == null || carHead.length != gw * gh) carHead = new int[gw * gh];
+            java.util.Arrays.fill(carHead, -1);
+            int n = fleet.vehicles.size();
+            if (carNext.length < n) {
+                carNext = new int[n * 2];
+                carList = new Fleet.Vehicle[n * 2];
+            }
+            carCount = 0;
+            for (int i = 0; i < n; i++) {
+                Fleet.Vehicle v = fleet.vehicles.get(i);
+                if (Fleet.airborne(v) || v.type == Fleet.TRAIN || !v.occupied()) continue;
+                int cx = Math.max(0, Math.min(gw - 1, (int) (v.x / CAR_CELL))), cy = Math.max(0, Math.min(gh - 1, (int) (v.y / CAR_CELL)));
+                carList[carCount] = v;
+                carNext[carCount] = carHead[cy * gw + cx];
+                carHead[cy * gw + cx] = carCount++;
             }
         }
+        Fleet.Vehicle best = null;
+        float bd = radius * radius;
+        int gw = city.w * City.T / CAR_CELL + 1, gh = city.h * City.T / CAR_CELL + 1;
+        int x0 = Math.max(0, (int) ((z.x - radius) / CAR_CELL)), x1 = Math.min(gw - 1, (int) ((z.x + radius) / CAR_CELL));
+        int y0 = Math.max(0, (int) ((z.y - radius) / CAR_CELL)), y1 = Math.min(gh - 1, (int) ((z.y + radius) / CAR_CELL));
+        for (int cy = y0; cy <= y1; cy++)
+            for (int cx = x0; cx <= x1; cx++)
+                for (int i = carHead[cy * gw + cx]; i >= 0; i = carNext[i]) {
+                    Fleet.Vehicle v = carList[i];
+                    float d = (v.x - z.x) * (v.x - z.x) + (v.y - z.y) * (v.y - z.y);
+                    if (d < bd) {
+                        bd = d;
+                        best = v;
+                    }
+                }
         // (Not one on the far side of the barrier, or a fence: it would only press against it.)
         if (best != null && !city.passLine(z.x, z.y, best.x, best.y)) return null;
         return best;
@@ -3091,7 +3068,7 @@ final class World {
             Entity z = nearestInReach(e);
             if (z == null && e.melee > 0) z = nearest(e, e.radius + 12, true, false);
             if (z != null && e.meleeCd <= 0) {
-                if (e.melee > 0 || e.type == Entity.FIREFIGHTER) swing(e, z);
+                if (e.melee > 0) swing(e, z);
                 else shove(e, z, e.type == Entity.COP || e.type == Entity.SOLDIER || e.type == Entity.RAIDER);
             }
         }
@@ -3116,7 +3093,7 @@ final class World {
     /** A bat or an axe: a hard blow that stuns, and sometimes splits a skull. */
     private void swing(Entity e, Entity z) {
         // (A machete cuts like an axe; a crowbar hits like a bat, only harder.)
-        boolean axe = e.melee == Entity.M_AXE || e.melee == Entity.M_MACHETE || (e.melee == Entity.M_NONE && e.type == Entity.FIREFIGHTER);
+        boolean axe = e.melee == Entity.M_AXE || e.melee == Entity.M_MACHETE;
         if (e.melee == Entity.M_CROWBAR) z.hp -= 8;
         e.meleeCd = axe ? 0.8f : 0.6f;
         e.swingAt = time;
@@ -6739,17 +6716,11 @@ final class World {
                 e.pathBest = Float.MAX_VALUE;
                 continue;
             }
-            // Pushed well off the line it was walking: plan it again from here.
-            float ax, ay;
-            if (e.pathIdx > 0) {
-                int q = p[e.pathIdx - 1];
-                ax = (q % w + 0.5f) * City.T;
-                ay = (q / w + 0.5f) * City.T;
-            } else {
-                ax = px;
-                ay = py;
-            }
-            if (distToSegment(e.x, e.y, ax, ay, px, py) > 40) {
+            // Pushed well off the line it was walking: plan it again from here. (10.49) Not on the way to the first
+            // corner: with no corner before it, that measured the way still to go, and threw out (and planned again,
+            // every moment) every route whose first leg was long.
+            int q0 = e.pathIdx > 0 ? p[e.pathIdx - 1] : 0;
+            if (e.pathIdx > 0 && distToSegment(e.x, e.y, (q0 % w + 0.5f) * City.T, (q0 / w + 0.5f) * City.T, px, py) > 40) {
                 // (10.37) Back onto the route where it can be seen from here, rather than a whole new plan.
                 int back = -1;
                 for (int k = Math.max(0, e.pathIdx - 1); k < Math.min(p.length, e.pathIdx + 6) && back < 0; k++) {
@@ -6965,93 +6936,6 @@ final class World {
                     + " gate. Turned away.", z.x, z.y);
         }
         return true;
-    }
-
-    /**
-     * Firefighters: they put out fires with their hoses, give first aid to the hurt, and fight zombies off with
-     * their axes (backing away from a crowd). With nothing to do they go back to the station.
-     */
-    private void thinkFirefighter(Entity e, float dt) {
-        Entity z = nearest(e, 60, true, true);
-        if (e.meleeCd <= 0) {
-            Entity r = nearestInReach(e);
-            if (r != null) {
-                // A swing of the axe.
-                shove(e, r, true);
-                r.hp -= 10;
-                e.meleeCd = 1.0f;
-            }
-        }
-        if (z != null) {
-            float ddx = z.x - e.x, ddy = z.y - e.y, d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
-            int crowd = countZombiesNear(e.x, e.y, 45);
-            if (crowd >= 3 || e.hp < e.maxHp * 0.4f || z.type == Entity.BRUTE) {
-                flee(e, -ddx / d, -ddy / d, e.runSpeed);
-                return;
-            }
-            if (d < 35) {
-                steer(e, ddx / d, ddy / d, e.runSpeed);
-                return;
-            }
-        }
-        // Fires first: walk up close and hose them down. (On foot without their engine, only fires close by.)
-        Fire f = null;
-        float fd = e.rig != null ? 450 * 450 : 160 * 160;
-        for (int i = 0, n = fires.size(); i < n; i++) {
-            Fire o = fires.get(i);
-            float d2 = (o.x - e.x) * (o.x - e.x) + (o.y - e.y) * (o.y - e.y);
-            if (d2 < fd && o.life > 0.5f) {
-                fd = d2;
-                f = o;
-            }
-        }
-        if (f != null) {
-            float ddx = f.x - e.x, ddy = f.y - e.y, d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
-            if (d > 24) {
-                steer(e, ddx / d, ddy / d, e.runSpeed * 0.9f);
-                if (e.blocked) {
-                    e.blocked = false;
-                    e.unstick = 0.5f;
-                    e.unstickAngle = (float) Math.atan2(ddy, ddx) + (rnd.nextBoolean() ? 1.3f : -1.3f);
-                }
-            } else {
-                steer(e, 0, 0, 0);
-                e.angle = turn(e.angle, (float) Math.atan2(ddy, ddx), dt * 6);
-                f.life -= 3.5f * dt;
-                if (f.life <= 0 && f.life > -3.5f * dt) firesOut++;
-                if (rnd.nextFloat() < dt * 14)
-                    particle(e.x + ddx / d * 4, e.y + ddy / d * 4, ddx / d * 60 + rnd.nextFloat() * 10 - 5,
-                            ddy / d * 60 + rnd.nextFloat() * 10 - 5, 0.35f, 1.2f, 0xFFB8DCF0, P_DOT);
-            }
-            return;
-        }
-        // First aid for anyone badly hurt close by.
-        Entity patient = null;
-        float pd = 140 * 140;
-        for (int i = 0, n = gatherLiving(e.x, e.y, 140); i < n; i++) {
-            Entity o = gathered[i];
-            if (o == e || o.dead || o.isZombie() || o.type == Entity.RAIDER || o.hp >= o.maxHp * 0.6f) continue;
-            float d2 = (o.x - e.x) * (o.x - e.x) + (o.y - e.y) * (o.y - e.y);
-            if (d2 < pd) {
-                pd = d2;
-                patient = o;
-            }
-        }
-        if (patient != null && z == null) {
-            float ddx = patient.x - e.x, ddy = patient.y - e.y, d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
-            if (d > e.radius + patient.radius + 5) steer(e, ddx / d, ddy / d, e.runSpeed * 0.8f);
-            else {
-                steer(e, 0, 0, 0);
-                patient.hp = Math.min(patient.maxHp, patient.hp + 6 * dt);
-            }
-            return;
-        }
-        City.Facility st = city.nearestFacility(City.FACILITY_FIRE, e.x, e.y);
-        if (st != null) {
-            float ddx = st.x - e.x, ddy = st.y - e.y;
-            if (ddx * ddx + ddy * ddy > st.r * st.r * 2 && followField(e, city.field(st), e.speed)) return;
-        }
-        wander(e, e.speed * 0.5f);
     }
 
     /** Whether the governor has already called out the National Guard this outbreak (and how many times, when). */
@@ -8665,12 +8549,13 @@ final class World {
         f.building = b;
         fires.add(f);
         b.fire = f;
+        buildingsAlight++;
         b.lurkers = 0;
         // Everyone inside gets out.
         while (!b.occupants.isEmpty()) leaveBuilding(b.occupants.remove(b.occupants.size() - 1), b, true);
         while (!b.visitors.isEmpty()) leaveBuilding(b.visitors.remove(b.visitors.size() - 1), b, true);
         if (b.name != null || b.kind == City.HOSPITAL || b.kind == City.STATION)
-            dispatch.say(Dispatch.WHO_FIRE, null, "Fire Dept: " + (b.name != null ? b.name : "A building") + " on "
+            dispatch.say(Dispatch.WHO_INFO, null, "News: " + (b.name != null ? b.name : "A building") + " on "
                     + city.placeName(f.x, f.y) + " is on fire!", f.x, f.y);
     }
 
@@ -8689,8 +8574,8 @@ final class World {
         if (n < 4) return;
         blockFireSaid = time + 50;
         timeline("Fire spreading through the block at " + city.placeName(cx, cy));
-        dispatch.say(Dispatch.WHO_FIRE, null, "Fire Dept: The fire is spreading through the block at " + city.placeName(cx, cy)
-                + ": " + n + " buildings alight. All engines, all engines.", cx, cy);
+        dispatch.say(Dispatch.WHO_INFO, null, "News: Fire is spreading through the block at " + city.placeName(cx, cy)
+                + ": " + n + " buildings alight. Keep well clear.", cx, cy);
     }
 
     private void updateBuildingFires(float dt) {
@@ -8706,7 +8591,7 @@ final class World {
                 b.fire = null;
                 continue;
             }
-            // A building fire grows unless it's being hosed down (the hose takes it faster than it grows).
+            // A building fire grows until there is nothing left to burn.
             f.life = Math.min(40, f.life + dt * 1.8f);
             float heat = f.life / 40;
             b.hp -= dt * heat * b.maxHp / 70;
@@ -10206,7 +10091,7 @@ final class World {
      */
     int turnType(int was) {
         float roll = rnd.nextFloat();
-        float brute = was == Entity.SOLDIER || was == Entity.COP || was == Entity.FIREFIGHTER ? 0.025f : 0.01f;
+        float brute = was == Entity.SOLDIER || was == Entity.COP ? 0.025f : 0.01f;
         if (roll < 0.05f) return Entity.RUNNER;
         roll -= 0.05f;
         if (roll < 0.015f) return Entity.SCREAMER;
@@ -11037,7 +10922,10 @@ final class World {
             steer(e, dx / d, dy / d, speed);
             return;
         }
-        if (e.path == null || e.pathDest != null || Math.abs(e.planX - x) > 1 || Math.abs(e.planY - y) > 1) {
+        // (10.49) A spot that's crept a little (a cordon post as the zone shifts) keeps the way already planned
+        // while it's still far off: replanned as it gets near.
+        float slack = Math.max(1, d * 0.12f);
+        if (e.path == null || e.pathDest != null || Math.abs(e.planX - x) > slack || Math.abs(e.planY - y) > slack) {
             if (pathBudget < 0.25f) {
                 steer(e, dx / d, dy / d, speed * 0.7f);
                 return;
@@ -11294,8 +11182,35 @@ final class World {
     /** Those who've fled the city (out of the world until they come home), and how it's gone. */
     final ArrayList<Entity> away = new ArrayList<Entity>();
     boolean exodusStarted;
-    int fled, cameHome, exodusSaid, fledByCar;
+    int fled, cameHome, exodusSaid, fledByTransit;
     private float exodusTick;
+
+    /**
+     * (10.49) An evacuation bus stop: where the bus pulls up on the road, where people wait on the pavement beside
+     * it, and the bus on its way to it or waiting there (or null).
+     */
+    static final class EvacStop {
+        float bx, by, x, y;
+        String place;
+        boolean closed;
+        Fleet.Vehicle bus;
+        float busCd;
+    }
+
+    /** (10.49) The evacuation bus stops (chosen when people start leaving); and the trains, if there's a station. */
+    final ArrayList<EvacStop> evacStops = new ArrayList<EvacStop>();
+    /** Who waits for the train: their stop number. */
+    static final int STOP_TRAIN = -2;
+
+    /** People are leaving the city right now (and the buses and trains are running). */
+    boolean exodusOn() {
+        return city.cfg.exodus() && exodusStarted && outbreak && alert >= 2;
+    }
+
+    /** Leaving by bus and train is one of the ways people go. */
+    boolean byTransit() {
+        return city.cfg.exodus == CityConfig.EXODUS_TRANSIT || city.cfg.exodus == CityConfig.EXODUS_ALL;
+    }
     /** Where the roads (or the causeway) leave the map: the ways out, and back in. */
     private float[][] exits;
 
@@ -11317,8 +11232,7 @@ final class World {
             for (int i = 0, m = entities.size(); i < m; i++) {
                 Entity e = entities.get(i);
                 if (!e.dead && e.task == Dispatch.T_LEAVE) {
-                    if (e.exitCar != null && e.exitCar.exodusClaim == e) e.exitCar.exodusClaim = null;
-                    e.exitCar = null;
+                    e.exitStop = -1;
                     e.task = e.home != null ? Dispatch.T_HOMECOMING : Dispatch.T_NONE;
                     e.path = null;
                     e.goalCd = 0;
@@ -11331,9 +11245,32 @@ final class World {
         if (!exodusStarted) {
             exodusStarted = true;
             timeline("People are fleeing the city");
-            dispatch.say(Dispatch.WHO_INFO, null, "News: Thousands are leaving the city on foot and by car. Authorities urge everyone "
-                    + "leaving to keep to the main roads.", city.worldW() / 2, city.worldH() / 2);
+            if (byTransit()) {
+                // (10.49) The buses and trains: where they pick up.
+                if (evacStops.isEmpty()) {
+                    int n = Math.max(4, Math.min(10, (int) (city.worldW() / 1300)));
+                    for (float[] q : city.evacuationStops(n, new java.util.Random(city.cfg.seed * 13 + 5))) {
+                        EvacStop st = new EvacStop();
+                        st.bx = q[0];
+                        st.by = q[1];
+                        st.x = q[2];
+                        st.y = q[3];
+                        st.place = city.placeName(q[2], q[3]);
+                        evacStops.add(st);
+                    }
+                }
+                StringBuilder where = new StringBuilder();
+                for (int k = 0; k < evacStops.size() && k < 3; k++) where.append(k == 0 ? "" : ", ").append(evacStops.get(k).place);
+                dispatch.say(Dispatch.WHO_INFO, null, "News: Evacuation buses are picking people up at " + where
+                        + (evacStops.size() > 3 ? " and " + (evacStops.size() - 3) + " more stops" : "")
+                        + (city.stationX >= 0 ? ". Trains are leaving from " + city.stationName + "." : "."), city.worldW() / 2, city.worldH() / 2);
+            }
+            if (city.cfg.exodus != CityConfig.EXODUS_TRANSIT)
+                dispatch.say(Dispatch.WHO_INFO, null, "News: Thousands are leaving the city on foot. Authorities urge everyone leaving "
+                        + "to keep to the main roads.", city.worldW() / 2, city.worldH() / 2);
         }
+        // (A stop with the dead at it is closed: those waiting there go to another.)
+        for (EvacStop st : evacStops) st.closed = countZombiesNear(st.x, st.y, 110) > 0;
         // Out on the street: they decide to go (not all at once).
         for (int i = 0, m = entities.size(); i < m; i++) {
             Entity e = entities.get(i);
@@ -11387,30 +11324,57 @@ final class World {
     }
 
     private void startLeaving(Entity e) {
-        // (10.48) By car, if that's how they go: a parked one near.
+        // (10.49) By bus or train, if that's a way people go: the nearest stop still open, or the station.
+        e.exitStop = -1;
         int how = city.cfg.exodus;
-        if (how == CityConfig.EXODUS_CAR || how == CityConfig.EXODUS_BOTH) {
-            Fleet.Vehicle car = fleet.carToFleeIn(e.x, e.y, 320);
-            // (Or one of those parked in the car parks and along the streets.)
-            if (car == null) car = fleet.parkedCarFromMap(e.x, e.y, 320);
-            if (car != null) {
-                car.exodusClaim = e;
-                e.exitCar = car;
-                e.task = Dispatch.T_LEAVE;
-                e.postX = car.x;
-                e.postY = car.y;
-                e.evacTime = 0;
-                e.goalCd = 0;
-                e.paused = false;
-                return;
+        if (byTransit()) {
+            int bestStop = -1;
+            float bd = Float.MAX_VALUE;
+            for (int k = 0; k < evacStops.size(); k++) {
+                EvacStop st = evacStops.get(k);
+                float d = (float) Math.hypot(st.x - e.x, st.y - e.y);
+                if (!st.closed && d < bd) {
+                    bd = d;
+                    bestStop = k;
+                }
             }
-            if (how == CityConfig.EXODUS_CAR) {
-                // (No car: they stay, and look again in a while.)
+            float sx = 0, sy = 0;
+            if (city.stationX >= 0) {
+                float d = (float) Math.hypot(city.stationX - e.x, city.stationY - e.y);
+                if (d < bd && countZombiesNear(city.stationX, city.stationY, 150) == 0) {
+                    bd = d;
+                    bestStop = STOP_TRAIN;
+                }
+            }
+            // (Both ways: on foot instead if the nearest stop is a long walk.)
+            if (bestStop != -1 && (how == CityConfig.EXODUS_TRANSIT || bd < 1100)) {
+                if (bestStop == STOP_TRAIN) {
+                    // On the platform, along the train.
+                    sx = city.stationX + (rnd.nextFloat() - 0.5f) * Fleet.TRAIN_LENGTH * 0.8f;
+                    sy = city.stationY + (city.stationY < (city.railY0 + city.railRows / 2f) * City.T ? -10 : 10);
+                } else {
+                    EvacStop st = evacStops.get(bestStop);
+                    sx = st.x + rnd.nextFloat() * 36 - 18;
+                    sy = st.y + rnd.nextFloat() * 36 - 18;
+                }
+                float[] p = city.findWalkable(sx, sy);
+                if (p != null) {
+                    e.exitStop = bestStop;
+                    e.task = Dispatch.T_LEAVE;
+                    e.postX = p[0];
+                    e.postY = p[1];
+                    e.evacTime = 0;
+                    e.goalCd = 0;
+                    e.paused = false;
+                    return;
+                }
+            }
+            if (how == CityConfig.EXODUS_TRANSIT) {
+                // (Nowhere to get on: they stay, and look again in a while.)
                 e.exodusCd = 25;
                 return;
             }
         }
-        e.exitCar = null;
         float[] best = null;
         float bd = Float.MAX_VALUE;
         for (float[] x : exits) {
@@ -11443,34 +11407,17 @@ final class World {
             return true;
         }
         if (e.task != Dispatch.T_LEAVE) return false;
-        Fleet.Vehicle car = e.exitCar;
-        if (car != null) {
-            // (10.48) To the car, then away in it.
-            if (car.removedFromFleet || car.broken || car.burnt || !car.parked || car.player != null || car.exodusClaim != e) {
-                if (car.exodusClaim == e) car.exodusClaim = null;
-                e.exitCar = null;
+        if (e.exitStop != -1) {
+            // (10.49) To the bus stop or the platform, then wait there for the bus or the train.
+            boolean shut = e.exitStop == STOP_TRAIN ? city.stationX < 0 : e.exitStop >= evacStops.size() || evacStops.get(e.exitStop).closed;
+            if (shut || unreachable(e, e.postX, e.postY)) {
                 e.task = Dispatch.T_NONE;
                 startLeaving(e);
+                if (e.task != Dispatch.T_LEAVE) e.exodusCd = 20;
                 return e.task == Dispatch.T_LEAVE;
             }
-            if (Math.hypot(car.x - e.x, car.y - e.y) < car.length() * 0.5f + 12) {
-                car.exodusClaim = null;
-                if (!fleet.driveOut(car, e)) {
-                    e.exitCar = null;
-                    e.task = Dispatch.T_NONE;
-                    e.exodusCd = 30;
-                    return false;
-                }
-                return true;
-            }
-            if (unreachable(e, car.x, car.y)) {
-                car.exodusClaim = null;
-                e.exitCar = null;
-                e.task = Dispatch.T_NONE;
-                e.exodusCd = 20;
-                return false;
-            }
-            walkToSpot(e, car.x, car.y, e.fear > 0 ? e.runSpeed * 0.85f : e.speed * 1.5f);
+            if (Math.hypot(e.postX - e.x, e.postY - e.y) > 14) walkToSpot(e, e.postX, e.postY, e.fear > 0 ? e.runSpeed * 0.85f : e.speed * 1.4f);
+            else standAt(e, e.postX, e.postY, 0.3f);
             return true;
         }
         float m = City.T * 2.5f;
@@ -11500,11 +11447,51 @@ final class World {
         return e.path != null && e.path.length == 0 && e.pathDest == null && e.planX == x && e.planY == y && Math.hypot(x - e.x, y - e.y) > 60;
     }
 
-    /** (10.48) A car of people fleeing the city has driven off the map: they're gone with it. */
+    /** (10.49) A bus or train of people fleeing the city has left the map: they're gone with it. */
     void droveOut(java.util.List<Entity> riders) {
-        fledByCar += riders.size();
+        fledByTransit += riders.size();
         for (Entity e : riders) gone(e);
         riders.clear();
+    }
+
+    /**
+     * (10.49) Aboard the bus or train at a stop (or the platform): those waiting for it there, with their families,
+     * up to the room there is. Returns how many got on.
+     */
+    int boardEvac(Fleet.Vehicle v, int stop, float x, float y, float radius, int room) {
+        int n = 0;
+        for (int i = 0, m = entities.size(); i < m && n < room; i++) {
+            Entity e = entities.get(i);
+            if (e.dead || e.task != Dispatch.T_LEAVE || e.exitStop != stop || Math.hypot(e.x - x, e.y - y) > radius) continue;
+            for (int k = 0; k < m && n < room; k++) {
+                Entity o = entities.get(k);
+                if (o == e || o.dead || o.leader != e || o == controlled || Math.hypot(o.x - e.x, o.y - e.y) > 80) continue;
+                aboard(v, o);
+                n++;
+            }
+            aboard(v, e);
+            n++;
+        }
+        return n;
+    }
+
+    private void aboard(Fleet.Vehicle v, Entity e) {
+        e.task = Dispatch.T_NONE;
+        e.exitStop = -1;
+        e.dead = true;
+        e.removed = true;
+        e.vx = e.vy = 0;
+        v.riders.add(e);
+    }
+
+    /** How many are on their way to (or waiting at) a stop, and how many are there now. */
+    int waitingFor(int stop, float x, float y, boolean there) {
+        int n = 0;
+        for (int i = 0, m = entities.size(); i < m; i++) {
+            Entity e = entities.get(i);
+            if (!e.dead && e.task == Dispatch.T_LEAVE && e.exitStop == stop && (!there || Math.hypot(e.x - x, e.y - y) < 60)) n++;
+        }
+        return n;
     }
 
     /** Out of the city: off the map until it's over, with the family that came with them. */
@@ -12194,10 +12181,6 @@ final class World {
         dispatch.say(Dispatch.WHO_POLICE, null, "Dispatch: Rescue " + ready.number + ", people cut off at " + place
                 + ". Crew to the helicopter, get them out.", tx, ty);
         rescueCd = 20;
-    }
-
-    Entity nearestArmedFor(float x, float y, float r) {
-        return nearestArmed(x, y, r);
     }
 
     /** How many rescue teams the police have (their helicopters): more on the bigger maps and with more precincts. */

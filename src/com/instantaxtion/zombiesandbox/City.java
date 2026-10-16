@@ -25,7 +25,6 @@ final class City {
             SHOP = 7, CHURCH = 8, SCHOOL = 9, FIRE_STATION = 10, MARKET = 11, KIOSK = 12, SPIRE = 13, CRYPT = 14,
             APARTMENT = 15, GARAGE = 16, PHARMACY = 17, TRAIN_STATION = 18, MALL = 19, STADIUM = 20, POWER = 21,
             BARN = 22, SILO = 23, CITY_HALL = 24, COURTHOUSE = 25, JAIL = 26, CALL_CENTRE = 27, WORKS = 28, ARMORY = 29;
-    static final int KIND_COUNT = 30;
     /** Ground decorations drawn into the map: {kind, x0, y0, x1, y1, variant} in world units. */
     static final int D_COURT = 0, D_FIELD = 1, D_PLAYGROUND = 2, D_GARDEN = 3, D_GRAVE = 4, D_SKATE = 5,
             D_CANOPY = 6, D_ALLEY = 7, D_SITE = 8, D_POWER = 9, D_HELIPAD = 10, D_BAY = 11, D_BANDSTAND = 12,
@@ -122,7 +121,7 @@ final class City {
         boolean fighting;
         /** A survivor group has made this building its home. */
         World.Holdout holdout;
-        /** On fire: the flames firefighters hose (null if not burning). */
+        /** On fire: the flames (null if not burning). */
         World.Fire fire;
         /** People inside on an errand (shopping, at church, at school), and how many are on their way. */
         final List<Entity> visitors = new ArrayList<Entity>();
@@ -1897,7 +1896,10 @@ final class City {
                     break;
                 }
                 for (int k = 0; k < 4; k++) {
-                    int j = c + (k == 0 ? 1 : k == 1 ? -1 : k == 2 ? w : -w);
+                    // ((10.49) Not off the edge of the map: a road out to the edge of it ran the search off the end.)
+                    int nx = x + (k == 0 ? 1 : k == 1 ? -1 : 0), ny = y + (k == 2 ? 1 : k == 3 ? -1 : 0);
+                    if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+                    int j = ny * w + nx;
                     if (seen[j] == stamp || !roadTile(j)) continue;
                     seen[j] = stamp;
                     q[tail++] = j;
@@ -4535,25 +4537,6 @@ final class City {
         lake(lx0, ly0, lx1, ly1);
     }
 
-    /** No piece of town came out the right size for the lake: it takes the biggest block near the middle. */
-    private void lakeFromBlock() {
-        int best = -1;
-        float bestScore = -Float.MAX_VALUE;
-        for (int k = 0; k < blocks.size(); k++) {
-            int[] b = blocks.get(k);
-            int bw = b[2] - b[0], bh = b[3] - b[1];
-            if (Math.min(bw, bh) < 16) continue;
-            float score = bw * bh - (float) Math.hypot((b[0] + b[2]) / 2f - w / 2f, (b[1] + b[3]) / 2f - h / 2f) * 20;
-            if (score > bestScore) {
-                bestScore = score;
-                best = k;
-            }
-        }
-        if (best < 0) return;
-        int[] b = blocks.remove(best);
-        lake(b[0], b[1], b[2], b[3]);
-    }
-
     /** The colour of a tile of open water: darker the further it is from the shore. */
     private int waterColor(int x, int y) {
         int base = waterKind == CityConfig.W_LAKE || waterKind == CityConfig.W_NONE ? 0xFF2F6E80 : waterKind == CityConfig.W_RIVER ? 0xFF2E6584 : 0xFF2A6390;
@@ -4607,39 +4590,61 @@ final class City {
     }
 
     /**
-     * (10.48) Someone fleeing the city takes one of the cars parked in a car park or along the street near (x, y):
-     * it comes off the map picture (its bay or bit of kerb left empty) and the spot is returned, or null.
+     * (10.49) Where evacuation buses pick people up: up to n places along the main roads in town, spread out
+     * across it. Each is {x, y on the road where the bus stops, x, y on the pavement beside it where people wait}.
      */
-    float[] takeParkedCar(float x, float y, float radius) {
-        int tx0 = Math.max(1, (int) ((x - radius) / T)), tx1 = Math.min(w - 2, (int) ((x + radius) / T));
-        int ty0 = Math.max(1, (int) ((y - radius) / T)), ty1 = Math.min(h - 2, (int) ((y + radius) / T));
-        int best = -1;
-        float bd = radius * radius;
-        for (int ty = ty0; ty <= ty1; ty++)
-            for (int tx = tx0; tx <= tx1; tx++) {
-                int i = ty * w + tx;
-                if (tiles[i] != CAR || carKind[i] != 0) continue;
-                float dx = (tx + 0.5f) * T - x, dy = (ty + 0.5f) * T - y, d = dx * dx + dy * dy;
-                if (d < bd) {
-                    bd = d;
-                    best = i;
+    List<float[]> evacuationStops(int n, Random r) {
+        List<float[]> cand = new ArrayList<float[]>();
+        int x0 = Math.max(2, townX0), y0 = Math.max(2, townY0), x1 = Math.min(w - 3, townX1), y1 = Math.min(h - 3, townY1);
+        for (int k = 0; k < 6000 && cand.size() < 400; k++) {
+            int tx = x0 + r.nextInt(Math.max(1, x1 - x0)), ty = y0 + r.nextInt(Math.max(1, y1 - y0));
+            int i = ty * w + tx;
+            if (tiles[i] != ROAD || !mainRoad[i] || (oneWay != null && oneWay[i] != 0) || (slipTile != null && slipTile[i])
+                    || junctionAt(tx, ty) || onHighway((tx + 0.5f) * T, (ty + 0.5f) * T)) continue;
+            int dir = roadDir[i];
+            if (dir != 1 && dir != 2) continue;
+            // The pavement beside it: across the road from where it runs.
+            for (int sd = -1; sd <= 1; sd += 2) {
+                int qx = tx, qy = ty;
+                for (int step = 0; step < 4; step++) {
+                    if (dir == 1) qx += sd;
+                    else qy += sd;
+                    if (qx < 0 || qy < 0 || qx >= w || qy >= h || tiles[qy * w + qx] != ROAD) break;
+                }
+                if (qx < 0 || qy < 0 || qx >= w || qy >= h || tiles[qy * w + qx] != SIDEWALK) continue;
+                cand.add(new float[]{(tx + 0.5f) * T, (ty + 0.5f) * T, (qx + 0.5f) * T, (qy + 0.5f) * T});
+                break;
+            }
+        }
+        List<float[]> out = new ArrayList<float[]>();
+        if (cand.isEmpty()) return out;
+        // Spread out: each next one as far as it can be from those already chosen (the first nearest the middle).
+        float cx = (x0 + x1) * T / 2f, cy = (y0 + y1) * T / 2f;
+        float[] first = null;
+        float bd = Float.MAX_VALUE;
+        for (float[] c : cand) {
+            float d = (float) Math.hypot(c[0] - cx, c[1] - cy);
+            if (d < bd) {
+                bd = d;
+                first = c;
+            }
+        }
+        out.add(first);
+        while (out.size() < n) {
+            float[] best = null;
+            float far = 0;
+            for (float[] c : cand) {
+                float near = Float.MAX_VALUE;
+                for (float[] o : out) near = Math.min(near, (float) Math.hypot(c[0] - o[0], c[1] - o[1]));
+                if (near > far) {
+                    far = near;
+                    best = c;
                 }
             }
-        if (best < 0) return null;
-        int bx = best % w, by = best / w;
-        boolean lot = isLotCar(bx, by);
-        tiles[best] = lot ? LOT : ROAD;
-        solid[best] = false;
-        opaque[best] = false;
-        Canvas c = new Canvas(bitmap);
-        if (detail != 1f) c.scale(detail, detail);
-        Paint p = new Paint();
-        p.setColor(lot ? (drawnRealistic ? 0xFF46474A : 0xFF48494D) : (drawnRealistic ? 0xFF38393C : 0xFF3A3D43));
-        c.drawRect(bx * T, by * T, bx * T + T, by * T + T, p);
-        changed(bx * T, by * T, bx * T + T, by * T + T);
-        // (Which way it faces: along the street, or out of its bay.)
-        boolean across = (bx > 0 && tiles[best - 1] == ROAD) || (bx < w - 1 && tiles[best + 1] == ROAD);
-        return new float[]{(bx + 0.5f) * T, (by + 0.5f) * T, across ? 0 : 1.5708f};
+            if (best == null || far < 30 * T) break;
+            out.add(best);
+        }
+        return out;
     }
 
     /** An army truck parks in an empty bay on a base (the spot one drove off from). */
@@ -6503,6 +6508,13 @@ final class City {
         return tx >= 0 && ty >= 0 && tx < w && ty < h && oneWay[ty * w + tx] != 0;
     }
 
+    /** (10.49) On one of the slip roads on and off the highway (or a link road out across the country). */
+    boolean onSlip(float x, float y) {
+        if (slipTile == null) return false;
+        int tx = (int) (x / T), ty = (int) (y / T);
+        return tx >= 0 && ty >= 0 && tx < w && ty < h && slipTile[ty * w + tx];
+    }
+
     /** A random spot on the highway (a tile centre), or null if there's no highway. */
     float[] randomHighway(Random r) {
         if (hwyAxis < 0) return null;
@@ -7990,21 +8002,6 @@ final class City {
         return true;
     }
 
-    /** The army helipad nearest a point, or null if the city has none. */
-    float[] nearestHelipad(float x, float y) {
-        float[] best = null;
-        float bd = Float.MAX_VALUE;
-        for (float[] p : helipads) {
-            if (padKind(p) != PAD_ARMY) continue;
-            float d = (p[0] - x) * (p[0] - x) + (p[1] - y) * (p[1] - y);
-            if (d < bd) {
-                bd = d;
-                best = p;
-            }
-        }
-        return best;
-    }
-
     /** The building standing at a world position, or null. */
     Building buildingAt(float x, float y) {
         int tx = (int) Math.floor(x / T), ty = (int) Math.floor(y / T);
@@ -8914,6 +8911,7 @@ final class City {
                 p.setStrokeWidth(pass == 0 ? 3.35f * T : 3.1f * T);
                 p.setColor(pass == 0 ? kerb : road);
                 c.drawPath(path, p);
+                if (pass == 1) cornerPatches(c, p, l, road);
             }
         }
         // A faint worn line down the middle.
@@ -8964,6 +8962,47 @@ final class City {
     private boolean roadUnder(float x, float y) {
         int tx = (int) Math.floor(x), ty = (int) Math.floor(y);
         return tx >= 0 && ty >= 0 && tx < w && ty < h && tiles[ty * w + tx] == ROAD;
+    }
+
+    /**
+     * (10.49) A curved road that comes in at the end of a straight one, where the straight road turns away (an L,
+     * nothing beyond): the curve stops at the middle of the straight road, which left a notch of grass in the
+     * corner. The tarmac is carried on to the straight road's far side, so the corner is filled.
+     */
+    private void cornerPatches(Canvas c, Paint p, float[] l, int road) {
+        int n = l.length / 2;
+        if (n < 4) return;
+        for (int end = 0; end < 2; end++) {
+            int k = end == 0 ? 0 : n - 1, k2 = end == 0 ? 2 : n - 3;
+            float x = l[k * 2], y = l[k * 2 + 1], dx = x - l[k2 * 2], dy = y - l[k2 * 2 + 1], d = (float) Math.hypot(dx, dy);
+            if (d < 0.01f) continue;
+            dx /= d;
+            dy /= d;
+            int tx = (int) Math.floor(x), ty = (int) Math.floor(y);
+            if (tx < 0 || ty < 0 || tx >= w || ty >= h || tiles[ty * w + tx] != ROAD) continue;
+            int bx = (int) Math.floor(x + dx * 2.2f), by = (int) Math.floor(y + dy * 2.2f);
+            if (bx >= 0 && by >= 0 && bx < w && by < h && tiles[by * w + bx] == ROAD) continue;
+            // (A straight road turning away to one side there, not the curve just stopping in the grass.)
+            boolean side = false;
+            for (int sd = -1; sd <= 1; sd += 2) {
+                int sx = (int) Math.floor(x - dy * sd * 2.4f), sy = (int) Math.floor(y + dx * sd * 2.4f);
+                if (sx >= 0 && sy >= 0 && sx < w && sy < h && tiles[sy * w + sx] == ROAD && !onCurveTile(sx + 0.5f, sy + 0.5f)) side = true;
+            }
+            if (!side) continue;
+            // A square of tarmac from the end of the curve to the straight road's far edge.
+            float ex = x + dx * 1.6f, ey = y + dy * 1.6f, nx = -dy * 1.55f, ny = dx * 1.55f;
+            Path q = new Path();
+            q.moveTo((x + nx) * T, (y + ny) * T);
+            q.lineTo((ex + nx) * T, (ey + ny) * T);
+            q.lineTo((ex - nx) * T, (ey - ny) * T);
+            q.lineTo((x - nx) * T, (y - ny) * T);
+            q.close();
+            p.setStyle(Paint.Style.FILL);
+            p.setColor(road);
+            c.drawPath(q, p);
+            // (Back to drawing the curves' lines.)
+            p.setStyle(Paint.Style.STROKE);
+        }
     }
 
     private boolean onCurveTile(float x, float y) {
@@ -11392,12 +11431,6 @@ final class City {
 
     // ------------------------------------------------------------------ places
 
-    private static String ordinal(int n) {
-        String suffix = n % 100 >= 11 && n % 100 <= 13 ? "th"
-                : n % 10 == 1 ? "st" : n % 10 == 2 ? "nd" : n % 10 == 3 ? "rd" : "th";
-        return n + suffix;
-    }
-
     /** A street corner name for a world position, like "Oak St & 3rd Ave". */
     String placeName(float x, float y) {
         if (hwyAxis >= 0) {
@@ -12140,6 +12173,11 @@ final class City {
         return nav.path(sx, sy, tx, ty);
     }
 
+    /** (10.49) A few more of the walking router's clusters worked out ahead of need (once it's in use). */
+    void warmPaths(int n) {
+        if (nav != null) nav.warm(n);
+    }
+
     int[] oldFindPath(float sx, float sy, float tx, float ty, int maxExpand) {
         if (walkCost == null) computeWalkCost();
         if (astarG == null) {
@@ -12223,20 +12261,6 @@ final class City {
             i = c;
         }
         astarHeap[i] = v;
-    }
-
-    /** Distance field (in tiles) to the nearest of the given points. */
-    void fieldFromPoints(int[] dist, float[] xs, float[] ys, int n) {
-        Arrays.fill(dist, FAR);
-        int tail = 0;
-        for (int i = 0; i < n; i++) {
-            int t = tileIndex(xs[i], ys[i]);
-            if (dist[t] != 0) {
-                dist[t] = 0;
-                queue[tail++] = t;
-            }
-        }
-        spread(dist, tail, FAR);
     }
 
     /** More places the living can be smelled from: the walls of safe zones with people inside (set by Dispatch). */

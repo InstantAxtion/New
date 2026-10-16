@@ -278,9 +278,6 @@ final class Country {
         }
     }
 
-    /** Government buildings: city hall, courthouse, jail, 911 centre and public works depot. */
-    static final int GOV_HALL = 0, GOV_COURT = 1, GOV_JAIL = 2, GOV_CALLS = 3, GOV_WORKS = 4;
-
     /** The country's own SWAT team: {its name, what its officers are called}. */
     static String[] swat(int id) {
         switch (id) {

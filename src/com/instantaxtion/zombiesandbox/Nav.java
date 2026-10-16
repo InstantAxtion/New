@@ -66,6 +66,12 @@ final class Nav {
     // ------------------------------------------------------------------ the gateways
 
     private void buildEntrances() {
+        // (10.49) The clusters already worked out keep it if their gateways are just where they were: one wall
+        // going up on a border used to throw away every cluster on the map, and the next long trip stalled the game
+        // working them all out again.
+        int[][] oldNodes = clusterNodes, oldIntra = intra;
+        boolean[] oldReady = intraReady;
+        int[] oldTile = oldNodes == null ? null : Arrays.copyOf(nodeTile, nodes);
         nodes = 0;
         clusterCount = new int[cw * ch];
         clusterNodes = new int[cw * ch][];
@@ -90,7 +96,36 @@ final class Nav {
             int k = nodeCluster[n];
             clusterNodes[k][fill[k]++] = n;
         }
+        if (oldNodes != null)
+            for (int k = 0; k < cw * ch; k++) {
+                int[] was = oldNodes[k], now = clusterNodes[k];
+                if (!oldReady[k] || was.length != now.length) continue;
+                boolean same = true;
+                for (int i = 0; i < now.length && same; i++) same = oldTile[was[i]] == nodeTile[now[i]];
+                if (!same) continue;
+                intra[k] = oldIntra[k];
+                intraReady[k] = true;
+            }
         entrancesDirty = false;
+        warmAt = 0;
+    }
+
+    private int warmAt;
+
+    /**
+     * (10.49) A few more clusters worked out ahead of need (n of them at most), a little each moment, so a long
+     * trip doesn't have to do dozens at once.
+     */
+    void warm(int n) {
+        if (entrancesDirty || clusterNodes == null) buildEntrances();
+        int all = cw * ch;
+        for (int looked = 0; n > 0 && looked < all; looked++) {
+            int k = warmAt;
+            warmAt = (warmAt + 1) % all;
+            if (intraReady[k]) continue;
+            ensureIntra(k);
+            n--;
+        }
     }
 
     /** Along one border (at column or row `at`, from a0 to a1), a gateway in each stretch open on both sides. */

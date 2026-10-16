@@ -437,6 +437,10 @@ mounting up, and lighter running with big populations.
 
 **More police than soldiers (10.35):** the army on the map is never more than two in five of the police force.
 
+**Ramps and country police (10.41):** nothing joins the highway's on and off ramps halfway along them, country
+police stations run their own patrol cars round their own patch, and officers at a station take a car to a call
+that's a long way off.
+
 **One road network (10.40):** the first part of the roads and vehicles overhaul: every home has its own drive to a
 real road or lane, chains of drives become country lanes, roads to nowhere are taken up, streets ending at the
 highway are joined by frontage roads, and lanes and drives are drawn smoothly with proper ends where they meet roads.

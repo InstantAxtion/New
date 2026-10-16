@@ -553,7 +553,18 @@ final class World {
         City.Facility[] precincts = new City.Facility[Math.max(1, stations)];
         int pk = 0;
         for (City.Facility f : city.facilities) if (f.kind == City.FACILITY_POLICE) precincts[pk++] = f;
-        for (int i = 0; i < cars; i++) if (fleet.startPatrol(precincts[i % precincts.length]) != null) made++;
+        // ((10.41) A small town's station out in the country runs two cars of its own; the rest are the city's.)
+        int town = 0;
+        for (City.Facility f : precincts) if (f != null && !f.satellite) town++;
+        int ci = 0;
+        for (City.Facility f : precincts)
+            if (f != null && f.satellite && cfg.civic >= 19)
+                for (int k = 0; k < 2 && ci < cars; k++, ci++) if (fleet.startPatrol(f) != null) made++;
+        for (int i = 0; ci < cars; i++, ci++) {
+            City.Facility f = precincts[i % precincts.length];
+            if (cfg.civic >= 19 && town > 0) while (f.satellite) f = precincts[++i % precincts.length];
+            if (fleet.startPatrol(f) != null) made++;
+        }
         int copsAtStations = stations > 0 ? cops - made * 2 : 0;
         int k = 0;
         for (City.Facility f : city.facilities) {

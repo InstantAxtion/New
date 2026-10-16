@@ -784,6 +784,15 @@ final class Fleet {
             }
             routes++;
         }
+        // ((10.41) A country station's cars keep to their own patch of the country: somewhere round the station.)
+        if (v.patrol && v.agency == 0 && v.station != null && v.station.satellite)
+            for (int tries = 0; tries < 10; tries++) {
+                float a = w.rnd.nextFloat() * 6.2832f, r = 300 + w.rnd.nextFloat() * 1000;
+                float[] d = city.nearestDrivable(v.station.x + (float) Math.cos(a) * r, v.station.y + (float) Math.sin(a) * r);
+                if (d == null || Math.hypot(d[0] - v.x, d[1] - v.y) < 250) continue;
+                if (route(v, d[0], d[1])) return true;
+                if (++routes >= 4) break;
+            }
         for (int tries = 0; tries < 12; tries++) {
             float[] d = randomRoad();
             if (d == null || Math.hypot(d[0] - v.x, d[1] - v.y) < (tries < 6 ? 400 : 160)) continue;
@@ -3575,6 +3584,11 @@ final class Fleet {
     /** A patrol car out on the roads with two officers aboard (at the start of the game). */
     Vehicle startPatrol(City.Facility station) {
         float[] start = randomRoad();
+        // ((10.41) A country station's cars start out from it, on its own patch.)
+        if (station != null && station.satellite) {
+            float[] s = city.nearestDrivable(station.gateX > 0 ? station.gateX : station.x, station.gateY > 0 ? station.gateY : station.y);
+            if (s != null) start = s;
+        }
         if (start == null) return null;
         Vehicle v = make(CRUISER);
         v.x = start[0];
@@ -3719,6 +3733,33 @@ final class Fleet {
             vehicles.add(v);
             return;
         }
+    }
+
+    /**
+     * (10.41) Officers at a station sent to a call a long way off take one of its cars (two to a car), instead of
+     * walking there: it pulls up at the station's gate, they get in, and it drives to the call with the lights
+     * on. False if there's no road from the station.
+     */
+    boolean stationCar(java.util.List<Entity> officers, City.Facility f, Dispatch.Incident inc) {
+        if (officers.isEmpty() || inc == null) return false;
+        float[] p = city.nearestDrivable(f.gateX > 0 ? f.gateX : f.x, f.gateY > 0 ? f.gateY : f.y);
+        if (p == null || !canDrive(p[0], p[1], inc.x, inc.y)) return false;
+        Vehicle v = make(CRUISER);
+        v.x = p[0];
+        v.y = p[1];
+        v.angle = (float) Math.atan2(inc.y - p[1], inc.x - p[0]);
+        v.patrol = true;
+        v.station = f;
+        v.state = MUSTER;
+        v.crewWanted = officers.size();
+        v.incident = inc;
+        v.number = ++unitCount;
+        for (Entity e : officers) {
+            e.rig = v;
+            e.task = Dispatch.T_BOARD;
+        }
+        vehicles.add(v);
+        return true;
     }
 
     /** The nearest patrol car free to answer a call. */
@@ -3885,6 +3926,7 @@ final class Fleet {
         for (int i = 0, m = vehicles.size(); i < m; i++) {
             Vehicle v = vehicles.get(i);
             if (v.patrol && v.incident == inc && v.state == DRIVE) n += v.crew.size();
+            else if (v.patrol && v.incident == inc && v.state == MUSTER) n += Math.max(v.crew.size(), v.crewWanted);
         }
         return n;
     }
@@ -3913,6 +3955,10 @@ final class Fleet {
             v.timer += dt;
             if (v.crew.size() >= v.crewWanted || (v.timer > 8 && !v.crew.isEmpty())) {
                 dropCrew(v);
+                // ((10.41) Mounted up for a call: off to it with the lights on; a patrol car after.)
+                Dispatch.Incident inc = v.incident;
+                if (inc != null && !inc.resolved && respond(v, inc)) return false;
+                v.incident = null;
                 v.state = PATROL;
                 if (!newDestination(v)) v.stuckTimer = 99;
             } else if (v.timer > 20) {

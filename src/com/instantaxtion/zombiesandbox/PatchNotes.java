@@ -2,11 +2,17 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.40";
-    static final int VERSION_CODE = 78;
+    static final String VERSION = "10.41";
+    static final int VERSION_CODE = 79;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.41  -  Ramps kept clear, country police drive",
+                    "Nothing joins an on or off ramp halfway along it any more (in new cities): no street, lane or drive runs into a ramp or alongside it, so the only ways on and off the highway are the ramps' own ends. (10.40's new frontage roads were running into some ramps: fixed.) Every ramp still leads somewhere.",
+                    "A small town's police station out in the country runs two patrol cars of its own: they start from the station and patrol the roads round it, instead of all its cars starting (and staying) in the city.",
+                    "Officers at a station sent to a call a long way off take one of its cars, two to a car, with the lights on, instead of walking there. The car carries on as a patrol car once the call's dealt with.",
+            },
             {
                     "10.40  -  One road network (roads and vehicles overhaul, part 1)",
                     "Every kind of road now joins up properly (in new cities): every house and farm has its own drive out to a real road or country lane, not to the pavement or to a neighbour's drive; a drive that winds on from house to house past three homes or more is a proper country lane now, with the homes along it; and bits of lane and road that led nowhere (left where a house didn't go up, or stopping short in a field) are gone.",

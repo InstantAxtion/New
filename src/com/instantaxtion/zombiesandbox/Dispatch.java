@@ -1132,6 +1132,35 @@ final class Dispatch {
     private int assign(Incident inc, int type, int n) {
         ArrayList<Entity> units = nearestFree(type, inc.x, inc.y, n, Float.MAX_VALUE);
         if (units.isEmpty()) return 0;
+        // (10.41) Officers at a station a long way off go in one of its cars, two to a car, not on foot.
+        if (type == Entity.COP) {
+            int driven = 0;
+            for (int i = 0; i < units.size(); i++) {
+                Entity e = units.get(i);
+                if (Math.hypot(e.x - inc.x, e.y - inc.y) < 500) continue;
+                City.Facility f = city.nearestFacility(City.FACILITY_POLICE, e.x, e.y);
+                if (f == null || Math.hypot(e.x - f.x, e.y - f.y) > 220) continue;
+                ArrayList<Entity> pair = new ArrayList<Entity>();
+                pair.add(e);
+                for (int j = i + 1; j < units.size() && pair.size() < 2; j++) {
+                    Entity o = units.get(j);
+                    if (Math.hypot(o.x - f.x, o.y - f.y) <= 220) pair.add(o);
+                }
+                if (!w.fleet.stationCar(pair, f, inc)) continue;
+                for (Entity o : pair) units.remove(o);
+                driven += pair.size();
+                i--;
+            }
+            if (driven > 0) {
+                say(WHO_POLICE, null, "Dispatch: Units from the station, take a car to " + inc.place + ".", inc.x, inc.y);
+            }
+            if (units.isEmpty()) return driven;
+            return driven + assignOnFoot(inc, type, units);
+        }
+        return assignOnFoot(inc, type, units);
+    }
+
+    private int assignOnFoot(Incident inc, int type, ArrayList<Entity> units) {
         StringBuilder names = new StringBuilder();
         for (int i = 0; i < units.size(); i++) {
             Entity e = units.get(i);

@@ -1294,7 +1294,7 @@ final class City {
                     }
                     byte t = tiles[j];
                     boolean open = t == GRASS || t == TREE || t == SIDEWALK || t == PLAZA || t == SAND || t == TRAIL || t == RAIL;
-                    if (!open || byHighway(nx, ny, 1) || (bridge != null && bridge[j])) continue;
+                    if (!open || byHighway(nx, ny, 1) || (bridge != null && bridge[j]) || nearRamp(j)) continue;
                     q[tail++] = j;
                 }
                 if (head == levelEnd) {
@@ -1327,12 +1327,52 @@ final class City {
      */
     private void tidyRoads() {
         frontageRoads();
+        separateRamps();
         pruneSpurs();
         connectHomes();
         lanesFromDrives();
         // (And any bit of lane still on its own joined up, with no bits of paved street left in the lanes.)
         joinRoads();
         unpaveLaneStubs();
+        clearOrphans();
+    }
+
+    /** Scraps of lane or drive joined to nothing (left where a drive that ran to a ramp was cut off) go. */
+    private void clearOrphans() {
+        int n = w * h;
+        boolean[] main = mainNetwork();
+        int[] comp = new int[n];
+        Arrays.fill(comp, -1);
+        int[] q = new int[n];
+        for (int i = 0; i < n; i++) {
+            if (comp[i] >= 0 || !scrap(i)) continue;
+            int head = 0, tail = 0;
+            q[tail++] = i;
+            comp[i] = i;
+            boolean joined = false;
+            while (head < tail) {
+                int c = q[head++], x = c % w, y = c / w;
+                for (int k = 0; k < 4; k++) {
+                    int nx = x + (k == 0 ? 1 : k == 1 ? -1 : 0), ny = y + (k == 2 ? 1 : k == 3 ? -1 : 0);
+                    if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+                    int j = ny * w + nx;
+                    byte t = tiles[j];
+                    if (main[j] || t == ROAD || t == CAR || (t == LOT && !scrap(j))) joined = true;
+                    if (comp[j] >= 0 || !scrap(j)) continue;
+                    comp[j] = i;
+                    q[tail++] = j;
+                }
+            }
+            if (joined || tail > 40) continue;
+            for (int k = 0; k < tail; k++) {
+                tiles[q[k]] = GRASS;
+                if (drive != null) drive[q[k]] = false;
+            }
+        }
+    }
+
+    private boolean scrap(int i) {
+        return tiles[i] == DIRT || (tiles[i] == LOT && drive != null && drive[i]);
     }
 
     /**
@@ -1449,6 +1489,7 @@ final class City {
                         int i = frontTile(k, a);
                         byte t = tiles[i];
                         if (oneWay[i] != 0 || (bridge != null && bridge[i]) || buildingAt[i] >= 0
+                                || (slipWay != null && slipWay[i] != 0) || nearRamp(i)
                                 || !(t == GRASS || t == TREE || t == DIRT || t == ROAD || t == TRAIL || t == SAND)) clear = false;
                     }
                 if (!clear) {
@@ -1481,6 +1522,132 @@ final class City {
                 }
             }
         }
+    }
+
+    /**
+     * A tile right beside a slip road (an on or off ramp), but not on the road it leaves from or joins: nothing
+     * else may run there, so no street, lane or drive joins a ramp halfway along it.
+     */
+    boolean nearRamp(int i) {
+        if (slipWay == null || cfg.civic < 19) return false;
+        int x = i % w, y = i / w;
+        if (slipWay[i] != 0 || onExitRoad(x, y)) return false;
+        for (int dy = -1; dy <= 1; dy++)
+            for (int dx = -1; dx <= 1; dx++) {
+                int nx = x + dx, ny = y + dy;
+                if (nx >= 0 && ny >= 0 && nx < w && ny < h && slipWay[ny * w + nx] != 0) return true;
+            }
+        return false;
+    }
+
+    /** On the road that crosses the highway at an interchange (where its ramps are meant to meet it). */
+    private boolean onExitRoad(int x, int y) {
+        int k = hwyAxis == 0 ? x : y;
+        for (int[] e : hwyExits)
+            if (k >= e[0] - 1 && k <= e[0] + e[1]) return true;
+        return false;
+    }
+
+    /** Cuts off any road, lane or drive that has come to touch an on or off ramp halfway along it. */
+    private void separateRamps() {
+        if (slipWay == null) return;
+        int n = w * h;
+        byte[] was = new byte[n];
+        List<Integer> cut = new ArrayList<Integer>();
+        for (int i = 0; i < n; i++) {
+            byte t = tiles[i];
+            if ((t == ROAD || t == DIRT || t == LOT) && (oneWay == null || oneWay[i] == 0) && nearRamp(i)
+                    && (bridge == null || !bridge[i])) {
+                was[i] = t;
+                cut.add(i);
+                tiles[i] = GRASS;
+            }
+        }
+        if (cut.isEmpty()) return;
+        // (Where a ramp's own end runs into a road alongside the highway rather than the one crossing it, that's
+        // the way on or off: whatever was cut there goes back, until every ramp can be driven again.)
+        int[] f = new int[n];
+        for (int round = 0; round < 4; round++) {
+            localReach(f);
+            boolean restored = false;
+            for (int i : cut) {
+                if (tiles[i] != GRASS) continue;
+                int x = i % w, y = i / w;
+                boolean strands = false;
+                for (int dy = -1; dy <= 1 && !strands; dy++)
+                    for (int dx = -1; dx <= 1; dx++) {
+                        int nx = x + dx, ny = y + dy;
+                        if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+                        int j = ny * w + nx;
+                        if (slipWay[j] != 0 && f[j] == 0) {
+                            strands = true;
+                            break;
+                        }
+                    }
+                if (!strands) continue;
+                tiles[i] = was[i];
+                restored = true;
+            }
+            if (!restored) break;
+        }
+        for (int i : cut)
+            if (tiles[i] == GRASS) {
+                solid[i] = false;
+                roadDir[i] = 0;
+                mainRoad[i] = false;
+            }
+    }
+
+    /**
+     * Which roads, lanes and drives join up with the main network by the local roads alone (not along the
+     * highway itself): 1 for those that do, 0 for the rest.
+     */
+    private void localReach(int[] f) {
+        int n = w * h;
+        Arrays.fill(f, 0);
+        boolean[] main = mainNetwork();
+        // Forward (can get there from the town's streets) and back (can get from there to them), by the rules the
+        // traffic drives by: the highway one way, down each side of a boulevard, the ramps the way they run.
+        byte[] reach = new byte[n];
+        int[] q = new int[n];
+        for (int dir = 0; dir < 2; dir++) {
+            int tail = 0;
+            for (int i = 0; i < n; i++)
+                if (main[i] && (slipWay == null || slipWay[i] == 0) && (oneWay == null || oneWay[i] == 0)) {
+                    reach[i] |= 1 << dir;
+                    q[tail++] = i;
+                }
+            int head = 0;
+            while (head < tail) {
+                int c = q[head++], x = c % w, y = c / w;
+                int link = bridgeTo(c);
+                if (link >= 0 && (reach[link] & (1 << dir)) == 0) {
+                    reach[link] |= 1 << dir;
+                    q[tail++] = link;
+                }
+                for (int k = 0; k < 4; k++) {
+                    int dx = k == 0 ? 1 : k == 1 ? -1 : 0, dy = k == 2 ? 1 : k == 3 ? -1 : 0;
+                    int nx = x + dx, ny = y + dy;
+                    if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+                    int j = ny * w + nx;
+                    byte t = tiles[j];
+                    if ((reach[j] & (1 << dir)) != 0 || !(t == ROAD || t == DIRT || t == LOT || t == CAR)) continue;
+                    // (Forward: a step from c on to j; back: a step from j on to c.)
+                    if (dir == 0 ? !driveStep(c, j, dx, dy) : !driveStep(j, c, -dx, -dy)) continue;
+                    reach[j] |= 1 << dir;
+                    q[tail++] = j;
+                }
+            }
+        }
+        for (int i = 0; i < n; i++) f[i] = reach[i] == 3 ? 1 : 0;
+    }
+
+    /** A step a vehicle may take from tile a to the next tile b (dx, dy), by the one-way rules. */
+    private boolean driveStep(int a, int b, int dx, int dy) {
+        if (oneWay != null && (oneWay[a] != 0) != (oneWay[b] != 0) && (bridgeTo(a) >= 0 || bridgeTo(b) >= 0)) return false;
+        if (oneWay != null && (!oneWayOk(a, dx, dy) || !oneWayOk(b, dx, dy))) return false;
+        if (divided != null && (!wayOk(divided, a, dx, dy) || !wayOk(divided, b, dx, dy))) return false;
+        return slipWay == null || slipOk(a, b, dx, dy);
     }
 
     private boolean hwyRowOk(int a) {
@@ -1664,11 +1831,12 @@ final class City {
                     seen[j] = stamp;
                     prev[j] = c;
                     byte t = tiles[j];
-                    if ((t == ROAD || t == DIRT) && main[j] && !byHighway(nx, ny, 1) && (oneWay == null || oneWay[j] == 0)) {
+                    if ((t == ROAD || t == DIRT) && main[j] && !byHighway(nx, ny, 1) && (oneWay == null || oneWay[j] == 0)
+                            && (slipWay == null || slipWay[j] == 0) && !nearRamp(j)) {
                         goal = j;
                         break;
                     }
-                    if (byHighway(nx, ny, 1) || (bridge != null && bridge[j])) continue;
+                    if (byHighway(nx, ny, 1) || (bridge != null && bridge[j]) || nearRamp(j)) continue;
                     // (The pavement only right at the end, where the drive crosses it to the road.)
                     boolean kerb = t == SIDEWALK && tiles[prev[j]] != SIDEWALK;
                     // (Across a footpath too: it's only a path.)
@@ -1692,7 +1860,7 @@ final class City {
                 // The second lane of it, to one side, where there's grass.
                 int step = last - c, side = step == 1 || step == -1 ? w : 1;
                 int o = c + side;
-                if (o > 0 && o < n && (tiles[o] == GRASS || tiles[o] == TREE) && !nextToBuilding(o) && !byHighway(o % w, o / w, 1)) {
+                if (o > 0 && o < n && (tiles[o] == GRASS || tiles[o] == TREE) && !nextToBuilding(o) && !byHighway(o % w, o / w, 1) && !nearRamp(o)) {
                     tiles[o] = end;
                     solid[o] = false;
                     opaque[o] = false;

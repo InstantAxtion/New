@@ -2908,6 +2908,89 @@ public final class GameTests {
                 }
             }
         });
+        test("10.41: nothing joins a ramp halfway, every ramp drivable; country police stations run their own cars", new Check() {
+            public void run() throws Exception {
+                for (int[] ps : new int[][]{{0, 3}, {2, 3}, {6, 3}}) {
+                    CityConfig c = new CityConfig();
+                    c.v[CityConfig.OPT_PRESET] = ps[0];
+                    c.seed = ps[1];
+                    c.normalize();
+                    c.seed = ps[1];
+                    City city = new City(c, 0.05f);
+                    String m = "map " + ps[0] + "/" + ps[1] + ": ";
+                    check(city.slipWay != null, m + "slip roads");
+                    int w = city.w, lanes = 0, stranded = 0;
+                    for (int i = w; i < w * (city.h - 1); i++) {
+                        if (city.slipWay[i] == 0) continue;
+                        for (int k = 0; k < 4; k++) {
+                            int j = i + (k == 0 ? 1 : k == 1 ? -1 : k == 2 ? w : -w);
+                            // (Where the ramps meet the road that crosses the highway is what they're for.)
+                            int kk = city.hwyAxis == 0 ? j % w : j / w;
+                            boolean exitRoad = false;
+                            for (int[] e : city.hwyExits) if (kk >= e[0] - 1 && kk <= e[0] + e[1]) exitRoad = true;
+                            if (!exitRoad && city.slipWay[j] == 0 && (city.tiles[j] == City.DIRT || (city.tiles[j] == City.LOT && city.drive != null && city.drive[j]))) lanes++;
+                        }
+                    }
+                    check(lanes == 0, m + "no lane or drive joins an on or off ramp (" + lanes + ")");
+                    int[] f = new int[w * city.h];
+                    float[] mid = city.nearestDrivable((city.townX0 + city.townX1) / 2f * City.T, (city.townY0 + city.townY1) / 2f * City.T);
+                    city.driveField(f, mid[0], mid[1]);
+                    for (int i = 0; i < w * city.h; i++) if (city.slipWay[i] != 0 && city.tiles[i] == City.ROAD && f[i] >= City.FAR) stranded++;
+                    check(stranded == 0, m + "every ramp leads somewhere (" + stranded + " tiles of ramp lead nowhere)");
+                }
+                // A small town's police station out in the country: two cars of its own, on its own patch.
+                CityConfig c = new CityConfig();
+                c.v[CityConfig.OPT_PRESET] = 0;
+                c.v[CityConfig.OPT_SIZE] = CityConfig.MASSIVE;
+                c.v[CityConfig.OPT_ZOMBIES] = 0;
+                c.seed = 3;
+                c.normalize();
+                c.seed = 3;
+                World w = new World(c);
+                w.populate(c);
+                City.Facility sat = null;
+                for (City.Facility f : w.city.facilities) if (f.kind == City.FACILITY_POLICE && f.satellite) sat = f;
+                check(sat != null, "a country police station");
+                for (int f = 0; f < 30 * 30; f++) {
+                    w.update(1 / 30f);
+                    w.evCount = 0;
+                }
+                int own = 0, near = 0;
+                for (Fleet.Vehicle v : w.fleet.vehicles)
+                    if (v.station == sat && v.patrol && !v.broken) {
+                        own++;
+                        if (Math.hypot(v.x - sat.x, v.y - sat.y) < 1500) near++;
+                    }
+                check(own >= 2 && near >= 2, sat.name + " has its own cars round it (" + near + " of " + own + ")");
+                // Its officers sent a long way take one of its cars.
+                java.util.List<Entity> two = new java.util.ArrayList<Entity>();
+                for (Entity e : w.entities)
+                    if (e.type == Entity.COP && e.task == Dispatch.T_NONE && e.rig == null && two.size() < 2 && Math.hypot(e.x - sat.x, e.y - sat.y) < 200) two.add(e);
+                check(two.size() == 2, "officers at the station");
+                float[] far = null;
+                java.util.Random r = new java.util.Random(4);
+                for (int k = 0; k < 2000 && far == null; k++) {
+                    float an = r.nextFloat() * 6.283f, d = 700 + r.nextFloat() * 300;
+                    float[] p = w.city.nearestDrivable(sat.x + (float) Math.cos(an) * d, sat.y + (float) Math.sin(an) * d);
+                    if (p != null && w.fleet.canDrive(sat.gateX > 0 ? sat.gateX : sat.x, sat.gateY > 0 ? sat.gateY : sat.y, p[0], p[1])) far = p;
+                }
+                check(far != null, "a road a way off");
+                Dispatch.Incident inc = new Dispatch.Incident();
+                inc.x = far[0];
+                inc.y = far[1];
+                inc.place = "the test";
+                int before = w.fleet.vehicles.size();
+                check(w.fleet.stationCar(two, sat, inc) && w.fleet.vehicles.size() == before + 1, "a car for them at the station");
+                Fleet.Vehicle car = w.fleet.vehicles.get(w.fleet.vehicles.size() - 1);
+                boolean rolled = false;
+                for (int f = 0; f < 30 * 20 && !rolled; f++) {
+                    w.update(1 / 30f);
+                    w.evCount = 0;
+                    rolled = car.crew.size() == 2 && car.speed > 5;
+                }
+                check(rolled, "they get in and drive off (crew " + car.crew.size() + ")");
+            }
+        });
         test("every screen draws", new Check() {
             public void run() throws Exception {
                 GameView v = new GameView(new android.app.Activity());

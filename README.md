@@ -437,6 +437,10 @@ mounting up, and lighter running with big populations.
 
 **More police than soldiers (10.35):** the army on the map is never more than two in five of the police force.
 
+**One road network (10.40):** the first part of the roads and vehicles overhaul: every home has its own drive to a
+real road or lane, chains of drives become country lanes, roads to nowhere are taken up, streets ending at the
+highway are joined by frontage roads, and lanes and drives are drawn smoothly with proper ends where they meet roads.
+
 **Hordes and hunting (10.39):** the last part of the AI rebuild: the dead share routes to noises and to where
 they last saw someone, hordes walk in a column behind their leader and follow its trail round corners (the leader
 waits for stragglers), and a zombie that loses sight of someone follows the way they were going.

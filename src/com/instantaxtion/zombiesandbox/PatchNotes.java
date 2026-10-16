@@ -2,11 +2,20 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.39";
-    static final int VERSION_CODE = 77;
+    static final String VERSION = "10.40";
+    static final int VERSION_CODE = 78;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.40  -  One road network (roads and vehicles overhaul, part 1)",
+                    "Every kind of road now joins up properly (in new cities): every house and farm has its own drive out to a real road or country lane, not to the pavement or to a neighbour's drive; a drive that winds on from house to house past three homes or more is a proper country lane now, with the homes along it; and bits of lane and road that led nowhere (left where a house didn't go up, or stopping short in a field) are gone.",
+                    "Country lanes and drives are drawn as smooth bands instead of square tiles: round the bends and across the diagonals without a staircase, with a soft verge into the grass, wheel ruts along the lanes, a square end where they meet a road, the pavement or a car park, and a little gravel carried out onto the tarmac where a lane joins a road.",
+                    "A drive in town crosses the pavement to the road at a dropped kerb, instead of stopping at the pavement.",
+                    "Streets and lanes that come up to the highway on either side are joined to each other by a frontage road alongside it, instead of each stopping dead at the verge.",
+                    "Footpaths no longer cut a hamlet off from the roads: a drive can cross a footpath to reach the lane.",
+                    "Cities from older saves are rebuilt exactly as they were.",
+            },
             {
                     "10.39  -  Hordes and hunting (AI rebuild, part 3)",
                     "The dead drawn to a noise, or to where they last saw someone, now share one route there round the buildings, worked out once for all of them, instead of each planning their own. More of them get there round corners, a little quicker, and it leaves more of the route planning for the living. They go straight for the furthest bit of the way they can see, instead of zig-zagging along it.",

@@ -545,6 +545,7 @@ final class City {
             // Again now the drives are in: a lane they made into a bit of paved street carries on as dirt.
             if (cfg.civic >= 8) unpaveLaneStubs();
             if (cfg.civic >= 12) connectStations();
+            if (cfg.civic >= 19) tidyRoads();
             for (int[] e : cfg.edits) applyEdit(e[0], e[1], e[2], false);
             computeSolid();
             for (int i = generated; i < buildingLots.size(); i++) createBuilding(buildingLots.get(i));
@@ -1312,6 +1313,404 @@ final class City {
             }
             joined[id] = true;
         }
+    }
+
+    // ------------------------------------------------------------------ (10.40) one road network
+
+    /** (10.40) Drive tiles (a house's or barn's own way out to the road), for drawing them as drives. */
+    boolean[] drive;
+
+    /**
+     * (10.40) The last word on the roads of a city built since 10.40: bits of lane and road that lead nowhere
+     * (left when a house didn't go up, or stopped short of something) are taken up, and every home is joined to
+     * a real road or lane by a drive of its own - not to the pavement, nor to another house's drive.
+     */
+    private void tidyRoads() {
+        frontageRoads();
+        pruneSpurs();
+        connectHomes();
+        lanesFromDrives();
+        // (And any bit of lane still on its own joined up, with no bits of paved street left in the lanes.)
+        joinRoads();
+        unpaveLaneStubs();
+    }
+
+    /**
+     * A tarmac drive that winds on from house to house (serving three homes or more, or running a long way) is
+     * really a lane: it becomes one, dirt, with the homes along it, instead of a strip of car park through the
+     * fields. (A shop's or a station's forecourt is left as it is.)
+     */
+    private void lanesFromDrives() {
+        int n = w * h;
+        int[] comp = new int[n];
+        Arrays.fill(comp, -1);
+        int[] q = new int[n];
+        for (int i = 0; i < n; i++) {
+            if (comp[i] >= 0 || !drive[i] || tiles[i] != LOT) continue;
+            int head = 0, tail = 0;
+            q[tail++] = i;
+            comp[i] = i;
+            java.util.HashSet<Integer> homes = new java.util.HashSet<Integer>();
+            boolean other = false;
+            while (head < tail) {
+                int c = q[head++], x = c % w, y = c / w;
+                for (int dy = -1; dy <= 1; dy++)
+                    for (int dx = -1; dx <= 1; dx++) {
+                        int nx = x + dx, ny = y + dy;
+                        if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+                        int j = ny * w + nx;
+                        int bi = buildingAt[j];
+                        if (bi >= 0 && bi < buildings.size()) {
+                            int k = buildings.get(bi).kind;
+                            if (k == HOUSE || k == BARN) homes.add(bi);
+                            else other = true;
+                        }
+                        if (tiles[j] == LOT && !drive[j]) other = true;
+                        if ((dx != 0 && dy != 0) || comp[j] >= 0 || !drive[j] || tiles[j] != LOT) continue;
+                        comp[j] = i;
+                        q[tail++] = j;
+                    }
+            }
+            if (homes.size() < 3 && (tail <= 14 || other)) continue;
+            for (int k = 0; k < tail; k++) {
+                int c = q[k], x = c % w, y = c / w;
+                // (Right by a shop or a car park it stays tarmac: their forecourt.)
+                boolean forecourt = false;
+                for (int dy = -1; dy <= 1 && !forecourt; dy++)
+                    for (int dx = -1; dx <= 1; dx++) {
+                        int nx = x + dx, ny = y + dy;
+                        if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+                        int j = ny * w + nx, bi = buildingAt[j];
+                        if ((tiles[j] == LOT && !drive[j] && comp[j] != i) || (bi >= 0 && bi < buildings.size()
+                                && buildings.get(bi).kind != HOUSE && buildings.get(bi).kind != BARN)) {
+                            forecourt = true;
+                            break;
+                        }
+                    }
+                if (forecourt) continue;
+                tiles[c] = DIRT;
+                drive[c] = false;
+            }
+        }
+    }
+
+    /** Which of the roads and lanes are the main network (joined up, over the bridges too). */
+    private boolean[] mainNetwork() {
+        int n = w * h;
+        int[] comp = new int[n];
+        Arrays.fill(comp, -1);
+        int[] q = new int[n];
+        int best = -1, bestSize = 0;
+        for (int i = 0; i < n; i++) {
+            if (comp[i] >= 0 || !roadish(i)) continue;
+            int head = 0, tail = 0;
+            q[tail++] = i;
+            comp[i] = i;
+            while (head < tail) {
+                int c = q[head++], x = c % w, y = c / w;
+                int link = bridgeTo(c);
+                for (int k = 0; k < (link >= 0 ? 5 : 4); k++) {
+                    int nx = k == 4 ? link % w : x + (k == 0 ? 1 : k == 1 ? -1 : 0), ny = k == 4 ? link / w : y + (k == 2 ? 1 : k == 3 ? -1 : 0);
+                    if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+                    int j = ny * w + nx;
+                    if (comp[j] >= 0 || !roadish(j)) continue;
+                    comp[j] = i;
+                    q[tail++] = j;
+                }
+            }
+            if (tail > bestSize) {
+                bestSize = tail;
+                best = i;
+            }
+        }
+        boolean[] main = new boolean[n];
+        for (int i = 0; i < n; i++) main[i] = comp[i] == best && best >= 0;
+        return main;
+    }
+
+    /**
+     * Frontage roads: nothing joins the highway but at its interchanges, so the streets and lanes that come up to
+     * it on either side are joined to each other by a road running alongside it, instead of each stopping dead
+     * at the verge.
+     */
+    private void frontageRoads() {
+        if (oneWay == null || hwyAxis < 0) return;
+        int len = hwyAxis == 0 ? w : h;
+        for (int side = 0; side < 2; side++) {
+            // The two rows just clear of the highway's verge, and the row beyond them the roads come up to.
+            int a0 = side == 0 ? -3 : 8, a1 = side == 0 ? -2 : 9, beyond = side == 0 ? -4 : 10;
+            if (!hwyRowOk(a0) || !hwyRowOk(a1) || !hwyRowOk(beyond)) continue;
+            int start = -1, stubs = 0, last = -1;
+            boolean paved = false;
+            for (int k = 2; k <= len - 2; k++) {
+                boolean clear = k < len - 2;
+                if (clear)
+                    for (int a = a0; a <= a1 && clear; a++) {
+                        int i = frontTile(k, a);
+                        byte t = tiles[i];
+                        if (oneWay[i] != 0 || (bridge != null && bridge[i]) || buildingAt[i] >= 0
+                                || !(t == GRASS || t == TREE || t == DIRT || t == ROAD || t == TRAIL || t == SAND)) clear = false;
+                    }
+                if (!clear) {
+                    if (stubs >= 2) layFrontage(start, last, a0, a1, paved);
+                    start = -1;
+                    stubs = 0;
+                    paved = false;
+                    continue;
+                }
+                int ui = frontTile(k, beyond), oi = frontTile(k, side == 0 ? a1 : a0);
+                byte up = tiles[ui], on = tiles[oi];
+                // (A street or lane of the town's, not the highway's own slip roads.)
+                boolean upRoad = (up == ROAD || up == DIRT) && oneWay[ui] == 0 && (slipTile == null || !slipTile[ui]);
+                boolean onRoad = (on == ROAD || on == DIRT) && oneWay[oi] == 0 && (slipTile == null || !slipTile[oi]);
+                boolean stub = upRoad || onRoad;
+                if (stub && (last < 0 || k - last > 1)) {
+                    // (A gap of more than sixty tiles: two separate stretches.)
+                    if (start >= 0 && k - last > 60) {
+                        if (stubs >= 2) layFrontage(start, last, a0, a1, paved);
+                        start = -1;
+                        stubs = 0;
+                        paved = false;
+                    }
+                    if (start < 0) start = k;
+                    stubs++;
+                }
+                if (stub) {
+                    last = k;
+                    if (up == ROAD || on == ROAD) paved = true;
+                }
+            }
+        }
+    }
+
+    private boolean hwyRowOk(int a) {
+        int r = hwyAt + a;
+        return r >= 1 && r < (hwyAxis == 0 ? h : w) - 1;
+    }
+
+    private int frontTile(int k, int a) {
+        return hwyAxis == 0 ? (hwyAt + a) * w + k : k * w + hwyAt + a;
+    }
+
+    private void layFrontage(int k0, int k1, int a0, int a1, boolean paved) {
+        for (int k = k0; k <= k1 + 1; k++)
+            for (int a = a0; a <= a1; a++) {
+                int i = frontTile(k, a);
+                if (tiles[i] == ROAD || (tiles[i] == DIRT && !paved)) continue;
+                tiles[i] = paved ? ROAD : DIRT;
+                solid[i] = false;
+                opaque[i] = false;
+                roadDir[i] = (byte) (paved ? (hwyAxis == 0 ? 2 : 1) : 0);
+            }
+    }
+
+    private boolean roadTile(int i) {
+        byte t = tiles[i];
+        return t == ROAD || t == DIRT || t == CAR || t == LOT;
+    }
+
+    /** Something that gives the road beside it a reason to be there. */
+    private boolean anchors(byte t) {
+        return t == BUILDING || t == LOT || t == BASE || t == PIER || t == SIDEWALK || t == PLAZA || t == FENCE || t == PUMP
+                || t == RAIL || t == TRAIL || t == WATER || t == SAND || t == STATUE;
+    }
+
+    /** Takes up the ends of roads and lanes that lead nowhere, a tile at a time, back to where they join something. */
+    private void pruneSpurs() {
+        int n = w * h;
+        int[] q = new int[n];
+        boolean[] queued = new boolean[n];
+        int head = 0, tail = 0;
+        for (int i = 0; i < n; i++)
+            if (tiles[i] == DIRT || tiles[i] == ROAD) {
+                q[tail++] = i;
+                queued[i] = true;
+            }
+        int removed = 0;
+        while (head != tail && removed < n / 20) {
+            int c = q[head];
+            head = (head + 1) % n;
+            queued[c] = false;
+            if (!spur(c)) continue;
+            tiles[c] = GRASS;
+            solid[c] = false;
+            roadDir[c] = 0;
+            mainRoad[c] = false;
+            removed++;
+            int x = c % w, y = c / w;
+            for (int dy = -1; dy <= 1; dy++)
+                for (int dx = -1; dx <= 1; dx++) {
+                    int j = (y + dy) * w + x + dx;
+                    if ((dx == 0 && dy == 0) || queued[j] || (tiles[j] != DIRT && tiles[j] != ROAD)) continue;
+                    q[tail] = j;
+                    tail = (tail + 1) % n;
+                    queued[j] = true;
+                }
+        }
+    }
+
+    /** The very end of a road or lane, with nothing it serves beside it, that can go without cutting anything off. */
+    private boolean spur(int c) {
+        byte t = tiles[c];
+        if (t != DIRT && t != ROAD) return false;
+        int x = c % w, y = c / w;
+        if (x < 3 || y < 3 || x >= w - 3 || y >= h - 3) return false;
+        if ((bridge != null && bridge[c]) || (oneWay != null && oneWay[c] != 0) || (slipTile != null && slipTile[c])
+                || (curveTile != null && curveTile[c]) || (keepPaved != null && keepPaved[c]) || buildingAt[c] >= 0) return false;
+        int ring = 0;
+        for (int dy = -1; dy <= 1; dy++)
+            for (int dx = -1; dx <= 1; dx++) {
+                if (dx == 0 && dy == 0) continue;
+                int j = (y + dy) * w + x + dx;
+                if (anchors(tiles[j]) || buildingAt[j] >= 0) return false;
+                if (roadTile(j)) ring++;
+            }
+        if (ring > 3) return false;
+        // (A lane passing a home a step or two off still serves it.)
+        for (int dy = -2; dy <= 2; dy++)
+            for (int dx = -2; dx <= 2; dx++) {
+                int bi = buildingAt[(y + dy) * w + x + dx];
+                if (bi >= 0 && bi < buildings.size() && (buildings.get(bi).kind == HOUSE || buildings.get(bi).kind == BARN)) return false;
+            }
+        boolean l = roadTile(c - 1), r = roadTile(c + 1), u = roadTile(c - w), d = roadTile(c + w);
+        int four = (l ? 1 : 0) + (r ? 1 : 0) + (u ? 1 : 0) + (d ? 1 : 0);
+        if (four <= 1) return true;
+        if (four > 2 || (l && r) || (u && d)) return false;
+        // Two, round a corner: still joined through the tile between them once this one goes.
+        int diag = (y + (u ? -1 : 1)) * w + x + (l ? -1 : 1);
+        return roadTile(diag);
+    }
+
+    /**
+     * Every home joined to a real road or lane: a house or barn whose own way out reaches only grass, the
+     * pavement or a neighbour's drive gets a drive of its own (straight out where there's a clear run, round
+     * things where not), two tiles wide where there's room; across the pavement at a dropped kerb if that's
+     * the last thing between it and the road.
+     */
+    private void connectHomes() {
+        int n = w * h;
+        drive = new boolean[n];
+        for (int i = 0; i < n; i++) drive[i] = tiles[i] == LOT && !lotPatch(i);
+        // (Not the edge of a car park either.)
+        for (int i = 0; i < n; i++)
+            if (drive[i]) {
+                int x = i % w, y = i / w;
+                for (int dy = -1; dy <= 1 && drive[i]; dy++)
+                    for (int dx = -1; dx <= 1; dx++) {
+                        int xx = x + dx, yy = y + dy;
+                        if (xx >= 0 && yy >= 0 && xx < w && yy < h && tiles[yy * w + xx] == LOT && lotPatch(yy * w + xx)) {
+                            drive[i] = false;
+                            break;
+                        }
+                    }
+            }
+        int[] seen = new int[n], prev = new int[n], q = new int[n];
+        int stamp = 0;
+        boolean[] main = mainNetwork();
+        for (Building b : buildings) {
+            if ((b.kind != HOUSE && b.kind != BARN) || b.doorX <= 0) continue;
+            int bx0 = (int) (b.x0 / T) - 1, by0 = (int) (b.y0 / T) - 1, bx1 = (int) Math.ceil(b.x1 / T), by1 = (int) Math.ceil(b.y1 / T);
+            if (bx0 < 2 || by0 < 2 || bx1 >= w - 2 || by1 >= h - 2) continue;
+            // On the road already: through its own drive (drive, lane or road all the way, no pavement).
+            stamp++;
+            int head = 0, tail = 0;
+            boolean onStreet = false;
+            for (int y = by0; y <= by1; y++)
+                for (int x = bx0; x <= bx1; x++) {
+                    int j = y * w + x;
+                    if (tiles[j] == SIDEWALK) onStreet = true;
+                    if (!roadTile(j) || seen[j] == stamp) continue;
+                    seen[j] = stamp;
+                    q[tail++] = j;
+                }
+            if (onStreet) continue;
+            boolean reached = false;
+            while (head < tail && !reached && tail < 4000) {
+                int c = q[head++], x = c % w, y = c / w;
+                if ((tiles[c] == ROAD || tiles[c] == DIRT || tiles[c] == CAR) && main[c] && !byHighway(x, y, 1)) {
+                    reached = true;
+                    break;
+                }
+                for (int k = 0; k < 4; k++) {
+                    int j = c + (k == 0 ? 1 : k == 1 ? -1 : k == 2 ? w : -w);
+                    if (seen[j] == stamp || !roadTile(j)) continue;
+                    seen[j] = stamp;
+                    q[tail++] = j;
+                }
+            }
+            if (reached) continue;
+            // A new drive: out from the house over open ground to the nearest real road or lane.
+            stamp++;
+            head = 0;
+            tail = 0;
+            for (int y = by0; y <= by1; y++)
+                for (int x = bx0; x <= bx1; x++) {
+                    int j = y * w + x;
+                    if (y != by0 && y != by1 && x != bx0 && x != bx1) continue;
+                    byte t = tiles[j];
+                    if (t != GRASS && t != TREE && !roadTile(j)) continue;
+                    seen[j] = stamp;
+                    prev[j] = -1;
+                    q[tail++] = j;
+                }
+            int goal = -1, levelEnd = tail, depth = 0;
+            while (head < tail && goal < 0 && depth <= 150) {
+                int c = q[head++], x = c % w, y = c / w;
+                for (int k = 0; k < 4 && goal < 0; k++) {
+                    int nx = x + (k == 0 ? 1 : k == 1 ? -1 : 0), ny = y + (k == 2 ? 1 : k == 3 ? -1 : 0);
+                    if (nx < 1 || ny < 1 || nx >= w - 1 || ny >= h - 1) continue;
+                    int j = ny * w + nx;
+                    if (seen[j] == stamp) continue;
+                    seen[j] = stamp;
+                    prev[j] = c;
+                    byte t = tiles[j];
+                    if ((t == ROAD || t == DIRT) && main[j] && !byHighway(nx, ny, 1) && (oneWay == null || oneWay[j] == 0)) {
+                        goal = j;
+                        break;
+                    }
+                    if (byHighway(nx, ny, 1) || (bridge != null && bridge[j])) continue;
+                    // (The pavement only right at the end, where the drive crosses it to the road.)
+                    boolean kerb = t == SIDEWALK && tiles[prev[j]] != SIDEWALK;
+                    // (Across a footpath too: it's only a path.)
+                    if (t != GRASS && t != TREE && t != LOT && t != TRAIL && t != SAND && !kerb) continue;
+                    q[tail++] = j;
+                }
+                if (head == levelEnd) {
+                    depth++;
+                    levelEnd = tail;
+                }
+            }
+            if (goal < 0) continue;
+            byte end = tiles[goal] == DIRT ? DIRT : LOT;
+            for (int c = prev[goal], last = goal; c >= 0; last = c, c = prev[c]) {
+                if (tiles[c] == GRASS || tiles[c] == TREE || tiles[c] == SIDEWALK || tiles[c] == TRAIL || tiles[c] == SAND) {
+                    tiles[c] = end;
+                    solid[c] = false;
+                    opaque[c] = false;
+                    if (end == LOT) drive[c] = true;
+                }
+                // The second lane of it, to one side, where there's grass.
+                int step = last - c, side = step == 1 || step == -1 ? w : 1;
+                int o = c + side;
+                if (o > 0 && o < n && (tiles[o] == GRASS || tiles[o] == TREE) && !nextToBuilding(o) && !byHighway(o % w, o / w, 1)) {
+                    tiles[o] = end;
+                    solid[o] = false;
+                    opaque[o] = false;
+                    if (end == LOT) drive[o] = true;
+                }
+            }
+        }
+    }
+
+    /** The middle of a car park (a paved patch at least three tiles across), not a drive. */
+    private boolean lotPatch(int i) {
+        int x = i % w, y = i / w, c = 0;
+        for (int dy = -1; dy <= 1; dy++)
+            for (int dx = -1; dx <= 1; dx++) {
+                int xx = x + dx, yy = y + dy;
+                if (xx >= 0 && yy >= 0 && xx < w && yy < h && tiles[yy * w + xx] == LOT) c++;
+            }
+        return c == 9;
     }
 
     private boolean roadish(int i) {
@@ -7461,6 +7860,8 @@ final class City {
                     default: col = real ? 0xFF38393C : 0xFF3A3D43; break;
                 }
                 if (t == TREE && isPlazaTree(x, y)) col = 0xFFB3A487;
+                // (10.40) Lanes and drives are drawn smoothly over the ground afterwards (drawLanes).
+                if (t == DIRT || (t == LOT && drive != null && drive[y * w + x])) col = laneGround(x, y);
                 if (t == CAR && isLotCar(x, y)) col = 0xFF48494D;
                 if (t == CAR && carKind[y * w + x] == 2) col = 0xFF6A6E5E;
                 if (slipTile != null && slipTile[y * w + x] && (t == ROAD || t == CAR))
@@ -7529,8 +7930,8 @@ final class City {
                         for (int k = 0; k < 3; k++)
                             c.drawCircle(fx + prnd.nextFloat() * T, fy + prnd.nextFloat() * T, 0.8f, p);
                     }
-                } else if (t == DIRT) {
-                    // Packed earth: wheel ruts and pebbles.
+                } else if (t == DIRT && false) {
+                    // Packed earth: wheel ruts and pebbles. (Since 10.40 drawn smoothly in drawLanes.)
                     p.setColor(0xFF7A6446);
                     boolean vert = (y > 0 && tiles[(y - 1) * w + x] == DIRT) && (y < h - 1 && tiles[(y + 1) * w + x] == DIRT);
                     if (vert) {
@@ -7614,6 +8015,7 @@ final class City {
         }
 
         if (drawnRealistic) drawRealGround(c, p);
+        drawLanes(c, p, X0, Y0, X1, Y1);
         drawCurves(c, p);
         drawRoadMarkings(c, p);
         drawHighway(c, p);
@@ -7823,6 +8225,123 @@ final class City {
     }
 
     // ------------------------------------------------------------------ realistic graphics
+
+    /** The ground a lane or drive runs over: the grass, or the sand or plaza it's beside. */
+    private int laneGround(int x, int y) {
+        int sand = 0, plaza = 0;
+        for (int k = 0; k < 4; k++) {
+            int nx = x + (k == 0 ? 1 : k == 1 ? -1 : 0), ny = y + (k == 2 ? 1 : k == 3 ? -1 : 0);
+            if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+            byte o = tiles[ny * w + nx];
+            if (o == SAND) sand++;
+            else if (o == PLAZA) plaza++;
+        }
+        if (sand > 0) return sandColor();
+        if (plaza > 0) return country.plaza != 0 ? country.plaza : drawnRealistic ? 0xFFB2A58A : 0xFFB3A487;
+        return country.grass != 0 ? country.grass : drawnRealistic ? 0xFF4F6F36 : 0xFF4C7837;
+    }
+
+    /** 1 for a lane (dirt), 2 for a drive (a home's own way out), 0 for anything else. */
+    private int laneKind(int x, int y) {
+        if (x < 0 || y < 0 || x >= w || y >= h) return 0;
+        int i = y * w + x;
+        if (tiles[i] == DIRT) return 1;
+        if (tiles[i] == LOT && drive != null && drive[i]) return 2;
+        return 0;
+    }
+
+    /** Paved ground a lane or drive runs out onto (it stops square at its edge, with a little gravel spilt on it). */
+    private boolean pavedEdge(int x, int y) {
+        if (x < 0 || y < 0 || x >= w || y >= h) return false;
+        byte t = tiles[y * w + x];
+        return t == ROAD || t == CAR || t == SIDEWALK || t == PLAZA || t == BASE || (t == LOT && (drive == null || !drive[y * w + x]));
+    }
+
+    /**
+     * (10.40) Lanes and drives drawn as smooth bands, not tile by tile: each tile a round patch joined to its
+     * neighbours (straight on, round the bends and across the diagonal steps, so there's no staircase), with a
+     * soft verge, wheel ruts along a lane, and a square end where it meets a road, the pavement or a car park.
+     */
+    private void drawLanes(Canvas c, Paint p, int X0, int Y0, int X1, int Y1) {
+        boolean real = drawnRealistic;
+        int dirt = real ? 0xFF8A7252 : 0xFF8C7456, tar = real ? 0xFF46474A : 0xFF48494D;
+        int x0 = Math.max(0, X0 - 1), y0 = Math.max(0, Y0 - 1), x1 = Math.min(w, X1 + 1), y1 = Math.min(h, Y1 + 1);
+        p.setAntiAlias(true);
+        for (int pass = 0; pass < 3; pass++) {
+            for (int y = y0; y < y1; y++)
+                for (int x = x0; x < x1; x++) {
+                    int kind = laneKind(x, y);
+                    if (kind == 0) continue;
+                    int surface = kind == 1 ? dirt : tar;
+                    float half = pass == 0 ? T * 0.72f : T * 0.6f;
+                    int col = pass == 0 ? mix(surface, laneGround(x, y), 0.55f) : pass == 1 ? surface : kind == 1 ? 0xFF7A6446 : 0xFF3E3F42;
+                    if (pass == 2 && kind == 2) continue;
+                    float cx = x * T + T / 2f, cy = y * T + T / 2f;
+                    p.setColor(col);
+                    if (pass < 2) {
+                        p.setStyle(Paint.Style.FILL);
+                        c.drawCircle(cx, cy, half, p);
+                    }
+                    p.setStyle(Paint.Style.STROKE);
+                    p.setStrokeWidth(pass == 2 ? 1.6f : half * 2);
+                    for (int k = 0; k < 4; k++) {
+                        int dx = k == 0 ? 1 : k == 1 ? 0 : k == 2 ? 1 : -1, dy = k == 0 ? 0 : 1;
+                        int ok = laneKind(x + dx, y + dy);
+                        boolean diag = dx != 0 && dy != 0;
+                        if (ok == kind) {
+                            // (A diagonal only across a step, where the two tiles beside it aren't lane too.)
+                            if (diag && (laneKind(x + dx, y) == kind || laneKind(x, y + dy) == kind)) continue;
+                            if (pass == 2 && diag) continue;
+                            // (Ruts run along the lane, not across it: only where it carries on beyond these two.)
+                            if (pass == 2 && laneKind(x - dx, y - dy) != kind && laneKind(x + 2 * dx, y + 2 * dy) != kind) continue;
+                            c.drawLine(cx, cy, cx + dx * T, cy + dy * T, p);
+                        }
+                    }
+                    // Out to the edge of the road, pavement or car park it meets: square there.
+                    if (pass == 1)
+                        for (int k = 0; k < 4; k++) {
+                            int dx = k == 0 ? 1 : k == 1 ? -1 : 0, dy = k == 2 ? 1 : k == 3 ? -1 : 0;
+                            if (!pavedEdge(x + dx, y + dy) && laneKind(x + dx, y + dy) == 0) continue;
+                            if (laneKind(x + dx, y + dy) != 0 && laneKind(x + dx, y + dy) != kind) {
+                                // (A drive onto a lane, or a lane onto a drive: the two meet halfway.)
+                            } else if (laneKind(x + dx, y + dy) == kind) continue;
+                            p.setStyle(Paint.Style.FILL);
+                            float ex = cx + dx * T / 2f, ey = cy + dy * T / 2f;
+                            c.drawRect(Math.min(cx - (dy != 0 ? half : 0), ex), Math.min(cy - (dx != 0 ? half : 0), ey),
+                                    Math.max(cx + (dy != 0 ? half : 0), ex), Math.max(cy + (dx != 0 ? half : 0), ey), p);
+                            if (kind == 1 && pavedEdge(x + dx, y + dy)) {
+                                // Gravel the wheels have carried out onto the tarmac.
+                                p.setColor(0x996E5A40);
+                                for (int g = 0; g < 4; g++) {
+                                    float gx = ex + dx * (1 + g % 2 * 2) + (dy != 0 ? (g - 1.5f) * 3 : 0);
+                                    float gy = ey + dy * (1 + g % 2 * 2) + (dx != 0 ? (g - 1.5f) * 3 : 0);
+                                    c.drawCircle(gx, gy, 0.7f, p);
+                                }
+                                p.setColor(col);
+                            }
+                        }
+                }
+        }
+        // Pebbles and tufts on the dirt.
+        Random r = new Random(cfg.seed * 31 + x0 * 7919L + y0);
+        p.setStyle(Paint.Style.FILL);
+        for (int y = y0; y < y1; y++)
+            for (int x = x0; x < x1; x++) {
+                if (laneKind(x, y) != 1) continue;
+                for (int k = 0; k < 3; k++) {
+                    p.setColor(r.nextBoolean() ? 0xFFA08A68 : 0xFF6E5A40);
+                    c.drawCircle(x * T + T * (0.2f + r.nextFloat() * 0.6f), y * T + T * (0.2f + r.nextFloat() * 0.6f), 0.7f, p);
+                }
+            }
+        p.setStyle(Paint.Style.FILL);
+        p.setStrokeWidth(1);
+        p.setAntiAlias(false);
+    }
+
+    private static int mix(int a, int b, float t) {
+        int ar = (a >> 16) & 255, ag = (a >> 8) & 255, ab = a & 255, br = (b >> 16) & 255, bg = (b >> 8) & 255, bb = b & 255;
+        return 0xFF000000 | ((int) (ar + (br - ar) * t) << 16) | ((int) (ag + (bg - ag) * t) << 8) | (int) (ab + (bb - ab) * t);
+    }
 
     /**
      * Realistic ground: grainy asphalt with darker tyre tracks and the odd oil stain, paving slabs that

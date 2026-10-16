@@ -2782,6 +2782,132 @@ public final class GameTests {
                 check(with >= 9, "and most of it is still with it a minute later (" + with + " of " + horde.size() + ")");
             }
         });
+        test("10.40: one road network - every home on a road or lane, no roads to nowhere, lanes and drives joined up", new Check() {
+            public void run() throws Exception {
+                for (int[] ps : new int[][]{{0, 3}, {1, 3}, {4, 3}, {2, 5}}) {
+                    CityConfig c = new CityConfig();
+                    c.v[CityConfig.OPT_PRESET] = ps[0];
+                    c.seed = ps[1];
+                    c.normalize();
+                    c.seed = ps[1];
+                    City city = new City(c, 0.05f);
+                    int w = city.w, h = city.h, n = w * h;
+                    byte[] t = city.tiles;
+                    String m = "map " + ps[0] + "/" + ps[1] + ": ";
+                    // The roads and lanes are one network.
+                    int[] comp = new int[n];
+                    java.util.Arrays.fill(comp, -1);
+                    int[] q = new int[n];
+                    java.util.List<Integer> sizes = new java.util.ArrayList<Integer>();
+                    for (int i = 0; i < n; i++) {
+                        if (comp[i] >= 0 || !(t[i] == City.ROAD || t[i] == City.DIRT)) continue;
+                        int id = sizes.size(), hd = 0, tl = 0;
+                        q[tl++] = i;
+                        comp[i] = id;
+                        while (hd < tl) {
+                            int cc = q[hd++], x = cc % w, y = cc / w;
+                            for (int k = 0; k < 4; k++) {
+                                int nx = x + (k == 0 ? 1 : k == 1 ? -1 : 0), ny = y + (k == 2 ? 1 : k == 3 ? -1 : 0);
+                                if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+                                int j = ny * w + nx;
+                                if (comp[j] >= 0 || !(t[j] == City.ROAD || t[j] == City.DIRT || t[j] == City.CAR)) continue;
+                                comp[j] = id;
+                                q[tl++] = j;
+                            }
+                        }
+                        sizes.add(tl);
+                    }
+                    int main = 0, stray = 0;
+                    for (int k = 1; k < sizes.size(); k++) if (sizes.get(k) > sizes.get(main)) main = k;
+                    for (int k = 0; k < sizes.size(); k++) if (k != main && sizes.get(k) >= 4) stray++;
+                    check(stray == 0, m + "no bits of road or lane on their own (" + stray + ")");
+                    // Every home reaches that network by its own drive (or is on a street, by the pavement).
+                    int homes = 0, off = 0;
+                    int[] seen = new int[n];
+                    int stamp = 0;
+                    for (City.Building b : city.buildings) {
+                        if (b.kind != City.HOUSE && b.kind != City.BARN) continue;
+                        homes++;
+                        stamp++;
+                        int hd = 0, tl = 0;
+                        boolean ok = false;
+                        for (int y = (int) (b.y0 / City.T) - 1; y <= (int) Math.ceil(b.y1 / City.T); y++)
+                            for (int x = (int) (b.x0 / City.T) - 1; x <= (int) Math.ceil(b.x1 / City.T); x++) {
+                                if (x < 0 || y < 0 || x >= w || y >= h) continue;
+                                int j = y * w + x;
+                                if (t[j] == City.SIDEWALK) ok = true;
+                                if ((t[j] == City.LOT || t[j] == City.DIRT || t[j] == City.ROAD || t[j] == City.CAR) && seen[j] != stamp) {
+                                    seen[j] = stamp;
+                                    q[tl++] = j;
+                                }
+                            }
+                        while (hd < tl && !ok && tl < 20000) {
+                            int cc = q[hd++], x = cc % w, y = cc / w;
+                            if ((t[cc] == City.ROAD || t[cc] == City.DIRT) && comp[cc] == main) ok = true;
+                            for (int k = 0; k < 4; k++) {
+                                int nx = x + (k == 0 ? 1 : k == 1 ? -1 : 0), ny = y + (k == 2 ? 1 : k == 3 ? -1 : 0);
+                                if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+                                int j = ny * w + nx;
+                                if (seen[j] == stamp || !(t[j] == City.LOT || t[j] == City.DIRT || t[j] == City.ROAD || t[j] == City.CAR)) continue;
+                                seen[j] = stamp;
+                                q[tl++] = j;
+                            }
+                        }
+                        if (!ok) off++;
+                    }
+                    check(off * 50 <= homes, m + "every home (bar the odd one) is on a road or lane (" + off + " of " + homes + " not)");
+                    // No lane or road ending in the middle of nowhere.
+                    int dead = 0;
+                    for (int y = 1; y < h - 1; y++)
+                        for (int x = 1; x < w - 1; x++) {
+                            int i = y * w + x;
+                            if (!(t[i] == City.ROAD || t[i] == City.DIRT) || (city.bridge != null && city.bridge[i])) continue;
+                            int four = 0;
+                            for (int k = 0; k < 4; k++) {
+                                byte o = t[i + (k == 0 ? 1 : k == 1 ? -1 : k == 2 ? w : -w)];
+                                if (o == City.ROAD || o == City.DIRT || o == City.CAR || o == City.LOT) four++;
+                            }
+                            if (four > 1) continue;
+                            boolean near = false;
+                            for (int dy = -1; dy <= 1; dy++)
+                                for (int dx = -1; dx <= 1; dx++) {
+                                    byte o = t[(y + dy) * w + x + dx];
+                                    if (o == City.LOT || o == City.BUILDING || o == City.BASE || o == City.PIER || o == City.SIDEWALK || o == City.PLAZA
+                                            || o == City.RAIL || o == City.TRAIL || o == City.WATER || o == City.SAND) near = true;
+                                }
+                            if (!near) dead++;
+                        }
+                    check(dead <= 6, m + "hardly a lane or road ends in nothing (" + dead + ")");
+                    // Drives known for drawing, and none winding from house to house: those are lanes now.
+                    check(city.drive != null, m + "drives are known");
+                    int[] dc = new int[n];
+                    java.util.Arrays.fill(dc, -1);
+                    int chains = 0;
+                    for (int i = 0; i < n; i++) {
+                        if (dc[i] >= 0 || !city.drive[i] || t[i] != City.LOT) continue;
+                        int hd = 0, tl = 0;
+                        q[tl++] = i;
+                        dc[i] = i;
+                        java.util.Set<Integer> hs = new java.util.HashSet<Integer>();
+                        while (hd < tl) {
+                            int cc = q[hd++], x = cc % w, y = cc / w;
+                            for (int dy = -1; dy <= 1; dy++)
+                                for (int dx = -1; dx <= 1; dx++) {
+                                    int nx = x + dx, ny = y + dy;
+                                    if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+                                    int j = ny * w + nx, bi = city.buildingAt[j];
+                                    if (bi >= 0 && (city.buildings.get(bi).kind == City.HOUSE || city.buildings.get(bi).kind == City.BARN)) hs.add(bi);
+                                    if ((dx != 0 && dy != 0) || dc[j] >= 0 || !city.drive[j] || t[j] != City.LOT) continue;
+                                    dc[j] = i;
+                                    q[tl++] = j;
+                                }
+                        }
+                        if (hs.size() >= 3) chains++;
+                    }
+                    check(chains == 0, m + "no tarmac drive winding past three homes (" + chains + ")");
+                }
+            }
+        });
         test("every screen draws", new Check() {
             public void run() throws Exception {
                 GameView v = new GameView(new android.app.Activity());

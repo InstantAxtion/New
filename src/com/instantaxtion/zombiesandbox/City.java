@@ -543,6 +543,7 @@ final class City {
             if (cfg.civic >= 8) unpaveLaneStubs();
             if (cfg.civic >= 12) connectStations();
             if (cfg.civic >= 19) tidyRoads();
+            if (cfg.civic >= 22) mendLanePinches();
             for (int[] e : cfg.edits) applyEdit(e[0], e[1], e[2], false);
             computeSolid();
             for (int i = generated; i < buildingLots.size(); i++) createBuilding(buildingLots.get(i));
@@ -2346,6 +2347,9 @@ final class City {
         // Out in the country, a highway runs past the town.
         if (m >= 16) highway(bx0, by0, bx1, by1);
         if (m >= 16 && cfg.civic >= 12) ringRoad(bx0, by0, bx1, by1);
+        // (10.52) Map version 22: the beltway right round the map, before the country fills in round it (on the
+        // water maps, the roads round the edge of town: see outerBelt).
+        if (cfg.civic >= 22 && m >= 16 && waterKind == CityConfig.W_NONE && real == null) beltway();
         if (m > 0) {
             int n = w >= 400 ? 3 + rnd.nextInt(3) : w >= 300 ? 1 + rnd.nextInt(2) : rnd.nextInt(2);
             // (Since 10.20 the country is busier: more hamlets, the bigger ones small towns of their own.)
@@ -2657,6 +2661,11 @@ final class City {
         }
         if (real != null) realStreetNames();
         for (Street st : ringStreets) st.name = country.ringRoad;
+        if (cfg.civic >= 22 && waterKind != CityConfig.W_NONE && real == null) outerBelt();
+        for (Street st : beltStreets) {
+            st.name = BELTWAY;
+            streets.add(st);
+        }
         for (Facility f : facilities)
             if (f.kind == FACILITY_POLICE) {
                 String street = placeName(f.x, f.y);
@@ -2776,6 +2785,33 @@ final class City {
                 }
             }
         }
+    }
+
+    /**
+     * (10.52) A lane that only touches another lane, a drive or a road corner to corner, with grass (or a tree)
+     * between: the corner becomes lane, so the two join (nobody drives across a corner of grass).
+     */
+    private void mendLanePinches() {
+        for (int pass = 0; pass < 3; pass++) {
+            boolean mended = false;
+            for (int y = 1; y < h - 1; y++)
+                for (int x = 1; x < w - 1; x++) {
+                    if (tiles[y * w + x] != DIRT) continue;
+                    for (int dx = -1; dx <= 1; dx += 2) {
+                        int o = (y + 1) * w + x + dx, a = y * w + x + dx, b = (y + 1) * w + x;
+                        if (!laneWay(tiles[o]) || laneWay(tiles[a]) || tiles[a] == CAR || laneWay(tiles[b]) || tiles[b] == CAR) continue;
+                        int g = tiles[a] == GRASS || tiles[a] == TREE ? a : tiles[b] == GRASS || tiles[b] == TREE ? b : -1;
+                        if (g < 0) continue;
+                        tiles[g] = DIRT;
+                        mended = true;
+                    }
+                }
+            if (!mended) break;
+        }
+    }
+
+    private static boolean laneWay(byte t) {
+        return t == DIRT || t == ROAD || t == LOT;
     }
 
     /** True if a neighbouring road tile is a junction (cars don't park there). */
@@ -6059,6 +6095,200 @@ final class City {
         }
         hwyExits.add(new int[]{k0, width, side, Math.round(kc - flow * reach), flow});
         slipZone(ew, kc - reach - 2, kc + reach + 2, side < 0 ? at + 7 : startA - 1, side < 0 ? startA + 1 : at - 1);
+    }
+
+    // ------------------------------------------------------------------ the beltway (10.52)
+
+    static final String BELTWAY = "Beltway";
+    /** The beltway's tiles: four lanes right round the map, driven at nearly highway speed. */
+    boolean[] beltTile;
+    /** Its sides (named, and added to the streets once the rest are named). */
+    private final List<Street> beltStreets = new ArrayList<Street>();
+
+    boolean onBelt(float x, float y) {
+        if (beltTile == null) return false;
+        int tx = (int) (x / T), ty = (int) (y / T);
+        return tx >= 0 && ty >= 0 && tx < w && ty < h && beltTile[ty * w + tx];
+    }
+
+    /**
+     * (10.52) Out in the country, a four-lane beltway right round the map, a little in from its edge: its four
+     * sides meet at the corners, the country lanes and the ring road's spokes join it where they cross, it goes
+     * over lakes on bridges, crosses the railway on the level, and crosses the highway on a bridge. A side
+     * that would run along beside the highway is the highway itself, the sides either side joining it.
+     */
+    private void beltway() {
+        final int rw = 5;
+        int[] lim = {h, h, w, w};
+        // Which sides are the highway itself (it runs within 24 tiles of that edge).
+        boolean[] isHwy = new boolean[4];
+        if (hwyAxis >= 0) {
+            int s0 = hwyAxis == 0 ? 0 : 2;
+            int len = hwyAxis == 0 ? h : w;
+            if (hwyAt < 24) isHwy[s0] = true;
+            else if (len - (hwyAt + 7) < 24) isHwy[s0 + 1] = true;
+        }
+        int[] at = {3, h - 3 - rw, 3, w - 3 - rw};
+        boolean[] ok = new boolean[4];
+        for (int s = 0; s < 4; s++) ok[s] = !isHwy[s];
+        // Each side as far out as it can be, clear of anything in the way (twice round: a side's reach depends
+        // on where the sides across its ends are).
+        for (int pass = 0; pass < 2; pass++)
+            for (int s = 0; s < 4; s++) {
+                if (isHwy[s]) continue;
+                ok[s] = false;
+                for (int in = 3; in <= 18 && !ok[s]; in++) {
+                    int a = s == 0 || s == 2 ? in : lim[s] - in - rw;
+                    int[] span = beltSpan(s, at, isHwy, rw);
+                    if (beltClear(s, a, span[0], span[1], rw)) {
+                        at[s] = a;
+                        ok[s] = true;
+                    }
+                }
+            }
+        int sides = 0;
+        for (int s = 0; s < 4; s++) if (ok[s] || isHwy[s]) sides++;
+        if (sides < 4) {
+            // Not right round: no beltway (a road that ends out in the fields is no loop).
+            return;
+        }
+        beltTile = new boolean[w * h];
+        for (int s = 0; s < 4; s++) {
+            if (!ok[s]) continue;
+            boolean horiz = s < 2;
+            int[] span = beltSpan(s, at, isHwy, rw);
+            boolean crosses = hwyAxis == (horiz ? 1 : 0);
+            for (int k = span[0]; k < span[1]; k++) {
+                // (Over the highway on a bridge: its two ends linked over the top, the highway untouched.)
+                if (crosses && k >= hwyAt - 1 && k <= hwyAt + 7) continue;
+                for (int q = 0; q < rw; q++) {
+                    int x = horiz ? k : at[s] + q, y = horiz ? at[s] + q : k;
+                    beltPave(x, y, horiz);
+                }
+            }
+            if (crosses && hwyAt - 1 >= span[0] && hwyAt + 7 < span[1]) {
+                for (int q = 0; q < rw; q++) {
+                    int[] ends = new int[2];
+                    for (int e = 0; e < 2; e++) {
+                        int k = e == 0 ? hwyAt - 1 : hwyAt + 7;
+                        int x = horiz ? k : at[s] + q, y = horiz ? at[s] + q : k;
+                        beltPave(x, y, horiz);
+                        solid[y * w + x] = false;
+                        ends[e] = y * w + x;
+                    }
+                    bridgeLink.put(ends[0], ends[1]);
+                    bridgeLink.put(ends[1], ends[0]);
+                }
+                overpasses.add(horiz ? new float[]{(hwyAt - 1) * T, at[s] * T, (hwyAt + 8) * T, (at[s] + rw) * T}
+                        : new float[]{at[s] * T, (hwyAt - 1) * T, (at[s] + rw) * T, (hwyAt + 8) * T});
+            }
+            beltStreets.add(horiz ? new Street(span[0], at[s], span[1], at[s] + rw, false, true)
+                    : new Street(at[s], span[0], at[s] + rw, span[1], true, true));
+        }
+    }
+
+    /** Where a side of the beltway runs from and to: between the sides across its ends, or the highway. */
+    private int[] beltSpan(int s, int[] at, boolean[] isHwy, int rw) {
+        boolean horiz = s < 2;
+        int a = horiz ? 2 : 0, b = horiz ? 3 : 1;
+        int from = isHwy[a] ? hwyAt + 7 : at[a], to = isHwy[b] ? hwyAt : at[b] + rw;
+        return new int[]{from, to};
+    }
+
+    /** Whether a side of the beltway at a (its first row or column) can run from..to: nothing built in the way. */
+    private boolean beltClear(int s, int a, int from, int to, int rw) {
+        boolean horiz = s < 2;
+        if (to - from < 40) return false;
+        boolean crosses = hwyAxis == (horiz ? 1 : 0);
+        int wet = 0;
+        for (int k = from; k < to; k++) {
+            if (crosses && k >= hwyAt - 2 && k <= hwyAt + 8) continue;
+            boolean water = false;
+            for (int q = 0; q < rw; q++) {
+                int x = horiz ? k : a + q, y = horiz ? a + q : k;
+                if (x < 1 || y < 1 || x >= w - 1 || y >= h - 1) return false;
+                int i = y * w + x;
+                byte t = tiles[i];
+                // (A street's pavement where the beltway crosses it is part of the crossing.)
+                if (t == SIDEWALK) {
+                    boolean street = false;
+                    for (int e = -2; e <= 2 && !street; e++) {
+                        int sx = horiz ? x + e : x, sy = horiz ? y : y + e;
+                        if (e != 0 && sx >= 0 && sy >= 0 && sx < w && sy < h && tiles[sy * w + sx] == ROAD) street = true;
+                    }
+                    if (street) continue;
+                }
+                if (t == BUILDING || t == BASE || t == LOT || t == PLAZA || t == SIDEWALK || t == FENCE || t == CAR
+                        || (slipTile != null && slipTile[i]) || (t == RAIL && horiz)) {
+                    return false;
+                }
+                if (t == WATER) water = true;
+            }
+            wet = water ? wet + 1 : 0;
+            // (Over a pond or the end of a lake on a bridge; not along one.)
+            if (wet > 30) return false;
+        }
+        return true;
+    }
+
+    private void beltPave(int x, int y, boolean horiz) {
+        int i = y * w + x;
+        if (tiles[i] == WATER) {
+            if (bridge == null) bridge = new boolean[w * h];
+            bridge[i] = true;
+        }
+        roadDir[i] = tiles[i] == RAIL ? 1 : roadDir[i] != 0 && tiles[i] == ROAD ? 3 : (byte) (horiz ? 2 : 1);
+        tiles[i] = ROAD;
+        mainRoad[i] = true;
+        beltTile[i] = true;
+    }
+
+    /**
+     * (10.52) On the water maps, where the town runs right to the edge of the map and the shore: the streets
+     * round its edge (along the map's edge, the beach and the water) are its beltway, main roads driven fast,
+     * with the bridges at the edge of the map (and the Islands' bridges between them) part of it.
+     */
+    private void outerBelt() {
+        beltTile = new boolean[w * h];
+        for (Street st : streets) {
+            int len = st.vertical ? st.y1 - st.y0 : st.x1 - st.x0;
+            if (len < 12) continue;
+            boolean outer = st.x0 <= 2 || st.y0 <= 2 || st.x1 >= w - 2 || st.y1 >= h - 2;
+            for (int side = -1; side <= 1 && !outer; side += 2) {
+                int open = 0;
+                for (int f = 1; f <= 3; f++) {
+                    int k = (st.vertical ? st.y0 : st.x0) + len * f / 4;
+                    boolean clear = true;
+                    for (int d = 1; d <= 8 && clear; d++) {
+                        int x = st.vertical ? (side < 0 ? st.x0 - d : st.x1 - 1 + d) : k;
+                        int y = st.vertical ? k : (side < 0 ? st.y0 - d : st.y1 - 1 + d);
+                        if (x < 0 || y < 0 || x >= w || y >= h) break;
+                        byte t = tiles[y * w + x];
+                        if (t == SIDEWALK || t == BUILDING || t == LOT || t == PLAZA || t == ROAD || t == BASE) clear = false;
+                    }
+                    if (clear) open++;
+                }
+                if (open >= 2) outer = true;
+            }
+            if (!outer) continue;
+            st.name = BELTWAY;
+            for (int y = Math.max(0, st.y0); y < Math.min(h, st.y1); y++)
+                for (int x = Math.max(0, st.x0); x < Math.min(w, st.x1); x++) {
+                    int i = y * w + x;
+                    if (tiles[i] != ROAD) continue;
+                    beltTile[i] = true;
+                    mainRoad[i] = true;
+                }
+        }
+        if (bridge != null)
+            for (int i = 0; i < w * h; i++) {
+                if (!bridge[i] || tiles[i] != ROAD) continue;
+                int x = i % w, y = i / w;
+                if (waterKind == CityConfig.W_ISLANDS || x < 8 || y < 8 || x >= w - 8 || y >= h - 8) {
+                    beltTile[i] = true;
+                    mainRoad[i] = true;
+                }
+            }
     }
 
     /** (10.32) Road bridges over the highway at the interchanges: {x0, y0, x1, y1} in world units. */

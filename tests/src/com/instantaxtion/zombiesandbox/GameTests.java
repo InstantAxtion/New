@@ -1163,13 +1163,14 @@ public final class GameTests {
                 float[] hq = w.city.findWalkable(cx - 40, cy);
                 Entity hurt = w.spawn(Entity.CIVILIAN, hq != null ? hq[0] : cx, hq != null ? hq[1] : cy);
                 hurt.hp = hurt.maxHp * 0.2f;
-                // (Since 10.50 the hurt go home to rest: a home a little way off.)
+                // (Since 10.50 the hurt go home to rest: a home a little way off, the nearest past 120.)
+                float best = Float.MAX_VALUE;
                 for (City.Building hb : w.city.buildings) {
                     float hd = (float) Math.hypot(hb.doorX - hurt.x, hb.doorY - hurt.y);
-                    if (hd > 120 && hd < 300 && !hb.collapsed) {
+                    if (hd > 120 && hd < best && !hb.collapsed) {
+                        best = hd;
                         hurt.home = hb;
                         hurt.homeChecked = true;
-                        break;
                     }
                 }
                 for (int f = 0; f < 30 * 10; f++) w.update(1 / 30f);
@@ -3307,6 +3308,9 @@ public final class GameTests {
                     for (int f = 0; f < 30 * 90; f++) {
                         w.update(1 / 30f);
                         if (f % 30 == 0) for (Entity e : w.entities) if (!e.dead && e.task == Dispatch.T_LEAVE) leaving++;
+                        // ((10.52) Once a few are gone: over the beltway the outbreak can be over, and them home again,
+                        // inside the minute and a half.)
+                        if (on == 1 && w.away.size() >= 5) break;
                     }
                     if (on == 0) {
                         check(w.fled == 0 && leaving == 0 && w.away.isEmpty(), "with it off nobody leaves (" + w.fled + ")");

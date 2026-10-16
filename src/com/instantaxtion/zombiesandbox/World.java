@@ -10966,6 +10966,18 @@ final class World {
             for (float[] q : list) if (Math.hypot(q[0] - p[0], q[1] - p[1]) < 400) near = true;
             if (!near) list.add(p);
         }
+        // (10.52) Over the beltway: the lanes that ran off the map's edges stop at it, so on foot it's out across
+        // it, in the middle of each side (and a third and two thirds along on the bigger maps).
+        if (city.beltTile != null)
+            for (int side = 0; side < 4; side++)
+                for (int f = 1; f <= 3; f++) {
+                    if (f != 2 && city.w < 500) continue;
+                    float along = (side < 2 ? city.worldW() : city.worldH()) * f / 4f, in = City.T * 1.5f;
+                    float x = side < 2 ? along : side == 2 ? in : city.worldW() - in, y = side < 2 ? (side == 0 ? in : city.worldH() - in) : along;
+                    float[] p = city.findWalkable(x, y);
+                    if (p != null && (p[0] < City.T * 2.5f || p[1] < City.T * 2.5f || p[0] > city.worldW() - City.T * 2.5f || p[1] > city.worldH() - City.T * 2.5f))
+                        list.add(p);
+                }
         exits = list.toArray(new float[0][]);
     }
 

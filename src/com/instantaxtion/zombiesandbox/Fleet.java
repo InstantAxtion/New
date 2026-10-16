@@ -3576,7 +3576,7 @@ final class Fleet {
             if (v.held || queue) v.stuckTimer = Math.min(v.stuckTimer, 1);
             // (On the highway: highway speeds.)
             // (10.49) A slip road on or off the highway at nearly highway speed, not a town crawl.
-            float cruise = city.onHighway(v.x, v.y) ? 115 : city.onSlip(v.x, v.y) ? 100 : v.fleeing ? 90 : 70;
+            float cruise = city.onHighway(v.x, v.y) ? 115 : city.onSlip(v.x, v.y) || city.onBelt(v.x, v.y) ? 100 : v.fleeing ? 90 : 70;
             boolean going = driveStep(v, dt, Math.min(limit, zombiesClose ? 60 : cruise), throttle);
             // A panicking driver who's gone round in a circle gives up on that way out and goes somewhere else.
             if (v.orbited) {
@@ -4861,7 +4861,7 @@ final class Fleet {
         v.stuckTimer += dt;
         boolean queue = carAhead(v);
         if (v.held || queue) v.stuckTimer = Math.min(v.stuckTimer, 1);
-        if (!driveStep(v, dt, Math.min(limit, person ? 15 : city.onHighway(v.x, v.y) ? 105 : city.onSlip(v.x, v.y) ? 95 : 60), queue ? 0.15f : 1f) || v.stuckTimer > 10) {
+        if (!driveStep(v, dt, Math.min(limit, person ? 15 : city.onHighway(v.x, v.y) ? 105 : city.onSlip(v.x, v.y) || city.onBelt(v.x, v.y) ? 95 : 60), queue ? 0.15f : 1f) || v.stuckTimer > 10) {
             v.stuckTimer = 0;
             newDestination(v);
         }

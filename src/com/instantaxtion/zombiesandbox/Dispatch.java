@@ -186,7 +186,6 @@ final class Dispatch {
     int swatTeams;
     /** Riot vans the police can send, and police helicopter flights left (since 10.10). */
     int riotVans, policeAir;
-    private float ambulanceTimer;
     int calls, sheltered, messageCount;
     int copCount, soldierCount;
     private int freeCops, freeSoldiers;
@@ -538,7 +537,6 @@ final class Dispatch {
         if (tick < 0.5f) return;
         float step = tick;
         tick = 0;
-        sendAmbulances(step);
         policeZoneCd -= step;
         militaryZoneCd -= step;
         militaryCd -= step;
@@ -874,30 +872,6 @@ final class Dispatch {
             if (commander != null) say(WHO_MILITARY, commander, "Heavy contact at " + place + ". Requesting air support!", x, y);
             requestAir(x, y, place);
         }
-    }
-
-    /** The hospital sends an ambulance for someone badly hurt when the street around them is quiet. */
-    private void sendAmbulances(float step) {
-        ambulanceTimer -= step;
-        if (ambulanceTimer > 0) return;
-        ambulanceTimer = 4;
-        City.Facility hospital = city.nearestFacility(City.FACILITY_HOSPITAL, 0, 0);
-        if (hospital == null || w.fleet.count(Fleet.AMBULANCE) >= 2 || w.countZombiesNear(hospital.x, hospital.y, 160) > 0) return;
-        Entity best = null;
-        float worst = 1;
-        for (int i = 0, n = w.entities.size(); i < n; i++) {
-            Entity e = w.entities.get(i);
-            if (e.dead || e.type != Entity.CIVILIAN || e.ride != null || e.task == T_SHELTER) continue;
-            float f = e.hp / e.maxHp;
-            if (f >= Math.min(worst, 0.5f)) continue;
-            if (Math.hypot(e.x - hospital.x, e.y - hospital.y) < 300 || w.countZombiesNear(e.x, e.y, 60) > 0) continue;
-            if (w.fleet.hasPatient(e)) continue;
-            worst = f;
-            best = e;
-        }
-        if (best != null && w.fleet.sendAmbulance(hospital, best))
-            say(WHO_INFO, null, "Hospital: Ambulance on its way to an injured person on " + city.placeName(best.x, best.y) + ".",
-                    best.x, best.y);
     }
 
     /** Air support that has been approved but hasn't taken off yet: seconds to go, and where it's going. */

@@ -43,7 +43,7 @@ public final class GameTests {
                 c.seed = 77;
                 World w = new World(c);
                 w.populate(c);
-                w.raiderGang(w.city.worldW() / 2, w.city.worldH() / 2, 4);
+                w.panic(w.city.worldW() / 2, w.city.worldH() / 2);
                 w.hordeEvent(w.city.worldW() / 2, w.city.worldH() / 2);
                 w.explode(w.city.worldW() / 3, w.city.worldH() / 3, 70, 400);
                 for (int i = 0; i < 30 * 120; i++) {
@@ -304,11 +304,11 @@ public final class GameTests {
                 check(w.hallLost && !w.broadcasting(), "City Hall overrun: no more broadcasts");
                 check(w.callsLost, "the 911 centre overrun");
                 // The power fails: the cell doors open.
-                int before = w.counts[Entity.RAIDER];
+                int before = w.counts[Entity.CIVILIAN];
                 w.blackout = true;
                 for (int f = 0; f < 30 * 2; f++) w.update(1 / 30f);
-                check(w.jailBroken && w.inmates == 0 && w.counts[Entity.RAIDER] > before, "jailbreak when the power fails ("
-                        + (w.counts[Entity.RAIDER] - before) + " escaped)");
+                check(w.jailBroken && w.inmates == 0 && w.counts[Entity.CIVILIAN] > before, "jailbreak when the power fails ("
+                        + (w.counts[Entity.CIVILIAN] - before) + " escaped)");
             }
         });
         test("water maps: the sea, a river with bridges, a lake and a port; nobody ends up in the water", new Check() {
@@ -398,7 +398,7 @@ public final class GameTests {
                 check(f != null && base.takeParkedTruck(f.x, f.y, 600) != null, "a parked truck drives off the base");
             }
         });
-        test("police and soldiers carry a real load and make it count; people keep out of bloater gas", new Check() {
+        test("police and soldiers carry a real load and make it count; (10.50: no bloater gas)", new Check() {
             public void run() {
                 CityConfig c = new CityConfig();
                 c.seed = 3;
@@ -423,33 +423,6 @@ public final class GameTests {
                     if (e.ammo + e.reserve == 0) dry++;
                 }
                 check(dry * 8 <= armed, dry + " of " + armed + " police and soldiers out of ammo after two minutes");
-                // A cloud of gas on someone's way: they go round it.
-                CityConfig q = new CityConfig();
-                q.seed = 7;
-                q.v[CityConfig.OPT_SIZE] = CityConfig.MEDIUM;
-                q.v[CityConfig.OPT_ZOMBIES] = 0;
-                World g = new World(q);
-                g.populate(q);
-                int walkedIn = 0, tried = 0;
-                for (int round = 0; round < 12; round++) {
-                    for (int f = 0; f < 30 * 3; f++) g.update(1 / 30f);
-                    Entity walker = null;
-                    for (Entity e : g.entities)
-                        if (!e.dead && !e.hidden && e.type == Entity.CIVILIAN && e.want > 5 && e.fleeTimer <= 0 && (walker == null || e.want > walker.want)) walker = e;
-                    if (walker == null) continue;
-                    float l = (float) Math.hypot(walker.mx, walker.my) + 0.001f;
-                    float[] cloud = {walker.x + walker.mx / l * 80, walker.y + walker.my / l * 80, 36, 9};
-                    g.gases.add(cloud);
-                    tried++;
-                    boolean in = false;
-                    for (int f = 0; f < 30 * 4; f++) {
-                        g.update(1 / 30f);
-                        if (!walker.dead && Math.hypot(walker.x - cloud[0], walker.y - cloud[1]) < cloud[2]) in = true;
-                    }
-                    if (in) walkedIn++;
-                    g.gases.clear();
-                }
-                check(tried >= 6 && walkedIn * 6 <= tried, walkedIn + " of " + tried + " people walked into a gas cloud in their way");
             }
         });
         test("Islands: two to four island towns, joined up, one fixed size, nobody stranded", new Check() {
@@ -730,26 +703,14 @@ public final class GameTests {
                     if (e.role == Entity.ROLE_GRENADIER) gren++;
                     if (e.role == Entity.ROLE_MARKSMAN) marks++;
                 }
-                check(medic > 0 && gren > 0, "squads have combat medics and grenadiers (" + medic + ", " + gren + ")");
+                check(medic == 0 && gren > 0, "squads have grenadiers and (since 10.50) no combat medics (" + medic + ", " + gren + ")");
                 check(marks > 0, "a police marksman at the precinct (" + marks + ")");
                 int bikes = 0;
                 for (Fleet.Vehicle v : w.fleet.vehicles) if (v.kind == Fleet.K_BIKE) bikes++;
                 check(bikes > 0, "police motorcycles on patrol (" + bikes + ")");
                 check(w.dispatch.riotVans > 0 && w.dispatch.policeAir > 0, "riot vans and the police helicopter are ready");
-                // A wounded soldier gets patched up by the medic.
-                w.viewX0 = 0;
-                w.viewY0 = 0;
-                w.viewX1 = w.city.worldW();
-                w.viewY1 = w.city.worldH();
                 Entity doc = null;
-                for (Entity e : w.entities) if (e.role == Entity.ROLE_CORPSMAN && e.task == Dispatch.T_NONE && e.rig == null) doc = e;
-                Entity hurt = w.spawn(Entity.SOLDIER, doc.x + 20, doc.y);
-                hurt.hp = 30;
-                hurt.task = Dispatch.T_POST;
-                hurt.postX = hurt.x;
-                hurt.postY = hurt.y;
-                for (int f = 0; f < 300; f++) w.update(1 / 30f);
-                check(hurt.hp >= hurt.maxHp * 0.69f, "the combat medic patched up a wounded soldier (" + (int) hurt.hp + "/" + (int) hurt.maxHp + ")");
+                for (Entity e : w.entities) if (e.type == Entity.SOLDIER && e.task == Dispatch.T_NONE && e.rig == null) doc = e;
                 // Someone who turns up later has no home.
                 Entity drifter = w.spawn(Entity.CIVILIAN, doc.x, doc.y + 40);
                 for (int f = 0; f < 60; f++) w.update(1 / 30f);
@@ -1202,6 +1163,15 @@ public final class GameTests {
                 float[] hq = w.city.findWalkable(cx - 40, cy);
                 Entity hurt = w.spawn(Entity.CIVILIAN, hq != null ? hq[0] : cx, hq != null ? hq[1] : cy);
                 hurt.hp = hurt.maxHp * 0.2f;
+                // (Since 10.50 the hurt go home to rest: a home a little way off.)
+                for (City.Building hb : w.city.buildings) {
+                    float hd = (float) Math.hypot(hb.doorX - hurt.x, hb.doorY - hurt.y);
+                    if (hd > 120 && hd < 300 && !hb.collapsed) {
+                        hurt.home = hb;
+                        hurt.homeChecked = true;
+                        break;
+                    }
+                }
                 for (int f = 0; f < 30 * 10; f++) w.update(1 / 30f);
                 int casings = 0, blood = 0;
                 for (int i = 0; i < w.mcount; i++) {
@@ -1210,16 +1180,6 @@ public final class GameTests {
                 }
                 check(casings > 0, "spent cases on the ground (" + casings + ")");
                 check(blood > 0 || hurt.dead, "a trail of blood behind someone badly hurt (" + blood + ")");
-                // A building that has burned is sooted up.
-                City.Building b = w.city.buildings.get(0);
-                World.Fire fire = new World.Fire();
-                fire.x = b.doorX;
-                fire.y = b.doorY;
-                fire.life = 20;
-                fire.building = b;
-                w.fires.add(fire);
-                for (int f = 0; f < 30 * 5; f++) w.update(1 / 30f);
-                check(b.scorch > 0, "a fire leaves soot on the building");
             }
         });
         test("10.18: fewer maps, no animals, hikers out, people get clear, dirt lanes, the real cities", new Check() {

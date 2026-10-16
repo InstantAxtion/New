@@ -7,6 +7,18 @@ final class Entity {
             /** (Firefighters went in 10.49: any in an old save load as civilians.) */
             FIREFIGHTER = 14;
     static final int TYPE_COUNT = 15;
+
+    /**
+     * (10.50) The kind someone of kind t is now: the kinds taken out of the game (crawlers, bloaters, spitters and
+     * screamers come back as ordinary zombies; firefighters, medics and raiders are ordinary people).
+     */
+    static int current(int t) {
+        switch (t) {
+            case CRAWLER: case BLOATER: case SPITTER: case SCREAMER: return ZOMBIE;
+            case FIREFIGHTER: case MEDIC: case RAIDER: return CIVILIAN;
+            default: return t;
+        }
+    }
     static final String[] NAMES = {"Civilian", "Cop", "Soldier", "Medic", "Dog", "Raider", "Zombie", "Runner", "Brute",
             "Crawler", "Screamer", "Zombie dog", "Spitter", "Bloater", "Firefighter"};
 

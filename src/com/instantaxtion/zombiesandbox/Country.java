@@ -12,9 +12,11 @@ final class Country {
             NORWAY = 15, DENMARK = 16, CANADA = 17;
     static final String[] NAMES = {"USA", "Australia", "Japan", "France", "Mexico", "Switzerland", "South Korea",
             "Malaysia", "Portugal", "Morocco", "Russia", "China", "Egypt", "Saudi Arabia", "Sweden", "Norway", "Denmark", "Canada"};
-    /** Countries taken off the New Game screen in 10.17 (kept so old saves and city codes still build). */
+    /** Countries taken off the New Game screen (kept so old saves and city codes still build). */
     static boolean retired(int id) {
-        return id == KOREA || id == MALAYSIA || id == PORTUGAL || id == MOROCCO || id == EGYPT || id == SAUDI || id == DENMARK;
+        // (Switzerland and China went in 10.50.)
+        return id == KOREA || id == MALAYSIA || id == PORTUGAL || id == MOROCCO || id == EGYPT || id == SAUDI || id == DENMARK
+                || id == SWITZERLAND || id == CHINA;
     }
 
     static final String[] INFO = {

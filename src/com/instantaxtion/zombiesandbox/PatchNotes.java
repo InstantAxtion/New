@@ -2,11 +2,26 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.49";
-    static final int VERSION_CODE = 87;
+    static final String VERSION = "10.50";
+    static final int VERSION_CODE = 88;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.50  -  A leaner game, and a better screen",
+                    "Gone: fires (nothing catches fire any more - wrecks and blasts still smoke and scorch), the Auto cam, spitter and screamer zombies, raiders, medics, ambulances and hospital care. Anyone of those kinds in a saved game comes back as an ordinary zombie or person.",
+                    "Brutes are toned down: less health and weight, a weaker bite, a shorter and rarer charge that knocks people about less, and a headshot can now drop one. Fewer people come back as brutes.",
+                    "Hurt people patch themselves up at a pharmacy if there's one near, or go home and rest. The army's squads have grenadiers instead of combat medics. A jailbreak lets out frightened inmates, not armed raiders.",
+                    "New Game: the Downtown, Village and Lakeside maps and the Switzerland and China countries are gone, as are the people-about and Little nature settings (people come and go from their homes as they please). The line saying how many live in the city no longer gets cut off on a phone held upright.",
+                    "New achievements in place of the old ones: Long Haul (keep people alive through 20 minutes of outbreak) and Safe and Sound (see 50 people leave by bus or train).",
+                    "A new game always starts in the 3D view.",
+                    "2x, 4x and 8x speed now really run faster on a phone: the extra time used to be cut short.",
+                    "The tactical map stays open after you tap its button (it used to close as soon as you let go).",
+                    "With the stats folded to one line, the radio and news messages move up into the space it leaves.",
+                    "The minimap shows the part of the city round you on the bigger maps (and sharper), just the police, army and the dead, and helicopters in the air as rotor marks in their side's colour with a line to where they're going.",
+                    "New pictures on the spawn buttons: a civilian, a cop in a peaked cap, a soldier in a helmet and the dead, each on a disc in their side's colour.",
+                    "Fixed: the Place tool's pictures were one out since 10.49, and dragging built crates instead of a line of barricades.",
+            },
             {
                     "10.49  -  Buses and trains out, no more firefighters, and quicker",
                     "Firefighters and fire engines are gone. The fire stations stay (the paramedics are based there), and a fire now burns until there's nothing left of the building. The Up in Flames achievement is now for seeing five buildings catch fire in one game.",

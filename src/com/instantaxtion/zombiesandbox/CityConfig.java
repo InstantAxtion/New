@@ -140,7 +140,7 @@ final class CityConfig implements OptionSet {
     };
 
     /** Current index into VALUES for each option. */
-    final int[] v = {METROPOLIS, LARGE, 4, 2, 1, 0, 3, 0};
+    final int[] v = {METROPOLIS, LARGE, PEOPLE_ABOUT, 2, 1, 0, 3, 0};
     /** The map a new game starts on (since Classic went in 10.18). */
     static final int METROPOLIS = 8;
 
@@ -151,7 +151,9 @@ final class CityConfig implements OptionSet {
      */
     static boolean retired(int option, int value) {
         // (The real cities went in 10.28.)
-        if (option == OPT_PRESET) return value == 0 || value == 3 || value == 4 || value == 5 || value == 6 || value == 7 || value == 13 || RealCities.isReal(value);
+        // (Downtown, Village and Lakeside went in 10.50.)
+        if (option == OPT_PRESET) return value == 0 || value == 1 || value == 3 || value == 4 || value == 5 || value == 6 || value == 7
+                || value == 9 || value == 12 || value == 13 || RealCities.isReal(value);
         // (The number of zombies at the start isn't a choice any more: the game starts quiet.)
         if (option == OPT_ZOMBIES) return value != 0;
         if (option == OPT_SIZE) return value < LARGE;
@@ -498,6 +500,21 @@ final class CityConfig implements OptionSet {
     /** Relative weights of the park kinds for this map. */
     int[] parkMix() { return PARK_MIX[v[OPT_PRESET]]; }
 
+    /**
+     * (10.50) A fresh New Game screen leaves behind the choices no longer offered (a map or country taken off, the
+     * people about and outskirts settings that aren't choices now).
+     */
+    void dropRetired() {
+        if (retired(OPT_PRESET, v[OPT_PRESET])) v[OPT_PRESET] = METROPOLIS;
+        if (retired(OPT_COUNTRY, v[OPT_COUNTRY])) v[OPT_COUNTRY] = Country.USA;
+        v[OPT_CIVILIANS] = PEOPLE_ABOUT;
+        outskirts = 0;
+        normalize();
+    }
+
+    /** (10.50) The share of residents out and about when a game starts: no longer a setting. */
+    static final int PEOPLE_ABOUT = 3;
+
     void randomize(Random r) {
         for (int i = 0; i < v.length; i++) {
             // (A random city is a made-up one: not one of the real cities.)
@@ -506,7 +523,8 @@ final class CityConfig implements OptionSet {
         }
         v[OPT_SIZE] = LARGE;
         normalize();
-        if (v[OPT_CIVILIANS] == 0) v[OPT_CIVILIANS] = 4;
+        v[OPT_CIVILIANS] = PEOPLE_ABOUT;
+        outskirts = 0;
         keepCity = false;
     }
 

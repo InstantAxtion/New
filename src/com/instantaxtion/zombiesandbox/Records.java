@@ -12,9 +12,9 @@ final class Records {
             {"Back to Normal", "See the city start to recover after an outbreak."},
             {"Horde Breaker", "Kill 500 zombies in one game."},
             {"The Big One", "Watch a horde of 50 or more roam the city."},
-            {"Up in Flames", "See 5 buildings catch fire in one game."},
+            {"Long Haul", "Keep people alive through 20 minutes of outbreak."},
             {"Armor", "Get a tank on the streets."},
-            {"Medic!", "Medics patch up 10 hurt people in one game."},
+            {"Safe and Sound", "See 50 people leave the city by bus or train."},
             {"Evolution", "Let the infection reach stage 5."},
             {"Wrecking Ball", "Bring down 3 buildings in one game."},
             {"Road Rage", "Wreck 10 cars in one game."},
@@ -22,8 +22,8 @@ final class Records {
             {"Photographer", "Take a screenshot."},
             {"Veteran", "Play 10 games."},
     };
-    static final int CONTAINED = 0, HOLD = 1, VOLUNTEERS = 2, RECOVER = 3, HORDE_BREAKER = 4, BIG_ONE = 5, FIRE = 6,
-            ARMOR = 7, MEDIC = 8, EVOLUTION = 9, WRECKING = 10, ROAD_RAGE = 11, LAST_STAND = 12, PHOTO = 13, VETERAN = 14;
+    static final int CONTAINED = 0, HOLD = 1, VOLUNTEERS = 2, RECOVER = 3, HORDE_BREAKER = 4, BIG_ONE = 5, LONG_HAUL = 6,
+            ARMOR = 7, SAFE = 8, EVOLUTION = 9, WRECKING = 10, ROAD_RAGE = 11, LAST_STAND = 12, PHOTO = 13, VETERAN = 14;
     static final String[] RECORD_NAMES = {"Longest outbreak survived", "Most zombies killed in a game",
             "Biggest horde", "Most volunteers in a game", "Zombies killed, all games", "Games played"};
 
@@ -98,9 +98,9 @@ final class Records {
                 w.recovering,
                 w.zombiesKilled >= 500,
                 w.biggestHorde >= 50,
-                w.buildingsAlight >= 5,
+                w.outbreakTime >= 1200 && w.humans > 0,
                 w.tanksDeployed > 0,
-                w.healed >= 10,
+                w.fledByTransit >= 50,
                 w.mutation >= 5,
                 w.collapsedCount >= 3,
                 w.carsWrecked >= 10,

@@ -9,12 +9,10 @@ away from the middle of the screen as you pan, and the game plays in both portra
 
 ## Main menu
 
-- **New Game** opens the city setup, with a live preview of the city and these options: the map (Downtown,
-  Suburbs, Metropolis, Village, or the water maps: Seaside, River City and Lakeside, or Islands; or one of the
-  real cities: Los Angeles, Portland, Seattle, New York, Sydney, Tokyo or Paris), map size (Default, Large or
+- **New Game** opens the city setup, with a live preview of the city and these options: the map (Suburbs,
+  Metropolis, or the water maps Seaside and River City, or Islands), map size (Default, Large or
   Massive), the **country** (USA, Australia, Japan, France,
-  Mexico, Switzerland, Russia, China, Sweden, Norway or Canada), how many of
-  the residents are out and about (All by default) and how many reinforcements can
+  Mexico, Russia, Sweden, Norway or Canada) and how many reinforcements can
   be called in (Off, Low, Medium or High, each spelled out: waves of police backup, army squads, tanks
   and helicopter sorties). Police and soldiers on duty are set by the size of the city (about one officer
   per 80 residents plus two per station; a garrison at the base if the map has one). Each map decides its
@@ -47,9 +45,9 @@ on the phone, so the APK contains no audio files.
 
 - **Vehicles**: cruisers bring backup officers, army trucks bring reserve squads, and a helicopter
   gives limited air support. Vehicles drive on the roads and run over zombies. Cars take damage from
-  zombies, crashes, gunfire and blasts, smoke when damaged and break down (sometimes burning) at zero.
+  zombies, crashes, gunfire and blasts, smoke when damaged and break down at zero.
 - **Traffic**: people fleeing wave down passing cars and get driven to a safe zone. Zombies chase cars.
-- **Tanks** roll out for big hordes; **ambulances** fetch badly hurt people to the hospital.
+- **Tanks** roll out for big hordes.
 - **Air support takes time**: once approved, the crew is briefed and the aircraft readied (about a
   minute from a helipad in town, nearly two from outside the city). The helicopter spins up for
   16 seconds, climbs out slowly, slows for its approach, flies a wide orbit so the door gunner can
@@ -79,10 +77,9 @@ on the phone, so the APK contains no audio files.
   happens off screen. Bigger maps have more traffic.
 - **Pedestrians keep to the rules**: people out on errands walk on the pavement, cross at the zebra
   crossings by the junctions and wait at the kerb while a car goes by. Anyone running from zombies
-  crosses wherever they like. Walking routes are planned (A*) along pavements and crossings. Police,
-  soldiers and medics with no call to answer keep to the pavements too.
-- **Raiders, zombie dogs and evolution**: armed gangs rob and loot; dogs can rise as zombie dogs; a long
-  outbreak makes new zombies tougher.
+  crosses wherever they like. Walking routes are planned (A*) along pavements and crossings. Police
+  and soldiers with no call to answer keep to the pavements too.
+- **Evolution**: a long outbreak makes new zombies tougher.
 - **Survivors and recovery**: supply runs, armed patrols, people escaping in abandoned cars; after the
   outbreak, bodies are cleared, buildings repaired and safe zones closed.
 - **Railways**: trains run through most cities, with level crossings and a station.
@@ -104,9 +101,9 @@ on the phone, so the APK contains no audio files.
 - **Hiding**: civilians barricade themselves in buildings; zombies batter the doors down.
 - **Weapons and ammo**: some civilians are armed, dropped guns can be picked up, and ammo runs out
   (units resupply at the station or base). Anyone can shove a zombie away.
-- **Medics and the hospital** heal the injured. There is no cure: a bite is for good.
-- **Zombies** head for gunfire and explosions. Crawlers are hard to hit; screamers call the horde;
-  spitters lob acid from a distance; bloaters burst into infectious gas. Zombies see far in front but
+- **Healing**: the hurt patch themselves up at a pharmacy or go home to rest. There is no cure: a
+  bite is for good.
+- **Zombies** head for gunfire and explosions: shamblers, fast runners and big brutes. Zombies see far in front but
   only notice what is close behind, remember where they last saw someone and search there, and their
   moans draw in others.
 - **Everyday life**: civilians have homes and run errands (shops, the mall, church, school) while the
@@ -125,8 +122,7 @@ on the phone, so the APK contains no audio files.
   Highway patrol drives it, and in the USA sheriff's deputies patrol the country roads. Where the railway
   meets the highway it crosses on a bridge, with the traffic running underneath.
 - **Emergency services grow with the city**: more officers for every resident and more police stations on
-  Large and Massive maps; medics at the hospital and at the fire stations (which have no crews of their
-  own since 10.49).
+  Large and Massive maps.
 - **A sharp map up close**: zoomed in, the area on screen is drawn again in fine detail in the background
   and laid over the map picture.
 - **Loading**: cities are built (and saved games loaded) in the background behind a "Building the city"
@@ -147,7 +143,7 @@ on the phone, so the APK contains no audio files.
 - **Sieges**: the dead outside a building with people hiding find their way round to the door and batter
   it together. They leave empty and abandoned vehicles alone.
 - **Squad tactics**: units radio sightings to each other, soldiers move in a wedge, advance by bounding
-  overwatch and send flankers round the side, the wounded pull back to a medic, and police form a cordon
+  overwatch and send flankers round the side, the wounded pull back, and police form a cordon
   around a call.
 - **Checkpoints and roadblocks**: soldiers screen people entering a military safe zone for bites;
   police park cruisers across the roads around their safe zones.
@@ -157,8 +153,6 @@ on the phone, so the APK contains no audio files.
   magazine; they hold fire at long range unless the zombie is going for someone, and riflemen fire
   aimed single shots at range and bursts only up close. Frightened civilians with a gun are far worse
   shots.
-- **Gas and acid**: people steer round a bloater's gas cloud and spitters' acid instead of walking into
-  it, and anyone caught in it runs straight out.
 - **SWAT**: every city with a police station has a SWAT team (two on Large and Massive maps), called
   by its local name (SWAT, Tactical Response Group, SAT, RAID, GOPES, SOBR...). When a call turns
   into a horde (six or more of the dead) or officers go down, six officers in body armour with
@@ -200,20 +194,17 @@ counts), and wherever the dead gather the ground glows red. Labels go most impor
 - **Fights indoors**: the dead that break a door down come in and fight whoever is inside; the armed
   stand, the rest fall back and flee, and the bitten turn. Survivors win and board up, or the building falls.
 - **Survivor groups**: people who hold a building become a named group that fortifies it (boards,
-  sandbags, a wall), takes in passers-by, guards the door, sends out supply runs and draws raiders.
+  sandbags, a wall), takes in passers-by, guards the door, and sends out supply runs.
 - **After the war**: a surviving city recovers (clean-up, repairs, shops reopen) though the dead may come
   back; a fallen city gets one last army force to retake it.
 - **Ammunition runs out**: precincts and the base have a limited armoury, safe zones keep their own
   stock, and army supply trucks carry ammo to zones running low. Zombies can wreck a truck.
-- **Fire spreads**: burning cars and explosions set buildings alight; fires grow, jump to the building
-  next door, and burn until there's nothing left. People inside get out.
 - **Militias**: armed residents band together, take over a building, hold the street and shelter their
   neighbours inside.
 - **Stampedes**: panicking crowds knock people down. Families and groups following someone stay together.
-- **Zombies**: brutes charge, bowling people over and smashing barricades and cars; screamers that hear gunfire bring the
-  neighbourhood's dead with them; on big maps hordes travel the lanes between the town and the hamlets.
+- **Zombies**: brutes charge, shoving people aside and battering barricades and cars; on big maps hordes travel the lanes between the town and the hamlets.
 - **Turning**: nearly all of the bitten rise as ordinary zombies; about one in eleven comes back as a
-  runner, screamer, spitter or brute.
+  runner or (more rarely) a brute.
 - **Wildlife**: deer and foxes live in the countryside. Deer bolting out of the woods mean something is
   coming; a fox caught by the dead can come back as a zombie dog.
 - **Seeing what's going on**: 911 calls are small tags on the map ("911 12" for twelve of the dead, a blue
@@ -234,7 +225,7 @@ counts), and wherever the dead gather the ground glows red. Labels go most impor
 - **Supplies**: every building has food; survivors hiding inside eat it and have to go out foraging
   when it runs out. Supermarkets and gun stores stock ammo, pharmacies medicine.
 - **Functions**: gun stores arm frightened civilians; if the power station is overrun there is a
-  blackout (no sirens, no safe-zone broadcasts); if the hospital falls, nobody can be treated.
+  blackout (no sirens, no safe-zone broadcasts).
 - **Government**: every town has a city hall on its own square (fountain, flags and flower beds),
   and most have a courthouse with a walled jail behind it, an emergency call centre with a radio
   mast, and a public works depot full of orange trucks, each named in the country's own words
@@ -275,7 +266,7 @@ bandstand and flower beds. Every city has a name. Parks come as
 classic parks, playgrounds, soccer fields, courts, community gardens, skateparks and cemeteries.
 Courts and pitches are marked at their real proportions (basketball keys and three-point arcs,
 tennis service boxes, football penalty areas).
-Traffic drives the streets, pigeons flock in the parks, and explosions leave burning wrecks.
+Traffic drives the streets, pigeons flock in the parks, and explosions leave wrecks.
 
 **Water:** four maps are built on the water, and the dead can't swim.
 - **Seaside**: the town runs down to a seafront road and promenade, then a sandy beach with umbrellas,
@@ -433,6 +424,14 @@ mounting up, and lighter running with big populations.
 
 **More police than soldiers (10.35):** the army on the map is never more than two in five of the police force.
 
+**A leaner game, and a better screen (10.50):** gone are fires, the Auto cam, spitter and screamer zombies,
+raiders, medics, ambulances and hospital care, the Downtown, Village and Lakeside maps, Switzerland and China, and
+the people-about and Little nature settings (saved games and city codes that use them still load). Brutes are
+weaker and rarer; squads have grenadiers instead of combat medics; the hurt heal at a pharmacy or go home to rest. A new
+game starts in 3D; 2x/4x/8x really speed up on a phone; the tactical map stays open after a tap; with the stats
+folded the messages move up into their space; the minimap shows the part of the city round you on big maps, with
+helicopters and where they're heading; new spawn button pictures. New achievements: Long Haul and Safe and Sound.
+
 **No firefighters; leaving by bus and train; quicker (10.49):** firefighters and fire engines are gone (fire
 stations stay, with the paramedics based there; fires burn out on their own, and the Up in Flames achievement is
 now for five buildings alight in one game). Fleeing citizens now leave On foot, by Bus & train (evacuation buses
@@ -562,13 +561,11 @@ a Guard Headquarters (the National Guard comes sooner).
 - **Pick a tool** in the bottom bar, then **tap or drag on the city**:
   - Buttons with a dot open a **picker** with a short description of each choice: tap one, then tap
     the city. Tap the button again (or anywhere else) to close it.
-  - **People**: civilians (wander and run from zombies), medics (heal the hurt),
-    dogs and raiders.
+  - **People**: civilians (wander and run from zombies).
   - **Police**: cops (15-round pistol and three spare magazines), riot cops, K9 units and SWAT.
   - **Military**: soldiers (3-round bursts, grenades), commanders, snipers, gunners and the National
     Guard.
-  - **Zombies**: zombie (slow shambler), runner (fast, fragile), brute (huge, knocks people back),
-    screamer (calls the horde), zombie dog and spitter.
+  - **Zombies**: zombie (slow shambler), runner (fast, fragile), and brute (big and tough).
   - **Bomb**: explosion at the tap point.
   - **Erase**: removes people, zombies and corpses under your finger. Tap a safe zone's centre to
     close it.
@@ -577,12 +574,12 @@ a Guard Headquarters (the National Guard comes sooner).
 - Top buttons: **Pause/Play**, **Speed** (1x/2x/4x/8x), **Brush** (spawn 1/5/10 at a time),
   **View** (3D or bird's-eye), **Clear** (choose what to clear), **Menu**.
 - **Take control**: tap anyone with **Move**, then **Take control** on their card to play them yourself: a
-  civilian, cop, soldier, medic, raider, dog or zombie. Put your left thumb down anywhere
+  civilian, cop, soldier or zombie. Put your left thumb down anywhere
   on the left to move (push further to run; the living get out of breath), and hold the red button to
   act: armed people auto-aim at the zombie most in line with where they're facing, zombies bite, and
   anyone else shoves. **Stop controlling** (or picking another tool) hands them back to the AI.
   While you're in control, buttons above the red one offer what you can do there:
-  - **Get in / Get out**: drive any car, cruiser, truck, ambulance, bus or tank. The stick
+  - **Get in / Get out**: drive any car, cruiser, truck, bus or tank. The stick
     steers (pull back to reverse), the red button sounds the horn (or the siren, or fires the tank's
     cannon). Run zombies over; crashes damage the vehicle. Your group rides with you.
   - **Weapons**: walk over a gun, bat or axe to pick it up (a gun you already have gives you its ammo;
@@ -597,8 +594,8 @@ a Guard Headquarters (the National Guard comes sooner).
 - **Outbreak replay**: the **Replay** button on the Stats screen plays the whole game back on the city
   map: people in blue, the dead in green, and a red mark wherever someone turned. Drag the timeline to
   scrub. Saved games keep their replay.
-- Tap anyone with **Move** to follow them and see who they are. The **minimap** jumps the camera;
-  **Auto cam** follows the action. Take a **screenshot** from the pause menu.
+- Tap anyone with **Move** to follow them and see who they are. The **minimap** (the part of the city round you, on the
+  bigger maps) jumps the camera; the button in its corner opens the **tactical map**. Take a **screenshot** from the pause menu.
 - Zoom right in and roofs turn see-through, so you can see who is hiding inside.
 
 A person killed by a zombie gets up again as a zombie a few seconds later. Bites can also infect: an

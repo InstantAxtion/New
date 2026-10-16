@@ -69,11 +69,11 @@ final class Menu {
 
     private static final String[][] TUTORIAL_PAGES = {
             {"Welcome to Zombie City", "A sandbox: set up a city, start an outbreak and watch what happens. There are no missions. Play however you like."},
-            {"Spawning", "Pick a unit in the bottom bar and tap the city. Drag to paint a line of them, or use Brush (top) to spawn 5 or 10 at once. Buttons with a dot open a picker: People (civilians, medics, raiders), Police, Military (soldiers, snipers, gunners, the National Guard) and Zombies. Tap a choice, then tap the city."},
+            {"Spawning", "Pick a unit in the bottom bar and tap the city. Drag to paint a line of them, or use Brush (top) to spawn 5 or 10 at once. Buttons with a dot open a picker: People, Police, Military (soldiers, snipers, gunners, the National Guard) and Zombies. Tap a choice, then tap the city."},
             {"Looking around", "Pinch to zoom and drag with two fingers. With Move selected you can drag with one finger, and tap anyone to follow them with the camera. Press Take control on their card to play them yourself: left thumb to move (push further to run), the red button to shoot, bite or shove. Zoom right in to see through roofs. The View button switches between 3D and bird's-eye."},
             {"The city fights back", "Civilians call 911, the police respond by car, and the military is called in when it gets bad. The radio feed shows what they say. Tap a message to jump there."},
             {"Safe zones and hiding", "Police and soldiers pick a spot well away from the dead and put up a sandbag line; the zone opens once it's built. Its border grows as people arrive and guards join, follows the streets, and pulls back where the dead push. Others barricade themselves in buildings until zombies break the door down. Where and when zones go up is up to them."},
-            {"Medics, ammo and reserves", "Medics heal the hurt (a bite can't be treated). Ammo runs out, and units go back to the station or base to resupply. Backup, army squads and helicopter support are limited."},
+            {"Ammo and reserves", "Ammo runs out, and units go back to the station or base to resupply. Backup, army squads and helicopter support are limited."},
             {"Pausing and saving", "Menu (top right) pauses the game, saves it and shows the stats. The game also saves itself when you leave the app."},
     };
     private int tutorialPage;
@@ -164,7 +164,10 @@ final class Menu {
         screen = s;
         scroll = 0;
         if (s == NOTES) settings.markNotesRead();
-        if (s == SETUP && !config.keepCity) config.newSeed(rnd);
+        if (s == SETUP && !config.keepCity) {
+            config.newSeed(rnd);
+            config.dropRetired();
+        }
         if (s == TUTORIAL) tutorialPage = 0;
     }
 
@@ -514,7 +517,7 @@ final class Menu {
                 {"Zombies killed", String.valueOf(world.zombiesKilled)},
                 {"People turned", String.valueOf(world.turned)},
                 {"Civilians lost", String.valueOf(world.civiliansLost)},
-                {"People patched up by medics", String.valueOf(world.healed)},
+                {"Left by bus or train", String.valueOf(world.fledByTransit)},
                 {"911 calls", String.valueOf(world.dispatch.calls)},
                 {"Shots fired", String.valueOf(world.shotsFired)},
                 {"Volunteers joined (said no)", world.recruits + " (" + world.refused + ")"},
@@ -1119,22 +1122,16 @@ final class Menu {
             y += 16 * dp;
         }
         y += 12 * dp;
-        y = segRow(c, CityConfig.OPT_OUTSKIRTS, "Outskirts: the country round the town", lx, y, lw);
-        plain.setTextSize(12.5f * dp);
-        plain.setColor(0xFF9AA0A8);
-        y -= 6 * dp;
-        for (String line : wrap(config.outskirts == 1 ? "Little nature: open fields and farmland round the town, a few copses, no mountains."
-                : "Default: woods, hills and mountains, lakes and a nature park, small towns and farms along the lanes.", lw - 4 * dp, plain)) {
-            c.drawText(line, lx + 2 * dp, y + 10 * dp, plain);
-            y += 16 * dp;
-        }
-        y += 12 * dp;
         }
         int homes = previewResidents;
         boolean known = homes > 0 && config.code().equals(previewKey);
-        y = segRow(c, CityConfig.OPT_CIVILIANS, known
-                ? "People: how many of the " + homes + " residents are about (" + config.civilians(homes) + ")"
-                : "People: how many residents are about", lx, y, lw);
+        // (10.50) How many people are about isn't a choice: they come and go from their homes as they please.
+        plain.setTextSize(12.5f * dp);
+        plain.setColor(0xFF9AA0A8);
+        if (known) {
+            c.drawText(homes + " people live here.", lx + 2 * dp, y + 10 * dp, plain);
+            y += 16 * dp;
+        }
         // Police and the army are set by the size of the city.
         plain.setTextSize(12.5f * dp);
         plain.setColor(0xFF9AA0A8);

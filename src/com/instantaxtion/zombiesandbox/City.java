@@ -121,8 +121,6 @@ final class City {
         boolean fighting;
         /** A survivor group has made this building its home. */
         World.Holdout holdout;
-        /** On fire: the flames (null if not burning). */
-        World.Fire fire;
         /** People inside on an errand (shopping, at church, at school), and how many are on their way. */
         final List<Entity> visitors = new ArrayList<Entity>();
         int heading;

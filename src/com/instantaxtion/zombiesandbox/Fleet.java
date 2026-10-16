@@ -1164,24 +1164,6 @@ final class Fleet {
         return false;
     }
 
-    /** An ambulance leaves the hospital to fetch someone who is hurt. */
-    boolean sendAmbulance(City.Facility hospital, Entity patient) {
-        float[] start = city.nearestDrivable(hospital.x, hospital.y);
-        if (start == null) return false;
-        Vehicle v = make(AMBULANCE);
-        v.x = start[0];
-        v.y = start[1];
-        if (!route(v, patient.x, patient.y)) return false;
-        v.state = WAIT;
-        v.timer = 1;
-        v.homeX = start[0];
-        v.homeY = start[1];
-        v.patient = patient;
-        v.place = city.placeName(patient.x, patient.y);
-        vehicles.add(v);
-        return true;
-    }
-
     /** A car dropped into traffic by the player. */
     Vehicle placeCar(float x, float y) {
         float[] p = city.nearestDrivable(x, y);
@@ -1766,7 +1748,6 @@ final class Fleet {
             else if (v.type == TRAIN) done = updateTrain(v, dt);
             else if (v.broken || v.parked) done = updateWreck(v, dt);
             else if (v.type == TANK) done = updateTank(v, dt);
-            else if (v.type == AMBULANCE) done = updateAmbulance(v, dt);
             else if (v.type == CAR) done = v.evacStop >= 0 ? updateEvacBus(v, dt) : updateTraffic(v, dt);
             else if (v.patrol) done = updatePatrol(v, dt);
             else done = updateCar(v, dt);
@@ -1951,7 +1932,6 @@ final class Fleet {
 
     private void burn(Vehicle v) {
         v.burnt = true;
-        w.ignite(v.x, v.y, 30 + w.rnd.nextFloat() * 25);
         if (w.rnd.nextFloat() < 0.3f) w.blastLater(v.x, v.y, 45, 150, 2 + w.rnd.nextFloat() * 4);
     }
 
@@ -5192,71 +5172,4 @@ final class Fleet {
         return !moving || v.stuckTimer > 8;
     }
 
-    private boolean updateAmbulance(Vehicle v, float dt) {
-        if (v.state == WAIT) {
-            v.timer -= dt;
-            if (v.timer <= 0) {
-                v.state = DRIVE;
-                w.emit(Sfx.AMB_SIREN, v.x, v.y);
-            }
-            return false;
-        }
-        Entity p = v.patient;
-        if (v.state == DRIVE || v.state == LOAD) {
-            boolean gone = p == null || (p.dead && !v.riders.contains(p)) || p.isZombie();
-            if (!v.riders.isEmpty()) {
-                // Patient on board: back to the hospital.
-                v.state = RETURN;
-                w.emit(Sfx.AMB_SIREN, v.x, v.y);
-                return !route(v, v.homeX, v.homeY);
-            }
-            if (gone) {
-                v.patient = null;
-                v.state = RETURN;
-                return !route(v, v.homeX, v.homeY);
-            }
-            float d = (float) Math.hypot(p.x - v.x, p.y - v.y);
-            if (v.state == DRIVE) {
-                v.stuckTimer += dt;
-                if (v.soundCd <= 0) {
-                    v.soundCd = 3.5f;
-                    w.emit(Sfx.AMB_SIREN, v.x, v.y);
-                }
-                boolean moving = driveStep(v, dt, 90, carAhead(v) ? 0.5f : 1f);
-                if (moving) hit(v, w.runOver(v.x, v.y, 8, v.speed, v.angle));
-                if (d < 70 || !moving || v.stuckTimer > 4) {
-                    v.state = LOAD;
-                    v.timer = 12;
-                    v.waitTimer = 12;
-                    w.callRide(p, v);
-                }
-            } else {
-                v.speed = Math.max(0, v.speed - dt * 150);
-                v.timer -= dt;
-                if (v.timer <= 0 || w.countZombiesNear(v.x, v.y, 30) >= 2) {
-                    if (p.ride == v) p.ride = null;
-                    v.patient = null;
-                    v.state = RETURN;
-                    return !route(v, v.homeX, v.homeY);
-                }
-            }
-            return false;
-        }
-        v.stuckTimer += dt;
-        boolean moving = driveStep(v, dt, 90, carAhead(v) ? 0.5f : 1f);
-        if (moving) hit(v, w.runOver(v.x, v.y, 8, v.speed, v.angle));
-        if (!moving || v.stuckTimer > 6) {
-            // At the hospital: the patient goes inside to be treated.
-            for (int i = 0; i < v.riders.size(); i++) {
-                Entity e = v.riders.get(i);
-                if (w.release(e, v.x, v.y)) {
-                    e.task = Dispatch.T_HEAL;
-                    e.hp = Math.max(e.hp, e.maxHp * 0.5f);
-                }
-            }
-            v.riders.clear();
-            return true;
-        }
-        return false;
-    }
 }

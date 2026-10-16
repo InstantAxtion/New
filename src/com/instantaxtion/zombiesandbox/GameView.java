@@ -3760,7 +3760,9 @@ final class GameView extends View implements Menu.Host {
         else if (v.broken) body = City.darken(body, 0.65f);
         fill.setColor(body);
         oval.set(-hl, -hw, hl, hw);
-        if (model == Fleet.M_BEETLE) c.drawRoundRect(oval, hw, hw * 0.9f, fill);
+        boolean shell = shellModel(v);
+        if (shell) carShell(c, hl, hw, hw * (v.model == Fleet.M_SUV || v.model == Fleet.M_PICKUP ? 0.38f : 0.55f), hw * 0.32f);
+        else if (model == Fleet.M_BEETLE) c.drawRoundRect(oval, hw, hw * 0.9f, fill);
         else c.drawRoundRect(oval, model == Fleet.M_KEI || model == Fleet.M_BUS || model == Fleet.M_VAN ? 1.2f : 2.5f,
                 model == Fleet.M_KEI || model == Fleet.M_BUS || model == Fleet.M_VAN ? 1.2f : 2.5f, fill);
         if (speck) {
@@ -3778,7 +3780,7 @@ final class GameView extends View implements Menu.Host {
         }
         if (civ) {
             drawCarBody(c, v, body, hl, hw);
-            if (!v.parked) {
+            if (!v.parked && !shell) {
                 fill.setColor(0xFFFFF4C0);
                 c.drawCircle(hl - 0.8f, -hw + 1.3f, 0.8f, fill);
                 c.drawCircle(hl - 0.8f, hw - 1.3f, 0.8f, fill);
@@ -3859,11 +3861,15 @@ final class GameView extends View implements Menu.Host {
             c.drawRect(-hl, hw - 1, hl * 0.5f, hw, fill);
             c.drawRect(-3.5f, -0.8f, 0.5f, 0.8f, fill);
             c.drawRect(-2.3f, -2f, -0.7f, 2f, fill);
-            if (v.lightsOn()) {
-                boolean blink = ((int) (v.anim * 8)) % 2 == 0;
-                fill.setColor(blink ? 0xFFFF3A30 : 0xFF3A7BFF);
-                c.drawRect(hl * 0.42f, -hw + 1, hl * 0.52f, hw - 1, fill);
-            }
+            // (10.44) The cab's roof, its light bar, and flashers on the back corners of the box.
+            fill.setColor(0xFFE4E4E4);
+            c.drawRect(hl * 0.5f, -hw + 0.4f, hl * 0.55f, hw - 0.4f, fill);
+            lightBar(c, hl * 0.44f, hw, v.lightsOn(), v.anim);
+            boolean blink = ((int) (v.anim * 8)) % 2 == 0;
+            fill.setColor(v.lightsOn() && !blink ? 0xFFFF4A3A : 0xFF8A2A24);
+            c.drawRect(-hl + 0.2f, -hw + 0.2f, -hl + 1.2f, -hw + 1.2f, fill);
+            fill.setColor(v.lightsOn() && blink ? 0xFFFF4A3A : 0xFF8A2A24);
+            c.drawRect(-hl + 0.2f, hw - 1.2f, -hl + 1.2f, hw - 0.2f, fill);
         } else if (engine) {
             fill.setColor(0xFF1E2A33);
             c.drawRect(hl * 0.5f, -hw + 1, hl * 0.75f, hw - 1, fill);
@@ -3872,50 +3878,53 @@ final class GameView extends View implements Menu.Host {
             c.drawRect(-hl + 1.5f, -1.6f, hl * 0.4f, -0.9f, fill);
             c.drawRect(-hl + 1.5f, 0.9f, hl * 0.4f, 1.6f, fill);
             for (float x = -hl + 2.5f; x < hl * 0.4f; x += 2.2f) c.drawRect(x, -1.6f, x + 0.5f, 1.6f, fill);
-            if (v.lightsOn()) {
-                boolean blink = ((int) (v.anim * 8)) % 2 == 0;
-                fill.setColor(blink ? 0xFFFF3A30 : 0xFFFFD27A);
-                c.drawRect(hl * 0.42f, -hw + 1, hl * 0.5f, hw - 1, fill);
-            }
+            // (10.44) The crew cab: its roof, a seam where the body starts, the light bar, and a white band.
+            fill.setColor(City.darken(body, 0.75f));
+            c.drawRect(hl * 0.4f, -hw + 0.5f, hl * 0.43f, hw - 0.5f, fill);
+            fill.setColor(0xFFEDEDED);
+            c.drawRect(-hl + 0.6f, -hw + 0.1f, hl * 0.4f, -hw + 0.7f, fill);
+            c.drawRect(-hl + 0.6f, hw - 0.7f, hl * 0.4f, hw - 0.1f, fill);
+            lightBar(c, hl * 0.47f, hw, v.lightsOn(), v.anim);
         } else {
+            // (10.44) A patrol car: a saloon in its force's colours, the doors marked out, and the light bar across
+            // the roof just behind the windscreen.
             Country land = world.city.country;
             boolean city = v.agency == 0;
-            if (!city) {
-                // Highway patrol and sheriff's cars: their own colours, a stripe down each side.
-                fill.setColor(v.broken ? 0xFF9A9A9A : v.agency == 1 ? land.hpDoor : v.agency == 3 ? 0xFFD8C898 : v.agency == 4 ? 0xFF15171A : land.ruralDoor);
-                c.drawRect(-hl + 1, -hw, hl - 1, -hw + 1f, fill);
-                c.drawRect(-hl + 1, hw - 1f, hl - 1, hw, fill);
-            }
-            if (city && land.cruiserRoof != 0) {
-                // Japanese patrol cars: white roof and doors over a black body.
-                fill.setColor(v.broken ? 0xFFA0A0A0 : land.cruiserRoof);
-                c.drawRect(-hl * 0.55f, -hw + 0.6f, hl * 0.45f, hw - 0.6f, fill);
-            }
+            int door = v.broken ? 0xFFA0A0A0 : v.agency == 1 ? land.hpDoor : v.agency == 2 ? land.ruralDoor : v.agency == 3 ? 0xFFD8C898
+                    : v.agency == 4 ? 0xFF15171A : land.cruiserDoor;
             if (city && land.cruiserChecks) {
                 // A chequered band down each side.
                 for (int q = 0; q < 6; q++) {
-                    float x0 = -hl + 1 + q * (hl * 2 - 2) / 6f, x1 = x0 + (hl * 2 - 2) / 6f;
+                    float x0 = -hl + 1.5f + q * (hl * 2 - 3) / 6f, x1 = x0 + (hl * 2 - 3) / 6f;
                     fill.setColor(v.broken ? 0xFF9A9A9A : q % 2 == 0 ? land.checkA : land.checkB);
-                    c.drawRect(x0, -hw, x1, -hw + 1.3f, fill);
+                    c.drawRect(x0, -hw + 0.15f, x1, -hw + 1.3f, fill);
                     fill.setColor(v.broken ? 0xFF9A9A9A : q % 2 == 0 ? land.checkB : land.checkA);
-                    c.drawRect(x0, hw - 1.3f, x1, hw, fill);
+                    c.drawRect(x0, hw - 1.3f, x1, hw - 0.15f, fill);
                 }
+            } else {
+                // The doors in the force's second colour (a stripe the length of the car, out on the highway).
+                float d0 = city ? -hl * 0.5f : -hl + 1.2f, d1 = city ? hl * 0.3f : hl - 1.5f;
+                fill.setColor(door);
+                c.drawRect(d0, -hw + 0.15f, d1, -hw + 1.4f, fill);
+                c.drawRect(d0, hw - 1.4f, d1, hw - 0.15f, fill);
             }
-            fill.setColor(v.broken ? 0xFFA0A0A0 : v.agency == 1 ? land.hpDoor : v.agency == 2 ? land.ruralDoor : v.agency == 3 ? 0xFFD8C898 : v.agency == 4 ? 0xFF15171A : land.cruiserDoor);
-            c.drawRect(-3f, -hw, 2f, -hw + 1.3f, fill);
-            c.drawRect(-3f, hw - 1.3f, 2f, hw, fill);
-            fill.setColor(0xFF1E2A33);
-            c.drawRect(2.5f, -hw + 1, 5f, hw - 1, fill);
-            if (!v.broken) {
-                // The light bar: flashing on a call, dark on a quiet patrol.
-                boolean on = v.lightsOn(), blink = ((int) (v.anim * 8)) % 2 == 0;
-                fill.setColor(!on ? 0xFF5A1A18 : blink ? 0xFFFF3A30 : 0xFF5A1A18);
-                c.drawRect(-1f, -hw + 1, 0.5f, 0, fill);
-                fill.setColor(!on ? 0xFF1A2A5A : blink ? 0xFF3A5AA0 : 0xFF3A7BFF);
-                c.drawRect(-1f, 0, 0.5f, hw - 1, fill);
+            int roof = city && land.cruiserRoof != 0 ? (v.broken ? 0xFFA0A0A0 : land.cruiserRoof) : body;
+            cabin(c, hl, hw, roof, 0.42f, 0.14f, -0.46f, -0.68f);
+            if (city && land.cruiserRoof != 0) {
+                fill.setColor(roof);
+                c.drawRect(-hl * 0.46f + 0.3f, -hw + 1.6f, hl * 0.14f - 0.3f, hw - 1.6f, fill);
             }
+            // The unit number on the roof, for the helicopter.
+            fill.setColor(City.darken(roof, 0.55f));
+            c.drawRect(-hl * 0.32f, -0.9f, -hl * 0.3f + 0.5f, 0.9f, fill);
+            c.drawRect(-hl * 0.22f, -0.9f, -hl * 0.2f + 0.5f, 0.9f, fill);
+            // A push bar on the front.
+            fill.setColor(0xFF1A1B1E);
+            c.drawRect(hl - 0.1f, -hw * 0.55f, hl + 0.7f, hw * 0.55f, fill);
+            if (!v.broken) lightBar(c, hl * 0.06f, hw, v.lightsOn(), v.anim);
         }
-        if (!v.broken) {
+        if (!v.broken && shell) lamps(c, hl, hw, !v.parked, !v.parked && v.speed < 25);
+        else if (!v.broken) {
             // Brake lights: bright red when slowing or stopped in traffic.
             boolean braking = !v.parked && v.speed < 25;
             fill.setColor(braking ? 0xFFFF2A20 : 0xFF7A1410);
@@ -3941,7 +3950,7 @@ final class GameView extends View implements Menu.Host {
             stroke.setColor(0x55000000);
             stroke.setStrokeWidth(0.45f);
             oval.set(-hl, -hw, hl, hw);
-            c.drawRoundRect(oval, 2.5f, 2.5f, stroke);
+            if (!shell) c.drawRoundRect(oval, 2.5f, 2.5f, stroke);
             // Wing mirrors.
             fill.setColor(City.darken(civ ? v.color : 0xFF333333, 0.8f));
             c.drawRect(hl * 0.35f, -hw - 1f, hl * 0.35f + 1.2f, -hw, fill);
@@ -3963,6 +3972,109 @@ final class GameView extends View implements Menu.Host {
         c.restore();
     }
 
+    private final Path carPath = new Path();
+
+    /** (10.44) Car-shaped models (not the boxes: vans, buses, kei cars, Beetles), and patrol cars. */
+    private static boolean shellModel(Fleet.Vehicle v) {
+        if (v.type == Fleet.CRUISER) return v.kind != Fleet.K_RIOT_VAN && v.kind != Fleet.K_BIKE;
+        if (v.type != Fleet.CAR) return false;
+        int m = v.model;
+        return m == Fleet.M_SEDAN || m == Fleet.M_TAXI || m == Fleet.M_HATCH || m == Fleet.M_SUV || m == Fleet.M_PICKUP;
+    }
+
+    /** (10.44) A car's outline seen from above: a rounded nose, squarer tail, slightly pinched at the cabin. */
+    private void carShell(Canvas c, float hl, float hw, float nose, float tail) {
+        Path pa = carPath;
+        pa.reset();
+        float pinch = hw * 0.06f;
+        pa.moveTo(-hl + tail, -hw);
+        pa.lineTo(-hl * 0.1f, -hw + pinch);
+        pa.lineTo(hl - nose, -hw);
+        pa.quadTo(hl, -hw, hl, -hw + nose);
+        pa.lineTo(hl, hw - nose);
+        pa.quadTo(hl, hw, hl - nose, hw);
+        pa.lineTo(-hl * 0.1f, hw - pinch);
+        pa.lineTo(-hl + tail, hw);
+        pa.quadTo(-hl, hw, -hl, hw - tail);
+        pa.lineTo(-hl, -hw + tail);
+        pa.quadTo(-hl, -hw, -hl + tail, -hw);
+        pa.close();
+        c.drawPath(pa, fill);
+    }
+
+    /** A pane of glass seen from above: wider at one end (w0, at x0) than the other (w1, at x1). */
+    private void pane(Canvas c, float x0, float w0, float x1, float w1) {
+        Path pa = carPath;
+        pa.reset();
+        pa.moveTo(x0, -w0);
+        pa.lineTo(x1, -w1);
+        pa.lineTo(x1, w1);
+        pa.lineTo(x0, w0);
+        pa.close();
+        c.drawPath(pa, fill);
+    }
+
+    /**
+     * (10.44) The cabin of a car from above, as fractions of its half-length (front +1, back -1): the windscreen
+     * from wsF back to wsR, the roof from there to rwF, the rear window back to rwR, with the side windows along
+     * it, a glint on the glass and the bonnet's crease.
+     */
+    private void cabin(Canvas c, float hl, float hw, int body, float wsF, float wsR, float rwF, float rwR) {
+        int glass = 0xFF1C2630;
+        float in = hw - 0.9f, top = hw - 1.6f;
+        fill.setColor(glass);
+        pane(c, hl * wsF, in, hl * wsR, top);
+        if (rwR < rwF) pane(c, hl * rwR, in - 0.2f, hl * rwF, top);
+        // Side windows.
+        fill.setColor(0xFF2A3540);
+        c.drawRect(hl * rwF, -in, hl * wsR, -top + 0.25f, fill);
+        c.drawRect(hl * rwF, top - 0.25f, hl * wsR, in, fill);
+        // The roof, catching the light.
+        fill.setColor(City.lighten(body, 0.12f));
+        c.drawRect(hl * rwF + 0.3f, -top, hl * wsR - 0.3f, top, fill);
+        fill.setColor(0x26FFFFFF);
+        c.drawRect(hl * rwF + 0.6f, -top + 0.4f, hl * wsR - 0.6f, -top * 0.2f, fill);
+        // A glint across the windscreen.
+        stroke.setColor(0x70FFFFFF);
+        stroke.setStrokeWidth(0.45f);
+        c.drawLine(hl * (wsF * 0.7f + wsR * 0.3f), -in + 0.6f, hl * (wsF * 0.35f + wsR * 0.65f), -top * 0.15f, stroke);
+        // The bonnet: a crease down the middle.
+        stroke.setColor(City.darken(body, 0.82f));
+        stroke.setStrokeWidth(0.35f);
+        c.drawLine(hl * wsF + 0.6f, 0, hl - 1.2f, 0, stroke);
+    }
+
+    /** (10.44) Head and tail lamps, set into the corners of a car's shell. */
+    private void lamps(Canvas c, float hl, float hw, boolean lit, boolean braking) {
+        fill.setColor(lit ? 0xFFFFF6D0 : 0xFFD8D4C4);
+        c.drawRect(hl - 1.1f, -hw + 0.9f, hl - 0.3f, -hw + 2.3f, fill);
+        c.drawRect(hl - 1.1f, hw - 2.3f, hl - 0.3f, hw - 0.9f, fill);
+        fill.setColor(braking ? 0xFFFF2A20 : 0xFF8A1A14);
+        c.drawRect(-hl + 0.3f, -hw + 0.8f, -hl + 1.0f, -hw + 2.4f, fill);
+        c.drawRect(-hl + 0.3f, hw - 2.4f, -hl + 1.0f, hw - 0.8f, fill);
+        if (braking) {
+            fill.setColor(0x40FF2A20);
+            c.drawCircle(-hl - 1, -hw + 1.6f, 2f, fill);
+            c.drawCircle(-hl - 1, hw - 1.6f, 2f, fill);
+        }
+    }
+
+    /** (10.44) A patrol car's light bar across the roof: red one side, blue the other, flashing in turn. */
+    private void lightBar(Canvas c, float x, float hw, boolean on, float anim) {
+        boolean blink = ((int) (anim * 8)) % 2 == 0;
+        float y = hw - 1.1f;
+        fill.setColor(0xFF2A2C30);
+        c.drawRect(x - 0.95f, -y, x + 0.95f, y, fill);
+        fill.setColor(!on ? 0xFF6A2420 : blink ? 0xFFFF4A3A : 0xFF7A2A24);
+        c.drawRect(x - 0.7f, -y + 0.25f, x + 0.7f, -0.3f, fill);
+        fill.setColor(!on ? 0xFF22346A : !blink ? 0xFF4A8AFF : 0xFF2A3C7A);
+        c.drawRect(x - 0.7f, 0.3f, x + 0.7f, y - 0.25f, fill);
+        if (on) {
+            fill.setColor(blink ? 0x55FF4A3A : 0x554A8AFF);
+            c.drawCircle(x, blink ? -y * 0.5f : y * 0.5f, 2.6f, fill);
+        }
+    }
+
     /**
      * The top of an everyday car, by model: windscreens, roof and the things that set it apart (a pickup's
      * bed, a taxi's roof sign, a bus's roof hatches, a Beetle's round wings).
@@ -3972,29 +4084,23 @@ final class GameView extends View implements Menu.Host {
         int roofCol = City.lighten(body, 0.15f);
         switch (v.model) {
             case Fleet.M_PICKUP:
-                fill.setColor(glass);
-                c.drawRect(hl * 0.3f, -hw + 1, hl * 0.55f, hw - 1, fill);
-                fill.setColor(roofCol);
-                c.drawRect(-hl * 0.05f, -hw + 1.3f, hl * 0.3f, hw - 1.3f, fill);
-                fill.setColor(glass);
-                c.drawRect(-hl * 0.12f, -hw + 1.2f, -hl * 0.05f, hw - 1.2f, fill);
+                cabin(c, hl, hw, body, 0.55f, 0.3f, -0.02f, -0.12f);
                 // The open bed, with something tied down in it now and then.
-                fill.setColor(City.darken(body, 0.6f));
-                c.drawRect(-hl + 0.9f, -hw + 0.9f, -hl * 0.18f, hw - 0.9f, fill);
+                fill.setColor(City.darken(body, 0.55f));
+                c.drawRect(-hl + 1.0f, -hw + 1.0f, -hl * 0.2f, hw - 1.0f, fill);
+                fill.setColor(City.darken(body, 0.42f));
+                for (float x = -hl + 2.2f; x < -hl * 0.25f; x += 2.2f) c.drawRect(x, -hw + 1.2f, x + 0.35f, hw - 1.2f, fill);
                 if ((v.number & 1) == 0) {
                     fill.setColor(0xFF8A6A48);
-                    c.drawRect(-hl * 0.8f, -hw * 0.45f, -hl * 0.4f, hw * 0.35f, fill);
+                    c.drawRect(-hl * 0.8f, -hw * 0.45f, -hl * 0.42f, hw * 0.35f, fill);
                 }
                 break;
             case Fleet.M_SUV:
-                fill.setColor(glass);
-                c.drawRect(hl * 0.25f, -hw + 1, hl * 0.52f, hw - 1, fill);
-                c.drawRect(-hl * 0.85f, -hw + 1, -hl * 0.68f, hw - 1, fill);
-                fill.setColor(roofCol);
-                c.drawRect(-hl * 0.66f, -hw + 1.4f, hl * 0.23f, hw - 1.4f, fill);
-                fill.setColor(0xFF2A2A2E);
-                c.drawRect(-hl * 0.6f, -hw + 1.3f, hl * 0.18f, -hw + 1.8f, fill);
-                c.drawRect(-hl * 0.6f, hw - 1.8f, hl * 0.18f, hw - 1.3f, fill);
+                cabin(c, hl, hw, body, 0.5f, 0.24f, -0.7f, -0.88f);
+                // Roof rails.
+                fill.setColor(0xFF2A2C30);
+                c.drawRect(-hl * 0.62f, -hw + 1.7f, hl * 0.16f, -hw + 2.2f, fill);
+                c.drawRect(-hl * 0.62f, hw - 2.2f, hl * 0.16f, hw - 1.7f, fill);
                 break;
             case Fleet.M_KEI:
                 // A tall little box: the windscreen right at the front.
@@ -4006,11 +4112,7 @@ final class GameView extends View implements Menu.Host {
                 c.drawRect(-hl * 0.97f, -hw + 1f, -hl * 0.86f, hw - 1f, fill);
                 break;
             case Fleet.M_HATCH:
-                fill.setColor(glass);
-                c.drawRect(hl * 0.18f, -hw + 1, hl * 0.48f, hw - 1, fill);
-                c.drawRect(-hl * 0.9f, -hw + 1.1f, -hl * 0.72f, hw - 1.1f, fill);
-                fill.setColor(roofCol);
-                c.drawRect(-hl * 0.7f, -hw + 1.4f, hl * 0.16f, hw - 1.4f, fill);
+                cabin(c, hl, hw, body, 0.46f, 0.16f, -0.66f, -0.88f);
                 break;
             case Fleet.M_VAN:
                 fill.setColor(glass);
@@ -4059,11 +4161,7 @@ final class GameView extends View implements Menu.Host {
                 c.drawOval(oval, fill);
                 break;
             default:
-                fill.setColor(glass);
-                c.drawRect(1.5f, -hw + 1, 4.5f, hw - 1, fill);
-                c.drawRect(-5f, -hw + 1, -3f, hw - 1, fill);
-                fill.setColor(roofCol);
-                c.drawRect(-2.5f, -hw + 1.5f, 1f, hw - 1.5f, fill);
+                cabin(c, hl, hw, body, 0.42f, 0.12f, -0.44f, -0.66f);
                 if (v.model == Fleet.M_TAXI) {
                     // The roof sign (and the chequered stripe on American and Australian cabs).
                     fill.setColor(world.city.country.id == Country.MEXICO ? 0xFFF2F2F2 : 0xFFF2E8A0);
@@ -4387,6 +4485,16 @@ final class GameView extends View implements Menu.Host {
         c.drawRoundRect(oval, 1.2f, 1.2f, fill);
         fill.setColor(world.city.country.cruiserDoor);
         c.drawRect(-3.5f, -1.6f, -1.5f, 1.6f, fill);
+        // (10.44) Handlebars with their mirrors, a windscreen, and the panniers either side of the back wheel.
+        fill.setColor(0xFF1A1B1E);
+        c.drawRect(2.2f, -2.4f, 2.8f, 2.4f, fill);
+        c.drawRect(2.4f, -2.9f, 3.0f, -2.3f, fill);
+        c.drawRect(2.4f, 2.3f, 3.0f, 2.9f, fill);
+        fill.setColor(0x99A8C8E0);
+        c.drawRect(3.0f, -1.3f, 3.6f, 1.3f, fill);
+        fill.setColor(v.broken ? 0xFF6A6A6A : 0xFFE8E8E8);
+        c.drawRect(-4.6f, -2.6f, -2.4f, -1.5f, fill);
+        c.drawRect(-4.6f, 1.5f, -2.4f, 2.6f, fill);
         if (!v.crew.isEmpty() && !v.parked) {
             fill.setColor(0xFF23408E);
             c.drawCircle(-0.5f, 0, 1.9f, fill);

@@ -8782,31 +8782,39 @@ final class City {
                 byte t = tiles[y * w + x];
                 if (t != SIDEWALK && t != PLAZA) continue;
                 float fx = x * T, fy = y * T;
-                if (tiles[y * w + x + 1] == ROAD) {
+                if (kerbRoad(y * w + x + 1)) {
                     p.setColor(0x40000000);
                     c.drawRect(fx + T, fy, fx + T + 1.2f, fy + T, p);
                     p.setColor(0x30FFFFFF);
                     c.drawRect(fx + T - 1, fy, fx + T, fy + T, p);
                 }
-                if (tiles[y * w + x - 1] == ROAD) {
+                if (kerbRoad(y * w + x - 1)) {
                     p.setColor(0x28000000);
                     c.drawRect(fx - 1, fy, fx, fy + T, p);
                     p.setColor(0x30FFFFFF);
                     c.drawRect(fx, fy, fx + 1, fy + T, p);
                 }
-                if (tiles[(y + 1) * w + x] == ROAD) {
+                if (kerbRoad((y + 1) * w + x)) {
                     p.setColor(0x40000000);
                     c.drawRect(fx, fy + T, fx + T, fy + T + 1.2f, p);
                     p.setColor(0x30FFFFFF);
                     c.drawRect(fx, fy + T - 1, fx + T, fy + T, p);
                 }
-                if (tiles[(y - 1) * w + x] == ROAD) {
+                if (kerbRoad((y - 1) * w + x)) {
                     p.setColor(0x28000000);
                     c.drawRect(fx, fy - 1, fx + T, fy, p);
                     p.setColor(0x30FFFFFF);
                     c.drawRect(fx, fy, fx + T, fy + 1, p);
                 }
             }
+    }
+
+    /**
+     * Road a kerb is drawn against: not a curved street's tiles, which are drawn as pavement under the street's
+     * own smooth kerb (10.44: straight kerb lines showed through across the pavement where it joins the grid).
+     */
+    private boolean kerbRoad(int i) {
+        return tiles[i] == ROAD && (curveTile == null || !curveTile[i]);
     }
 
     /** Weathering on roofs: grime speckles, streaks, a lit parapet on the sunny edges and a dark one opposite. */

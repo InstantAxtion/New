@@ -2,11 +2,18 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.43";
-    static final int VERSION_CODE = 81;
+    static final String VERSION = "10.44";
+    static final int VERSION_CODE = 82;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.44  -  How the vehicles look",
+                    "Cars are drawn car-shaped from above: a rounded nose and squarer tail, a raked windscreen and rear window, side windows, a roof that catches the light, a crease down the bonnet, and the lamps set into the corners. Saloons, hatchbacks, SUVs (with roof rails), pickups (with a ribbed bed) and taxis each have their own proportions.",
+                    "Patrol cars are proper saloons in their force's colours, the doors marked out (a stripe the length of the car on highway patrol and sheriff's cars), a push bar on the front and the light bar across the roof behind the windscreen, red and blue flashing in turn.",
+                    "Ambulances get a light bar on the cab and flashers on the back of the box; fire engines a crew cab with its light bar and a white band down the sides; police motorbikes handlebars, a screen and panniers.",
+                    "Where a curved street meets a straight one, the straight pavement's kerb no longer shows through as a thin grey line across the curve.",
+            },
             {
                     "10.43  -  Stations clear of the road, no gaps",
                     "In the bigger country towns, the second cross street was laid straight through the town's police and fire stations: now the stations are built between the cross streets, facing the main street, with nothing running through them (in new cities).",

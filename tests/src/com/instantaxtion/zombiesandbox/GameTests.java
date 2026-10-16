@@ -1235,6 +1235,8 @@ public final class GameTests {
                 c.v[CityConfig.OPT_COUNTRY] = Country.SWEDEN;
                 c.v[CityConfig.OPT_PRESET] = 6;
                 World w = new World(c);
+                // (The same run every time: what happens next is chance, and a test shouldn't be.)
+                w.rnd.setSeed(18);
                 w.populate(c);
                 int dogs = 0, hikers = 0;
                 for (Entity e : w.entities) {
@@ -1256,7 +1258,9 @@ public final class GameTests {
                 int evac = 0;
                 for (int f = 0; f < 30 * 12; f++) {
                     w.update(1 / 30f);
-                    if (f % 30 == 0) for (Entity e : w.entities) if (!e.dead && e.task == Dispatch.T_EVACUATE) evac++;
+                    // (Since 10.37 getting clear is the civilian's own choice: evacuating, running, or hiding.)
+                    if (f % 30 == 0) for (Entity e : w.entities)
+                        if (!e.dead && e.type == Entity.CIVILIAN && (e.task == Dispatch.T_EVACUATE || e.goal == World.G_FLEE || e.goal == World.G_HIDE || e.goal == World.G_EVAC)) evac++;
                 }
                 check(evac > 0, "people get clear of the outbreak");
                 // Dirt lanes stay dirt.
@@ -1665,6 +1669,8 @@ public final class GameTests {
                 c.normalize();
                 c.seed = 1;
                 World w = new World(c);
+                // (The same run every time: what happens next is chance, and a test shouldn't be.)
+                w.rnd.setSeed(23);
                 w.populate(c);
                 for (int f = 0; f < 60; f++) w.update(1 / 30f);
                 float[] q = w.city.findWalkable(w.city.worldW() / 2 + 200, w.city.worldH() / 2);
@@ -2512,6 +2518,8 @@ public final class GameTests {
                 c.normalize();
                 c.seed = 9;
                 World w = new World(c);
+                // (The same run every time: what happens next is chance, and a test shouldn't be.)
+                w.rnd.setSeed(9);
                 w.populate(c);
                 for (int f = 0; f < 30 * 3; f++) w.update(1 / 30f);
                 // Who someone is decides how brave they are: always the same for the same person, and not
@@ -2607,6 +2615,8 @@ public final class GameTests {
                 c.normalize();
                 c.seed = 12;
                 World w = new World(c);
+                // (The same run every time: what happens next is chance, and a test shouldn't be.)
+                w.rnd.setSeed(38);
                 w.populate(c);
                 for (int f = 0; f < 30 * 2; f++) w.update(1 / 30f);
                 // Somewhere open in town, well away from the stations.

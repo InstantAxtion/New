@@ -11294,7 +11294,7 @@ final class World {
     /** Those who've fled the city (out of the world until they come home), and how it's gone. */
     final ArrayList<Entity> away = new ArrayList<Entity>();
     boolean exodusStarted;
-    int fled, cameHome, exodusSaid;
+    int fled, cameHome, exodusSaid, fledByCar;
     private float exodusTick;
     /** Where the roads (or the causeway) leave the map: the ways out, and back in. */
     private float[][] exits;
@@ -11317,11 +11317,14 @@ final class World {
             for (int i = 0, m = entities.size(); i < m; i++) {
                 Entity e = entities.get(i);
                 if (!e.dead && e.task == Dispatch.T_LEAVE) {
+                    if (e.exitCar != null && e.exitCar.exodusClaim == e) e.exitCar.exodusClaim = null;
+                    e.exitCar = null;
                     e.task = e.home != null ? Dispatch.T_HOMECOMING : Dispatch.T_NONE;
                     e.path = null;
                     e.goalCd = 0;
                 }
             }
+            fleet.exodusOver();
             if (aftermath == AFTER_RECOVERY && afterTime > 30) homecoming();
             return;
         }
@@ -11334,6 +11337,7 @@ final class World {
         // Out on the street: they decide to go (not all at once).
         for (int i = 0, m = entities.size(); i < m; i++) {
             Entity e = entities.get(i);
+            if (e.exodusCd > 0) e.exodusCd -= 1;
             if (!mayFlee(e) || (e.task != Dispatch.T_NONE && e.task != Dispatch.T_EVACUATE) || rnd.nextFloat() > 0.2f) continue;
             startLeaving(e);
         }
@@ -11374,7 +11378,7 @@ final class World {
     /** Someone on the street who might leave: an ordinary citizen on their own (families go with whoever leads them). */
     private boolean mayFlee(Entity e) {
         return !e.dead && e.type == Entity.CIVILIAN && !e.infected && e != controlled && e.leader == null && !e.militia
-                && e.holdout == null && !stays(e) && e.taskTimer <= 0;
+                && e.holdout == null && !stays(e) && e.taskTimer <= 0 && e.exodusCd <= 0;
     }
 
     /** One in eight won't leave their home whatever happens. */
@@ -11383,6 +11387,30 @@ final class World {
     }
 
     private void startLeaving(Entity e) {
+        // (10.48) By car, if that's how they go: a parked one near.
+        int how = city.cfg.exodus;
+        if (how == CityConfig.EXODUS_CAR || how == CityConfig.EXODUS_BOTH) {
+            Fleet.Vehicle car = fleet.carToFleeIn(e.x, e.y, 320);
+            // (Or one of those parked in the car parks and along the streets.)
+            if (car == null) car = fleet.parkedCarFromMap(e.x, e.y, 320);
+            if (car != null) {
+                car.exodusClaim = e;
+                e.exitCar = car;
+                e.task = Dispatch.T_LEAVE;
+                e.postX = car.x;
+                e.postY = car.y;
+                e.evacTime = 0;
+                e.goalCd = 0;
+                e.paused = false;
+                return;
+            }
+            if (how == CityConfig.EXODUS_CAR) {
+                // (No car: they stay, and look again in a while.)
+                e.exodusCd = 25;
+                return;
+            }
+        }
+        e.exitCar = null;
         float[] best = null;
         float bd = Float.MAX_VALUE;
         for (float[] x : exits) {
@@ -11415,6 +11443,36 @@ final class World {
             return true;
         }
         if (e.task != Dispatch.T_LEAVE) return false;
+        Fleet.Vehicle car = e.exitCar;
+        if (car != null) {
+            // (10.48) To the car, then away in it.
+            if (car.removedFromFleet || car.broken || car.burnt || !car.parked || car.player != null || car.exodusClaim != e) {
+                if (car.exodusClaim == e) car.exodusClaim = null;
+                e.exitCar = null;
+                e.task = Dispatch.T_NONE;
+                startLeaving(e);
+                return e.task == Dispatch.T_LEAVE;
+            }
+            if (Math.hypot(car.x - e.x, car.y - e.y) < car.length() * 0.5f + 12) {
+                car.exodusClaim = null;
+                if (!fleet.driveOut(car, e)) {
+                    e.exitCar = null;
+                    e.task = Dispatch.T_NONE;
+                    e.exodusCd = 30;
+                    return false;
+                }
+                return true;
+            }
+            if (unreachable(e, car.x, car.y)) {
+                car.exodusClaim = null;
+                e.exitCar = null;
+                e.task = Dispatch.T_NONE;
+                e.exodusCd = 20;
+                return false;
+            }
+            walkToSpot(e, car.x, car.y, e.fear > 0 ? e.runSpeed * 0.85f : e.speed * 1.5f);
+            return true;
+        }
         float m = City.T * 2.5f;
         if (Math.hypot(e.postX - e.x, e.postY - e.y) < 40 || e.x < m || e.y < m || e.x > city.worldW() - m || e.y > city.worldH() - m) {
             goAway(e);
@@ -11440,6 +11498,13 @@ final class World {
     /** The walk planner found no way to there on foot. */
     private static boolean unreachable(Entity e, float x, float y) {
         return e.path != null && e.path.length == 0 && e.pathDest == null && e.planX == x && e.planY == y && Math.hypot(x - e.x, y - e.y) > 60;
+    }
+
+    /** (10.48) A car of people fleeing the city has driven off the map: they're gone with it. */
+    void droveOut(java.util.List<Entity> riders) {
+        fledByCar += riders.size();
+        for (Entity e : riders) gone(e);
+        riders.clear();
     }
 
     /** Out of the city: off the map until it's over, with the family that came with them. */

@@ -3318,7 +3318,7 @@ public final class GameTests {
                     c.normalize();
                     c.seed = 5;
                     c.exodus = on;
-                    check(c.get(CityConfig.OPT_EXODUS) == on && c.values(CityConfig.OPT_EXODUS).length == 2, "the option reads back");
+                    check(c.get(CityConfig.OPT_EXODUS) == on && c.values(CityConfig.OPT_EXODUS).length == 4, "the option reads back");
                     World w = new World(c);
                     w.rnd.setSeed(4);
                     w.populate(c);
@@ -3359,6 +3359,64 @@ public final class GameTests {
                     check(still == 0, "nobody's still leaving once it's over (" + still + ")");
                     check(w.cameHome > 0, "and those who fled come home (" + w.cameHome + " of " + w.fled + ")");
                 }
+            }
+        });
+        test("10.48: an empty police car is taken by officers on foot nearby; people leave the city by car when that's the way chosen", new Check() {
+            public void run() throws Exception {
+                CityConfig c = new CityConfig();
+                c.v[CityConfig.OPT_PRESET] = 0;
+                c.seed = 5;
+                c.v[CityConfig.OPT_SIZE] = CityConfig.MEDIUM;
+                c.v[CityConfig.OPT_ZOMBIES] = 0;
+                c.normalize();
+                c.seed = 5;
+                c.exodus = CityConfig.EXODUS_CAR;
+                check(c.values(CityConfig.OPT_EXODUS).length == 4, "four ways to leave (off, on foot, by car, both)");
+                World w = new World(c);
+                w.rnd.setSeed(4);
+                w.populate(c);
+                for (int f = 0; f < 150; f++) w.update(1 / 30f);
+                // A patrol car whose crew is gone, parked in the street, and two officers with nothing to do near it.
+                Fleet.Vehicle car = null;
+                for (Fleet.Vehicle v : w.fleet.vehicles) if (v.patrol && v.type == Fleet.CRUISER && !v.crew.isEmpty() && v.kind != Fleet.K_BIKE) car = v;
+                check(car != null, "a patrol car to use");
+                car.crew.clear();
+                car.parked = true;
+                car.state = Fleet.ABANDONED;
+                car.speed = 0;
+                java.util.List<Entity> cops = new java.util.ArrayList<Entity>();
+                for (int k = 0; k < 2; k++) {
+                    float[] q = w.city.findWalkable(car.x + 40 + k * 20, car.y + 30);
+                    Entity e = q == null ? null : w.spawnCop(0, q[0], q[1]);
+                    if (e != null) cops.add(e);
+                }
+                check(!cops.isEmpty(), "officers on foot near it");
+                boolean taken = false;
+                for (int f = 0; f < 30 * 40 && !taken; f++) {
+                    w.update(1 / 30f);
+                    for (Entity e : cops) if (car.crew.contains(e)) taken = true;
+                }
+                check(taken, "they take the car (state " + car.state + ", crew " + car.crew.size() + ")");
+                // By car: once the news breaks, people walk to a parked car and drive out of the city.
+                java.util.Random r = new java.util.Random(7);
+                float[] q0 = w.city.randomWalkableInTown(r);
+                int sp = 0;
+                for (int i = 0; i < 1600 && sp < 40; i++) {
+                    float[] q = w.city.findWalkable(q0[0] + (i % 40) * 8 - 160, q0[1] + (i / 40) * 8 - 160);
+                    if (q != null && w.spawn(Entity.ZOMBIE, q[0], q[1]) != null) sp++;
+                }
+                w.alert = 2;
+                w.outbreak = true;
+                int driving = 0, onFoot = 0;
+                for (int f = 0; f < 30 * 120 && w.fledByCar == 0; f++) {
+                    w.update(1 / 30f);
+                    if (f % 30 != 0) continue;
+                    for (Fleet.Vehicle v : w.fleet.vehicles) if (v.exodus) driving = Math.max(driving, v.riders.size());
+                    for (Entity e : w.entities) if (!e.dead && e.task == Dispatch.T_LEAVE && e.exitCar == null) onFoot++;
+                }
+                check(driving > 0, "people drive off in cars");
+                check(w.fledByCar > 0 && w.fled == w.fledByCar, "and leave the city in them (" + w.fledByCar + " of " + w.fled + ")");
+                check(onFoot == 0, "nobody walks out with only cars chosen (" + onFoot + ")");
             }
         });
         test("every screen draws", new Check() {

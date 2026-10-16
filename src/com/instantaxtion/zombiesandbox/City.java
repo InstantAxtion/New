@@ -4606,6 +4606,42 @@ final class City {
         return new float[]{(bx + 0.5f) * T, (by + 0.5f) * T};
     }
 
+    /**
+     * (10.48) Someone fleeing the city takes one of the cars parked in a car park or along the street near (x, y):
+     * it comes off the map picture (its bay or bit of kerb left empty) and the spot is returned, or null.
+     */
+    float[] takeParkedCar(float x, float y, float radius) {
+        int tx0 = Math.max(1, (int) ((x - radius) / T)), tx1 = Math.min(w - 2, (int) ((x + radius) / T));
+        int ty0 = Math.max(1, (int) ((y - radius) / T)), ty1 = Math.min(h - 2, (int) ((y + radius) / T));
+        int best = -1;
+        float bd = radius * radius;
+        for (int ty = ty0; ty <= ty1; ty++)
+            for (int tx = tx0; tx <= tx1; tx++) {
+                int i = ty * w + tx;
+                if (tiles[i] != CAR || carKind[i] != 0) continue;
+                float dx = (tx + 0.5f) * T - x, dy = (ty + 0.5f) * T - y, d = dx * dx + dy * dy;
+                if (d < bd) {
+                    bd = d;
+                    best = i;
+                }
+            }
+        if (best < 0) return null;
+        int bx = best % w, by = best / w;
+        boolean lot = isLotCar(bx, by);
+        tiles[best] = lot ? LOT : ROAD;
+        solid[best] = false;
+        opaque[best] = false;
+        Canvas c = new Canvas(bitmap);
+        if (detail != 1f) c.scale(detail, detail);
+        Paint p = new Paint();
+        p.setColor(lot ? (drawnRealistic ? 0xFF46474A : 0xFF48494D) : (drawnRealistic ? 0xFF38393C : 0xFF3A3D43));
+        c.drawRect(bx * T, by * T, bx * T + T, by * T + T, p);
+        changed(bx * T, by * T, bx * T + T, by * T + T);
+        // (Which way it faces: along the street, or out of its bay.)
+        boolean across = (bx > 0 && tiles[best - 1] == ROAD) || (bx < w - 1 && tiles[best + 1] == ROAD);
+        return new float[]{(bx + 0.5f) * T, (by + 0.5f) * T, across ? 0 : 1.5708f};
+    }
+
     /** An army truck parks in an empty bay on a base (the spot one drove off from). */
     void parkTruck(float x, float y) {
         int tx = (int) (x / T), ty = (int) (y / T);

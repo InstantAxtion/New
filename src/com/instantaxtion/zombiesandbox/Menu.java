@@ -1159,8 +1159,11 @@ final class Menu {
         plain.setTextSize(12.5f * dp);
         plain.setColor(0xFF9AA0A8);
         y -= 6 * dp;
-        for (String line : wrap(config.exodus() ? "On: once the news breaks, most people leave the city for the country, on foot and by car. They come home once the outbreak is over."
-                : "Off: the people stay in town and sit it out (or don't).", lw - 4 * dp, plain)) {
+        String[] exodusInfo = {"Off: the people stay in town and sit it out (or don't).",
+                "On foot: once the news breaks, most people walk out of the city for the country. They come home once the outbreak is over.",
+                "By car: once the news breaks, everyone who can get to a parked car drives out of the city with their family; the rest stay. They come home once it's over.",
+                "Foot & car: once the news breaks, most people leave the city - by car if there's one near, on foot if not. They come home once it's over."};
+        for (String line : wrap(exodusInfo[Math.max(0, Math.min(3, config.exodus))], lw - 4 * dp, plain)) {
             c.drawText(line, lx + 2 * dp, y + 10 * dp, plain);
             y += 16 * dp;
         }

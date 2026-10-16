@@ -41,7 +41,7 @@ final class CityConfig implements OptionSet {
     private static final String[] OUTSKIRTS = {"Default", "Little nature"};
     /** (10.47) Whether the people flee the city once the news breaks (not one of the eight in v either). */
     static final int OPT_EXODUS = 9;
-    private static final String[] EXODUS = {"Off", "On"};
+    private static final String[] EXODUS = {"Off", "On foot", "By car", "Foot & car"};
     private static final String[] LABELS = {"Map", "Map size", "Civilians", "Cops", "Military", "Zombies",
             "Reinforcements", "Country"};
     private static final String[][] VALUES = {
@@ -170,12 +170,14 @@ final class CityConfig implements OptionSet {
      */
     int outskirts;
     /**
-     * (10.47) Fleeing citizens: 0 off (everyone sits it out in town, as before), 1 on (once the news breaks, most
-     * of the people leave the city, and come home once the outbreak is over). Not part of the city code.
+     * (10.47) Fleeing citizens: 0 off (everyone sits it out in town, as before); otherwise, once the news breaks,
+     * most of the people leave the city, and come home once the outbreak is over - 1 on foot, 2 (10.48) by car
+     * only (whoever can get to one), 3 by car if there's one near, on foot if not. Not part of the city code.
      */
     int exodus;
+    static final int EXODUS_OFF = 0, EXODUS_FOOT = 1, EXODUS_CAR = 2, EXODUS_BOTH = 3;
 
-    boolean exodus() { return exodus == 1; }
+    boolean exodus() { return exodus != EXODUS_OFF; }
 
     boolean littleNature() { return outskirts == 1 && civic >= 7; }
     /**

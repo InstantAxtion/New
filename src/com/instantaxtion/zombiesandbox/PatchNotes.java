@@ -2,11 +2,20 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.47";
-    static final int VERSION_CODE = 85;
+    static final String VERSION = "10.48";
+    static final int VERSION_CODE = 86;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.48  -  Back in their vehicles, and how people leave",
+                    "A police car or army truck left with nobody to drive it - its crew dead, or gone off elsewhere - is taken over by an officer (or soldier) standing about near it with nothing to do, who picks up the others on foot nearby as well. A patrol car goes back out on patrol with its new crew; anything else takes them back to the station or base.",
+                    "Officers and soldiers left on foot a long way from their station or base, with nothing to do and no empty car near, get one sent out from there to fetch them.",
+                    "A patrol car no longer waits at a scene for ever for officers who've been given somewhere else to be (an infection zone's perimeter, a post, another call across town): it goes on without them, and they find their own way back or another car later.",
+                    "Fleeing citizens now has four settings: Off, On foot, By car (people walk to a car parked nearby - in a car park or along the street - and drive out of the city with their family; those with no car near stay), or Foot & car (by car if there's one near, on foot if not).",
+                    "Cars leaving the city that get stuck or go round in circles find another way out instead of turning back into town; when the outbreak ends, any still on the way out pull over and their people walk home.",
+                    "Fixed: someone heading for a parked car to leave in could find it towed away from under them, and vanish when they got there.",
+            },
             {
                     "10.47  -  Fleeing citizens",
                     "New option on the New Game screen: Fleeing citizens (off unless you turn it on).",

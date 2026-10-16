@@ -437,6 +437,12 @@ mounting up, and lighter running with big populations.
 
 **More police than soldiers (10.35):** the army on the map is never more than two in five of the police force.
 
+**Back in their vehicles; how people leave (10.48):** a police car or army truck whose crew is dead or gone is
+taken over by officers or soldiers standing about near it, who pick up the others nearby; those stranded far
+from their station or base get a car or truck sent out for them; patrol cars no longer wait for ever for officers
+posted elsewhere. Fleeing citizens can now be set to leave on foot, by car (walking to a parked car and driving
+out with their family) or both.
+
 **Fleeing citizens (10.47):** a new option on the New Game screen. With it on, once the news breaks most people
 leave the city for the country (those indoors too, when the street outside is quiet), all but the few who won't
 leave home, survivor groups and anyone in a safe zone. Once the outbreak is over and the city is recovering, they

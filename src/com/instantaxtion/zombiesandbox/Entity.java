@@ -64,6 +64,12 @@ final class Entity {
     float spotX, spotY;
     /** Police or soldiers who came in from outside the city (10.27): they go home again once it's over. */
     boolean outsider;
+    /** (10.48) Seconds an officer or soldier has stood about on foot with no car and nothing to do. */
+    float strandedFor;
+    /** (10.48) The parked car someone fleeing the city is making for (or null: on foot). */
+    Fleet.Vehicle exitCar;
+    /** (10.48) Seconds before someone who couldn't leave (no car near) thinks about it again. */
+    float exodusCd;
     /** (10.32) One of the dead still in a police or army vest and helmet: harder to put down. */
     boolean armored;
     float phoneTimer, talkTimer, callCd, taskTimer;

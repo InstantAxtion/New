@@ -236,6 +236,10 @@ final class Entity {
     float stamina = 1;
     /** Police and soldiers: when they last radioed a sighting to the others, and a retreat already called. */
     float shareCd;
+    /** (10.50) Until a civilian running from the dead next shouts a warning to those about. */
+    float warnCd;
+    /** (10.51) Climbing over a fence: time left, and from where to where. */
+    float vaultT, vaultX0, vaultY0, vaultX1, vaultY1;
     /** Time until this shooter's next gunshot alerts the people around (one per burst, not per round). */
     float alertCd;
     /** When they last came out of hiding into a quiet street (they don't go straight back in on hearsay). */

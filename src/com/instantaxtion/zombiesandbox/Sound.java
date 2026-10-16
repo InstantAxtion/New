@@ -18,6 +18,8 @@ import java.util.Random;
 final class Sound {
     /** Bump when the synthesized audio changes so old cached files are regenerated. */
     private static final int AUDIO_VERSION = 2;
+    /** (10.52) The music on its own: ten pieces now. */
+    private static final int MUSIC_VERSION = 3;
 
     private final Context ctx;
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -78,10 +80,15 @@ final class Sound {
                 }
             });
         }
+        // (Music from before is cleared out.)
+        File[] old = dir.listFiles();
+        if (old != null)
+            for (File o : old)
+                if (o.getName().startsWith("music") && !o.getName().startsWith("music" + MUSIC_VERSION + "_")) o.delete();
         // Menu music first: it is what the player hears first.
         for (int track = 0; track < Synth.TRACKS; track++) {
             final int tr = track;
-            final File f = new File(dir, "music" + AUDIO_VERSION + "_" + track + ".wav");
+            final File f = new File(dir, "music" + MUSIC_VERSION + "_" + track + ".wav");
             try {
                 if (!f.exists()) Synth.writeWav(f, Synth.music(track));
             } catch (Exception e) {

@@ -14,7 +14,15 @@ import java.util.Random;
 final class Synth {
     static final int RATE = 22050;
     static final int TRACK_MENU = 0, TRACK_GAME = 1, TRACK_CALM = 2, TRACK_ACTION = 3;
-    static final int TRACKS = 4;
+    /** (10.52) Two more of each mood, played in turn: 4-5 the game's, 6-7 the calm, 8-9 the fighting. */
+    static final int TRACKS = 10;
+
+    /** The track for a mood (TRACK_GAME, TRACK_CALM or TRACK_ACTION) in its variation 0 to 2. */
+    static int variant(int mood, int v) {
+        if (v <= 0) return mood;
+        int base = mood == TRACK_GAME ? 4 : mood == TRACK_CALM ? 6 : 8;
+        return base + Math.min(1, v - 1);
+    }
     private static final float TAU = (float) (Math.PI * 2);
 
     private Synth() {
@@ -549,8 +557,18 @@ final class Synth {
 
     /** Renders one seamlessly looping music track. */
     static short[] music(int track) {
-        return track == TRACK_MENU ? menuTrack() : track == TRACK_CALM ? calmTrack() : track == TRACK_ACTION ? actionTrack()
-                : gameTrack();
+        switch (track) {
+            case TRACK_MENU: return menuTrack();
+            case TRACK_CALM: return calmTrack(0);
+            case TRACK_ACTION: return actionTrack(0);
+            case 4: return gameTrack(1);
+            case 5: return gameTrack(2);
+            case 6: return calmTrack(1);
+            case 7: return calmTrack(2);
+            case 8: return actionTrack(1);
+            case 9: return actionTrack(2);
+            default: return gameTrack(0);
+        }
     }
 
     /** Slow, dark ambient loop for the menus: A minor, F, D minor, E. */
@@ -583,12 +601,14 @@ final class Synth {
 
     /** Tense 112 BPM loop for gameplay: drums, driving bass, pads and a plucked arpeggio. */
     /** Quiet streets: slow pads and a few lonely notes. */
-    private static short[] calmTrack() {
-        float beat = 60f / 70f, bar = beat * 4;
-        int[][] chords = {{50, 53, 57}, {46, 50, 53}, {48, 52, 55}, {45, 48, 52}};
+    private static short[] calmTrack(int v) {
+        float beat = 60f / (v == 1 ? 62f : v == 2 ? 76f : 70f), bar = beat * 4;
+        int[][] chords = v == 1 ? new int[][]{{45, 48, 52}, {43, 47, 50}, {41, 45, 48}, {40, 44, 47}}
+                : v == 2 ? new int[][]{{48, 52, 55}, {45, 48, 52}, {41, 45, 48}, {43, 47, 50}}
+                : new int[][]{{50, 53, 57}, {46, 50, 53}, {48, 52, 55}, {45, 48, 52}};
         int n = (int) (bar * 8 * RATE);
         float[] pad = new float[n], lead = new float[n];
-        Random r = new Random(5);
+        Random r = new Random(5 + v * 31);
         for (int b = 0; b < 8; b++) {
             float t0 = b * bar;
             int[] ch = chords[b % 4];
@@ -604,12 +624,14 @@ final class Synth {
     }
 
     /** Heavy fighting: fast drums, driving bass and a stabbing lead. */
-    private static short[] actionTrack() {
-        float beat = 60f / 140f, bar = beat * 4;
-        int[][] chords = {{40, 43, 47}, {40, 43, 47}, {36, 40, 43}, {38, 42, 45}};
+    private static short[] actionTrack(int v) {
+        float beat = 60f / (v == 1 ? 150f : v == 2 ? 132f : 140f), bar = beat * 4;
+        int[][] chords = v == 1 ? new int[][]{{38, 41, 45}, {38, 41, 45}, {34, 38, 41}, {36, 40, 43}}
+                : v == 2 ? new int[][]{{42, 45, 49}, {40, 43, 47}, {38, 42, 45}, {40, 43, 47}}
+                : new int[][]{{40, 43, 47}, {40, 43, 47}, {36, 40, 43}, {38, 42, 45}};
         int n = (int) (bar * 8 * RATE);
         float[] pad = new float[n], bass = new float[n], drums = new float[n], lead = new float[n];
-        Random r = new Random(23);
+        Random r = new Random(23 + v * 17);
         for (int b = 0; b < 8; b++) {
             float t0 = b * bar;
             int[] ch = chords[b % 4];
@@ -621,8 +643,8 @@ final class Synth {
                 if (q % 2 == 1) addSnare(drums, t, r);
                 for (int h = 0; h < 4; h++) addHat(drums, t + h * beat / 4, r, h % 2 == 0 ? 0.1f : 0.05f);
             }
-            if (b % 2 == 1)
-                for (int s = 0; s < 6; s++) addPluck(lead, midi(ch[s % 3] + 24), t0 + s * beat * 0.66f, 0.3f, 0.08f);
+            if (b % 2 == (v == 2 ? 0 : 1))
+                for (int s = 0; s < 6; s++) addPluck(lead, midi(ch[(v == 1 ? 2 - s % 3 : s % 3)] + 24), t0 + s * beat * 0.66f, 0.3f, 0.08f);
         }
         lowpass(bass, 0.15f);
         float[] mix = new float[n];
@@ -631,13 +653,17 @@ final class Synth {
         return toPcm(mix, 0.8f);
     }
 
-    private static short[] gameTrack() {
-        float beat = 60f / 112f, bar = beat * 4;
-        int[][] chords = {{45, 48, 52}, {45, 48, 52}, {41, 45, 48}, {43, 47, 50},
+    private static short[] gameTrack(int v) {
+        float beat = 60f / (v == 1 ? 104f : v == 2 ? 120f : 112f), bar = beat * 4;
+        int[][] chords = v == 1 ? new int[][]{{50, 53, 57}, {50, 53, 57}, {46, 50, 53}, {48, 52, 55},
+                {50, 53, 57}, {45, 48, 52}, {46, 50, 53}, {45, 49, 52}}
+                : v == 2 ? new int[][]{{40, 43, 47}, {43, 47, 50}, {38, 42, 45}, {40, 43, 47},
+                {40, 43, 47}, {36, 40, 43}, {38, 42, 45}, {39, 42, 47}}
+                : new int[][]{{45, 48, 52}, {45, 48, 52}, {41, 45, 48}, {43, 47, 50},
                 {45, 48, 52}, {45, 48, 52}, {41, 45, 48}, {44, 47, 52}};
         int n = (int) (bar * 8 * RATE);
         float[] pad = new float[n], bass = new float[n], drums = new float[n], lead = new float[n];
-        Random r = new Random(11);
+        Random r = new Random(11 + v * 13);
         for (int b = 0; b < 8; b++) {
             float t0 = b * bar;
             int[] ch = chords[b];
@@ -652,8 +678,8 @@ final class Synth {
                 addHat(drums, t + beat / 2, r, 0.07f);
             }
             if (b % 4 == 3) addKick(drums, t0 + beat * 3.5f);
-            if (b >= 4) {
-                int[] arp = {0, 1, 2, 1};
+            if (v == 2 ? b % 2 == 0 : b >= 4) {
+                int[] arp = v == 1 ? new int[]{2, 1, 0, 1} : new int[]{0, 1, 2, 1};
                 for (int s = 0; s < 8; s++)
                     addPluck(lead, midi(ch[arp[s % 4]] + 12), t0 + s * beat / 2, 0.5f, 0.07f);
             }

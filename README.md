@@ -424,6 +424,15 @@ mounting up, and lighter running with big populations.
 
 **More police than soldiers (10.35):** the army on the map is never more than two in five of the police force.
 
+**Smarter people, better traffic (10.51):** people fleeing shout warnings so others turn away, keep running
+until well clear, sprint flat out while their breath lasts, and climb fences and the highway barrier (the dead
+can't); strollers keep off the grass; the hurt go home to rest. Bigger cities hold more 911 calls; police and
+soldiers share sightings further, report them, and call each other in. Police lights only on a call; traffic pulls
+over for army trucks and tanks too (and oncoming cars as well); vehicles on a call drive faster; cars go round
+roundabouts and walkers use their crossings. Every other army wave flies in by helicopter (and the helicopters fly
+back out); three pieces of music for each mood, rotated. New cities
+have more police stations, and Large maps an army base out in the country; roof signs sit centred on a plate.
+
 **A leaner game, and a better screen (10.50):** gone are fires, the Auto cam, spitter and screamer zombies,
 raiders, medics, ambulances and hospital care, the Downtown, Village and Lakeside maps, Switzerland and China, and
 the people-about and Little nature settings (saved games and city codes that use them still load). Brutes are

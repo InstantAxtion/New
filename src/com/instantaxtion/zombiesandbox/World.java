@@ -268,7 +268,7 @@ final class World {
     String message;
     float messageTime;
     /** How fast sprinting uses up stamina (per second, out of 1). */
-    static float STAMINA_DRAIN = 0.14f;
+    static float STAMINA_DRAIN = 0.1f;
     /** Balance: how much of a gun's damage counts against zombies, and how likely a bite is to infect. */
     static float GUN_DAMAGE = 0.3f, BITE_INFECT = 1.85f;
     /** Chance any hit on a zombie is a headshot that drops it on the spot. */
@@ -3461,9 +3461,10 @@ final class World {
         if (e.task == Dispatch.T_SHELTER && dispatch.zones.isEmpty()) e.task = Dispatch.T_NONE;
         // With the power out, nobody hears the broadcasts about safe zones any more.
         if (!e.heardZone && broadcasting() && readiness != 2 && rnd.nextFloat() < dt * 0.03f) e.heardZone = true;
-        // Out of sight isn't out of mind: keep going until well clear of where it was last seen.
-        if (e.fleeTimer <= 0 && e.fear > 20 && e.task == Dispatch.T_NONE
-                && (e.x - e.threatX) * (e.x - e.threatX) + (e.y - e.threatY) * (e.y - e.threatY) < 170 * 170) e.fleeTimer = 1.5f;
+        // Out of sight isn't out of mind: keep going until well clear of where it was last seen. ((10.51) Further
+        // than before, and for longer: running a block and then strolling back the way they came got people killed.)
+        if (e.fleeTimer <= 0 && e.fear > 15 && e.task == Dispatch.T_NONE
+                && (e.x - e.threatX) * (e.x - e.threatX) + (e.y - e.threatY) * (e.y - e.threatY) < 320 * 320) e.fleeTimer = 2.5f;
         int goal = decideCivilian(e, threat, threatDist, room, dt);
         if (goal != G_FIGHT) e.aiming = false;
         switch (goal) {
@@ -3733,6 +3734,12 @@ final class World {
     private void fleeStep(Entity e, float dt) {
         e.paused = false;
         if (e.fleeTimer <= 0) e.fleeTimer = 1.5f;
+        // (10.51) Shouting as they go: anyone about who hasn't seen it turns away instead of walking into it.
+        e.warnCd -= dt;
+        if (e.warnCd <= 0 && e.fear > 15) {
+            e.warnCd = 1.2f + rnd.nextFloat() * 0.8f;
+            warnOthers(e);
+        }
         float ax = e.x - e.threatX, ay = e.y - e.threatY;
         float d = (float) Math.sqrt(ax * ax + ay * ay) + 0.001f;
         // Running for their life past an abandoned car with the keys still in it.
@@ -3764,6 +3771,30 @@ final class World {
             }
         }
         flee(e, ax / d, ay / d, e.runSpeed);
+    }
+
+    /**
+     * (10.51) A civilian running from the dead calls out: those within earshot who haven't seen them yet learn where
+     * the danger is and keep away from it (the brave or the armed stay put and look; the rest get going).
+     */
+    private void warnOthers(Entity e) {
+        e.talkTimer = Math.max(e.talkTimer, 0.8f);
+        int n = gatherLiving(e.x, e.y, 90);
+        for (int i = 0; i < n; i++) {
+            Entity o = gathered[i];
+            if (o == e || o.dead || o.hidden || o.type != Entity.CIVILIAN || o == controlled || o.ride != null) continue;
+            if ((o.x - e.x) * (o.x - e.x) + (o.y - e.y) * (o.y - e.y) > 90 * 90) continue;
+            float od = (o.x - e.threatX) * (o.x - e.threatX) + (o.y - e.threatY) * (o.y - e.threatY);
+            if (o.fleeTimer > 0 && o.fear >= 25) continue;
+            o.aware = true;
+            o.fear = Math.max(o.fear, 30);
+            o.threatX = e.threatX;
+            o.threatY = e.threatY;
+            // Heading that way, or close to it: turn round and go.
+            float hx = e.threatX - o.x, hy = e.threatY - o.y;
+            boolean towards = o.vx * hx + o.vy * hy > 0;
+            if (towards || od < 220 * 220) o.fleeTimer = Math.max(o.fleeTimer, o.hasGun ? 1 : 3.5f);
+        }
     }
 
     private boolean hideStep(Entity e) {
@@ -7265,7 +7296,12 @@ final class World {
     }
 
     private void shareSighting(Entity e, float x, float y) {
-        float r = 180;
+        // ((10.51) Over the radio, and to the other service too: further than before, the call board hears of it,
+        // and when the police and the army are both about, one calls the other in.)
+        float r = 260;
+        boolean soldier = e.type == Entity.SOLDIER;
+        if (countZombiesNear(x, y, 90) >= 2) dispatch.sighting(x, y, null);
+        boolean otherSide = false;
         int cx0 = Math.max(0, (int) ((e.x - r) / CELL)), cx1 = Math.min(gw - 1, (int) ((e.x + r) / CELL));
         int cy0 = Math.max(0, (int) ((e.y - r) / CELL)), cy1 = Math.min(gh - 1, (int) ((e.y + r) / CELL));
         for (int cy = cy0; cy <= cy1; cy++)
@@ -7278,9 +7314,20 @@ final class World {
                     o.threatX = x;
                     o.threatY = y;
                     o.fear = 12;
+                    if ((o.type == Entity.SOLDIER) != soldier && (o.type == Entity.COP || o.type == Entity.SOLDIER)) otherSide = true;
                 }
             }
+        if (otherSide && time > jointSaid) {
+            jointSaid = time + 25;
+            String where = city.placeName(x, y);
+            dispatch.say(soldier ? Dispatch.WHO_MILITARY : Dispatch.WHO_POLICE, e, soldier
+                    ? "Army to police units: we have the dead at " + where + ". Hold the perimeter, we're moving in."
+                    : "Police to army: the dead at " + where + ", more than we can hold. Requesting your support.", x, y);
+        }
     }
+
+    /** (10.51) When police and soldiers last called each other in on the radio. */
+    private float jointSaid;
 
     private Entity nearestOfType(Entity e, int type, float radius) {
         Entity best = null;
@@ -8959,6 +9006,19 @@ final class World {
             e.wanderAngle = (e.isZombie() || e.wanderTimer < -1 ? rnd.nextInt(4) * TAU / 4
                     : roll < 0.5f ? base : roll < 0.92f ? base + (rnd.nextBoolean() ? 1 : -1) * TAU / 4 : base + TAU / 2)
                     + (rnd.nextFloat() - 0.5f) * 0.4f;
+            // (10.51) Out for a stroll in town, people (and police on foot) keep to the pavements and squares: a way
+            // that leads out onto the grass is swapped for one along the paving, where there is one.
+            if (!e.isZombie() && e.fear <= 0 && !city.outOfTown(e.x, e.y) && onGrassAhead(e, e.wanderAngle)) {
+                float best = e.wanderAngle;
+                for (int k = 1; k <= 3; k++) {
+                    float a = e.wanderAngle + k * TAU / 4;
+                    if (!onGrassAhead(e, a)) {
+                        best = a;
+                        break;
+                    }
+                }
+                e.wanderAngle = best;
+            }
             // People who saw a zombie recently keep away from where it was.
             if (e.fear > 0 && !e.isZombie() && !e.isArmed()) {
                 float tx = e.threatX - e.x, ty = e.threatY - e.y;
@@ -9003,6 +9063,15 @@ final class World {
         }
         if (e.paused) steer(e, 0, 0, 0);
         else steer(e, (float) Math.cos(e.wanderAngle), (float) Math.sin(e.wanderAngle), speed);
+    }
+
+    /** (10.51) The way at angle a leads onto grass (or into trees) a couple of tiles on. */
+    private boolean onGrassAhead(Entity e, float a) {
+        float ax = e.x + (float) Math.cos(a) * City.T * 2, ay = e.y + (float) Math.sin(a) * City.T * 2;
+        int t = city.tileIndex(ax, ay);
+        if (t < 0) return true;
+        byte k = city.tiles[t];
+        return k == City.GRASS || k == City.TREE;
     }
 
     /** Ordinary folk going about their day mind the traffic; anyone running for their life doesn't. */
@@ -9110,12 +9179,20 @@ final class World {
             for (int ox = -1; ox <= 1; ox++) {
                 if (ox == 0 && oy == 0) continue;
                 int nx = tx + ox, ny = ty + oy;
-                if (city.solidTile(nx, ny)) continue;
+                // ((10.51) A fence or the highway barrier with open ground past it is a way out too: over it.)
+                boolean over = false;
+                if (city.solidTile(nx, ny)) {
+                    if ((ox != 0 && oy != 0) || nx < 1 || ny < 1 || nx >= w - 1 || ny >= city.h - 1
+                            || city.tiles[ny * w + nx] != City.FENCE || city.solidTile(nx + ox, ny + oy)) continue;
+                    over = true;
+                    nx += ox;
+                    ny += oy;
+                }
                 if (ox != 0 && oy != 0 && (city.solidTile(tx + ox, ty) || city.solidTile(tx, ty + oy))) continue;
                 float len = (ox != 0 && oy != 0) ? 1.414f : 1f;
                 float dot = (ox * ax + oy * ay) / len;
                 int v = Math.min(12, city.zombieDist[ny * w + nx]);
-                float score = v * 1.2f + dot * 2.5f;
+                float score = v * 1.2f + dot * 2.5f - (over ? 1.5f : 0);
                 if (score > bestScore) {
                     bestScore = score;
                     bx = ox / len;
@@ -9140,14 +9217,26 @@ final class World {
     // ------------------------------------------------------------------ movement
 
     private void move(Entity e, float dt) {
+        // (10.51) Halfway over a fence or the highway barrier: nothing else until they're down the other side.
+        if (e.vaultT > 0) {
+            e.vaultT -= dt;
+            float f = 1 - Math.max(0, e.vaultT) / VAULT_TIME;
+            e.x = e.vaultX0 + (e.vaultX1 - e.vaultX0) * f;
+            e.y = e.vaultY0 + (e.vaultY1 - e.vaultY0) * f;
+            e.vx = e.vy = 0;
+            return;
+        }
         // The living tire: a sprint lasts a few seconds, then they slow to a jog until they get their breath back.
         // The dead never tire.
+        // ((10.51) A real sprint: running for their life with breath to spare they go flat out, for ten seconds or
+        // so, then jog until they've got it back - quicker standing still than on the move.)
         if (!e.isZombie() && e.type != Entity.DOG) {
             if (e.want > e.speed * 1.35f) {
+                if (e.fleeTimer > 0 && e.stamina > 0.3f && e != controlled) e.want *= 1.12f;
                 e.stamina -= dt * STAMINA_DRAIN;
-                if (e.stamina < 0.15f) e.want = Math.min(e.want, e.speed * 1.3f);
+                if (e.stamina < 0.15f) e.want = Math.min(e.want, e.speed * 1.45f);
             } else {
-                e.stamina = Math.min(1, e.stamina + dt * 0.05f);
+                e.stamina = Math.min(1, e.stamina + dt * (e.want < 1 ? 0.12f : 0.07f));
             }
             if (e.stamina < 0) e.stamina = 0;
         }
@@ -9171,7 +9260,12 @@ final class World {
         }
         float bx = e.x, by = e.y;
         boolean moved = tryMove(e, sx, sy);
-        if (!moved && e.want > 0) e.blocked = true;
+        if (!moved && e.want > 0) {
+            e.blocked = true;
+            // (10.51) The living, running, up against a fence or the highway's concrete barrier with open ground
+            // beyond: over it they go. (The dead can't climb.)
+            if (!e.isZombie() && e.type != Entity.DOG && e.want > e.speed * 1.2f && e.ride == null) tryVault(e, e.radius + 3);
+        }
         float went = Math.abs(e.x - bx) + Math.abs(e.y - by);
         if (e.want > 5 && went < e.want * dt * 0.2f) e.stuckTime += dt;
         else e.stuckTime = Math.max(0, e.stuckTime - dt * 2);
@@ -9185,6 +9279,9 @@ final class World {
         if (l < 0.01f) return;
         float dx = e.mx / l, dy = e.my / l, reach = e.radius + 5;
         if (!city.circleBlocked(e.x + dx * reach, e.y + dy * reach, e.radius)) return;
+        // (10.51) Running at a fence they can get over: over it, not round.
+        if (!e.isZombie() && e.type != Entity.DOG && e.want > e.speed * 1.2f && e.ride == null && e != controlled
+                && tryVault(e, reach + 3)) return;
         for (int step = 1; step <= 4; step++) {
             for (int side = 0; side < 2; side++) {
                 float a = step * 0.42f * (side == 0 ? e.slideSide : -e.slideSide);
@@ -9198,6 +9295,38 @@ final class World {
                 }
             }
         }
+    }
+
+    static final float VAULT_TIME = 0.55f;
+
+    private boolean tryVault(Entity e, float probe) {
+        float l = (float) Math.sqrt(e.mx * e.mx + e.my * e.my);
+        if (l < 0.01f) return false;
+        float ux = e.mx / l, uy = e.my / l;
+        // Straight at it, along the grid (a fence is a row of tiles): the tile in front, and the one past it.
+        if (Math.abs(ux) > Math.abs(uy)) {
+            ux = Math.signum(ux);
+            uy = 0;
+        } else {
+            uy = Math.signum(uy);
+            ux = 0;
+        }
+        int t1 = city.tileIndex(e.x + ux * probe, e.y + uy * probe);
+        if (t1 < 0 || city.tiles[t1] != City.FENCE) return false;
+        int fx = t1 % city.w, fy = t1 / city.w;
+        float lx = (fx + 0.5f) * City.T + ux * City.T, ly = (fy + 0.5f) * City.T + uy * City.T;
+        // Keep the line along the fence they were at, only the crossing is to the tile's middle.
+        if (ux != 0) ly = e.y;
+        else lx = e.x;
+        if (city.circleBlocked(lx, ly, e.radius)) return false;
+        e.vaultT = VAULT_TIME;
+        e.vaultX0 = e.x;
+        e.vaultY0 = e.y;
+        e.vaultX1 = lx;
+        e.vaultY1 = ly;
+        e.blocked = false;
+        e.path = null;
+        return true;
     }
 
     /** Moves with wall sliding. Returns false if the move was (at least partly) blocked. */

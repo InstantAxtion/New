@@ -3084,7 +3084,8 @@ public final class GameTests {
                 Dispatch d = w.dispatch;
                 // A full board of calls gone quiet: a new 911 call still gets on the map (a quiet one makes way).
                 java.util.Random r = new java.util.Random(5);
-                for (int k = 0; k < Dispatch.MAX_CALLS; k++) {
+                // ((10.51) The board holds more in a bigger city: d.maxCalls().)
+                for (int k = 0; k < d.maxCalls(); k++) {
                     float[] q = w.city.randomWalkableInTown(r);
                     Dispatch.Incident inc = new Dispatch.Incident();
                     inc.x = q[0];
@@ -3102,7 +3103,7 @@ public final class GameTests {
                 w.callsLost = before;
                 boolean onMap = false;
                 for (Dispatch.Incident inc : d.incidents) if (Math.hypot(inc.x - z.x, inc.y - z.y) < 30) onMap = true;
-                check(onMap && d.incidents.size() <= Dispatch.MAX_CALLS, "a call made with the board full still shows (" + d.incidents.size() + " open)");
+                check(onMap && d.incidents.size() <= d.maxCalls(), "a call made with the board full still shows (" + d.incidents.size() + " open)");
                 // A call with nothing at it closes in seconds; one whose dead have moved on goes with them.
                 d.incidents.clear();
                 w.clearZombies();

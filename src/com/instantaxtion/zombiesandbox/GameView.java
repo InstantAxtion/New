@@ -885,14 +885,28 @@ final class GameView extends View implements Menu.Host {
         }
         int want = world.zombieCount() == 0 ? Synth.TRACK_CALM
                 : shots >= 12 || onScreen >= 25 || !world.explosions.isEmpty() ? Synth.TRACK_ACTION : Synth.TRACK_GAME;
-        if (want == mood) {
+        // (10.52) Each mood has three pieces: a new one, picked at random, every couple of minutes and whenever
+        // the mood changes.
+        moodPlayed += 1;
+        if (want == moodBase) {
             if (want == Synth.TRACK_ACTION) moodHold = 15;
+            if (moodPlayed > 140) {
+                moodPlayed = 0;
+                moodVariant = (moodVariant + 1 + rnd.nextInt(2)) % 3;
+                mood = Synth.variant(moodBase, moodVariant);
+            }
             return;
         }
         if (moodHold > 0 && want != Synth.TRACK_ACTION) return;
-        mood = want;
+        moodBase = want;
+        moodVariant = rnd.nextInt(3);
+        moodPlayed = 0;
+        mood = Synth.variant(moodBase, moodVariant);
         moodHold = 20;
     }
+
+    private int moodBase = Synth.TRACK_GAME, moodVariant;
+    private float moodPlayed;
 
 
     private final RectF miniRect = new RectF(), camChip = new RectF();
@@ -1501,9 +1515,21 @@ final class GameView extends View implements Menu.Host {
             float size = l.size * s;
             if (size * scale < 3.5f) continue;
             labelPaint.setTextSize(size);
-            labelPaint.setColor(l.color);
-            labelPaint.setAlpha((int) (((l.color >>> 24) & 0xFF) * a));
-            c.drawText(l.text, cx + (l.x - cx) * s, cy + (l.y - cy) * s, labelPaint);
+            float lx = cx + (l.x - cx) * s, ly = cy + (l.y - cy) * s;
+            if (l.sign) {
+                // (10.52) A sign: on a dark plate, the letters centred on it.
+                float tw = labelPaint.measureText(l.text) / 2 + size * 0.35f, th = size * 0.62f;
+                fill.setColor(alpha(0xC8141618, a));
+                oval.set(lx - tw, ly - th, lx + tw, ly + th);
+                c.drawRoundRect(oval, size * 0.2f, size * 0.2f, fill);
+                ly += size * 0.36f;
+            }
+            int col = l.color;
+            // (Dark lettering on the dark plate: white instead.)
+            if (l.sign && ((col >> 16) & 0xFF) + ((col >> 8) & 0xFF) + (col & 0xFF) < 300) col = (col & 0xFF000000) | 0xF2F2F2;
+            labelPaint.setColor(col);
+            labelPaint.setAlpha((int) (((col >>> 24) & 0xFF) * a));
+            c.drawText(l.text, lx, ly, labelPaint);
         }
     }
 

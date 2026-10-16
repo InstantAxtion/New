@@ -205,7 +205,9 @@ final class Fleet {
 
         boolean lightsOn() {
             if (broken) return false;
-            if (type == CRUISER) return state != WAIT && (stopping != null || !(patrol && state != DRIVE && state != SCENE));
+            // ((10.51) Only on a call: on the way to one, at the scene, or pulling someone over. Not on the rounds,
+            // driving back to the station or parked.)
+            if (type == CRUISER) return stopping != null || state == SCENE || (state == DRIVE && (incident != null || !patrol));
             if (type == AMBULANCE) return state != WAIT;
             return false;
         }
@@ -1463,6 +1465,49 @@ final class Fleet {
         return true;
     }
 
+    /**
+     * (10.52) Reinforcements by air: an army helicopter flies in from the edge of the map at (fx, fy) with a squad
+     * aboard, puts them down near (tx, ty), covers them for a minute with its door guns, and flies back out the way
+     * it came. Returns the soldiers (still aboard), or null if there's no room.
+     */
+    ArrayList<Entity> airlift(int count, float fx, float fy, float tx, float ty, String place, Dispatch.Incident inc) {
+        if (w.entities.size() + count + 3 > w.maxEntities + World.OVER_CAP) return null;
+        Vehicle v = make(HELI);
+        v.x = fx;
+        v.y = fy;
+        v.angle = (float) Math.atan2(ty - fy, tx - fx);
+        v.alt = 1;
+        v.state = FLY_IN;
+        v.tx = tx;
+        v.ty = ty;
+        v.place = place;
+        v.incident = inc;
+        v.padAt = null;
+        v.baseX = fx;
+        v.baseY = fy;
+        v.number = ++airNumber;
+        v.reinforcement = true;
+        ArrayList<Entity> squad = new ArrayList<Entity>();
+        for (int i = 0; i < count + 3; i++) {
+            Entity e = w.create(Entity.SOLDIER, fx, fy);
+            // (The pilot, the squad, and last the two door gunners, who stay aboard.)
+            if (i == 0) {
+                e.role = Entity.ROLE_PILOT;
+                v.flight.add(e);
+            } else if (i <= count) {
+                w.kitOut(e);
+                squad.add(e);
+            }
+            e.dead = true;
+            e.removed = true;
+            e.rig = v;
+            v.crew.add(e);
+        }
+        v.troops = count;
+        vehicles.add(v);
+        return squad;
+    }
+
     /** Lands it back on its pad: everyone climbs out, the flight crew stand by, the rest go back to their duties. */
     private void landed(Vehicle v) {
         v.alt = 0;
@@ -1489,6 +1534,8 @@ final class Fleet {
      */
     private boolean staleCall(Vehicle v, float dt) {
         if (v.kind == K_RESCUE_HELI || v.escort != null) return false;
+        // ((10.52) Reinforcements flown in put their troops down whatever: it's the soldiers' call after that.)
+        if (v.reinforcement && v.troops > 0) return false;
         if (v.state != MUSTER && v.state != SPOOL && v.state != FLY_IN && v.state != CIRCLE) return false;
         v.quiet = w.countZombiesNear(v.tx, v.ty, 260) > 0 ? 0 : v.quiet + dt;
         boolean over = v.incident != null && v.incident.resolved;
@@ -1720,7 +1767,9 @@ final class Fleet {
         sirens.clear();
         for (int i = 0; i < vehicles.size(); i++) {
             Vehicle o = vehicles.get(i);
-            if (o.player == null && !airborne(o) && o.lightsOn() && Math.abs(o.speed) > 18) sirens.add(o);
+            // ((10.51) Army trucks and tanks on their way to the fighting too: everyone pulls over for them.)
+            boolean army = (o.type == TRUCK || o.type == TANK) && o.state == DRIVE && emergency(o);
+            if (o.player == null && !airborne(o) && (o.lightsOn() || army) && Math.abs(o.speed) > 18) sirens.add(o);
         }
         for (int i = vehicles.size() - 1; i >= 0; i--) {
             Vehicle v = vehicles.get(i);
@@ -1784,12 +1833,18 @@ final class Fleet {
             Vehicle o = sirens.get(i);
             if (o == v) continue;
             float dx = o.x - v.x, dy = o.y - v.y, d2 = dx * dx + dy * dy;
-            if (d2 > 140 * 140) continue;
+            if (d2 > 200 * 200) continue;
             float ahead = dx * fx + dy * fy;
             float same = fx * (float) Math.cos(o.angle) + fy * (float) Math.sin(o.angle);
             if (ahead < -8 && same > 0.6f) {
                 // Coming up behind in the same direction: over to the kerb, nearly stopped.
                 v.yieldT = 2.5f;
+                v.yieldStop = false;
+                return;
+            }
+            // (10.51) Coming the other way down the street: over to the kerb too, to leave it the middle.
+            if (ahead > 8 && same < -0.6f && d2 < 130 * 130) {
+                v.yieldT = 1.8f;
                 v.yieldStop = false;
                 return;
             }
@@ -2207,6 +2262,29 @@ final class Fleet {
                 // (Only where the lines run over road the whole way: not across a roundabout's island.)
                 if (i == first) {
                     jSmooth = false;
+                    // (10.51) A roundabout: round the island the way the traffic goes (anticlockwise where they
+                    // drive on the right), from where it came in to the lane it leaves by.
+                    rbOn = false;
+                    int jid = city.junctionIdAt(cx, cy);
+                    int[] jb = jid >= 0 ? city.junctions.get(jid) : null;
+                    if (jb != null && jb[4] == City.J_ROUNDABOUT && out && v.corN > 0) {
+                        rbCx = (jb[0] + jb[2] + 1) * City.T / 2f;
+                        rbCy = (jb[1] + jb[3] + 1) * City.T / 2f;
+                        rbR = (Math.min(jb[2] - jb[0], jb[3] - jb[1]) + 1) * City.T * 0.31f;
+                        int E = ts[k];
+                        float x2 = ex != 0 ? (E % W + 0.5f) * City.T : le, y2 = ex != 0 ? le : (E / W + 0.5f) * City.T;
+                        rbA0 = (float) Math.atan2(v.cor[v.corN * 2 - 1] - rbCy, v.cor[v.corN * 2 - 2] - rbCx);
+                        float a1 = (float) Math.atan2(y2 - rbCy, x2 - rbCx), d = a1 - rbA0;
+                        if (city.country.leftHand) {
+                            while (d <= 0.3f) d += (float) (Math.PI * 2);
+                            while (d > Math.PI * 2 + 0.3f) d -= (float) (Math.PI * 2);
+                        } else {
+                            while (d >= -0.3f) d -= (float) (Math.PI * 2);
+                            while (d < -Math.PI * 2 - 0.3f) d += (float) (Math.PI * 2);
+                        }
+                        rbD = d;
+                        rbOn = true;
+                    }
                     if (out && !Float.isNaN(li) && v.corN > 0) {
                         float x0 = v.cor[v.corN * 2 - 2], y0 = v.cor[v.corN * 2 - 1];
                         int E = ts[k];
@@ -2219,7 +2297,11 @@ final class Fleet {
                         jSmooth = onRoute(v, x0, y0, x1, y1) && onRoute(v, x1, y1, x2, y2);
                     }
                 }
-                if (!jSmooth) {
+                if (rbOn) {
+                    float fr = (i - first + 1) / (float) (k - first + 1), ra = rbA0 + rbD * fr;
+                    px = rbCx + (float) Math.cos(ra) * rbR;
+                    py = rbCy + (float) Math.sin(ra) * rbR;
+                } else if (!jSmooth) {
                     float o = city.laneOffset(tx, ty, sdx, sdy);
                     px = cx - sdy * o;
                     py = cy + sdx * o;
@@ -2291,7 +2373,8 @@ final class Fleet {
     private final int[] corTiles = new int[COR];
     private int corPi, jEntryX, jEntryY;
     private float jEntryL;
-    private boolean jSmooth;
+    private boolean jSmooth, rbOn;
+    private float rbCx, rbCy, rbR, rbA0, rbD;
 
     /** Every tile under the line from one point to another is on the vehicle's route. */
     private boolean onRoute(Vehicle v, float x0, float y0, float x1, float y1) {
@@ -2755,7 +2838,10 @@ final class Fleet {
             v.speed = Math.max(0, v.speed - dt * 150);
             return false;
         }
-        float top = v.type == CRUISER ? 105 : v.kind == K_APC ? 68 : v.kind == K_HUMVEE ? 100 : v.kind == K_RIOT_VAN ? 85 : 80;
+        // ((10.51) Quicker on a call, the army above all: the trucks used to trundle to a fight.)
+        boolean call = emergency(v) && v.state != RETURN;
+        float top = v.type == CRUISER ? (call ? 120 : 105) : v.kind == K_APC ? (call ? 85 : 68) : v.kind == K_HUMVEE ? (call ? 115 : 100)
+                : v.kind == K_RIOT_VAN ? (call ? 100 : 85) : (call ? 100 : 80);
         boolean arrived = !driveStep(v, dt, top, carAhead(v) ? 0.5f : 1f);
         // A patrol that comes on a crowd of the dead stops and lets the gunner work; the crew stay aboard.
         if (v.loop && v.state == DRIVE && hordeAhead(v)) {
@@ -4742,7 +4828,7 @@ final class Fleet {
                 v.incident = here;
                 inc = here;
             }
-            boolean moving = here == null && driveStep(v, dt, v.kind == K_BIKE ? 120 : 95, carAhead(v) ? 0.5f : 1f);
+            boolean moving = here == null && driveStep(v, dt, v.kind == K_BIKE ? 130 : 115, carAhead(v) ? 0.5f : 1f);
             if (moving) hit(v, w.runOver(v.x, v.y, 8, v.speed, v.angle));
             if (!moving || Math.hypot(inc.x - v.x, inc.y - v.y) < 50 || v.stuckTimer > 6) {
                 v.speed = 0;

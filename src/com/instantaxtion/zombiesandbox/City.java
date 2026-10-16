@@ -848,6 +848,8 @@ final class City {
         final String text;
         final float x, y, size;
         final int color, building;
+        /** (10.52) A sign on the roof: (x, y) is its middle, and it's drawn on a plate. */
+        boolean sign;
 
         Label(String text, float x, float y, float size, int color, int building) {
             this.text = text;
@@ -866,6 +868,13 @@ final class City {
         if (!collectLabels) return;
         int tx = Math.max(0, Math.min(w - 1, (int) (x / T))), ty = Math.max(0, Math.min(h - 1, (int) (y / T)));
         labels.add(new Label(text, x, y, size, color, buildingAt[ty * w + tx]));
+    }
+
+    /** (10.52) A roof sign centred on (x, y), on a plate: it reads the same on a flat roof or across a ridge. */
+    void sign(String text, float x, float y, float size, int color) {
+        if (!collectLabels) return;
+        label(text, x, y, size, color);
+        labels.get(labels.size() - 1).sign = true;
     }
 
     /** Draws (or redraws, after the Graphics setting changes) the ground bitmap. */
@@ -10766,7 +10775,7 @@ final class City {
             c.drawRect(x0 + 1.5f, y1 - 4, x1 - 1.5f, y1 - 1.5f, p);
             String sign = country.gunSign();
             float ts = Math.min(9f, bw / (sign.length() * 0.75f));
-            label(sign, (x0 + x1) / 2, (y0 + y1) / 2 + 2.5f, ts, 0xFFF2E2B8);
+            sign(sign, (x0 + x1) / 2, (y0 + y1) / 2, ts, 0xFFF2E2B8);
             return;
         }
         if (own != null && own.name != null && (own.name.equals(rangerStationName) || outpostNames.contains(own.name))) {
@@ -10780,7 +10789,7 @@ final class City {
             p.setColor(0xFF6E4A2A);
             c.drawRect(x0, y1 - 3, x1, y1, p);
             String sign = country.sign("RANGERS");
-            label(sign, (x0 + x1) / 2, (y0 + y1) / 2 + 3, Math.min(9f, bw / (sign.length() * 0.72f)), 0xFFE8D8A8);
+            sign(sign, (x0 + x1) / 2, (y0 + y1) / 2, Math.min(9f, bw / (sign.length() * 0.72f)), 0xFFE8D8A8);
             return;
         }
         if (own != null && own.landmark >= 0 && Roofs.drawLandmark(this, c, p, b, own)) return;
@@ -10833,7 +10842,7 @@ final class City {
             p.setColor(0xFFFFFFFF);
             p.setTextAlign(Paint.Align.CENTER);
             p.setTextSize(Math.min(10f, bw / 5.2f));
-            label(country.sign("POLICE"), (x0 + x1) / 2, (y0 + y1) / 2 + 3.5f, Math.min(10f, bw / 5.2f), 0xFFFFFFFF);
+            sign(country.sign("POLICE"), (x0 + x1) / 2, (y0 + y1) / 2, Math.min(10f, bw / 5.2f), 0xFFFFFFFF);
             p.setColor(0xFFE8C547);
             c.drawCircle((x0 + x1) / 2, y0 + Math.min(bh * 0.25f, 12), 3.2f, p);
             return;
@@ -10852,7 +10861,7 @@ final class City {
             p.setColor(kind == FIRE_STATION ? 0xFFFFFFFF : kind == KIOSK ? 0xFFD83A3A : 0xFF3A3A3A);
             p.setTextAlign(Paint.Align.CENTER);
             p.setTextSize(Math.min(10f, bw / (label.length() * 0.75f)));
-            label(label, (x0 + x1) / 2, (y0 + y1) / 2 + 3.5f, Math.min(10f, bw / (label.length() * 0.75f)),
+            sign(label, (x0 + x1) / 2, (y0 + y1) / 2, Math.min(10f, bw / (label.length() * 0.75f)),
                     kind == FIRE_STATION ? 0xFFFFFFFF : kind == KIOSK ? 0xFFD83A3A : 0xFF3A3A3A);
             return;
         }
@@ -11835,7 +11844,11 @@ final class City {
             boolean island = false;
             for (int y = Math.max(0, y0 - 1); y <= Math.min(h - 1, y1 + 1) && !island; y++)
                 for (int x = Math.max(0, x0 - 1); x <= Math.min(w - 1, x1 + 1); x++)
-                    if (x > x0 && x < x1 && y > y0 && y < y1 && (tiles[y * w + x] == GRASS || tiles[y * w + x] == TREE)) island = true;
+                    // ((10.51) A real island: road all round it. The end of a median reaching into a big crossroads
+                    // isn't one, and made the crossroads a roundabout nobody drove properly.)
+                    if (x > x0 && x < x1 && y > y0 && y < y1 && (tiles[y * w + x] == GRASS || tiles[y * w + x] == TREE)
+                            && tiles[y * w + x - 1] == ROAD && tiles[y * w + x + 1] == ROAD && tiles[(y - 1) * w + x] == ROAD
+                            && tiles[(y + 1) * w + x] == ROAD) island = true;
             int type = island ? J_ROUNDABOUT : (x1 - x0 >= 4 || y1 - y0 >= 4) ? J_LIGHTS : J_STOP;
             // Just two roads meeting at a corner: a bend, not a junction anyone stops at.
             if (type == J_STOP) {
@@ -12068,7 +12081,9 @@ final class City {
                 int i = y * w + x;
                 byte t = tiles[i];
                 // (Wading across a stream is slow going: a bridge nearby is better.)
-                walkCost[i] = (byte) (isFord(i) ? 6 : t != ROAD ? 1 : junction[i] ? 3 : crosswalk(x, y) ? 1 : 8);
+                // ((10.51) Not across the middle of a roundabout: round by the zebra crossings on its arms.)
+                boolean ring = junction[i] && junctionId[i] >= 0 && junctions.get(junctionId[i])[4] == J_ROUNDABOUT;
+                walkCost[i] = (byte) (isFord(i) ? 6 : t != ROAD ? 1 : crosswalk(x, y) ? 1 : ring ? 8 : junction[i] ? 3 : 8);
             }
     }
 

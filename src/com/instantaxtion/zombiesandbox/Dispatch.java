@@ -418,12 +418,20 @@ final class Dispatch {
     static final int MAX_CALLS = 24;
 
     /**
+     * (10.51) How many calls the board holds: more the bigger the city (a Default map about 30, a Massive one
+     * near 45, a Gigantic one 60), never fewer than the old 24.
+     */
+    int maxCalls() {
+        return Math.max(MAX_CALLS, Math.min(60, 10 + city.w / 20 + city.totalResidents / 400));
+    }
+
+    /**
      * (10.45) A new call on the board at (x, y). It used to be that once twelve were open any more were simply
      * dropped: the caller was on the phone, but nothing came of it and nothing showed on the map. Now a call
      * with nothing left at it makes room; failing that, null (and the caller's report goes on the nearest).
      */
     private Incident newIncident(float x, float y, int count) {
-        if (incidents.size() >= MAX_CALLS) {
+        if (incidents.size() >= maxCalls()) {
             Incident stale = null, nearest = null;
             float bd = Float.MAX_VALUE;
             for (int i = 0; i < incidents.size(); i++) {
@@ -660,7 +668,8 @@ final class Dispatch {
         boolean centre = city.callCentre != null;
         if (centre && w.callsLost) return;
         sweepCd = centre ? 2 : 3;
-        int max = (city.w >= 400 ? 18 : city.w >= 300 ? 14 : 12) + (centre ? 4 : 0);
+        // ((10.51) More at once in a bigger city.)
+        int max = Math.min(maxCalls(), 8 + city.w / 25 + (centre ? 6 : 0));
         if (incidents.size() >= max) return;
         int cell = 192, gw = (int) (city.worldW() / cell) + 1, gh = (int) (city.worldH() / cell) + 1;
         int[] count = new int[gw * gh];
@@ -1736,7 +1745,7 @@ final class Dispatch {
         }
     }
 
-    private int arrivedWaves;
+    private int arrivedWaves, airWaves;
 
     private void arrive(Arrival a) {
         java.util.List<float[]> from = entries(a.x, a.y);
@@ -1744,6 +1753,26 @@ final class Dispatch {
         if (a.type == Entity.SOLDIER) soldierCount = (soldierCount + 3) / 4 * 4;
         boolean army = a.type == Entity.SOLDIER;
         String label = a.label != null ? a.label.toUpperCase() : army ? "ARMY RESERVES" : "POLICE BACKUP";
+        // (10.52) Every other army wave comes in by air: helicopters from the edge of the map, eight soldiers to
+        // each, put down near the call; they cover them for a while and fly back out.
+        if (army && !a.swat && a.count >= 6 && (airWaves++ & 1) == 1) {
+            float[] p = from.get(0);
+            int before = w.fleet.vehicles.size(), helis = 0, landed = 0;
+            for (int left = a.count; left > 0; left -= 8) {
+                int n = Math.min(8, left);
+                float off = helis * 40;
+                ArrayList<Entity> squad = w.fleet.airlift(n, p[0] + off, p[1] + off, a.x, a.y, a.place, a.incident);
+                if (squad == null) break;
+                helis++;
+                landed += n;
+            }
+            if (helis > 0) {
+                trackConvoy(a.type, label, before, p[0], p[1], a.x, a.y, a.place);
+                say(WHO_MILITARY, null, "Military: Air assault inbound from " + sideOfMap(p[0], p[1]) + ", " + helis
+                        + (helis == 1 ? " helicopter" : " helicopters") + " with " + landed + " soldiers for " + a.place + ".", p[0], p[1]);
+                return;
+            }
+        }
         // (They drive to the nearest bit of road to the call, then get out: a call in a park or a yard is still
         // somewhere a car can get near.)
         float[] road = city.nearestDrivable(a.x, a.y);

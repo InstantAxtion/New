@@ -2,11 +2,29 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.50";
-    static final int VERSION_CODE = 88;
+    static final String VERSION = "10.51";
+    static final int VERSION_CODE = 89;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.51  -  Smarter people, better traffic",
+                    "People running from the dead shout a warning as they go: anyone about who hasn't seen them yet learns where the danger is and turns away instead of walking into it.",
+                    "They keep running for longer, until they're well clear of where they last saw the dead, instead of a block and back.",
+                    "A real sprint: with breath to spare, the living run flat out for ten seconds or so, then jog until they've got it back (quicker when they stop).",
+                    "The living climb over fences and the highway's concrete barrier when they're running for it (the dead can't).",
+                    "People and police out for a stroll keep to the pavements and squares instead of wandering across the grass.",
+                    "Hurt people go home to rest.",
+                    "Bigger cities keep more 911 calls on the board at once.",
+                    "Police and soldiers share what they see over a wider radius and put it on the call board, and call each other in on the radio when both are about.",
+                    "Police car lights only flash on a call: on the way to one, at the scene or pulling someone over. Not on the rounds or driving back to the station.",
+                    "Traffic pulls over for army trucks and tanks on their way to a fight too, and cars coming the other way pull to the kerb as well.",
+                    "Police and army vehicles on a call drive faster, the army trucks most of all.",
+                    "Cars go round the island at roundabouts, the way the traffic flows, and people cross at the zebra crossings on its arms instead of over the middle. A big crossroads with the end of a median in it is no longer mistaken for a roundabout.",
+                    "Every other wave of army reinforcements comes in by air: helicopters fly in from the edge of the map, eight soldiers to each, put them down near the trouble, cover them with their door guns for a minute and fly back out.",
+                    "More music: three pieces for each mood (quiet streets, the outbreak, heavy fighting), with a new one picked at random every couple of minutes and whenever the mood changes.",
+                    "The signs on police stations, fire stations, schools, markets, gas stations, gun stores and ranger stations sit centred on a plate, so they read cleanly whatever the roof is like.",
+            },
             {
                     "10.50  -  A leaner game, and a better screen",
                     "Gone: fires (nothing catches fire any more - wrecks and blasts still smoke and scorch), the Auto cam, spitter and screamer zombies, raiders, medics, ambulances and hospital care. Anyone of those kinds in a saved game comes back as an ordinary zombie or person.",

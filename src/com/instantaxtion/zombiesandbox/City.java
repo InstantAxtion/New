@@ -1333,8 +1333,106 @@ final class City {
         lanesFromDrives();
         // (And any bit of lane still on its own joined up, with no bits of paved street left in the lanes.)
         joinRoads();
+        if (cfg.civic >= 20) closeGaps();
         unpaveLaneStubs();
         clearOrphans();
+        if (cfg.civic >= 20) {
+            pruneDeadLanes();
+            closeGaps();
+        }
+    }
+
+
+    /**
+     * (10.43) A lane that just stops in the middle of a field (nothing at its end: no house, yard, car park, path
+     * or shore) is taken back to where it last met something.
+     */
+    private void pruneDeadLanes() {
+        for (int round = 0; round < 300; round++) {
+            boolean changed = false;
+            for (int y = 1; y < h - 1; y++)
+                for (int x = 1; x < w - 1; x++) {
+                    int i = y * w + x;
+                    if (tiles[i] != DIRT || (bridge != null && bridge[i])) continue;
+                    int four = 0;
+                    for (int k = 0; k < 4; k++) {
+                        byte o = tiles[i + (k == 0 ? 1 : k == 1 ? -1 : k == 2 ? w : -w)];
+                        if (o == ROAD || o == DIRT || o == CAR || o == LOT) four++;
+                    }
+                    if (four > 1) continue;
+                    boolean near = false;
+                    for (int dy = -1; dy <= 1 && !near; dy++)
+                        for (int dx = -1; dx <= 1; dx++) {
+                            byte o = tiles[(y + dy) * w + x + dx];
+                            if (o == LOT || o == BUILDING || o == BASE || o == PIER || o == SIDEWALK || o == PLAZA || o == RAIL
+                                    || o == TRAIL || o == WATER || o == SAND) near = true;
+                        }
+                    if (near) continue;
+                    tiles[i] = GRASS;
+                    changed = true;
+                }
+            if (!changed) break;
+        }
+    }
+
+    /** Somewhere a car can drive (or park), for closeGaps: not the highway or its ramps. */
+    private boolean gapWay(int x, int y) {
+        if (x < 0 || y < 0 || x >= w || y >= h) return false;
+        int i = y * w + x;
+        byte t = tiles[i];
+        if (t == ROAD) return (oneWay == null || oneWay[i] == 0) && (slipWay == null || slipWay[i] == 0);
+        return t == DIRT || t == LOT || t == CAR;
+    }
+
+    /** Open ground a gap can be closed over. */
+    private boolean gapFill(int x, int y) {
+        if (x < 1 || y < 1 || x >= w - 1 || y >= h - 1) return false;
+        int i = y * w + x;
+        return tiles[i] == GRASS && !nearRamp(i);
+    }
+
+    private void fillAs(int x, int y, int from) {
+        int i = y * w + x;
+        tiles[i] = tiles[from] == DIRT ? DIRT : LOT;
+        if (drive != null) drive[i] = tiles[i] == LOT;
+    }
+
+    /**
+     * (10.43) Gaps between lanes, drives and roads that nearly meet: a lane or drive that ends a tile short of
+     * another road, with only grass between, is carried on to meet it; and two that only touch corner to corner
+     * are joined across the corner, so they meet in a smooth bend rather than a pinch.
+     */
+    private void closeGaps() {
+        for (int round = 0; round < 2; round++)
+            for (int y = 1; y < h - 1; y++)
+                for (int x = 1; x < w - 1; x++) {
+                    int i = y * w + x;
+                    if (!scrap(i)) continue;
+                    int n = 0, bx = 0, by = 0;
+                    for (int k = 0; k < 4; k++) {
+                        int dx = k == 0 ? 1 : k == 1 ? -1 : 0, dy = k == 2 ? 1 : k == 3 ? -1 : 0;
+                        if (gapWay(x + dx, y + dy)) {
+                            n++;
+                            bx = dx;
+                            by = dy;
+                        }
+                    }
+                    // A dead end: straight on across one tile of grass to a road or lane.
+                    if (n == 1) {
+                        int dx = -bx, dy = -by, fx = x + 2 * dx, fy = y + 2 * dy;
+                        if (gapFill(x + dx, y + dy) && gapWay(fx, fy)) {
+                            byte ft = tiles[fy * w + fx];
+                            if (ft == ROAD || ft == DIRT || scrap(fy * w + fx)) fillAs(x + dx, y + dy, i);
+                        }
+                    }
+                    // Corner to corner with another way, and nothing joining them: across the corner.
+                    for (int dx = -1; dx <= 1; dx += 2)
+                        for (int dy = -1; dy <= 1; dy += 2) {
+                            if (!gapWay(x + dx, y + dy) || gapWay(x + dx, y) || gapWay(x, y + dy)) continue;
+                            if (gapFill(x + dx, y)) fillAs(x + dx, y, i);
+                            else if (gapFill(x, y + dy)) fillAs(x, y + dy, i);
+                        }
+                }
     }
 
     /** Scraps of lane or drive joined to nothing (left where a drive that ran to a ramp was cut off) go. */
@@ -7466,17 +7564,28 @@ final class City {
                     Street cross = vertical ? new Street(cx - 14, cy + 6, cx + 15, cy + 9, false, false)
                             : new Street(cx + 6, cy - 14, cx + 9, cy + 15, true, false);
                     carve(cross);
-                    // Police and fire stations facing the main street, on the side away from the cross street.
-                    int px = vertical ? cx + 3 : cx - 13, py = vertical ? cy - 13 : cy + 3;
-                    int fx = vertical ? cx - 13 : cx - 13, fy = vertical ? cy - 13 : cy - 12;
-                    if (allOpen(px - 1, py - 1, 12, 11)) serviceBuilding(px, py, 10, 9, STATION, facilities.size() + 1);
-                    if (allOpen(fx - 1, fy - 1, 12, 11)) serviceBuilding(fx, fy, 10, 9, FIRE_STATION, 0);
                     // (10.30) A bigger town on the Massive maps: a second cross street the other side of the middle,
                     // houses all along all three, and its streets stay paved.
+                    // ((10.43) Laid out before the stations, so they're built round it rather than it being run
+                    // straight through them.)
+                    Street cross2 = !big ? null : vertical ? new Street(cx - 14, cy - 12, cx + 15, cy - 9, false, false)
+                            : new Street(cx - 12, cy - 14, cx - 9, cy + 15, true, false);
+                    boolean first = cfg.civic >= 20;
+                    if (cross2 != null && first) carve(cross2);
+                    // Police and fire stations facing the main street, on the side away from the cross street.
+                    // ((10.43) Between the two cross streets, in a bigger town.)
+                    int px = vertical ? cx + 3 : cx - 13, py = vertical ? cy - 13 : cy + 3;
+                    int fx = vertical ? cx - 13 : cx - 13, fy = vertical ? cy - 13 : cy - 12;
+                    if (first) {
+                        px = vertical ? cx + 3 : cx - 7;
+                        py = vertical ? cy - 7 : cy + 3;
+                        fx = vertical ? cx - 13 : cx - 7;
+                        fy = vertical ? cy - 7 : cy - 12;
+                    }
+                    if (allOpen(px - 1, py - 1, 12, 11)) serviceBuilding(px, py, 10, 9, STATION, facilities.size() + 1);
+                    if (allOpen(fx - 1, fy - 1, 12, 11)) serviceBuilding(fx, fy, 10, 9, FIRE_STATION, 0);
                     if (big) {
-                        Street cross2 = vertical ? new Street(cx - 14, cy - 12, cx + 15, cy - 9, false, false)
-                                : new Street(cx - 12, cy - 14, cx - 9, cy + 15, true, false);
-                        carve(cross2);
+                        if (!first) carve(cross2);
                         for (Street o : new Street[]{st, cross, cross2}) keepPaved(o);
                         plotsAlong(cross2, cx - 38, cy - 38, cx + 38, cy + 38, 2);
                     }

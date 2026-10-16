@@ -2,11 +2,16 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.42";
-    static final int VERSION_CODE = 80;
+    static final String VERSION = "10.43";
+    static final int VERSION_CODE = 81;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.43  -  Stations clear of the road, no gaps",
+                    "In the bigger country towns, the second cross street was laid straight through the town's police and fire stations: now the stations are built between the cross streets, facing the main street, with nothing running through them (in new cities).",
+                    "Lanes and drives that ended a tile short of the road or lane they were heading for are carried on to meet it, and ones that only touched corner to corner are joined across the corner, so they meet in a smooth bend instead of a pinch or a gap.",
+            },
             {
                     "10.42  -  Driving the road network",
                     "Cars now plan the line they're about to drive - down the middle of their lane, round the bends and through the junction ahead - and steer smoothly for a point on along it (further ahead the faster they go), instead of aiming at one tile after another: less swerving, smoother corners, and they keep to their lane better.",

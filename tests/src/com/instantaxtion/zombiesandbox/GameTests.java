@@ -1274,7 +1274,11 @@ public final class GameTests {
                         int across = 0;
                         for (int dy = -6; dy <= 6; dy++)
                             if (y + dy >= 0 && y + dy < lanes.h && lanes.tiles[(y + dy) * lanes.w + (x + k) / 2] == City.ROAD) across++;
-                        if (k < lanes.w && k - x < 25 && lanes.tiles[y * lanes.w + k] == City.DIRT && across <= 4) stubs++;
+                        // (A town's street with pavements along it, that a lane runs on from, is a street, not a stub.)
+                        boolean street = false;
+                        for (int dy = -3; dy <= 3; dy++)
+                            if (y + dy >= 0 && y + dy < lanes.h && lanes.tiles[(y + dy) * lanes.w + (x + k) / 2] == City.SIDEWALK) street = true;
+                        if (k < lanes.w && k - x < 25 && lanes.tiles[y * lanes.w + k] == City.DIRT && across <= 4 && !street) stubs++;
                     }
                 check(stubs == 0, stubs + " stretches of tarmac in the middle of a dirt lane");
                 // The real cities.
@@ -2933,7 +2937,10 @@ public final class GameTests {
                     }
                     check(lanes == 0, m + "no lane or drive joins an on or off ramp (" + lanes + ")");
                     int[] f = new int[w * city.h];
-                    float[] mid = city.nearestDrivable((city.townX0 + city.townX1) / 2f * City.T, (city.townY0 + city.townY1) / 2f * City.T);
+                    // (From a road near the middle of town: the very middle can be a park.)
+                    float[] mid = null;
+                    for (int s = 0; s < 12 && mid == null; s++)
+                        mid = city.nearestDrivable(((city.townX0 + city.townX1) / 2f + s * 10) * City.T, (city.townY0 + city.townY1) / 2f * City.T);
                     city.driveField(f, mid[0], mid[1]);
                     for (int i = 0; i < w * city.h; i++) if (city.slipWay[i] != 0 && city.tiles[i] == City.ROAD && f[i] >= City.FAR) stranded++;
                     check(stranded == 0, m + "every ramp leads somewhere (" + stranded + " tiles of ramp lead nowhere)");
@@ -3047,6 +3054,49 @@ public final class GameTests {
                 check(careful < samples * 0.015, "hardly anyone goes round in circles (" + careful + " of " + samples + ")");
                 check(stuck < samples * 0.02, "hardly anyone stuck for half a minute (" + stuck + " of " + samples + ")");
                 check(overlaps <= 10, "cars don't end up on top of one another (" + overlaps + ")");
+            }
+        });
+        test("10.43: no street runs through a country town's police or fire station; lanes and drives meet up without gaps", new Check() {
+            public void run() throws Exception {
+                for (int[] ps : new int[][]{{0, 3, CityConfig.MASSIVE}, {0, 5, CityConfig.MASSIVE}, {2, 5, CityConfig.LARGE}}) {
+                    CityConfig c = new CityConfig();
+                    c.v[CityConfig.OPT_PRESET] = ps[0];
+                    c.v[CityConfig.OPT_SIZE] = ps[2];
+                    c.seed = ps[1];
+                    c.normalize();
+                    c.seed = ps[1];
+                    City city = new City(c, 0.05f);
+                    String m = "map " + ps[0] + "/" + ps[1] + ": ";
+                    int w = city.w, stations = 0;
+                    for (City.Facility f : city.facilities) {
+                        if (!f.satellite || (f.kind != City.FACILITY_POLICE && f.kind != City.FACILITY_FIRE)) continue;
+                        stations++;
+                        int tx = (int) (f.x / City.T), ty = (int) (f.y / City.T), through = 0;
+                        for (int y = ty - 2; y <= ty + 2; y++)
+                            for (int x = tx - 1; x <= tx + 1; x++) {
+                                byte t = city.tiles[y * w + x];
+                                if (t == City.ROAD || t == City.DIRT) through++;
+                            }
+                        check(through == 0, m + f.name + " has no road through it (" + through + ")");
+                    }
+                    if (ps[2] == CityConfig.MASSIVE) check(stations >= 4, m + "country towns with their own stations (" + stations + ")");
+                    // Two ways (lane, drive or road) that only touch corner to corner, with nothing joining them.
+                    int pinch = 0;
+                    for (int y = 1; y < city.h - 1; y++)
+                        for (int x = 1; x < w - 1; x++) {
+                            int i = y * w + x;
+                            if (city.tiles[i] != City.DIRT) continue;
+                            for (int dx = -1; dx <= 1; dx += 2) {
+                                int j = (y + 1) * w + x + dx;
+                                byte o = city.tiles[j], a = city.tiles[y * w + x + dx], b = city.tiles[(y + 1) * w + x];
+                                boolean wayO = o == City.DIRT || o == City.ROAD || o == City.LOT;
+                                boolean wayA = a == City.DIRT || a == City.ROAD || a == City.LOT || a == City.CAR;
+                                boolean wayB = b == City.DIRT || b == City.ROAD || b == City.LOT || b == City.CAR;
+                                if (wayO && !wayA && !wayB && (a == City.GRASS || b == City.GRASS)) pinch++;
+                            }
+                        }
+                    check(pinch == 0, m + "lanes don't meet corner to corner (" + pinch + ")");
+                }
             }
         });
         test("every screen draws", new Check() {

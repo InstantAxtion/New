@@ -434,6 +434,67 @@ final class Dispatch {
 
     // ------------------------------------------------------------------ 911
 
+    /** How many calls can be open at once. */
+    static final int MAX_CALLS = 24;
+
+    /**
+     * (10.45) A new call on the board at (x, y). It used to be that once twelve were open any more were simply
+     * dropped: the caller was on the phone, but nothing came of it and nothing showed on the map. Now a call
+     * with nothing left at it makes room; failing that, null (and the caller's report goes on the nearest).
+     */
+    private Incident newIncident(float x, float y, int count) {
+        if (incidents.size() >= MAX_CALLS) {
+            Incident stale = null, nearest = null;
+            float bd = Float.MAX_VALUE;
+            for (int i = 0; i < incidents.size(); i++) {
+                Incident o = incidents.get(i);
+                if (o.cordonPost >= 0) continue;
+                if (o.zombiesNear == 0 && (stale == null || o.clearTimer > stale.clearTimer)) stale = o;
+                float d = (o.x - x) * (o.x - x) + (o.y - y) * (o.y - y);
+                if (d < bd) {
+                    bd = d;
+                    nearest = o;
+                }
+            }
+            if (stale != null) resolve(stale);
+            else {
+                if (nearest != null) nearest.reported = Math.max(nearest.reported, count);
+                return null;
+            }
+        }
+        // (On the map: one of the dead just coming in over the edge is still out past it.)
+        x = Math.max(City.T, Math.min(city.worldW() - City.T, x));
+        y = Math.max(City.T, Math.min(city.worldH() - City.T, y));
+        Incident inc = new Incident();
+        inc.x = x;
+        inc.y = y;
+        inc.place = city.placeName(x, y);
+        inc.reported = inc.lastLogged = count;
+        inc.field = city.walkField16(inc.x, inc.y);
+        incidents.add(inc);
+        return inc;
+    }
+
+    /**
+     * (10.45) Officers or soldiers on their way somewhere see the dead from the car: they radio it in and take it
+     * on there and then. The call there (an existing one close by, or a new one), or null if there's no room.
+     */
+    Incident sighting(float x, float y, Entity who) {
+        for (int i = 0; i < incidents.size(); i++) {
+            Incident inc = incidents.get(i);
+            float dx = inc.x - x, dy = inc.y - y;
+            if (dx * dx + dy * dy < 160 * 160) return inc;
+        }
+        int count = Math.max(1, w.countZombiesNear(x, y, 90));
+        Incident inc = newIncident(x, y, count);
+        if (inc == null) return null;
+        inc.reported = count;
+        if (who != null)
+            say(who.type == Entity.SOLDIER ? WHO_MILITARY : WHO_POLICE, who, "Contact on the way, " + inc.place + ". "
+                    + count + (count == 1 ? " hostile" : " hostiles") + ". Engaging.", x, y);
+        return inc;
+    }
+
     /** A civilian who saw a zombie calls 911. */
     void call(Entity caller, Entity zombie) {
         calls++;
@@ -462,14 +523,8 @@ final class Dispatch {
                 return;
             }
         }
-        if (incidents.size() >= 12) return;
-        Incident inc = new Incident();
-        inc.x = zombie.x;
-        inc.y = zombie.y;
-        inc.place = city.placeName(zombie.x, zombie.y);
-        inc.reported = inc.lastLogged = count;
-        inc.field = city.walkField16(inc.x, inc.y);
-        incidents.add(inc);
+        Incident inc = newIncident(zombie.x, zombie.y, count);
+        if (inc == null) return;
         String line = CALLS[rnd.nextInt(CALLS.length)];
         String text = line.contains("%d") ? String.format(line, count, inc.place) : String.format(line, inc.place);
         say(WHO_911, null, "\"" + text + "\"", inc.x, inc.y);
@@ -984,9 +1039,47 @@ final class Dispatch {
             inc.age += step;
             if (inc.onScene) inc.sceneTime += step;
             inc.zombiesNear = w.countZombiesNear(inc.x, inc.y, 140);
+            // (10.45) The dead don't stay put: the call moves with them (a little way, not across town), rather
+            // than everyone going on to where they were.
+            if (inc.zombiesNear == 0 && inc.cordonPost < 0) {
+                Entity z = w.nearestZombie(inc.x, inc.y, 320);
+                Incident other = z == null || z.hidden ? null : callAt(z.x, z.y, inc);
+                if (other != null) {
+                    // (Already a call where they've gone: everyone on this one goes on to that, and this one closes.)
+                    for (int k = 0, n = w.entities.size(); k < n; k++) {
+                        Entity e = w.entities.get(k);
+                        if (e.incident == inc && e.task == T_RESPOND) {
+                            e.incident = other;
+                            e.orderField = null;
+                            e.onScene = false;
+                        }
+                    }
+                    w.fleet.redirect(inc, other);
+                    inc.resolved = true;
+                    incidents.remove(inc);
+                    continue;
+                }
+                if (z != null && !z.hidden) {
+                    float nx = Math.max(City.T, Math.min(city.worldW() - City.T, z.x)), ny = Math.max(City.T, Math.min(city.worldH() - City.T, z.y));
+                    float mx = nx - inc.x, my = ny - inc.y;
+                    inc.x = nx;
+                    inc.y = ny;
+                    inc.zombiesNear = w.countZombiesNear(inc.x, inc.y, 140);
+                    if (mx * mx + my * my > 60 * 60) {
+                        inc.field = city.walkField16(inc.x, inc.y);
+                        inc.place = city.placeName(inc.x, inc.y);
+                        for (int k = 0, n = w.entities.size(); k < n; k++) {
+                            Entity e = w.entities.get(k);
+                            if (e.incident == inc) e.orderField = null;
+                        }
+                    }
+                }
+            }
             if (inc.zombiesNear == 0) inc.clearTimer += step;
             else inc.clearTimer = 0;
-            if ((inc.clearTimer > 5 && inc.onScene && inc.sceneTime > 5) || inc.clearTimer > 30) {
+            // ((10.45) And a call with none of them anywhere near is closed in a few seconds, not half a minute:
+            // nobody drives on across town to an empty street.)
+            if ((inc.clearTimer > 5 && inc.onScene && inc.sceneTime > 5) || inc.clearTimer > 12) {
                 resolve(inc);
                 continue;
             }
@@ -1087,6 +1180,15 @@ final class Dispatch {
                 say(WHO_POLICE, null, "Dispatch: " + name(first) + (moved > 1 ? " and partner" : "") + ", divert to " + starved.place
                         + ". " + starved.zombiesNear + " hostiles and nobody on it.", starved.x, starved.y);
         }
+    }
+
+    /** Another open call (besides inc) close to (x, y), or null. */
+    private Incident callAt(float x, float y, Incident inc) {
+        for (int i = 0; i < incidents.size(); i++) {
+            Incident o = incidents.get(i);
+            if (o != inc && !o.resolved && (o.x - x) * (o.x - x) + (o.y - y) * (o.y - y) < 160 * 160) return o;
+        }
+        return null;
     }
 
     private void resolve(Incident inc) {
@@ -1556,14 +1658,9 @@ final class Dispatch {
             if (!o.resolved && o.cordonPost < 0 && Math.hypot(o.x - e.x, o.y - e.y) < 220) inc = o;
         }
         if (inc == null) {
-            if (incidents.size() >= 20) return;
-            inc = new Incident();
-            inc.x = e.x;
-            inc.y = e.y;
-            inc.place = city.placeName(e.x, e.y);
-            inc.reported = inc.lastLogged = hostiles;
-            inc.field = city.walkField16(inc.x, inc.y);
-            incidents.add(inc);
+            // ((10.45) A unit's call for backup always gets on the board: a quiet call makes way for it.)
+            inc = newIncident(e.x, e.y, hostiles);
+            if (inc == null) return;
         }
         int want = Math.min(12, 2 + hostiles / 2);
         if (want <= inc.backupNeed) return;

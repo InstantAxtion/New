@@ -2084,6 +2084,20 @@ final class World {
             }
     }
 
+    /** (10.45) How far one of this person's shots is heard: louder guns carry further. */
+    static float gunLoudness(Entity e) {
+        if (e.role == Entity.ROLE_GUNNER) return 330;
+        if (e.role == Entity.ROLE_SNIPER) return 340;
+        switch (e.weapon) {
+            case Entity.W_PISTOL:
+            case Entity.W_REVOLVER: return 180;
+            case Entity.W_SHOTGUN: return 245;
+            case Entity.W_RIFLE: return 265;
+            case Entity.W_HUNTING: return 285;
+            default: return e.type == Entity.SOLDIER ? 255 : e.type == Entity.COP ? 205 : 190;
+        }
+    }
+
     /** How much better than the standard this one shoots: 0 to 0.15, fixed for the person (from their name). */
     static float aimBonus(Entity e) {
         int h = e.nameSeed * 0x9E3779B1;
@@ -2100,6 +2114,10 @@ final class World {
         float x = shooter.x, y = shooter.y;
         // Shooting at the dead, the danger is where the bullets are going; at people, it's the gun itself.
         boolean atDead = target.isZombie();
+        // ((10.45) Patrol cars on their rounds come to a fight they can hear.)
+        if (atDead && (shooter.type == Entity.COP || shooter.type == Entity.SOLDIER || shooter.hasGun)
+                && countZombiesNear(target.x, target.y, 90) >= 3)
+            fleet.heardFight(x, y, radius, target.x, target.y);
         float dx = atDead ? target.x : x, dy = atDead ? target.y : y;
         int cx0 = Math.max(0, (int) ((x - radius) / CELL)), cx1 = Math.min(gw - 1, (int) ((x + radius) / CELL));
         int cy0 = Math.max(0, (int) ((y - radius) / CELL)), cy1 = Math.min(gh - 1, (int) ((y + radius) / CELL));
@@ -2128,14 +2146,37 @@ final class World {
                             break;
                         }
                         case Entity.COP:
-                        case Entity.SOLDIER:
-                            // Off duty for a moment: shots fired, so go and look.
-                            if (o.aiming || o.fear > 0 || o.task != Dispatch.T_NONE || o.scout || o.rig != null) break;
+                        case Entity.SOLDIER: {
+                            if (o.aiming || o.scout || o.rig != null || o.ride != null) break;
                             if (o.ammo <= 0 && o.reserve <= 0) break;
+                            // (10.45) One of their own (or anyone with a gun) in a fight with several of them: go and
+                            // help, not just look. On the way to a call that's gone quiet, they're needed here instead.
+                            boolean ally = shooter.type == Entity.COP || shooter.type == Entity.SOLDIER || shooter.hasGun;
+                            int pressing = atDead && ally ? countZombiesNear(target.x, target.y, 90) : 0;
+                            if (o.task == Dispatch.T_RESPOND && pressing >= 3 && o.incident != null && o.incident.zombiesNear == 0
+                                    && d2 < 200 * 200) {
+                                Dispatch.Incident here = dispatch.sighting(target.x, target.y, null);
+                                if (here != null && here != o.incident) {
+                                    o.incident = here;
+                                    o.orderField = null;
+                                    o.onScene = false;
+                                }
+                                break;
+                            }
+                            // Off duty for a moment: shots fired, so go and look (and keep at it while the shooting
+                            // goes on, longer when it sounds like someone's in trouble).
+                            if (o.task != Dispatch.T_NONE) break;
+                            if (o.fear > 0 && pressing < 3) break;
                             o.threatX = dx + rnd.nextFloat() * 20 - 10;
                             o.threatY = dy + rnd.nextFloat() * 20 - 10;
-                            o.fear = 10;
+                            o.fear = pressing >= 3 ? 25 : 10;
+                            if (pressing >= 3 && o.shareCd <= 0 && rnd.nextFloat() < 0.15f) {
+                                o.shareCd = 20;
+                                dispatch.say(o.type == Entity.SOLDIER ? Dispatch.WHO_MILITARY : Dispatch.WHO_POLICE, o,
+                                        "Shots fired by " + city.placeName(dx, dy) + ". Moving to assist.", dx, dy);
+                            }
                             break;
+                        }
                         case Entity.RAIDER:
                             if (o.noiseTimer <= 0 && !o.aiming && rnd.nextFloat() < 0.5f) {
                                 o.noiseX = x;
@@ -2970,11 +3011,26 @@ final class World {
     }
 
     /** Shoves a zombie back and stuns it; armed units also hit it with their weapon. */
-    private void shove(Entity e, Entity z, boolean strong) {
+    void shove(Entity e, Entity z, boolean strong) {
         e.meleeCd = strong ? 1.2f : 2.2f;
         e.swingAt = time;
         float ddx = z.x - e.x, ddy = z.y - e.y;
         float d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
+        // (10.45) Not a sure thing: a shove can glance off or be shrugged off, the more so from the untrained, against
+        // a big one, or with more of them pressing in. (Only the one you're controlling shoves when you say.)
+        if (e != controlled) {
+            float chance = strong ? 0.72f : 0.5f;
+            if (z.type == Entity.BRUTE) chance -= 0.35f;
+            if (z.stun > 0) chance += 0.15f;
+            chance -= 0.08f * Math.max(0, countZombiesNear(e.x, e.y, 22) - 1);
+            if (e.hp < e.maxHp * 0.4f) chance -= 0.1f;
+            if (rnd.nextFloat() > Math.max(0.12f, chance)) {
+                tryMove(z, ddx / d * 1.5f / z.mass, ddy / d * 1.5f / z.mass);
+                e.angle = (float) Math.atan2(ddy, ddx);
+                emit(Sfx.THUD, z.x, z.y);
+                return;
+            }
+        }
         float push = (strong ? 11 : 7) / z.mass;
         tryMove(z, ddx / d * push, ddy / d * push);
         z.stun = z.type == Entity.BRUTE ? 0.3f : strong ? 0.9f : 0.6f;
@@ -8934,10 +8990,13 @@ final class World {
         // (10.20) Some shoot better than others: each one anywhere from as before to 15% better, for good.
         accuracy = Math.min(0.99f, accuracy * (1 + aimBonus(e)));
         if (e.ammo <= 0 && e.reserve > 0) e.reload = soldier ? (e.role == Entity.ROLE_GUNNER ? 4f : 2.2f) : 1.6f;
-        if (rnd.nextFloat() < (e.role == Entity.ROLE_GUNNER ? 0.08f : 0.25f)) noise(e.x, e.y, e.role == Entity.ROLE_SNIPER ? 300 : 220);
+        // (10.45) How far the shot carries depends on the gun: a pistol's crack, a shotgun's boom, a rifle's
+        // report, a machine gun's chatter.
+        float loud = gunLoudness(e);
+        if (rnd.nextFloat() < (e.role == Entity.ROLE_GUNNER ? 0.12f : 0.25f) * (0.6f + loud / 550f)) noise(e.x, e.y, loud);
         if (e.alertCd <= 0) {
             e.alertCd = 1.2f;
-            heardShot(e, t, e.role == Entity.ROLE_SNIPER ? 320 : 250);
+            heardShot(e, t, loud * 1.12f);
         }
         // A spent case flies out of the side of the gun.
         float ea = e.angle + 1.57f + (rnd.nextFloat() - 0.5f) * 0.6f;
@@ -10385,7 +10444,8 @@ final class World {
         }
         particle(fx, fy, 0, 0, 0.06f, 3.4f, 0xFFFFE9A0, P_FLASH);
         emit(Sfx.MG, fx, fy);
-        if (rnd.nextFloat() < 0.15f) noise(fx, fy, 260);
+        // ((10.45) A heavy machine gun is heard a long way off.)
+        if (rnd.nextFloat() < 0.2f) noise(fx, fy, 360);
         return true;
     }
 

@@ -437,6 +437,10 @@ mounting up, and lighter running with big populations.
 
 **More police than soldiers (10.35):** the army on the map is never more than two in five of the police force.
 
+**Calls, gunfire and the gate (10.45):** vehicles no longer jam leaving stations and bases, calls follow the dead
+and close when they're gone, no 911 call goes missing, units spot the dead on the way and deal with them, they come
+to help when they hear a fight, bigger guns are louder, and shoves can fail.
+
 **How the vehicles look (10.44):** the last part of the roads and vehicles overhaul: cars drawn car-shaped from
 above with windscreens, roofs and lamps, patrol cars in proper liveries with a light bar across the roof, and
 light bars on ambulances and fire engines.

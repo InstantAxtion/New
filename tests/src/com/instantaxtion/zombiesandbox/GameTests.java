@@ -3109,6 +3109,128 @@ public final class GameTests {
                 }
             }
         });
+        test("10.45: calls always reach the map and follow the dead, units help each other, louder guns, shoves can fail, yards kept clear", new Check() {
+            public void run() throws Exception {
+                CityConfig c = new CityConfig();
+                c.v[CityConfig.OPT_PRESET] = 0;
+                c.v[CityConfig.OPT_ZOMBIES] = 0;
+                c.seed = 3;
+                c.normalize();
+                c.seed = 3;
+                World w = new World(c);
+                w.rnd.setSeed(45);
+                w.populate(c);
+                for (int f = 0; f < 30; f++) w.update(1 / 30f);
+                Dispatch d = w.dispatch;
+                // A full board of calls gone quiet: a new 911 call still gets on the map (a quiet one makes way).
+                java.util.Random r = new java.util.Random(5);
+                for (int k = 0; k < Dispatch.MAX_CALLS; k++) {
+                    float[] q = w.city.randomWalkableInTown(r);
+                    Dispatch.Incident inc = new Dispatch.Incident();
+                    inc.x = q[0];
+                    inc.y = q[1];
+                    inc.place = "test";
+                    d.incidents.add(inc);
+                }
+                Entity caller = null;
+                for (Entity e : w.entities) if (e.type == Entity.CIVILIAN && !e.dead && w.city.inTown(e.x, e.y)) caller = e;
+                float[] zp = w.city.findWalkable(caller.x + 50, caller.y);
+                Entity z = w.spawn(Entity.ZOMBIE, zp[0], zp[1]);
+                boolean before = w.callsLost;
+                w.callsLost = false;
+                d.call(caller, z);
+                w.callsLost = before;
+                boolean onMap = false;
+                for (Dispatch.Incident inc : d.incidents) if (Math.hypot(inc.x - z.x, inc.y - z.y) < 30) onMap = true;
+                check(onMap && d.incidents.size() <= Dispatch.MAX_CALLS, "a call made with the board full still shows (" + d.incidents.size() + " open)");
+                // A call with nothing at it closes in seconds; one whose dead have moved on goes with them.
+                d.incidents.clear();
+                w.clearZombies();
+                float[] a = w.city.randomWalkableInTown(r);
+                Dispatch.Incident empty = d.sighting(a[0], a[1], null);
+                float[] b = null;
+                for (int k = 0; k < 400 && b == null; k++) {
+                    float[] q = w.city.randomWalkableInTown(r);
+                    if (Math.hypot(q[0] - a[0], q[1] - a[1]) > 900) b = q;
+                }
+                Dispatch.Incident moving = d.sighting(b[0], b[1], null);
+                float[] zq = w.city.findWalkable(b[0] + 200, b[1]);
+                Entity walker = w.spawn(Entity.ZOMBIE, zq[0], zq[1]);
+                walker.stun = 30;
+                for (int f = 0; f < 45; f++) w.update(1 / 30f);
+                // (Unless there's a call there already: then this one hands over to it and closes.)
+                boolean covered = false;
+                for (Dispatch.Incident o : d.incidents) if (Math.hypot(o.x - walker.x, o.y - walker.y) < 60) covered = true;
+                check(covered && (Math.hypot(moving.x - walker.x, moving.y - walker.y) < 60 || moving.resolved), "the call goes with the dead ("
+                        + (int) Math.hypot(moving.x - walker.x, moving.y - walker.y) + " away)");
+                for (int f = 0; f < 30 * 15; f++) w.update(1 / 30f);
+                check(!d.incidents.contains(empty), "a call with none of the dead near it is closed within seconds");
+                // Seen from the road on the way to a call: a sighting is put on the map there.
+                int open = d.incidents.size();
+                float[] s2 = w.city.randomWalkableInTown(r);
+                Dispatch.Incident seen = d.sighting(s2[0], s2[1], null);
+                check(seen != null && d.incidents.size() == open + 1 && d.sighting(s2[0] + 30, s2[1], null) == seen,
+                        "a sighting from a passing unit becomes a call (and the same spot isn't reported twice)");
+                // Louder guns carry further.
+                Entity p = new Entity(), sg = new Entity(), hr = new Entity(), mg = new Entity();
+                p.weapon = Entity.W_PISTOL;
+                sg.weapon = Entity.W_SHOTGUN;
+                hr.weapon = Entity.W_HUNTING;
+                mg.type = Entity.SOLDIER;
+                mg.role = Entity.ROLE_GUNNER;
+                check(World.gunLoudness(p) < World.gunLoudness(sg) && World.gunLoudness(sg) < World.gunLoudness(hr)
+                        && World.gunLoudness(hr) < World.gunLoudness(mg), "a pistol is quieter than a shotgun, a deer rifle, a machine gun");
+                // An officer hears another fighting several of the dead, and goes to help.
+                w.clearZombies();
+                Entity shooter = null, helper = null;
+                for (Entity e : w.entities) {
+                    if (e.dead || e.type != Entity.COP || e.task != Dispatch.T_NONE || e.rig != null) continue;
+                    if (shooter == null) shooter = e;
+                    else if (helper == null && Math.hypot(e.x - shooter.x, e.y - shooter.y) < 200) helper = e;
+                }
+                if (shooter != null && helper == null) {
+                    float[] hp = w.city.findWalkable(shooter.x + 120, shooter.y);
+                    helper = w.spawn(Entity.COP, hp[0], hp[1]);
+                }
+                check(shooter != null && helper != null, "two officers");
+                helper.fear = 0;
+                helper.aiming = false;
+                Entity target = null;
+                for (int k = 0; k < 4; k++) {
+                    float[] q = w.city.findWalkable(shooter.x + 40 + k * 6, shooter.y + 10);
+                    Entity zz = w.spawn(Entity.ZOMBIE, q[0], q[1]);
+                    if (target == null) target = zz;
+                }
+                // (Once they're on the map's grid.)
+                w.update(1 / 30f);
+                helper.fear = 0;
+                w.heardShot(shooter, target, 260);
+                check(helper.fear >= 20 && Math.hypot(helper.threatX - target.x, helper.threatY - target.y) < 30,
+                        "an officer who hears another in a fight with several of them goes to help (fear " + helper.fear + ")");
+                // A shove isn't a sure thing.
+                w.clearZombies();
+                int stunned = 0, tries = 200;
+                Entity cop = shooter;
+                for (int k = 0; k < tries; k++) {
+                    float[] q = w.city.findWalkable(cop.x + 8, cop.y);
+                    Entity zz = w.spawn(Entity.ZOMBIE, q[0], q[1]);
+                    zz.stun = 0;
+                    w.shove(cop, zz, true);
+                    if (zz.stun > 0) stunned++;
+                    zz.dead = true;
+                    w.clearZombies();
+                }
+                check(stunned > tries * 0.4f && stunned < tries * 0.95f, "shoves work most of the time, not every time (" + stunned + " of " + tries + ")");
+                // Trucks waiting at a base for their squads wait in the yard, clear of the gate.
+                City.Facility base = null;
+                for (City.Facility f : w.city.facilities) if (f.kind == City.FACILITY_BASE && f.gateX > 0) base = f;
+                check(base != null, "a base with a gate");
+                float[] g = w.city.nearestDrivable(base.gateX, base.gateY);
+                float[] bay = w.fleet.bay(g, base);
+                check(bay != null && Math.hypot(bay[0] - base.gateX, bay[1] - base.gateY) >= City.T * 3.4f,
+                        "a truck mustering at the base waits in the yard, off the gateway");
+            }
+        });
         test("every screen draws", new Check() {
             public void run() throws Exception {
                 GameView v = new GameView(new android.app.Activity());

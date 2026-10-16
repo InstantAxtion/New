@@ -2,11 +2,21 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.44";
-    static final int VERSION_CODE = 82;
+    static final String VERSION = "10.45";
+    static final int VERSION_CODE = 83;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.45  -  Calls, gunfire and getting out of the gate",
+                    "Police cars and army trucks no longer get stuck leaving their stations and bases: trucks back from a call park in the yard instead of round the gate, trucks and cars waiting for their crews wait in the yard clear of the gateway (each in a bay of its own, not all on one spot), and everyday traffic no longer drives into army bases.",
+                    "Calls follow the dead: when they move on, the call moves with them (or hands over to a call already where they've gone), and a call with none of them anywhere near closes in about twelve seconds instead of thirty, so nobody drives across town to an empty street.",
+                    "No call goes missing any more: with the board full, a quiet call makes way for a new 911 call or a unit's call for backup, instead of the new one being dropped while the caller was still on the phone.",
+                    "Officers and soldiers on their way to a call, or out on patrol, keep an eye out: the dead seen close by from the car and they pull up, radio it in (it goes on the map) and deal with them first.",
+                    "Officers and soldiers who hear someone with a gun fighting several of the dead go to help; patrol cars within earshot turn and respond; units heading to a call that's gone quiet are sent to the fight instead.",
+                    "Louder guns are heard further: a pistol least, then service weapons, shotguns, rifles, deer rifles, and machine guns and snipers most (and heavy machine guns on vehicles further still).",
+                    "A shove isn't a sure thing for the AI any more: it can glance off, more so from the untrained, against a brute, when hurt or with several of the dead pressing in.",
+            },
             {
                     "10.44  -  How the vehicles look",
                     "Cars are drawn car-shaped from above: a rounded nose and squarer tail, a raked windscreen and rear window, side windows, a roof that catches the light, a crease down the bonnet, and the lamps set into the corners. Saloons, hatchbacks, SUVs (with roof rails), pickups (with a ribbed bed) and taxis each have their own proportions.",

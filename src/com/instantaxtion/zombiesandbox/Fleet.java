@@ -77,6 +77,8 @@ final class Fleet {
         /** (10.42) The line it's about to drive (in its lane, through the junctions): {x, y} points, from a tile back on. */
         final float[] cor = new float[2 * COR];
         int corN;
+        /** (10.45) Until it next looks out for the dead on its way. */
+        float spotCd;
         /** Where it's steering for on that line, and whether it is. */
         float aimX, aimY;
         boolean aiming;
@@ -873,6 +875,11 @@ final class Fleet {
         if ((v.type == CAR || (v.patrol && v.state == PATROL && v.incident == null)) && v.player == null) {
             if (routeBudget <= 0) return false;
             routeBudget--;
+        }
+        // (10.45) Everyday traffic has no business inside an army base: it was driving in among the trucks at the gate.
+        if (v.type == CAR && v.player == null) {
+            for (City.Facility f : city.facilities)
+                if (f.kind == City.FACILITY_BASE && Math.hypot(x - f.x, y - f.y) < f.r + City.T * 2) return false;
         }
         int[] field = scratchField();
         // (Everyday traffic and patrol cars keep to the roads; emergencies cut across whatever's paved.)
@@ -2878,6 +2885,16 @@ final class Fleet {
             if (v.idleTimer < 12) return false;
             arrived = true;
         }
+        // (10.45) The dead spotted on the way to a call: deal with them first.
+        if (v.state == DRIVE && !arrived && !v.loop && !v.pickup && !v.restock && v.zone == null && v.block == null) {
+            Dispatch.Incident here = spotOnTheWay(v, dt);
+            if (here != null) {
+                v.incident = here;
+                v.place = here.place;
+                arrived = true;
+                v.speed *= 0.3f;
+            }
+        }
         // Don't drive into a horde: stop short and let the troops out (an APC drives on in: it's armoured).
         if (v.state == DRIVE && !v.loop && v.kind != K_APC && (v.passengers > 0 || !v.crew.isEmpty()) && hordeAhead(v)) {
             arrived = true;
@@ -3051,7 +3068,10 @@ final class Fleet {
         v.parkHome = false;
         v.stageCd = 4;
         int tx = (int) (v.x / City.T), ty = (int) (v.y / City.T);
-        for (int r = 1; r <= 7; r++)
+        // (10.45) Not in the gateway, though: one after another they parked round the gate and blocked it, so
+        // nothing could get in or out. Well inside, in sight of where it is now.
+        City.Facility d = v.depot;
+        for (int r = 1; r <= 12; r++)
             for (int dy = -r; dy <= r; dy++)
                 for (int dx = -r; dx <= r; dx++) {
                     if (Math.max(Math.abs(dx), Math.abs(dy)) != r) continue;
@@ -3061,6 +3081,10 @@ final class Fleet {
                     if (t != City.LOT && t != City.BASE && t != City.SIDEWALK && t != City.PLAZA) continue;
                     float px = (x + 0.5f) * City.T, py = (y + 0.5f) * City.T;
                     if (city.solidAt(px, py)) continue;
+                    if (d != null && d.gateX > 0 && Math.hypot(px - d.gateX, py - d.gateY) < City.T * 3.2f) continue;
+                    if (d != null && r > 2 && !city.los(v.x, v.y, px, py)) continue;
+                    // (And not out on the pavement beyond the fence.)
+                    if (d != null && Math.hypot(px - d.x, py - d.y) > d.r + City.T * 2) continue;
                     boolean taken = false;
                     for (int i = 0; i < vehicles.size() && !taken; i++) {
                         Vehicle o = vehicles.get(i);
@@ -3771,6 +3795,28 @@ final class Fleet {
      * A crowd of the dead on the road ahead (up to about 160 units out) or already round the car: police
      * and troops stop short there and go in on foot, rather than driving into the middle of them.
      */
+    /**
+     * (10.45) Officers or soldiers on their way to a call keep an eye out: one of the dead in sight close by (and
+     * not part of the call they're going to) and they stop, radio it in and take it on there. The call there,
+     * or null. Only with people aboard to get out, and not on a car that's just set off from the scene.
+     */
+    private Dispatch.Incident spotOnTheWay(Vehicle v, float dt) {
+        v.spotCd -= dt;
+        if (v.spotCd > 0) return null;
+        v.spotCd = 0.6f;
+        if (v.crew.isEmpty() || v.player != null || (v.type != CRUISER && v.type != TRUCK)) return null;
+        Entity z = w.nearestZombie(v.x, v.y, 105);
+        if (z == null || z.hidden || !city.los(v.x, v.y, z.x, z.y)) return null;
+        Dispatch.Incident inc = v.incident;
+        if (inc != null && Math.hypot(z.x - inc.x, z.y - inc.y) < 240) return null;
+        Entity who = v.crew.get(0);
+        // (Out of rounds: nothing to fight with, so they drive on.)
+        boolean armed = false;
+        for (Entity e : v.crew) if (e.ammo + e.reserve > 0) armed = true;
+        if (!armed) return null;
+        return w.dispatch.sighting(z.x, z.y, who);
+    }
+
     private boolean hordeAhead(Vehicle v) {
         if (!w.zombieWithin(v.x, v.y, 200)) return false;
         float ca = (float) Math.cos(v.angle), sa = (float) Math.sin(v.angle);
@@ -4061,7 +4107,7 @@ final class Fleet {
                 if (Math.hypot(e.x - f.x, e.y - f.y) < 220) two.add(e);
             }
             if (two.size() < want) continue;
-            float[] p = city.nearestDrivable(f.gateX > 0 ? f.gateX : f.x, f.gateY > 0 ? f.gateY : f.y);
+            float[] p = bay(city.nearestDrivable(f.gateX > 0 ? f.gateX : f.x, f.gateY > 0 ? f.gateY : f.y), f);
             if (p == null) continue;
             Vehicle v = make(CRUISER);
             v.x = p[0];
@@ -4091,6 +4137,7 @@ final class Fleet {
         if (officers.isEmpty() || inc == null) return false;
         float[] p = city.nearestDrivable(f.gateX > 0 ? f.gateX : f.x, f.gateY > 0 ? f.gateY : f.y);
         if (p == null || !canDrive(p[0], p[1], inc.x, inc.y)) return false;
+        p = bay(p, f);
         Vehicle v = make(CRUISER);
         v.x = p[0];
         v.y = p[1];
@@ -4131,6 +4178,37 @@ final class Fleet {
     }
 
     /** Sends a patrol car to a call, lights and siren. */
+    /**
+     * (10.45) Shots fired close by, and someone in a fight with several of the dead: a patrol car on its rounds
+     * with officers aboard turns and goes to help.
+     */
+    void heardFight(float x, float y, float radius, float tx, float ty) {
+        Dispatch.Incident inc = null;
+        for (int i = 0, n = vehicles.size(); i < n; i++) {
+            Vehicle v = vehicles.get(i);
+            if (v.type != CRUISER || !v.patrol || v.state != PATROL || v.crew.isEmpty() || v.broken || v.player != null) continue;
+            if ((v.x - x) * (v.x - x) + (v.y - y) * (v.y - y) > radius * radius) continue;
+            if (inc == null) inc = w.dispatch.sighting(tx, ty, null);
+            if (inc == null) return;
+            v.incident = inc;
+            if (respond(v, inc)) {
+                v.place = inc.place;
+                w.dispatch.say(Dispatch.WHO_POLICE, v.crew.get(0), callsign(v) + ", shots fired at " + inc.place + ". Responding.", tx, ty);
+            } else v.incident = null;
+        }
+    }
+
+    /** (10.45) Everything on its way to one call goes on to another instead (where the dead have gone). */
+    void redirect(Dispatch.Incident from, Dispatch.Incident to) {
+        for (int i = 0, n = vehicles.size(); i < n; i++) {
+            Vehicle v = vehicles.get(i);
+            if (v.incident != from) continue;
+            v.incident = to;
+            v.place = to.place;
+            if (v.state == DRIVE && !route(v, to.x, to.y)) v.incident = from;
+        }
+    }
+
     boolean respond(Vehicle v, Dispatch.Incident inc) {
         v.state = DRIVE;
         if (!route(v, inc.x, inc.y)) {
@@ -4194,8 +4272,74 @@ final class Fleet {
         return true;
     }
 
+    /**
+     * (10.45) A spot near p with no other vehicle on it: several trucks or cars mustering at the same gate used to
+     * be put on top of one another there, and blocked it. The nearest clear bit of road, yard or car park.
+     */
+    float[] clearSpot(float[] p) {
+        if (p == null || !occupied(p[0], p[1])) return p;
+        int tx = (int) (p[0] / City.T), ty = (int) (p[1] / City.T);
+        for (int r = 1; r <= 5; r++)
+            for (int dy = -r; dy <= r; dy++)
+                for (int dx = -r; dx <= r; dx++) {
+                    if (Math.max(Math.abs(dx), Math.abs(dy)) != r) continue;
+                    int x = tx + dx, y = ty + dy;
+                    if (x < 0 || y < 0 || x >= city.w || y >= city.h) continue;
+                    byte t = city.tiles[y * city.w + x];
+                    if (t != City.ROAD && t != City.LOT && t != City.BASE) continue;
+                    float px = (x + 0.5f) * City.T, py = (y + 0.5f) * City.T;
+                    if (city.solidAt(px, py) || occupied(px, py) || !city.los(p[0], p[1], px, py)) continue;
+                    return new float[]{px, py};
+                }
+        return p;
+    }
+
+    /**
+     * (10.45) Where a vehicle should wait for its people at a station or base: in the yard, off the gateway (so
+     * the ones coming and going can get by), as near the gate as that allows. Else just a clear spot near p.
+     */
+    float[] bay(float[] p, City.Facility f) {
+        if (p == null) return null;
+        if (f == null || f.gateX <= 0) return clearSpot(p);
+        float keep = f.kind == City.FACILITY_BASE ? City.T * 3.5f : City.T * 2.2f;
+        int tx = (int) (f.x / City.T), ty = (int) (f.y / City.T), rr = (int) (f.r / City.T) + 2;
+        float best = Float.MAX_VALUE;
+        float[] out = null;
+        for (int y = ty - rr; y <= ty + rr; y++)
+            for (int x = tx - rr; x <= tx + rr; x++) {
+                if (x < 0 || y < 0 || x >= city.w || y >= city.h) continue;
+                byte t = city.tiles[y * city.w + x];
+                if (t != City.LOT && t != City.BASE) continue;
+                float px = (x + 0.5f) * City.T, py = (y + 0.5f) * City.T;
+                float g = (float) Math.hypot(px - f.gateX, py - f.gateY);
+                if (g < keep || g >= best || Math.hypot(px - f.x, py - f.y) > f.r + City.T) continue;
+                if (city.solidAt(px, py) || occupied(px, py)) continue;
+                best = g;
+                out = new float[]{px, py};
+            }
+        return out != null ? out : clearSpot(p);
+    }
+
+    /** The station or base whose yard (x, y) is in, if any. */
+    private City.Facility yardOf(float x, float y) {
+        for (City.Facility f : city.facilities)
+            if ((f.kind == City.FACILITY_BASE || f.kind == City.FACILITY_POLICE)
+                    && (Math.hypot(x - f.x, y - f.y) < f.r + City.T * 4 || (f.gateX > 0 && Math.hypot(x - f.gateX, y - f.gateY) < City.T * 5))) return f;
+        return null;
+    }
+
+    private boolean occupied(float x, float y) {
+        for (int i = 0, n = vehicles.size(); i < n; i++) {
+            Vehicle o = vehicles.get(i);
+            if (airborne(o) || o.type == TRAIN) continue;
+            if (Math.abs(o.x - x) < 13 && Math.abs(o.y - y) < 13) return true;
+        }
+        return false;
+    }
+
     /** A truck at p waiting for this squad to climb in, then off to the call. */
     private void musterTruck(java.util.List<Entity> squad, float[] p, Dispatch.Incident inc, int kind) {
+        p = bay(p, yardOf(p[0], p[1]));
         Vehicle v = make(TRUCK);
         v.x = p[0];
         v.y = p[1];
@@ -4225,6 +4369,7 @@ final class Fleet {
         float[] p = city.takeParkedTruck(base.x, base.y, Math.max(260, base.r * 2.5f));
         if (p == null) p = city.nearestDrivable(base.gateX > 0 ? base.gateX : base.x, base.gateY > 0 ? base.gateY : base.y);
         if (p == null || squad.isEmpty()) return false;
+        p = bay(p, base);
         Vehicle v = make(TRUCK);
         setKind(v, K_HUMVEE);
         v.loop = true;
@@ -4388,7 +4533,13 @@ final class Fleet {
                 w.emit(Sfx.SIREN, v.x, v.y);
             }
             v.stuckTimer += dt;
-            boolean moving = driveStep(v, dt, v.kind == K_BIKE ? 120 : 95, carAhead(v) ? 0.5f : 1f);
+            // (10.45) The dead spotted on the way: pull up and deal with them first.
+            Dispatch.Incident here = spotOnTheWay(v, dt);
+            if (here != null) {
+                v.incident = here;
+                inc = here;
+            }
+            boolean moving = here == null && driveStep(v, dt, v.kind == K_BIKE ? 120 : 95, carAhead(v) ? 0.5f : 1f);
             if (moving) hit(v, w.runOver(v.x, v.y, 8, v.speed, v.angle));
             if (!moving || Math.hypot(inc.x - v.x, inc.y - v.y) < 50 || v.stuckTimer > 6) {
                 v.speed = 0;

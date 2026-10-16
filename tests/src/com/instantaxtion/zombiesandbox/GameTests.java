@@ -1225,7 +1225,8 @@ public final class GameTests {
                 check(evac > 0, "people get clear of the outbreak");
                 // Dirt lanes stay dirt.
                 CityConfig lc = new CityConfig();
-                lc.seed = 2;
+                // ((10.52) Seed 3: with another police station seed 2's lanes meet a main road at a paved junction.)
+                lc.seed = 3;
                 lc.v[CityConfig.OPT_PRESET] = 8;
                 lc.v[CityConfig.OPT_SIZE] = CityConfig.MASSIVE;
                 City lanes = new City(lc, 0.05f);
@@ -2709,6 +2710,9 @@ public final class GameTests {
                     if (f % 90 == 0) w.noise(n[0], n[1], 400);
                     w.update(1 / 30f);
                     w.evCount = 0;
+                    // ((10.52) The noise is near a police station now: officers kept away, so it's the dead's routing
+                    // that's tested, not who shoots them on the way.)
+                    for (Entity e : w.entities) if (e.isArmed() && Math.hypot(e.x - n[0], e.y - n[1]) < 800) e.dead = e.removed = true;
                 }
                 for (Entity z : zs) if (Math.hypot(z.x - n[0], z.y - n[1]) < 60) there++;
                 check(there >= 15, "most get to the noise round the buildings (" + there + " of 20)");
@@ -3084,19 +3088,23 @@ public final class GameTests {
                 Dispatch d = w.dispatch;
                 // A full board of calls gone quiet: a new 911 call still gets on the map (a quiet one makes way).
                 java.util.Random r = new java.util.Random(5);
-                // ((10.51) The board holds more in a bigger city: d.maxCalls().)
-                for (int k = 0; k < d.maxCalls(); k++) {
+                // ((10.51) The board holds more in a bigger city: d.maxCalls(). (10.52) From empty: a call opened in the
+                // first second would leave it one over.)
+                d.incidents.clear();
+                Entity caller = null;
+                for (Entity e : w.entities) if (e.type == Entity.CIVILIAN && !e.dead && w.city.inTown(e.x, e.y)) caller = e;
+                float[] zp = w.city.findWalkable(caller.x + 50, caller.y);
+                Entity z = w.spawn(Entity.ZOMBIE, zp[0], zp[1]);
+                // (None of them where the new call is: one within 200 would take the call as its own.)
+                while (d.incidents.size() < d.maxCalls()) {
                     float[] q = w.city.randomWalkableInTown(r);
+                    if (Math.hypot(q[0] - z.x, q[1] - z.y) < 300) continue;
                     Dispatch.Incident inc = new Dispatch.Incident();
                     inc.x = q[0];
                     inc.y = q[1];
                     inc.place = "test";
                     d.incidents.add(inc);
                 }
-                Entity caller = null;
-                for (Entity e : w.entities) if (e.type == Entity.CIVILIAN && !e.dead && w.city.inTown(e.x, e.y)) caller = e;
-                float[] zp = w.city.findWalkable(caller.x + 50, caller.y);
-                Entity z = w.spawn(Entity.ZOMBIE, zp[0], zp[1]);
                 boolean before = w.callsLost;
                 w.callsLost = false;
                 d.call(caller, z);
@@ -3364,10 +3372,12 @@ public final class GameTests {
                 // Bus and train: once the news breaks, people wait at the stops and on the platform, and get out of the
                 // city aboard.
                 check(w.city.stationX >= 0, "a station on this map");
-                java.util.Random r = new java.util.Random(7);
+                // ((10.52) Eighty of the dead, nearer the middle: with another police station on the map fifty were all
+                // put down before anyone was on their way.)
+                java.util.Random r = new java.util.Random(3);
                 float[] q0 = w.city.randomWalkableInTown(r);
                 int sp = 0;
-                for (int i = 0; i < 1600 && sp < 50; i++) {
+                for (int i = 0; i < 1600 && sp < 80; i++) {
                     float[] q = w.city.findWalkable(q0[0] + (i % 40) * 8 - 160, q0[1] + (i / 40) * 8 - 160);
                     if (q != null && w.spawn(Entity.ZOMBIE, q[0], q[1]) != null) sp++;
                 }

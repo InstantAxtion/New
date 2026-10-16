@@ -2449,10 +2449,22 @@ final class City {
             }
             if (options.isEmpty()) break;
             int k = options.get(rnd.nextInt(options.size()));
+            // ((10.52) The first is the police headquarters: the biggest block on offer, up to twice a station's.)
+            if (cfg.civic >= 23 && n == 0) {
+                int area = 0;
+                for (int o : options) {
+                    int[] b = blocks.get(o);
+                    int a = Math.min(b[2] - b[0] - 2, 26) * Math.min(b[3] - b[1] - 2, 26);
+                    if (a > area) {
+                        area = a;
+                        k = o;
+                    }
+                }
+            }
             used[k] = true;
             int[] b = blocks.get(k);
             fill(b[0], b[1], b[2] - b[0], b[3] - b[1], SIDEWALK);
-            serviceBuilding(b[0] + 1, b[1] + 1, b[2] - b[0] - 2, b[3] - b[1] - 2, STATION, n + 1);
+            serviceBuilding(b[0] + 1, b[1] + 1, b[2] - b[0] - 2, b[3] - b[1] - 2, STATION, cfg.civic >= 23 && n == 0 ? 0 : n + 1);
         }
 
         // One hospital, as far as it can be from the police stations.
@@ -2867,7 +2879,14 @@ final class City {
         addFacilityLot(ax + aw - 2, ay, 2, 2, TOWER, 3);
         // The open lower half depends on what kind of base it is (trucks are parked along the bottom right).
         Random bt = new Random(cfg.seed * 977L + salt);
+        // ((10.52) Never the same kind twice on one map.)
         int type = bt.nextInt(BASE_TYPES.length);
+        for (int k = 0; k < 8 && cfg.civic >= 23; k++) {
+            boolean dup = false;
+            for (Facility f : facilities) if (f.kind == FACILITY_BASE && f.baseType == type) dup = true;
+            if (!dup) break;
+            type = (type + 1) % BASE_TYPES.length;
+        }
         baseLayout(type, ax, ay, aw, ah, bt);
         for (int i = ax + aw / 2 + 2; i < ax + aw - 1; i++) {
             int ty = ay + ah - 2;
@@ -2930,16 +2949,24 @@ final class City {
      */
     private void outskirtsBase() {
         int bw = w >= 650 ? 70 : 58, bh = w >= 650 ? 48 : 40;
+        // ((10.52) Bigger on the Massive maps, and a smaller one on the Default ones, closer in.)
+        boolean small = !cfg.massive();
+        if (cfg.civic >= 23) {
+            bw = small ? 46 : w >= 650 ? 86 : 72;
+            bh = small ? 32 : w >= 650 ? 58 : 48;
+        }
+        int clear = small ? 10 : 40;
         float tcx = (townX0 + townX1) / 2f, tcy = (townY0 + townY1) / 2f;
         int[] prev = new int[w * h];
         for (int tries = 0; tries < 1500; tries++) {
             int x = 14 + rnd.nextInt(Math.max(1, w - bw - 28)), y = 14 + rnd.nextInt(Math.max(1, h - bh - 28));
             if (!allOpen(x - 6, y - 6, bw + 12, bh + 12)) continue;
             // (Kept off the wild side of the map, the hills and the park, unless there's nowhere else.)
-            if (tries < 900 && (inWildBand(x, y) || inWildBand(x + bw, y + bh) || inWildBand(x + bw, y) || inWildBand(x, y + bh))) continue;
+            // ((10.52) The smaller one on a Default map never: there's not the room for the park there as well.)
+            if ((tries < 900 || small) && (inWildBand(x, y, small) || inWildBand(x + bw, y + bh, small) || inWildBand(x + bw, y, small) || inWildBand(x, y + bh, small))) continue;
             if (railY0 >= 0 && railY0 + railRows >= y - 8 && railY0 <= y + bh + 8) continue;
             // (Out in the country, not on the edge of town.)
-            if (x + bw > townX0 - 40 && x < townX1 + 40 && y + bh > townY0 - 40 && y < townY1 + 40) continue;
+            if (x + bw > townX0 - clear && x < townX1 + clear && y + bh > townY0 - clear && y < townY1 + clear) continue;
             // The gate that faces town.
             int gx = x + bw / 2 - 1, gy = y + bh / 2 - 1;
             int[][] gates = {{gx + 1, y + bh, 0, 1}, {gx + 1, y - 1, 0, -1}, {x + bw, gy + 1, 1, 0}};
@@ -5043,7 +5070,17 @@ final class City {
             facilities.add(new Facility(FACILITY_FIRE, c[0], c[1], 48, c[0], c[1], country.fireStation + n));
             return;
         }
-        Facility station = new Facility(FACILITY_POLICE, c[0], c[1], 64, c[0], c[1], country.policeStation + number);
+        // (10.52) Number 0 is the police headquarters: where there's room, a second wing (the tactical unit's) and a
+        // helipad on the far end of the car park.
+        if (number == 0 && lw >= 9 && lh >= 9) {
+            int px = lx + lw - 4, py = ly + lh - 4;
+            fill(px, py, 3, 3, LOT);
+            addDecor(D_HELIPAD, px * T + 2, py * T + 2, (px + 3) * T - 2, (py + 3) * T - 2, 0);
+            int ww = wide ? Math.min(lw - 6, Math.max(4, lw / 2)) : Math.max(4, lw - 6), wh = wide ? Math.max(4, lh - 6) : Math.min(lh - 6, Math.max(4, lh / 2));
+            if (ww >= 4 && wh >= 4) addFacilityLot(lx + 1, ly + 1, ww, wh, STATION, 2);
+        }
+        Facility station = new Facility(FACILITY_POLICE, c[0], c[1], number == 0 ? 80 : 64, c[0], c[1],
+                number == 0 ? (country.policeStation.startsWith("Police") ? "Police Headquarters" : country.policeStation.trim() + " HQ") : country.policeStation + number);
         for (int k = -1; k <= 1; k += 2) {
             float[] p = findWalkable(c[0] + k * 18, c[1] + 10);
             if (p != null) station.posts.add(p);
@@ -11622,8 +11659,13 @@ final class City {
 
     /** In the wide band of country kept wild (see wildSide). */
     boolean inWildBand(int x, int y) {
+        return inWildBand(x, y, false);
+    }
+
+    /** (10.52) The whole of the wild side, not just its outer half (a Default map's country base keeps off it all). */
+    boolean inWildBand(int x, int y, boolean whole) {
         // ((10.33) Only the outer half of it: towns and farms are allowed nearer town.)
-        boolean half = cfg.civic >= 17;
+        boolean half = cfg.civic >= 17 && !whole;
         switch (wildSide) {
             case 0: return x < (half ? townX0 / 2 : townX0);
             case 1: return x >= (half ? (townX1 + w) / 2 : townX1);

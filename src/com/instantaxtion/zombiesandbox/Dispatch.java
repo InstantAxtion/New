@@ -1453,13 +1453,17 @@ final class Dispatch {
             if (e.outsider && !e.dead && e.type == first.type && e.task == T_NONE && e.rig == null && !e.aiming
                     && Math.hypot(e.x - first.x, e.y - first.y) < 250) group.add(e);
         }
-        java.util.List<float[]> out = entries(first.x, first.y);
+        java.util.List<float[]> out = entries(first.x, first.y, true);
         float[] exit = null;
-        for (float[] q : out)
-            if (w.fleet.canDrive(first.x, first.y, q[0], q[1])) {
+        // ((10.52) The nearest by road, not as the crow flies: the other end of the highway can be the quicker.)
+        int bestCost = City.FAR;
+        for (float[] q : out) {
+            int cost = w.fleet.driveCost(first.x, first.y, q[0], q[1]);
+            if (cost < bestCost) {
+                bestCost = cost;
                 exit = q;
-                break;
             }
+        }
         if (exit == null) return;
         if (!w.fleet.sendHome(group, exit[0], exit[1])) return;
         if (!homeSaid) {
@@ -1655,6 +1659,15 @@ final class Dispatch {
      * highway (each carriageway), then the end of the nearest road at the edge of the map.
      */
     java.util.List<float[]> entries(float tx, float ty) {
+        return entries(tx, ty, false);
+    }
+
+    /**
+     * (10.52) The same, or with leaving true the ways off the map: the ends of the carriageways going out of it.
+     * (Going home on the one coming in, a car had to drive the wrong way up it to get there, and went round and
+     * round the interchange looking for a way that didn't.)
+     */
+    java.util.List<float[]> entries(float tx, float ty, boolean leaving) {
         java.util.List<float[]> out = new ArrayList<float[]>();
         if (city.hwyAxis >= 0) {
             int len = city.hwyAxis == 0 ? city.w : city.h;
@@ -1666,7 +1679,7 @@ final class Dispatch {
                     if (city.oneWay != null) {
                         byte ow = city.oneWay[y * city.w + x];
                         boolean inward = end == 0 ? ow == 1 || ow == 3 : ow == 2 || ow == 4;
-                        if (!inward) continue;
+                        if (inward == leaving) continue;
                     }
                     out.add(new float[]{(x + 0.5f) * City.T, (y + 0.5f) * City.T});
                 }

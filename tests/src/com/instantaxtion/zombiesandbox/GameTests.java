@@ -1893,7 +1893,8 @@ public final class GameTests {
                     e.outsider = true;
                 }
                 boolean leaving = false;
-                for (int f = 0; f < 30 * 240 && w.dispatch.policeReserve <= before; f++) {
+                // ((10.52) Up to seven minutes: across a Default map and round its junctions, on the far side of the beltway.)
+                for (int f = 0; f < 30 * 420 && w.dispatch.policeReserve <= before; f++) {
                     w.update(1 / 30f);
                     for (Fleet.Vehicle v : w.fleet.vehicles) if (v.leaving) leaving = true;
                 }
@@ -2081,12 +2082,14 @@ public final class GameTests {
                     check(guards >= 1, "soldiers on the checkpoint");
                     check(soldiers >= 10, "the base has a garrison (" + soldiers + ")");
                 }
-                // A Large map is as it was: no base out in the country.
+                // ((10.52) A Large map has a smaller one now; a Medium one none.)
                 CityConfig l = new CityConfig();
-                l.v[CityConfig.OPT_PRESET] = 1;
+                l.v[CityConfig.OPT_PRESET] = 2;
                 l.v[CityConfig.OPT_SIZE] = CityConfig.LARGE;
                 l.normalize();
-                check(!l.outskirtsBase(), "no country base on a Large map");
+                check(l.outskirtsBase(), "a country base on a Large map too");
+                l.v[CityConfig.OPT_SIZE] = CityConfig.MEDIUM;
+                check(!l.outskirtsBase(), "none on a Medium map");
             }
         });
         test("10.31: Gigantic maps, one-way slip roads, outside help only when it's needed", new Check() {
@@ -2789,7 +2792,8 @@ public final class GameTests {
                                 int nx = x + (k == 0 ? 1 : k == 1 ? -1 : 0), ny = y + (k == 2 ? 1 : k == 3 ? -1 : 0);
                                 if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
                                 int j = ny * w + nx;
-                                if (comp[j] >= 0 || !(t[j] == City.ROAD || t[j] == City.DIRT || t[j] == City.CAR)) continue;
+                                // ((10.52) A drive that joins the rest across a paved lot is joined up: cars cross lots.)
+                                if (comp[j] >= 0 || !(t[j] == City.ROAD || t[j] == City.DIRT || t[j] == City.CAR || t[j] == City.LOT)) continue;
                                 comp[j] = id;
                                 q[tl++] = j;
                             }
@@ -3166,8 +3170,10 @@ public final class GameTests {
                 helper.fear = 0;
                 helper.aiming = false;
                 Entity target = null;
+                // (Four together: round one open spot, so none is put somewhere else by a wall in the way.)
+                float[] q0 = w.city.findWalkable(shooter.x + 40, shooter.y + 10);
                 for (int k = 0; k < 4; k++) {
-                    float[] q = w.city.findWalkable(shooter.x + 40 + k * 6, shooter.y + 10);
+                    float[] q = w.city.findWalkable(q0[0] + (k % 2) * 6, q0[1] + (k / 2) * 6);
                     Entity zz = w.spawn(Entity.ZOMBIE, q[0], q[1]);
                     if (target == null) target = zz;
                 }
@@ -3178,7 +3184,7 @@ public final class GameTests {
                 helper.aiming = false;
                 w.heardShot(shooter, target, 260);
                 check(helper.fear >= 20 && Math.hypot(helper.threatX - target.x, helper.threatY - target.y) < 30,
-                        "an officer who hears another in a fight with several of them goes to help (fear " + helper.fear + ")");
+                        "an officer who hears another in a fight with several of them goes to help (fear " + helper.fear + ", " + w.countZombiesNear(target.x, target.y, 90) + " of the dead there)");
                 // A shove isn't a sure thing.
                 w.clearZombies();
                 int stunned = 0, tries = 200;

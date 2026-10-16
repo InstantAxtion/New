@@ -1012,6 +1012,15 @@ final class Fleet {
         return true;
     }
 
+    /** (10.52) How far it is to drive from one point to another (in the route's own units), or City.FAR. */
+    int driveCost(float fx, float fy, float tx, float ty) {
+        float[] start = city.nearestDrivable(fx, fy);
+        if (start == null) return City.FAR;
+        int[] full = scratchField();
+        int si = city.tileIndex(start[0], start[1]);
+        return city.driveField(full, tx, ty, false, si) ? full[si] : City.FAR;
+    }
+
     /** Whether there's a way to drive from one point to another. */
     boolean canDrive(float fx, float fy, float tx, float ty) {
         float[] start = city.nearestDrivable(fx, fy);
@@ -2765,7 +2774,9 @@ final class Fleet {
             boolean ready = v.crew.size() >= v.crewWanted || (v.timer > 6 && v.crew.size() * 3 >= v.crewWanted * 2)
                     || (v.timer > 11 && !v.crew.isEmpty());
             if (!ready) {
-                if (v.timer > 22) {
+                // ((10.52) A car taking outside help home waits longer: the station it came from can be a walk away,
+                // and giving up only sent another, and another.)
+                if (v.timer > (v.leaving ? 60 : 22)) {
                     dropCrew(v);
                     return true;
                 }

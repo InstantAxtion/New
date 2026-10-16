@@ -2,11 +2,19 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.45";
-    static final int VERSION_CODE = 83;
+    static final String VERSION = "10.46";
+    static final int VERSION_CODE = 84;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.46  -  Infection zones",
+                    "Wherever the dead gather, an infection zone is declared round them - no call needed. It's drawn on the map and the tactical map as a dashed ring with its name: red while it's held, amber while it waits its turn.",
+                    "Police on patrol take up a perimeter round it on their own, and the army closes the roads into it: checkpoints go up where the roads cross the ring, two soldiers sent to each by truck from the base (or whatever they can get in town). Traffic is stopped and turned back there.",
+                    "A zone follows the dead as they move or spread, and two that run into each other become one. It's only lifted once it's been clear of them for a while - stragglers that wander out are followed - and then the perimeter stands down and the roads open again.",
+                    "Worst first: with not enough units for every zone, the one with the most of the dead (and people at risk, and anywhere near a shelter) is held, and the others wait their turn with nobody on them until there's someone free. A zone already held only gives way to somewhere clearly worse, so units aren't sent back and forth.",
+                    "Army trucks on a call go round a car stopped in their way instead of waiting behind it.",
+            },
             {
                     "10.45  -  Calls, gunfire and getting out of the gate",
                     "Police cars and army trucks no longer get stuck leaving their stations and bases: trucks back from a call park in the yard instead of round the gate, trucks and cars waiting for their crews wait in the yard clear of the gateway (each in a bay of its own, not all on one spot), and everyday traffic no longer drives into army bases.",

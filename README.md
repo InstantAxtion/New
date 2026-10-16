@@ -437,6 +437,11 @@ mounting up, and lighter running with big populations.
 
 **More police than soldiers (10.35):** the army on the map is never more than two in five of the police force.
 
+**Infection zones (10.46):** wherever the dead gather, an infection zone is declared round them on its own, no
+call needed: police on patrol take up a perimeter round it and the army sets up checkpoints on the roads into it.
+It moves and grows with them, is only lifted once they're cleared out of it, and when there aren't enough units
+for every zone, the worst is held first and the rest wait their turn.
+
 **Calls, gunfire and the gate (10.45):** vehicles no longer jam leaving stations and bases, calls follow the dead
 and close when they're gone, no 911 call goes missing, units spot the dead on the way and deal with them, they come
 to help when they hear a fight, bigger guns are louder, and shoves can fail.

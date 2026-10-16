@@ -7432,8 +7432,9 @@ final class World {
             return;
         }
         if (e.hp >= e.maxHp * 0.6f) e.retreatSaid = false;
+        InfectionZone myZone = e.task == Dispatch.T_CORDON ? zoneOfPost(e.postX, e.postY) : null;
         if (e.task == Dispatch.T_CORDON) {
-            if (cordonR <= 0 || Math.hypot(e.postX - cordonX, e.postY - cordonY) > cordonR + 160) {
+            if (myZone == null || !myZone.critical) {
                 e.task = Dispatch.T_NONE;
             } else {
                 float pd = (float) Math.hypot(e.postX - e.x, e.postY - e.y);
@@ -7444,9 +7445,18 @@ final class World {
                 if (t == null) {
                     // On the line: facing in, towards where the dead are.
                     standAt(e, e.postX, e.postY, 0.6f);
-                    if (e.want < 1) e.angle = turn(e.angle, (float) Math.atan2(cordonY - e.y, cordonX - e.x), dt * 3);
+                    if (e.want < 1) e.angle = turn(e.angle, (float) Math.atan2(myZone.y - e.y, myZone.x - e.x), dt * 3);
                     return;
                 }
+            }
+        }
+        // (10.46) Posted somewhere (a checkpoint on the road into an infection zone): get there first, and back to
+        // it after a fight.
+        if (e.task == Dispatch.T_POST && e.postX > 0) {
+            float pd = (float) Math.hypot(e.postX - e.x, e.postY - e.y);
+            if (pd > 24 && (t == null || Math.hypot(t.x - e.x, t.y - e.y) > 90)) {
+                walkToSpot(e, e.postX, e.postY, pd > 200 ? e.runSpeed * 0.9f : e.speed * 1.3f);
+                return;
             }
         }
         boolean stationary = e.task == Dispatch.T_POST || e.task == Dispatch.T_HOLD
@@ -7514,9 +7524,24 @@ final class World {
             // Dropped off on the cordon: take the post.
             Dispatch.Incident inc = e.incident;
             e.incident = null;
-            e.task = cordonR > 0 && !inc.resolved ? Dispatch.T_CORDON : Dispatch.T_NONE;
+            e.task = !inc.resolved && zoneOfPost(inc.x, inc.y) != null ? Dispatch.T_CORDON : Dispatch.T_NONE;
             e.postX = inc.x;
             e.postY = inc.y;
+        }
+        if (e.task == Dispatch.T_RESPOND && e.incident != null && e.incident.checkpointSpot != null) {
+            // (10.46) Dropped off for a checkpoint on the road into an infection zone: on to the spot by the barrier.
+            Dispatch.Incident inc = e.incident;
+            e.incident = null;
+            if (inc.resolved) e.task = Dispatch.T_NONE;
+            else {
+                // (Each to their own spot: the truck brought the whole squad.)
+                float[] spot = inc.checkpointSpot;
+                for (InfectionZone z : infection)
+                    for (int k = 0; k < z.guards.length && k < z.guardSpots.size(); k++) if (z.guards[k] == e) spot = z.guardSpots.get(k);
+                e.task = Dispatch.T_POST;
+                e.postX = spot[0];
+                e.postY = spot[1];
+            }
         }
         if (e.task == Dispatch.T_RESPOND && e.incident != null) {
             Dispatch.Incident inc = e.incident;
@@ -11257,165 +11282,573 @@ final class World {
         return true;
     }
 
-    // ------------------------------------------------------------------ containment (10.16)
+    // ------------------------------------------------------------------ containment (10.16, infection zones 10.46)
 
-    /** The cordon round the outbreak: its centre and radius (0 = none), and how many hold each post. */
+    /** The perimeter of the most critical infection zone: its centre and radius (0 = none). */
     float cordonX, cordonY, cordonR;
-    static final int CORDON_POSTS = 12;
-    final float[] cordonPost = new float[CORDON_POSTS * 2];
-    private final int[] cordonManned = new int[CORDON_POSTS];
-    private final Dispatch.Incident[] cordonCall = new Dispatch.Incident[CORDON_POSTS];
-    private float cordonTick = 3;
-    private float[] cordonScratch = new float[256];
+    static final int CORDON_POSTS = 12, MAX_ZONES = 4, MAX_CHECKPOINTS = 4;
 
     /**
-     * While the dead are still bunched in one part of the map, the police and the army throw a ring round it
-     * to keep them there, instead of everyone chasing every sighting. When it spreads too wide, the line is
-     * pulled back and they go back to fighting it street by street.
+     * (10.46) A designated infection zone: the ground round one bunch of the dead. Police throw a perimeter round
+     * it (twelve posts, a patrol car driving a crew out to any nobody can walk to) and the army closes the roads
+     * into it with checkpoints. It follows the dead as they move, and is lifted only once there are none of them
+     * left in it - or, with several zones and not enough people for all of them, it waits its turn while the
+     * worst are held.
      */
+    static final class InfectionZone {
+        float x, y, r, quietFor, priority, saidAt;
+        int zombies, people;
+        boolean critical, wasCritical;
+        String place;
+        final float[] post = new float[CORDON_POSTS * 2];
+        final int[] manned = new int[CORDON_POSTS];
+        final Dispatch.Incident[] postCall = new Dispatch.Incident[CORDON_POSTS];
+        /** Army checkpoints on the roads in: {x, y, angle} (also in city.checkpoints while the zone stands). */
+        final ArrayList<float[]> checkpoints = new ArrayList<float[]>();
+        /** Two guard spots at each checkpoint, and the soldiers on them (or on their way). */
+        final ArrayList<float[]> guardSpots = new ArrayList<float[]>();
+        final Entity[] guards = new Entity[MAX_CHECKPOINTS * 2];
+        final Dispatch.Incident[] guardCall = new Dispatch.Incident[MAX_CHECKPOINTS * 2];
+    }
+
+    final ArrayList<InfectionZone> infection = new ArrayList<InfectionZone>();
+    private float cordonTick = 3;
+    private float[] clusterX = new float[16], clusterY = new float[16], clusterR = new float[16];
+    private int[] clusterN = new int[16];
+
     private void updateCordon(float dt) {
         cordonTick -= dt;
         if (cordonTick > 0) return;
         cordonTick = 4;
-        float sx = 0, sy = 0;
-        int n = 0;
-        for (int i = 0, m = entities.size(); i < m; i++) {
-            Entity z = entities.get(i);
-            if (z.dead || !z.isZombie()) continue;
-            sx += z.x;
-            sy += z.y;
-            n++;
-        }
-        float was = cordonR;
-        if (alert < 1 || n < 6 || n > 220) {
-            if (was > 0 && n > 220) dispatch.say(Dispatch.WHO_POLICE, null, "Dispatch: It's spread too far to hold a perimeter. All units, engage at will.", cordonX, cordonY);
-            liftCordon();
+        if (alert < 1 || zombies == 0) {
+            while (!infection.isEmpty()) liftZone(infection.get(0), null);
+            cordonR = 0;
             return;
         }
-        float cx = sx / n, cy = sy / n;
-        if (cordonScratch.length < n) cordonScratch = new float[n * 2];
-        int k = 0;
-        for (int i = 0, m = entities.size(); i < m; i++) {
-            Entity z = entities.get(i);
-            if (z.dead || !z.isZombie()) continue;
-            cordonScratch[k++] = (float) Math.hypot(z.x - cx, z.y - cy);
-        }
-        java.util.Arrays.sort(cordonScratch, 0, k);
-        // Strays aside, how far the bulk of them has got.
-        float spread = cordonScratch[Math.min(k - 1, (int) (k * 0.8f))];
-        if (spread > 520) {
-            if (was > 0) dispatch.say(Dispatch.WHO_POLICE, null, "Dispatch: They've broken out of the perimeter. Fall back and engage.", cordonX, cordonY);
-            liftCordon();
-            return;
-        }
-        float r = Math.max(140, spread + 110);
-        // (The ring only grows or drifts gradually, so the line isn't forever being redrawn.)
-        if (was > 0 && Math.hypot(cx - cordonX, cy - cordonY) < 150 && r < was + 90) {
-            cx = cordonX;
-            cy = cordonY;
-            r = was;
-        } else {
-            for (int p = 0; p < CORDON_POSTS; p++) {
-                float a = TAU * p / CORDON_POSTS, px = 0, py = 0;
-                boolean ok = false;
-                // Each post on open ground, as near the ring as it can be.
-                for (int tr = 0; tr < 6 && !ok; tr++) {
-                    float rr = r + (tr % 2 == 0 ? tr : -tr) * 12, aa = a + (tr % 3 - 1) * 0.06f;
-                    px = cx + (float) Math.cos(aa) * rr;
-                    py = cy + (float) Math.sin(aa) * rr;
-                    ok = px > 20 && py > 20 && px < city.worldW() - 20 && py < city.worldH() - 20 && !city.solidAt(px, py);
+        int clusters = findClusters();
+        // Each bunch of the dead: the zone already round it moves with it (gradually), or a new one is declared.
+        boolean[] matched = new boolean[MAX_ZONES + 1];
+        for (int c = 0; c < clusters; c++) {
+            InfectionZone best = null;
+            int bi = -1;
+            float bd = Float.MAX_VALUE;
+            for (int i = 0; i < infection.size(); i++) {
+                InfectionZone z = infection.get(i);
+                float d = (float) Math.hypot(z.x - clusterX[c], z.y - clusterY[c]);
+                if (d < z.r + 220 && d < bd) {
+                    bd = d;
+                    best = z;
+                    bi = i;
                 }
-                cordonPost[p * 2] = ok ? px : -1;
-                cordonPost[p * 2 + 1] = ok ? py : -1;
-                if (cordonCall[p] != null) cordonCall[p].resolved = true;
-                cordonCall[p] = null;
             }
-            if (was <= 0) dispatch.say(Dispatch.WHO_POLICE, null, "Dispatch: Setting up a perimeter round " + city.placeName(cx, cy)
-                    + ". Keep them inside it. Nobody in or out.", cx, cy);
+            if (best != null) {
+                if (matched[bi]) continue;
+                matched[bi] = true;
+                // (Redrawn only when they've really moved or spread: a line forever being redrawn is never held.)
+                if (bd > Math.max(180, best.r * 0.6f) || clusterR[c] > best.r + 140 || (clusterR[c] < best.r * 0.5f && best.quietFor == 0))
+                    placeZone(best, clusterX[c], clusterY[c], Math.max(clusterR[c], best.r * 0.8f));
+            } else if (clusterN[c] >= 6 && infection.size() < MAX_ZONES) {
+                InfectionZone z = new InfectionZone();
+                placeZone(z, clusterX[c], clusterY[c], clusterR[c]);
+                infection.add(z);
+                matched[infection.size() - 1] = true;
+                dispatch.say(Dispatch.WHO_POLICE, null, "Dispatch: Infection zone declared round " + z.place
+                        + ". Perimeter going up; nobody in or out.", z.x, z.y);
+                dispatch.callout(z.x, z.y, "INFECTION ZONE", 0xFFFF5A3A);
+            }
         }
-        cordonX = cx;
-        cordonY = cy;
-        cordonR = r;
-        java.util.Arrays.fill(cordonManned, 0);
+        // Two that have run into each other become one (the bigger takes in the other).
+        for (int i = 0; i < infection.size(); i++)
+            for (int j = infection.size() - 1; j > i; j--) {
+                InfectionZone a = infection.get(i), b = infection.get(j);
+                float d = (float) Math.hypot(a.x - b.x, a.y - b.y);
+                if (d > Math.max(Math.max(a.r, b.r) * 0.8f, (a.r + b.r) * 0.6f)) continue;
+                InfectionZone keep = a.r >= b.r ? a : b, gone = keep == a ? b : a;
+                float far = d + gone.r;
+                if (far > keep.r + 60) {
+                    float nr = Math.min(640, (keep.r + far) * 0.5f), t = d > 1 ? (nr - keep.r) / d : 0;
+                    placeZone(keep, keep.x + (gone.x - keep.x) * t, keep.y + (gone.y - keep.y) * t, nr);
+                }
+                keep.wasCritical |= gone.wasCritical;
+                liftZone(gone, null);
+                i = -1;
+                break;
+            }
+        // How many of the dead are still inside each, and who's at risk there. A zone with none left for a while is
+        // cleared and lifted.
+        for (int i = infection.size() - 1; i >= 0; i--) {
+            InfectionZone z = infection.get(i);
+            z.zombies = countZombiesNear(z.x, z.y, z.r + 40);
+            if (z.zombies == 0) {
+                // (Gone out of it, not gone: the zone goes after the stragglers, and is only lifted once there are
+                // none of them anywhere near.)
+                float sx = 0, sy = 0;
+                int k = 0;
+                for (int j = 0, m = entities.size(); j < m; j++) {
+                    Entity o = entities.get(j);
+                    if (o.dead || !o.isZombie() || Math.hypot(o.x - z.x, o.y - z.y) > z.r + 500) continue;
+                    sx += o.x;
+                    sy += o.y;
+                    k++;
+                }
+                boolean taken = false;
+                if (k > 0) for (InfectionZone o : infection) if (o != z && Math.hypot(o.x - sx / k, o.y - sy / k) < o.r + 60) taken = true;
+                if (k > 0 && !taken) {
+                    placeZone(z, sx / k, sy / k, Math.max(160, z.r * 0.7f));
+                    z.zombies = countZombiesNear(z.x, z.y, z.r + 40);
+                }
+            }
+            if (z.zombies > 0) z.quietFor = 0;
+            else z.quietFor += 4;
+            if (z.quietFor >= 12) {
+                liftZone(z, "Dispatch: " + z.place + " is clear of them. Lifting the infection zone.");
+                continue;
+            }
+            int people = 0;
+            for (int k = 0, n = gatherLiving(z.x, z.y, z.r); k < n; k++) if (gathered[k].type == Entity.CIVILIAN) people++;
+            z.people = people;
+            boolean shelter = false;
+            for (Dispatch.SafeZone sz : dispatch.zones) if (!sz.removed && Math.hypot(sz.x - z.x, sz.y - z.y) < z.r + sz.r + 150) shelter = true;
+            z.priority = z.zombies + 0.3f * people + (shelter ? 15 : 0);
+        }
+        if (infection.isEmpty()) {
+            cordonR = 0;
+            return;
+        }
+        // The worst first: as many zones held as there are people for (about ten free units a perimeter); the rest
+        // wait their turn, watched, until there's someone for them (or they're the worst).
+        java.util.Collections.sort(infection, new java.util.Comparator<InfectionZone>() {
+            @Override
+            public int compare(InfectionZone a, InfectionZone b) {
+                return Float.compare(rank(b), rank(a));
+            }
+        });
         int free = 0;
+        for (int i = 0, m = entities.size(); i < m; i++) {
+            Entity e = entities.get(i);
+            if (!e.dead && controlled != e && (cordonCandidate(e) || e.task == Dispatch.T_CORDON)) free++;
+        }
+        int holdable = Math.max(1, free / 10);
+        float top = rank(infection.get(0));
+        for (int i = 0; i < infection.size(); i++) {
+            InfectionZone z = infection.get(i);
+            // (Held ones stay held a little longer than new ones take to qualify, so they don't flap.)
+            z.critical = i == 0 || (i < holdable + (z.wasCritical ? 1 : 0) && rank(z) >= top * (z.wasCritical ? 0.2f : 0.3f));
+            if (z.wasCritical && !z.critical)
+                dispatch.say(Dispatch.WHO_POLICE, null, "Dispatch: " + z.place + " isn't the priority now. Units on that perimeter, move to "
+                        + infection.get(0).place + ".", z.x, z.y);
+            else if (!z.wasCritical && z.critical && i > 0)
+                dispatch.say(Dispatch.WHO_POLICE, null, "Dispatch: Units free for " + z.place + ". Perimeter going up there too.", z.x, z.y);
+            z.wasCritical = z.critical;
+            if (!z.critical) {
+                // (Waiting its turn: nobody on its perimeter, and its roads open again for now.)
+                for (int p = 0; p < CORDON_POSTS; p++) closeCall(z.postCall, p);
+                if (!z.checkpoints.isEmpty()) removeCheckpoints(z);
+            } else if (z.checkpoints.isEmpty()) placeZone(z, z.x, z.y, z.r);
+        }
+        InfectionZone first = infection.get(0);
+        cordonX = first.x;
+        cordonY = first.y;
+        cordonR = first.r;
+        // Who's on which line now.
+        for (InfectionZone z : infection) java.util.Arrays.fill(z.manned, 0);
+        int unposted = 0;
         for (int i = 0, m = entities.size(); i < m; i++) {
             Entity e = entities.get(i);
             if (e.dead || controlled == e) continue;
             if (e.task == Dispatch.T_CORDON) {
-                int best = cordonPostFor(e.postX, e.postY);
+                InfectionZone z = zoneOfPost(e.postX, e.postY);
+                int best = z == null || !z.critical ? -1 : postFor(z, e.postX, e.postY);
                 if (best < 0) e.task = Dispatch.T_NONE;
                 else {
-                    cordonManned[best]++;
-                    e.postX = cordonPost[best * 2];
-                    e.postY = cordonPost[best * 2 + 1];
+                    z.manned[best]++;
+                    e.postX = z.post[best * 2];
+                    e.postY = z.post[best * 2 + 1];
                 }
-            } else if (cordonCandidate(e)) free++;
+            } else if (cordonCandidate(e)) unposted++;
         }
-        // Half of the free units go on the line; the rest stay free for 911 calls.
-        int budget = free / 2;
-        for (int i = 0, m = entities.size(); i < m && budget > 0; i++) {
-            Entity e = entities.get(i);
-            if (e.dead || controlled == e || !cordonCandidate(e)) continue;
-            if (Math.hypot(e.x - cx, e.y - cy) > r + 1400) continue;
+        // Half of the free units go on the lines (the most critical first); the rest stay free for 911 calls.
+        int budget = unposted / 2;
+        for (InfectionZone z : infection) {
+            if (!z.critical) continue;
+            for (int i = 0, m = entities.size(); i < m && budget > 0; i++) {
+                Entity e = entities.get(i);
+                if (e.dead || controlled == e || !cordonCandidate(e)) continue;
+                if (Math.hypot(e.x - z.x, e.y - z.y) > z.r + 1400) continue;
+                int best = -1;
+                float bd = Float.MAX_VALUE;
+                for (int p = 0; p < CORDON_POSTS; p++) {
+                    if (z.post[p * 2] < 0 || z.manned[p] >= 2) continue;
+                    float d = (float) Math.hypot(z.post[p * 2] - e.x, z.post[p * 2 + 1] - e.y) + z.manned[p] * 300;
+                    if (d < bd) {
+                        bd = d;
+                        best = p;
+                    }
+                }
+                if (best < 0) break;
+                e.task = Dispatch.T_CORDON;
+                e.postX = z.post[best * 2];
+                e.postY = z.post[best * 2 + 1];
+                z.manned[best]++;
+                budget--;
+            }
+            // Patrol cars on their rounds take crews out to posts nobody's on.
+            int cars = 0;
+            for (int p = 0; p < CORDON_POSTS && cars < 3; p++) {
+                if (z.post[p * 2] < 0 || z.manned[p] > 0 || (z.postCall[p] != null && !z.postCall[p].resolved)) continue;
+                Dispatch.Incident inc = new Dispatch.Incident();
+                inc.x = z.post[p * 2];
+                inc.y = z.post[p * 2 + 1];
+                inc.place = "the perimeter on " + city.placeName(inc.x, inc.y);
+                inc.cordonPost = p;
+                Fleet.Vehicle v = null;
+                float bd = Float.MAX_VALUE;
+                for (int i = 0, m = fleet.vehicles.size(); i < m; i++) {
+                    Fleet.Vehicle c = fleet.vehicles.get(i);
+                    if (!c.patrol || c.agency != 0 || c.state != Fleet.PATROL || c.broken || c.parked || c.crew.isEmpty()) continue;
+                    float d = (c.x - inc.x) * (c.x - inc.x) + (c.y - inc.y) * (c.y - inc.y);
+                    if (d < bd) {
+                        bd = d;
+                        v = c;
+                    }
+                }
+                if (v == null) break;
+                if (fleet.respond(v, inc)) {
+                    z.postCall[p] = inc;
+                    cars++;
+                }
+            }
+            manCheckpoints(z);
+        }
+    }
+
+    /**
+     * The bunches of the dead on the map (into clusterX/Y/R/N): the thickest patch first, everything within a few
+     * streets of it with it, and so on. Returns how many.
+     */
+    private int findClusters() {
+        int cell = 256, gw2 = (int) (city.worldW() / cell) + 1, gh2 = (int) (city.worldH() / cell) + 1;
+        int[] count = new int[gw2 * gh2];
+        for (int i = 0, m = entities.size(); i < m; i++) {
+            Entity z = entities.get(i);
+            if (z.dead || !z.isZombie()) continue;
+            int c = Math.min(gh2 - 1, Math.max(0, (int) (z.y / cell))) * gw2 + Math.min(gw2 - 1, Math.max(0, (int) (z.x / cell)));
+            count[c]++;
+        }
+        boolean[] taken = new boolean[entities.size()];
+        int n = 0;
+        while (n < clusterX.length) {
             int best = -1;
-            float bd = Float.MAX_VALUE;
-            for (int p = 0; p < CORDON_POSTS; p++) {
-                if (cordonPost[p * 2] < 0 || cordonManned[p] >= 2) continue;
-                float d = (float) Math.hypot(cordonPost[p * 2] - e.x, cordonPost[p * 2 + 1] - e.y) + cordonManned[p] * 300;
-                if (d < bd) {
-                    bd = d;
-                    best = p;
-                }
-            }
+            for (int c = 0; c < count.length; c++) if (count[c] >= 2 && (best < 0 || count[c] > count[best])) best = c;
             if (best < 0) break;
-            e.task = Dispatch.T_CORDON;
-            e.postX = cordonPost[best * 2];
-            e.postY = cordonPost[best * 2 + 1];
-            cordonManned[best]++;
-            budget--;
-        }
-        // Posts nobody on foot can reach: a patrol car drives a crew out to each.
-        int cars = 0;
-        for (int p = 0; p < CORDON_POSTS && cars < 3; p++) {
-            if (cordonPost[p * 2] < 0 || cordonManned[p] > 0 || (cordonCall[p] != null && !cordonCall[p].resolved)) continue;
-            Dispatch.Incident inc = new Dispatch.Incident();
-            inc.x = cordonPost[p * 2];
-            inc.y = cordonPost[p * 2 + 1];
-            inc.place = "the perimeter on " + city.placeName(inc.x, inc.y);
-            inc.cordonPost = p;
-            Fleet.Vehicle v = null;
-            float bd = Float.MAX_VALUE;
-            for (int i = 0, m = fleet.vehicles.size(); i < m; i++) {
-                Fleet.Vehicle c = fleet.vehicles.get(i);
-                if (!c.patrol || c.agency != 0 || c.state != Fleet.PATROL || c.broken || c.parked || c.crew.isEmpty()) continue;
-                float d = (c.x - inc.x) * (c.x - inc.x) + (c.y - inc.y) * (c.y - inc.y);
-                if (d < bd) {
-                    bd = d;
-                    v = c;
+            float bx = (best % gw2 + 0.5f) * cell, by = (best / gw2 + 0.5f) * cell;
+            // Everything within reach of that patch: its centre, and how far the bulk of them has got.
+            float sx = 0, sy = 0;
+            int k = 0;
+            for (int pass = 0; pass < 2; pass++) {
+                float ox = pass == 0 ? bx : sx / Math.max(1, k), oy = pass == 0 ? by : sy / Math.max(1, k);
+                sx = sy = 0;
+                k = 0;
+                for (int i = 0, m = entities.size(); i < m; i++) {
+                    Entity z = entities.get(i);
+                    if (z.dead || !z.isZombie() || taken[i]) continue;
+                    if ((z.x - ox) * (z.x - ox) + (z.y - oy) * (z.y - oy) > 420 * 420) continue;
+                    sx += z.x;
+                    sy += z.y;
+                    k++;
                 }
             }
-            if (v == null) break;
-            if (fleet.respond(v, inc)) {
-                cordonCall[p] = inc;
-                cars++;
+            if (k == 0) {
+                count[best] = 0;
+                continue;
+            }
+            float cx = sx / k, cy = sy / k;
+            float[] dist = new float[k];
+            int j = 0;
+            for (int i = 0, m = entities.size(); i < m; i++) {
+                Entity z = entities.get(i);
+                if (z.dead || !z.isZombie() || taken[i]) continue;
+                float d = (float) Math.hypot(z.x - cx, z.y - cy);
+                if (d > 460) continue;
+                taken[i] = true;
+                if (j < k) dist[j++] = d;
+                int c = Math.min(gh2 - 1, Math.max(0, (int) (z.y / cell))) * gw2 + Math.min(gw2 - 1, Math.max(0, (int) (z.x / cell)));
+                count[c]--;
+            }
+            java.util.Arrays.sort(dist, 0, j);
+            float spread = j == 0 ? 0 : dist[Math.min(j - 1, (int) (j * 0.8f))];
+            clusterX[n] = cx;
+            clusterY[n] = cy;
+            clusterR[n] = Math.min(640, Math.max(140, spread + 110));
+            clusterN[n] = j;
+            n++;
+        }
+        return n;
+    }
+
+    /** Puts a zone's ring round (cx, cy): its perimeter posts, and checkpoints on the roads that cross it. */
+    private void placeZone(InfectionZone z, float cx, float cy, float r) {
+        // (It keeps its name unless it's moved right away from where it was.)
+        if (z.place == null || Math.hypot(cx - z.x, cy - z.y) > z.r) {
+            z.place = city.placeName(cx, cy);
+            // (Two on the same street: told apart by which end of it.)
+            for (InfectionZone o : infection)
+                if (o != z && z.place.equals(o.place)) {
+                    float dx = cx - o.x, dy = cy - o.y;
+                    z.place += Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? " East" : " West") : (dy > 0 ? " South" : " North");
+                    break;
+                }
+        }
+        z.x = cx;
+        z.y = cy;
+        z.r = r;
+        for (int p = 0; p < CORDON_POSTS; p++) {
+            float a = TAU * p / CORDON_POSTS, px = 0, py = 0;
+            boolean ok = false;
+            // Each post on open ground, as near the ring as it can be.
+            for (int tr = 0; tr < 6 && !ok; tr++) {
+                float rr = r + (tr % 2 == 0 ? tr : -tr) * 12, aa = a + (tr % 3 - 1) * 0.06f;
+                px = cx + (float) Math.cos(aa) * rr;
+                py = cy + (float) Math.sin(aa) * rr;
+                ok = px > 20 && py > 20 && px < city.worldW() - 20 && py < city.worldH() - 20 && !city.solidAt(px, py);
+            }
+            z.post[p * 2] = ok ? px : -1;
+            z.post[p * 2 + 1] = ok ? py : -1;
+            closeCall(z.postCall, p);
+        }
+        // The army's checkpoints: where a road runs out across the ring, just outside it. (Whoever is already on
+        // their way to one goes on to the new spot with the same number.)
+        // (Those still on the roads in, near enough the new ring, stay where they are, and so do their guards.)
+        ArrayList<float[]> oldCp = new ArrayList<float[]>(z.checkpoints), oldSpots = new ArrayList<float[]>(z.guardSpots);
+        Entity[] oldGuards = z.guards.clone();
+        Dispatch.Incident[] oldCalls = z.guardCall.clone();
+        for (float[] cp : z.checkpoints) city.checkpoints.remove(cp);
+        z.checkpoints.clear();
+        z.guardSpots.clear();
+        java.util.Arrays.fill(z.guards, null);
+        java.util.Arrays.fill(z.guardCall, null);
+        for (int c = 0; c < oldCp.size(); c++) {
+            float[] cp = oldCp.get(c);
+            if (Math.abs(Math.hypot(cp[0] - cx, cp[1] - cy) - (r + 70)) > 110 || oldSpots.size() < c * 2 + 2) continue;
+            int n = z.checkpoints.size();
+            z.checkpoints.add(cp);
+            city.checkpoints.add(cp);
+            for (int sd = 0; sd < 2; sd++) {
+                z.guardSpots.add(oldSpots.get(c * 2 + sd));
+                z.guards[n * 2 + sd] = oldGuards[c * 2 + sd];
+                z.guardCall[n * 2 + sd] = oldCalls[c * 2 + sd];
+                oldGuards[c * 2 + sd] = null;
+                oldCalls[c * 2 + sd] = null;
+            }
+        }
+        // (The rest are taken down; whoever was going to them goes to the new ones in their place.)
+        int moved = z.checkpoints.size() * 2;
+        for (int k = 0; k < oldGuards.length; k++) {
+            if (oldGuards[k] == null || moved >= z.guards.length) continue;
+            z.guards[moved] = oldGuards[k];
+            z.guardCall[moved] = oldCalls[k];
+            oldGuards[k] = null;
+            oldCalls[k] = null;
+            moved++;
+        }
+        for (int k = 0; k < 32 && z.checkpoints.size() < MAX_CHECKPOINTS; k++) {
+            float a = TAU * k / 32, ux = (float) Math.cos(a), uy = (float) Math.sin(a);
+            float px = cx + ux * (r + 70), py = cy + uy * (r + 70);
+            int tx = (int) (px / City.T), ty = (int) (py / City.T);
+            if (tx < 2 || ty < 2 || tx >= city.w - 2 || ty >= city.h - 2) continue;
+            int i = ty * city.w + tx;
+            if (city.tiles[i] != City.ROAD || (city.oneWay != null && city.oneWay[i] != 0) || (city.slipWay != null && city.slipWay[i] != 0)
+                    || city.junctionAt(tx, ty)) continue;
+            int dir = city.roadDirAt(tx, ty);
+            boolean radial = (dir == 1 && Math.abs(uy) > 0.7f) || (dir == 2 && Math.abs(ux) > 0.7f);
+            if (!radial) continue;
+            boolean near = false;
+            for (float[] o : z.checkpoints) if (Math.hypot(o[0] - px, o[1] - py) < 220) near = true;
+            for (float[] o : city.checkpoints) if (Math.hypot(o[0] - px, o[1] - py) < 120) near = true;
+            if (near) continue;
+            float ang = dir == 1 ? (uy > 0 ? 1.5708f : -1.5708f) : (ux > 0 ? 0 : 3.1416f);
+            float[] cp = {(tx + 0.5f) * City.T, (ty + 0.5f) * City.T, ang};
+            z.checkpoints.add(cp);
+            city.checkpoints.add(cp);
+            for (int sd = -1; sd <= 1; sd += 2) {
+                float[] q = city.findWalkable(cp[0] - (float) Math.sin(ang) * sd * 2.4f * City.T, cp[1] + (float) Math.cos(ang) * sd * 2.4f * City.T);
+                z.guardSpots.add(q != null ? q : new float[]{cp[0], cp[1]});
+            }
+        }
+        for (int k = 0; k < z.guards.length; k++) {
+            Entity g = z.guards[k];
+            if (g == null) continue;
+            if (k >= z.guardSpots.size() || g.dead && !riding(g)) {
+                if (!g.dead && (g.task == Dispatch.T_POST || (g.task == Dispatch.T_RESPOND && g.incident == z.guardCall[k]))) {
+                    g.task = Dispatch.T_NONE;
+                    g.incident = null;
+                }
+                z.guards[k] = null;
+                if (z.guardCall[k] != null) z.guardCall[k].resolved = true;
+                z.guardCall[k] = null;
+                continue;
+            }
+            float[] spot = z.guardSpots.get(k);
+            if (g.task == Dispatch.T_POST) {
+                g.postX = spot[0];
+                g.postY = spot[1];
+            }
+            if (z.guardCall[k] != null) {
+                z.guardCall[k].checkpointSpot = spot;
+                z.guardCall[k].x = spot[0];
+                z.guardCall[k].y = spot[1];
             }
         }
     }
 
-    private void liftCordon() {
-        cordonR = 0;
-        for (int p = 0; p < CORDON_POSTS; p++) {
-            if (cordonCall[p] != null) cordonCall[p].resolved = true;
-            cordonCall[p] = null;
+    /**
+     * Soldiers onto a critical zone's checkpoints: two to each, the nearest free ones walking if it's close, a squad
+     * from the nearest base by truck if not.
+     */
+    private void manCheckpoints(InfectionZone z) {
+        if (z.guardSpots.isEmpty()) return;
+        ArrayList<Entity> squad = null;
+        Dispatch.Incident ride = null;
+        boolean sent = false;
+        for (int s = 0; s < z.guardSpots.size() && s < z.guards.length; s++) {
+            // (A truck to each checkpoint, with the pair for it: they're spread right round the zone.)
+            if (s % 2 == 0 && squad != null) {
+                sendSquad(squad, ride);
+                sent = true;
+                squad = null;
+            }
+            Entity g = z.guards[s];
+            // (Still on it, or on the way: walking, aboard the truck, or just dropped off.)
+            if (g != null && (riding(g) || !g.dead && (g.task == Dispatch.T_BOARD || g.task == Dispatch.T_RESPOND
+                    || (g.task == Dispatch.T_POST && Math.hypot(g.postX - z.guardSpots.get(s)[0], g.postY - z.guardSpots.get(s)[1]) < 4)))) continue;
+            z.guards[s] = null;
+            float[] spot = z.guardSpots.get(s);
+            Entity best = null;
+            float bd = Float.MAX_VALUE;
+            for (int i = 0, m = entities.size(); i < m; i++) {
+                Entity e = entities.get(i);
+                if (e.dead || e.type != Entity.SOLDIER || !cordonCandidate(e) || controlled == e) continue;
+                float d = (float) Math.hypot(e.x - spot[0], e.y - spot[1]);
+                if (d < bd) {
+                    bd = d;
+                    best = e;
+                }
+            }
+            if (best == null) continue;
+            z.guards[s] = best;
+            if (bd < 700) {
+                best.task = Dispatch.T_POST;
+                best.postX = spot[0];
+                best.postY = spot[1];
+                continue;
+            }
+            // A long way: they go by truck, the squad for this zone's checkpoints together.
+            Dispatch.Incident inc = new Dispatch.Incident();
+            inc.x = spot[0];
+            inc.y = spot[1];
+            inc.place = "the checkpoint on " + city.placeName(spot[0], spot[1]);
+            inc.checkpointSpot = spot;
+            z.guardCall[s] = inc;
+            best.task = Dispatch.T_RESPOND;
+            best.incident = inc;
+            if (squad == null) {
+                squad = new ArrayList<Entity>();
+                ride = inc;
+            }
+            squad.add(best);
+        }
+        if (squad != null) {
+            sendSquad(squad, ride);
+            sent = true;
+        }
+        if (sent && time > z.saidAt) {
+            z.saidAt = time + 45;
+            dispatch.say(Dispatch.WHO_MILITARY, null, "Military: Closing the roads into the " + z.place + " infection zone. Checkpoints going up.", z.x, z.y);
         }
     }
 
-    private int cordonPostFor(float x, float y) {
+    /** A checkpoint's squad on its way: by truck from the base, or whatever they can get in town, or on foot. */
+    private void sendSquad(ArrayList<Entity> squad, Dispatch.Incident ride) {
+        City.Facility base = city.nearestFacility(City.FACILITY_BASE, squad.get(0).x, squad.get(0).y);
+        boolean atBase = base != null && Math.hypot(base.x - squad.get(0).x, base.y - squad.get(0).y) < base.r + 300;
+        boolean byRoad = atBase && fleet.troopTruck(squad, base, ride) || fleet.mountUp(squad, ride);
+        if (!byRoad) for (Entity e : squad) {
+            // (No truck to be had: they walk.)
+            e.task = Dispatch.T_POST;
+            e.postX = e.incident.checkpointSpot[0];
+            e.postY = e.incident.checkpointSpot[1];
+            e.incident = null;
+        }
+    }
+
+    /**
+     * How a zone ranks against the others: one already held, with people on its perimeter and squads on their way,
+     * only gives way to somewhere clearly worse (not one that's just a few more of them this minute).
+     */
+    private static float rank(InfectionZone z) {
+        return z.priority * (z.wasCritical ? 1.6f : 1);
+    }
+
+    /** Aboard a vehicle (out of the world for the ride, not dead). */
+    static boolean riding(Entity g) {
+        return g.dead && g.removed && g.rig != null && g.hp > 0;
+    }
+
+    /** The soldiers on a zone's checkpoints go back to what they were doing. */
+    private void standDownGuards(InfectionZone z) {
+        for (int s = 0; s < z.guards.length; s++) {
+            Entity g = z.guards[s];
+            if (g != null && !g.dead && (g.task == Dispatch.T_POST || (g.task == Dispatch.T_RESPOND && g.incident == z.guardCall[s]))) {
+                g.task = Dispatch.T_NONE;
+                g.incident = null;
+            }
+            z.guards[s] = null;
+            if (z.guardCall[s] != null) z.guardCall[s].resolved = true;
+            z.guardCall[s] = null;
+        }
+    }
+
+    private void removeCheckpoints(InfectionZone z) {
+        standDownGuards(z);
+        for (float[] cp : z.checkpoints) city.checkpoints.remove(cp);
+        z.checkpoints.clear();
+        z.guardSpots.clear();
+    }
+
+    private void closeCall(Dispatch.Incident[] calls, int p) {
+        if (calls[p] != null) calls[p].resolved = true;
+        calls[p] = null;
+    }
+
+    private void liftZone(InfectionZone z, String say) {
+        for (int p = 0; p < CORDON_POSTS; p++) closeCall(z.postCall, p);
+        removeCheckpoints(z);
+        for (int i = 0, m = entities.size(); i < m; i++) {
+            Entity e = entities.get(i);
+            if (e.task == Dispatch.T_CORDON && zoneOfPost(e.postX, e.postY) == z) e.task = Dispatch.T_NONE;
+        }
+        infection.remove(z);
+        if (say != null) {
+            dispatch.say(Dispatch.WHO_POLICE, null, say, z.x, z.y);
+            dispatch.callout(z.x, z.y, "ZONE CLEARED", 0xFF7AD07A);
+        }
+    }
+
+    /** The zone a perimeter post belongs to, or null. */
+    InfectionZone zoneOfPost(float x, float y) {
+        for (InfectionZone z : infection)
+            for (int p = 0; p < CORDON_POSTS; p++)
+                if (z.post[p * 2] >= 0 && Math.abs(z.post[p * 2] - x) < 200 && Math.abs(z.post[p * 2 + 1] - y) < 200
+                        && Math.hypot(z.post[p * 2] - x, z.post[p * 2 + 1] - y) < 200) return z;
+        return null;
+    }
+
+    private int postFor(InfectionZone z, float x, float y) {
         int best = -1;
         float bd = 200;
         for (int p = 0; p < CORDON_POSTS; p++) {
-            if (cordonPost[p * 2] < 0) continue;
-            float d = (float) Math.hypot(cordonPost[p * 2] - x, cordonPost[p * 2 + 1] - y);
+            if (z.post[p * 2] < 0) continue;
+            float d = (float) Math.hypot(z.post[p * 2] - x, z.post[p * 2 + 1] - y);
             if (d < bd) {
                 bd = d;
                 best = p;

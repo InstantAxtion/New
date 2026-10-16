@@ -2659,6 +2659,8 @@ final class Fleet {
                     || (o.yieldT > 0 && !o.yieldStop && v.lightsOn())
                     // (Lights and sirens go round a queue sitting at a red light, too.)
                     || (v.lightsOn() && o.type == CAR && o.player == null && o.stillT > 1f && v.type != FIRE_ENGINE)
+                    // (10.46) An army truck on a call has no lights, but doesn't sit behind a stopped car either.
+                    || (v.type == TRUCK && v.state == DRIVE && v.incident != null && o.player == null && o.stillT > 2f)
                     // (Gridlock, everyone waiting on everyone and nobody on a light: edge round and break it.)
                     || (o.stillT > 6 && v.stillT > 6 && !o.held && !o.queuedHeld)
                     // (10.42) Or a knot where everyone's waiting on everyone else at once: longer than any red

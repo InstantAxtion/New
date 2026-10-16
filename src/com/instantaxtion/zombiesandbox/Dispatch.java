@@ -37,6 +37,8 @@ final class Dispatch {
         char[] field;
         /** A post on the cordon round the outbreak (World.updateCordon), or -1 for a real call. */
         int cordonPost = -1;
+        /** (10.46) A guard spot at an army checkpoint on the road into an infection zone, or null. */
+        float[] checkpointSpot;
     }
 
     /**

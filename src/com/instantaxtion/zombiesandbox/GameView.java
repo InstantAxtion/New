@@ -1211,6 +1211,13 @@ final class GameView extends View implements Menu.Host {
             c.drawCircle(tacRect.left + v.x * sx, tacRect.top + v.y * sy, dot, fill);
         }
         text.setTextAlign(Paint.Align.CENTER);
+        // (10.46) Infection zones.
+        for (int i = 0; i < world.infection.size(); i++) {
+            World.InfectionZone z = world.infection.get(i);
+            stroke.setColor(z.critical ? 0xFFFF4A3A : 0xFFFFB040);
+            stroke.setStrokeWidth(1.6f * dp);
+            c.drawCircle(tacRect.left + z.x * sx, tacRect.top + z.y * sy, Math.max(4 * dp, z.r * sx), stroke);
+        }
         // Checkpoints.
         for (int i = 0; i < city.checkpoints.size(); i++) {
             float[] cp = city.checkpoints.get(i);
@@ -2132,6 +2139,22 @@ final class GameView extends View implements Menu.Host {
             c.drawLine(b.x, b.y, b.x + 2.5f, b.y - wing, stroke);
         }
 
+        // (10.46) Infection zones: a dashed hazard ring round each, red while it's held, amber while it waits its turn.
+        for (int i = 0, n = world.infection.size(); i < n; i++) {
+            World.InfectionZone z = world.infection.get(i);
+            int col = z.critical ? 0xFFFF4A3A : 0xFFFFB040;
+            fill.setColor(alpha(col, 0.06f));
+            c.drawCircle(z.x, z.y, z.r, fill);
+            stroke.setStrokeWidth(2.4f / Math.max(0.4f, scale) + 0.4f);
+            stroke.setColor(alpha(col, 0.8f));
+            int segs = Math.max(40, (int) (z.r / 5)) / 2 * 2;
+            float spin = world.time * 0.04f;
+            for (int k = 0; k < segs; k += 2) {
+                float a0 = 6.2832f * k / segs + spin, a1 = 6.2832f * (k + 1) / segs + spin;
+                c.drawLine(z.x + (float) Math.cos(a0) * z.r, z.y + (float) Math.sin(a0) * z.r,
+                        z.x + (float) Math.cos(a1) * z.r, z.y + (float) Math.sin(a1) * z.r, stroke);
+            }
+        }
         for (int i = 0, n = world.dispatch.incidents.size(); i < n; i++) {
             Dispatch.Incident inc = world.dispatch.incidents.get(i);
             float pulse = (world.time * 1.5f + i * 0.3f) % 1f;
@@ -5104,6 +5127,21 @@ final class GameView extends View implements Menu.Host {
                 text.setColor(alpha(0xFF000000, districtAlpha * 0.6f));
                 c.drawText(label, sx + 1.5f * dp, sy + 1.5f * dp, text);
                 text.setColor(alpha(0xFFF4EED8, districtAlpha * 0.85f));
+                c.drawText(label, sx, sy, text);
+            }
+            // (10.46) Infection zones: their name, how many of the dead are in them, and whether they're held.
+            text.setTextSize(11 * dp);
+            for (int i = 0; i < world.infection.size(); i++) {
+                World.InfectionZone z = world.infection.get(i);
+                float sx = screenX(z.x), sy = screenY(z.y - z.r) - 6 * dp;
+                if (sx < -120 * dp || sx > getWidth() + 120 * dp || sy < 12 * dp || sy > barTop) continue;
+                String label = "INFECTION ZONE \u00b7 " + z.zombies + (z.critical ? "" : " \u00b7 WAITING");
+                float tw = text.measureText(label);
+                oval.set(sx - tw / 2 - 5 * dp, sy - 11 * dp, sx + tw / 2 + 5 * dp, sy + 4 * dp);
+                if (!claim(oval)) continue;
+                fill.setColor(z.critical ? 0xDD8A1E16 : 0xDD8A5A10);
+                c.drawRoundRect(oval, 4 * dp, 4 * dp, fill);
+                text.setColor(0xFFFFF0E8);
                 c.drawText(label, sx, sy, text);
             }
             // (10.32) The army's checkpoints, and a base that's been overrun.

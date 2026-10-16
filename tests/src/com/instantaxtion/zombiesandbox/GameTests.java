@@ -3231,6 +3231,82 @@ public final class GameTests {
                         "a truck mustering at the base waits in the yard, off the gateway");
             }
         });
+        test("10.46: infection zones round the dead - perimeter, army checkpoints on the roads in, worst first, lifted once clear", new Check() {
+            public void run() {
+                CityConfig c = new CityConfig();
+                c.v[CityConfig.OPT_PRESET] = 0;
+                c.seed = 5;
+                c.v[CityConfig.OPT_SIZE] = 3;
+                c.v[CityConfig.OPT_ZOMBIES] = 0;
+                c.normalize();
+                c.seed = 5;
+                World w = new World(c);
+                w.rnd.setSeed(4);
+                w.populate(c);
+                for (int f = 0; f < 150; f++) w.update(1 / 30f);
+                java.util.Random r = new java.util.Random(7);
+                float[] q0 = w.city.randomWalkableInTown(r);
+                int sp = 0;
+                for (int i = 0; i < 1600 && sp < 150; i++) {
+                    float[] q = w.city.findWalkable(q0[0] + (i % 40) * 8 - 160, q0[1] + (i / 40) * 8 - 160);
+                    if (q != null && w.spawn(Entity.ZOMBIE, q[0], q[1]) != null) sp++;
+                }
+                // And a few on their own, a long way off: a lesser zone, if one at all.
+                float[] q1 = null;
+                for (int k = 0; k < 200 && (q1 == null || Math.hypot(q1[0] - q0[0], q1[1] - q0[1]) < 2000); k++) q1 = w.city.randomWalkableInTown(r);
+                for (int i = 0; i < 400 && sp < 160; i++) {
+                    float[] q = w.city.findWalkable(q1[0] + (i % 20) * 8 - 80, q1[1] + (i / 20) * 8 - 80);
+                    if (q != null && w.spawn(Entity.ZOMBIE, q[0], q[1]) != null) sp++;
+                }
+                w.alert = 2;
+                w.outbreak = true;
+                boolean declared = false, roads = true, invariant = true, sent = false;
+                int perimeter = 0, checkpoints = 0;
+                for (int f = 0; f < 30 * 60; f++) {
+                    w.update(1 / 30f);
+                    if (f % 30 != 0) continue;
+                    for (World.InfectionZone z : w.infection) {
+                        if (Math.hypot(z.x - q0[0], z.y - q0[1]) < z.r + 200) declared = true;
+                        // The worst is always held; one that's waiting its turn has no checkpoints and nobody on its line.
+                        if (z == w.infection.get(0) && !z.critical) invariant = false;
+                        if (!z.critical && !z.checkpoints.isEmpty()) invariant = false;
+                        for (float[] cp : z.checkpoints) {
+                            if (!w.city.checkpoints.contains(cp)) roads = false;
+                            if (w.city.tiles[(int) (cp[1] / City.T) * w.city.w + (int) (cp[0] / City.T)] != City.ROAD) roads = false;
+                        }
+                        checkpoints = Math.max(checkpoints, z.checkpoints.size());
+                        for (int k = 0; k < z.guardSpots.size() && k < z.guards.length; k++) {
+                            Entity g = z.guards[k];
+                            if (g != null && g.type == Entity.SOLDIER && (!g.dead || World.riding(g))) sent = true;
+                        }
+                    }
+                    int n = 0;
+                    for (Entity e : w.entities) {
+                        if (e.dead || e.task != Dispatch.T_CORDON) continue;
+                        n++;
+                        World.InfectionZone z = w.zoneOfPost(e.postX, e.postY);
+                        if (z == null || !z.critical) invariant = false;
+                    }
+                    perimeter = Math.max(perimeter, n);
+                }
+                check(declared, "an infection zone is declared round the bunch of the dead");
+                check(checkpoints >= 1 && roads, "the army closes the roads into it (" + checkpoints + " checkpoints, all on the road)");
+                check(perimeter >= 4, "police on its perimeter, not called there by anyone (" + perimeter + ")");
+                check(sent, "soldiers are sent out to man the checkpoints");
+                check(invariant, "the worst zone is held first; the others wait, with nobody on them, till there's someone for them");
+                // Not lifted while any of them are about; lifted, roads and all, once they're gone.
+                boolean any = !w.infection.isEmpty();
+                // (Kept clear: anyone bitten who turns meanwhile is taken care of too.)
+                for (int f = 0; f < 30 * 25; f++) {
+                    if (f % 15 == 0) w.clearZombies();
+                    w.update(1 / 30f);
+                }
+                check(!any || w.infection.isEmpty(), "with the dead gone the zone is lifted (" + w.infection.size() + " left)");
+                int left = 0;
+                for (Entity e : w.entities) if (!e.dead && e.task == Dispatch.T_CORDON) left++;
+                check(left == 0, "and everyone on its perimeter stands down (" + left + ")");
+            }
+        });
         test("every screen draws", new Check() {
             public void run() throws Exception {
                 GameView v = new GameView(new android.app.Activity());

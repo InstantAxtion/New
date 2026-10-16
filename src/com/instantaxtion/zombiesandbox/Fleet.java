@@ -8,6 +8,8 @@ import java.util.ArrayList;
  * for air support. Cars take damage from zombies, crashes and blasts, and break down when it is too much.
  */
 final class Fleet {
+    /** (10.42) Points in a vehicle's planned line ahead. */
+    static final int COR = 12;
     static final int CRUISER = 0, TRUCK = 1, HELI = 2, CAR = 3, FIRE_ENGINE = 4, TANK = 5, AMBULANCE = 6, TRAIN = 7, JET = 8;
 
     /** Aircraft fly over everything: no crashes, no zombies clawing at them. */
@@ -72,6 +74,12 @@ final class Fleet {
         boolean held;
         /** The way along the road it was last heading (one step of its route). */
         int pdx, pdy;
+        /** (10.42) The line it's about to drive (in its lane, through the junctions): {x, y} points, from a tile back on. */
+        final float[] cor = new float[2 * COR];
+        int corN;
+        /** Where it's steering for on that line, and whether it is. */
+        float aimX, aimY;
+        boolean aiming;
         float x, y, angle, speed, timer, stuckTimer, lastDist, gunCd, soundCd, circle;
         /** It went round in a circle (missed its turn); traffic gives up that route. */
         boolean orbited;
@@ -2191,6 +2199,12 @@ final class Fleet {
         boolean vertical = diry != 0;
         // A bend: slow for the corner, but nobody stops.
         if (j[4] == City.J_BEND) return Float.MAX_VALUE;
+        // (10.42) Don't block the box: whatever the lights say, nobody pulls into the junction until there's room
+        // on the far side to get out of it again (unless it's been waiting so long the queue must be going nowhere).
+        if (!emergency && v.player == null && stopAt < 30 && v.stillT < 20 && exitBlocked(v, id)) {
+            v.held = stopAt < 6;
+            return approach;
+        }
         if (emergency) {
             if (!crossClear(id, v, dirx, diry)) {
                 v.held = stopAt < 6;
@@ -2243,6 +2257,238 @@ final class Fleet {
         return 0;
     }
 
+    /**
+     * (10.42) The line a vehicle is about to drive: from where it is, along the next steps of its route, each in
+     * its lane (and through a junction in the lane it will leave by), as points in v.cor.
+     */
+    private void buildCorridor(Vehicle v) {
+        v.corN = 0;
+        if (v.field == null || v.pathT < 0) return;
+        int W = city.w;
+        // The tiles: one back along the way it came, then on down the route (up to a bridge).
+        int[] ts = corTiles;
+        int m = 0;
+        if (v.pdx != 0 || v.pdy != 0) {
+            int bx = v.pathT % W - v.pdx, by = v.pathT / W - v.pdy;
+            if (bx >= 0 && by >= 0 && bx < W && by < city.h) ts[m++] = by * W + bx;
+        }
+        corPi = m;
+        ts[m++] = v.pathT;
+        for (int t = v.pathT; m < COR; ) {
+            int nt = downhill(v.field, t);
+            if (nt == t || Math.abs(nt % W - t % W) + Math.abs(nt / W - t / W) > 1) break;
+            ts[m++] = nt;
+            t = nt;
+        }
+        if (m < 2) return;
+        float lastAlong = Float.NaN;
+        int lastAxisX = 0, lastAxisY = 0;
+        boolean lastJ = false;
+        jEntryL = Float.NaN;
+        for (int i = 0; i < m; i++) {
+            int t = ts[i], tx = t % W, ty = t / W;
+            // Its heading here: over the tiles either side (a staircase of steps is one diagonal, not a zig-zag).
+            int a = ts[Math.max(0, i - 1)], b = ts[Math.min(m - 1, i + 1)];
+            float dx = b % W - a % W, dy = b / W - a / W, dl = (float) Math.sqrt(dx * dx + dy * dy);
+            if (dl < 0.01f) {
+                dx = v.pdx;
+                dy = v.pdy;
+                dl = Math.max(1, (float) Math.sqrt(dx * dx + dy * dy));
+            }
+            dx /= dl;
+            dy /= dl;
+            int sx = Math.abs(dx) >= Math.abs(dy) ? (int) Math.signum(dx) : 0, sy = sx == 0 ? (int) Math.signum(dy) : 0;
+            float px, py;
+            boolean inJ = city.junctionAt(tx, ty);
+            if (inJ) {
+                // (10.42) Through a junction: along the lane it came in by to where that crosses the lane it leaves
+                // by (measured on the road beyond, not on the junction's own tiles), and out along that - the
+                // corner is cut smoothly by steering for a point ahead on the line.
+                int sdx = i + 1 < m ? Integer.signum(ts[i + 1] % W - tx) : lastAxisX, sdy = i + 1 < m ? Integer.signum(ts[i + 1] / W - ty) : lastAxisY;
+                int ex = sdx, ey = sdy, k = i, first = i;
+                while (first > 0 && city.junctionAt(ts[first - 1] % W, ts[first - 1] / W)) first--;
+                while (k < m - 1 && city.junctionAt(ts[k] % W, ts[k] / W)) {
+                    ex = Integer.signum(ts[k + 1] % W - ts[k] % W);
+                    ey = Integer.signum(ts[k + 1] / W - ts[k] / W);
+                    k++;
+                }
+                boolean out = !city.junctionAt(ts[k] % W, ts[k] / W) && Math.abs(ex) + Math.abs(ey) == 1;
+                float le = 0;
+                if (out) {
+                    int E = ts[k];
+                    float oe = city.laneOffset(E % W, E / W, ex, ey);
+                    le = ex != 0 ? (E / W + 0.5f) * City.T + ex * oe : (E % W + 0.5f) * City.T - ey * oe;
+                }
+                int ax = jEntryX, ay = jEntryY;
+                if (i == first || Float.isNaN(jEntryL)) {
+                    ax = lastAxisX;
+                    ay = lastAxisY;
+                    jEntryX = ax;
+                    jEntryY = ay;
+                    jEntryL = Float.isNaN(lastAlong) || (ax == 0 && ay == 0) ? Float.NaN : lastAlong;
+                }
+                float li = jEntryL, cx = (tx + 0.5f) * City.T, cy = (ty + 0.5f) * City.T;
+                px = cx;
+                py = cy;
+                // (Only where the lines run over road the whole way: not across a roundabout's island.)
+                if (i == first) {
+                    jSmooth = false;
+                    if (out && !Float.isNaN(li) && v.corN > 0) {
+                        float x0 = v.cor[v.corN * 2 - 2], y0 = v.cor[v.corN * 2 - 1];
+                        int E = ts[k];
+                        float x2 = ex != 0 ? (E % W + 0.5f) * City.T : le, y2 = ex != 0 ? le : (E / W + 0.5f) * City.T;
+                        float x1 = x2, y1 = y2;
+                        if (ax * ex + ay * ey == 0) {
+                            x1 = ax != 0 ? le : li;
+                            y1 = ax != 0 ? li : le;
+                        }
+                        jSmooth = onRoute(v, x0, y0, x1, y1) && onRoute(v, x1, y1, x2, y2);
+                    }
+                }
+                if (!jSmooth) {
+                    float o = city.laneOffset(tx, ty, sdx, sdy);
+                    px = cx - sdy * o;
+                    py = cy + sdx * o;
+                } else if (out && !Float.isNaN(li) && ax * ex + ay * ey == 0) {
+                    // A turn: the corner where the two lanes cross.
+                    float kx = ax != 0 ? le : li, ky = ax != 0 ? li : le;
+                    // On the way in (up to the corner), or on the way out (from it): whichever is nearer.
+                    float inX = ax != 0 ? cx : li, inY = ax != 0 ? li : cy;
+                    if ((inX - kx) * ax + (inY - ky) * ay > 0) {
+                        inX = kx;
+                        inY = ky;
+                    }
+                    float outX = ex != 0 ? cx : le, outY = ex != 0 ? le : cy;
+                    if ((outX - kx) * ex + (outY - ky) * ey < 0) {
+                        outX = kx;
+                        outY = ky;
+                    }
+                    boolean useIn = Math.hypot(inX - cx, inY - cy) <= Math.hypot(outX - cx, outY - cy);
+                    px = useIn ? inX : outX;
+                    py = useIn ? inY : outY;
+                } else if (out && !Float.isNaN(li) && ax == ex && ay == ey) {
+                    // Straight over: from the one lane line to the other, a little at a time.
+                    float fr = (i - first + 1) / (float) (k - first + 1), l = li + (le - li) * fr;
+                    if (ax == 0) px = l;
+                    else py = l;
+                } else if (out && sdx == ex && sdy == ey) {
+                    if (ex != 0) py = le;
+                    else px = le;
+                } else {
+                    float o = city.laneOffset(tx, ty, sdx, sdy);
+                    px = cx - sdy * o;
+                    py = cy + sdx * o;
+                }
+                sx = sdx;
+                sy = sdy;
+            } else {
+                float off = city.laneOffset(tx, ty, sx, sy);
+                // (On a diagonal, or a curved street: no lanes to measure across it; near the middle.)
+                if (city.curveAt(tx, ty)) off = 0;
+                else if (Math.min(Math.abs(dx), Math.abs(dy)) > 0.3f) off = Math.max(-City.T * 0.4f, Math.min(City.T * 0.4f, off));
+                px = (tx + 0.5f) * City.T - dy * off;
+                py = (ty + 0.5f) * City.T + dx * off;
+                // On along a straight bit of road: keep to the lane it's in (a route stepping from row to row of a
+                // wide road is a gentle drift across, not a swerve every tile).
+                // (Only where that keeps it on the route, though: not off the end of a slip road and on along the
+                // highway it should have left.)
+                if (i > 0 && sx == lastAxisX && sy == lastAxisY && !lastJ && !Float.isNaN(lastAlong)) {
+                    float maxShift = City.T * 0.3f, qx = px, qy = py;
+                    if (sx == 0) qx = lastAlong + Math.max(-maxShift, Math.min(maxShift, px - lastAlong));
+                    else qy = lastAlong + Math.max(-maxShift, Math.min(maxShift, py - lastAlong));
+                    int q = city.tileIndex(qx, qy), fq = v.field.get(q);
+                    if (q == t || (fq < City.FAR && Math.abs(fq - v.field.get(t)) <= 6)) {
+                        px = qx;
+                        py = qy;
+                    }
+                }
+            }
+            lastJ = inJ;
+            lastAxisX = sx;
+            lastAxisY = sy;
+            lastAlong = sx == 0 ? px : py;
+            v.cor[v.corN * 2] = px;
+            v.cor[v.corN * 2 + 1] = py;
+            v.corN++;
+        }
+    }
+
+    /** Working space for buildCorridor: its tiles, where the path tile is among them, and the junction it's in. */
+    private final int[] corTiles = new int[COR];
+    private int corPi, jEntryX, jEntryY;
+    private float jEntryL;
+    private boolean jSmooth;
+
+    /** Every tile under the line from one point to another is on the vehicle's route. */
+    private boolean onRoute(Vehicle v, float x0, float y0, float x1, float y1) {
+        float d = (float) Math.hypot(x1 - x0, y1 - y0);
+        int n = Math.max(1, (int) (d / 4));
+        for (int s = 0; s <= n; s++) {
+            float f = s / (float) n;
+            if (v.field.get(city.tileIndex(x0 + (x1 - x0) * f, y0 + (y1 - y0) * f)) >= City.FAR) return false;
+        }
+        return true;
+    }
+
+    /** The point dist along a vehicle's planned line on from the nearest point of it to the vehicle. */
+    private float[] pursuitPoint(Vehicle v, float dist) {
+        // Where it is on the line: the nearest point of the first few legs.
+        int seg0 = 1;
+        float best = Float.MAX_VALUE, f0 = 0;
+        for (int i = 1; i < Math.min(v.corN, 5); i++) {
+            float ax = v.cor[i * 2 - 2], ay = v.cor[i * 2 - 1], sx = v.cor[i * 2] - ax, sy = v.cor[i * 2 + 1] - ay;
+            float l2 = sx * sx + sy * sy;
+            float f = l2 < 0.001f ? 0 : Math.max(0, Math.min(1, ((v.x - ax) * sx + (v.y - ay) * sy) / l2));
+            float d = (float) Math.hypot(ax + sx * f - v.x, ay + sy * f - v.y);
+            if (d < best) {
+                best = d;
+                seg0 = i;
+                f0 = f;
+            }
+        }
+        if (best > 40) return null;
+        float left = dist + f0 * (float) Math.hypot(v.cor[seg0 * 2] - v.cor[seg0 * 2 - 2], v.cor[seg0 * 2 + 1] - v.cor[seg0 * 2 - 1]);
+        for (int i = seg0; i < v.corN; i++) {
+            float ax = v.cor[i * 2 - 2], ay = v.cor[i * 2 - 1], bx = v.cor[i * 2], by = v.cor[i * 2 + 1];
+            float seg = (float) Math.hypot(bx - ax, by - ay);
+            if (seg >= left && seg > 0.001f) {
+                float f = left / seg;
+                return new float[]{ax + (bx - ax) * f, ay + (by - ay) * f};
+            }
+            left -= seg;
+        }
+        return v.corN >= 2 ? new float[]{v.cor[v.corN * 2 - 2], v.cor[v.corN * 2 - 1]} : null;
+    }
+
+    /** The way the line runs where alongCorridor last found something on it. */
+    private float hitDx, hitDy;
+
+    /**
+     * How far along a vehicle's planned line another one is, if it's on that line (within a lane's width of
+     * it); -1 if it isn't in the way.
+     */
+    private float alongCorridor(Vehicle v, Vehicle o, float width) {
+        // (From level with the vehicle: the first leg runs from a little behind it.)
+        float run = -(float) (((v.x - v.cor[0]) * Math.cos(v.angle)) + ((v.y - v.cor[1]) * Math.sin(v.angle)));
+        for (int i = 1; i < v.corN; i++) {
+            float ax = v.cor[i * 2 - 2], ay = v.cor[i * 2 - 1], bx = v.cor[i * 2], by = v.cor[i * 2 + 1];
+            float sx = bx - ax, sy = by - ay, l2 = sx * sx + sy * sy;
+            if (l2 < 0.001f) continue;
+            float f = ((o.x - ax) * sx + (o.y - ay) * sy) / l2;
+            float seg = (float) Math.sqrt(l2);
+            if (f >= 0 && f <= 1) {
+                float px = ax + sx * f, py = ay + sy * f;
+                if (Math.hypot(o.x - px, o.y - py) < width) {
+                    hitDx = sx / seg;
+                    hitDy = sy / seg;
+                    return run + f * seg;
+                }
+            }
+            run += seg;
+        }
+        return -1;
+    }
+
     /** The next tile down a route from tile t (t itself at the end). */
     private int downhill(Route field, int t) {
         int W = city.w, tx = t % W, ty = t / W, here = field.get(t), best = Integer.MAX_VALUE, bt = t;
@@ -2290,6 +2536,30 @@ final class Fleet {
         return bt;
     }
 
+    /** The way out of junction id along a vehicle's route has a car stopped in it. */
+    private boolean exitBlocked(Vehicle v, int id) {
+        int W = city.w, t = v.pathT;
+        boolean through = false;
+        for (int k = 0; k < 14; k++) {
+            boolean inJ = city.junctionIdAt((t % W + 0.5f) * City.T, (t / W + 0.5f) * City.T) == id;
+            if (inJ) through = true;
+            else if (through) {
+                float ex = (t % W + 0.5f) * City.T, ey = (t / W + 0.5f) * City.T;
+                for (int i = 0, n = vehicles.size(); i < n; i++) {
+                    Vehicle o = vehicles.get(i);
+                    if (o == v || o.parked || airborne(o) || o.type == TRAIN || Math.abs(o.speed) > 4) continue;
+                    if (Math.abs(o.x - ex) < City.T * 0.9f && Math.abs(o.y - ey) < City.T * 0.9f
+                            && city.junctionIdAt(o.x, o.y) < 0) return true;
+                }
+                return false;
+            }
+            int n = downhill(v.field, t);
+            if (n == t) return false;
+            t = n;
+        }
+        return false;
+    }
+
     /** Nobody else driving in the junction. */
     /** Nothing moving across the junction in front of a vehicle coming in along (dx, dy). */
     private boolean crossClear(int id, Vehicle self, int dx, int dy) {
@@ -2333,9 +2603,38 @@ final class Fleet {
             if (o == v || o.removedFromFleet || levels(v, o)) continue;
             float dx = o.x - v.x, dy = o.y - v.y;
             float ahead = dx * fx + dy * fy;
-            if (ahead <= 0 || ahead > look) continue;
             float side = Math.abs(dx * -fy + dy * fx);
-            if (side > 9) continue;
+            // (10.42) Two that have ended up on top of one another, each waiting for the other to move: one of
+            // them (whichever, so long as it's always the same one) drives out from under.
+            if (dx * dx + dy * dy < 64 && v.stillT > 3 && o.stillT > 3 && v.x * 7 + v.y < o.x * 7 + o.y) continue;
+            // (Likewise two stuck facing each other's sides in the middle of a junction, each queued behind the
+            // other: the knot only comes undone if one of them goes first.)
+            if (v.stillT > 3 && o.stillT > 3 && o.queued && v.player == null && city.junctionIdAt(v.x, v.y) >= 0
+                    && city.junctionIdAt(v.x, v.y) == city.junctionIdAt(o.x, o.y) && v.x * 7 + v.y < o.x * 7 + o.y) continue;
+            // (10.42) In the way only if it's on the line this one is about to drive (round the bend or across
+            // the junction too), not just somewhere in front of its bonnet: a car beside it in a junction,
+            // turning across behind it or waiting in the next lane isn't in its way. (Right up against the front
+            // of it, anything is.)
+            if (v.corN >= 3 && v.player == null) {
+                float along = alongCorridor(v, o, 9 + o.length() * 0.15f);
+                boolean nose = ahead > 0 && ahead < (v.length() + o.length()) * 0.5f + 8 && side < 8;
+                if (along < 0 && !nose) continue;
+                if (along >= 0) ahead = along;
+                if (ahead <= 0 || ahead > look) continue;
+                // (Crossing its line further on, through a junction: the junction's rules sort out who goes
+                // first. Only one right across its bonnet is something to stop for here - and not to queue behind.)
+                // (Stopped across it, it's in the way like anything else.)
+                if (along >= 0 && !nose && o.player == null && Math.abs(o.speed) >= 3
+                        && Math.abs((float) Math.cos(o.angle) * hitDx + (float) Math.sin(o.angle) * hitDy) < 0.5f) {
+                    float g = ahead - (v.length() + o.length()) * 0.5f;
+                    if (g > 12) continue;
+                    limit = Math.min(limit, Math.max(0, g - 4) * 2);
+                    continue;
+                }
+            } else {
+                if (ahead <= 0 || ahead > look) continue;
+                if (side > 9) continue;
+            }
             // How fast it's going our way (oncoming or crossing counts as standing still).
             float lead = Math.max(0, o.speed * ((float) Math.cos(o.angle) * fx + (float) Math.sin(o.angle) * fy));
             float gap = ahead - (v.length() + o.length()) * 0.5f - 5;
@@ -2354,7 +2653,10 @@ final class Fleet {
                     // (Lights and sirens go round a queue sitting at a red light, too.)
                     || (v.lightsOn() && o.type == CAR && o.player == null && o.stillT > 1f && v.type != FIRE_ENGINE)
                     // (Gridlock, everyone waiting on everyone and nobody on a light: edge round and break it.)
-                    || (o.stillT > 6 && v.stillT > 6 && !o.held && !o.queuedHeld);
+                    || (o.stillT > 6 && v.stillT > 6 && !o.held && !o.queuedHeld)
+                    // (10.42) Or a knot where everyone's waiting on everyone else at once: longer than any red
+                    // light lasts and it isn't a queue, it's stuck.
+                    || (o.stillT > 25 && v.stillT > 10 && o.type == CAR && o.player == null);
             if (stuckThere && v.player == null && v.type != TANK) {
                 if (gap < 40) v.passing = 1.4f;
                 limit = Math.min(limit, 30 + Math.max(0, gap));
@@ -3021,6 +3323,13 @@ final class Fleet {
                 }
             }
         }
+        // (10.42) Already on a tile further along the route than its path tile (cutting a corner on the line it
+        // planned): carry on from there, instead of going back round for the tile it skipped.
+        if (!crossing) {
+            int own = city.tileIndex(v.x, v.y), fo = v.field.get(own);
+            if (own != v.pathT && fo < v.field.get(v.pathT) && fo > 4
+                    && Math.abs(own % W - v.pathT % W) + Math.abs(own / W - v.pathT / W) <= 2) v.pathT = own;
+        }
         int cur = v.field.get(v.pathT);
         if (cur <= 4) return false;
         int tx = v.pathT % W, ty = v.pathT / W, nt = downhill(v.field, v.pathT), bx = nt % W, by = nt / W;
@@ -3109,6 +3418,43 @@ final class Fleet {
                 t = n;
             }
         }
+        // (10.42) The line it's about to drive, and (driving normally) steering for a point on along it, further
+        // ahead the faster it's going: smooth through the bends and round the corners of a junction, instead of
+        // aiming tile to tile.
+        buildCorridor(v);
+        // (10.42) Driving the lane where the route's tiles lie across the road from it (a wide road, or a U-turn):
+        // reaching the line's point for the next tile or two counts as reaching those tiles.
+        if (v.corN > corPi + 1 && !crossing) {
+            for (int j = Math.min(v.corN - 1, corPi + 3); j > corPi; j--)
+                if (Math.hypot(v.cor[j * 2] - v.x, v.cor[j * 2 + 1] - v.y) < City.T * 0.55f) {
+                    v.pathT = corTiles[j];
+                    int c2 = v.field.get(v.pathT);
+                    if (c2 < v.lastDist - 1) {
+                        v.lastDist = c2;
+                        v.stuckTimer = 0;
+                        v.spin = 0;
+                    }
+                    break;
+                }
+        }
+        if (v.careful <= 0 && v.passing <= 0 && !v.pulled && v.yieldT <= 0 && v.corN >= 3 && !crossing
+                && Math.abs(bx - tx) + Math.abs(by - ty) == 1) {
+            float[] p = pursuitPoint(v, 13 + Math.abs(v.speed) * 0.3f);
+            if (p != null) {
+                // (The line is planned afresh every moment, and can shift a little as it goes: ease the aim over.)
+                if (v.aiming && Math.hypot(p[0] - v.aimX, p[1] - v.aimY) < City.T * 2) {
+                    float k = Math.min(1, dt * 6);
+                    v.aimX += (p[0] - v.aimX) * k;
+                    v.aimY += (p[1] - v.aimY) * k;
+                } else {
+                    v.aimX = p[0];
+                    v.aimY = p[1];
+                }
+                v.aiming = true;
+                gx = v.aimX;
+                gy = v.aimY;
+            } else v.aiming = false;
+        } else v.aiming = false;
         float want = (float) Math.atan2(gy - v.y, gx - v.x);
         float diff = want - v.angle;
         while (diff > Math.PI) diff -= Math.PI * 2;
@@ -3116,7 +3462,8 @@ final class Fleet {
         // Wheels only turn the car while it's moving.
         // (Standing still, or as good as - held at a junction or in a jam - it doesn't turn on the spot.)
         float steer = Math.abs(v.speed) < 1.5f ? 0 : dt * 5 * Math.min(1, 0.05f + Math.abs(v.speed) / 18f);
-        float turned = Math.max(-steer, Math.min(steer, diff));
+        // (10.42) Following its line: ease the wheel round, rather than snapping onto every last fraction of a degree.
+        float turned = Math.max(-steer, Math.min(steer, v.aiming ? diff * Math.min(1, dt * 9) : diff));
         v.angle += turned;
         // A full circle and more without getting any nearer: it's missed its turn and is orbiting.
         v.spin += turned;

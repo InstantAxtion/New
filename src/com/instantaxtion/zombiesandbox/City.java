@@ -11765,6 +11765,11 @@ final class City {
         return t >= 13 && t < 22 ? 0 : t >= 22 && t < 25 ? 1 : 2;
     }
 
+    /** (10.42) A tile of a curved street (laid along a curve, drawn smoothly): no lanes to measure across. */
+    boolean curveAt(int tx, int ty) {
+        return curveTile != null && tx >= 0 && ty >= 0 && tx < w && ty < h && curveTile[ty * w + tx];
+    }
+
     /**
      * Where the lane is, across the road: how far (world units, to the driver's right) the middle of the lane
      * on the proper side of the road is from the middle of tile (tx, ty), for someone heading (dx, dy). The

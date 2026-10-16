@@ -2,11 +2,19 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.41";
-    static final int VERSION_CODE = 79;
+    static final String VERSION = "10.42";
+    static final int VERSION_CODE = 80;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.42  -  Driving the road network",
+                    "Cars now plan the line they're about to drive - down the middle of their lane, round the bends and through the junction ahead - and steer smoothly for a point on along it (further ahead the faster they go), instead of aiming at one tile after another: less swerving, smoother corners, and they keep to their lane better.",
+                    "Through a junction a car keeps to the lane it came in by until it turns, then takes the corner straight into the lane it's leaving by. (Cars could come out of a junction in the oncoming lane on a wide road and meet the queue head on: fixed.) Roundabouts are still driven round the island.",
+                    "Don't block the box: nobody pulls into a junction until there's room to get out the other side.",
+                    "Fewer jams: a car only waits for what's on the line it's about to drive (not a car turning across behind it or waiting in the next lane); cars knotted up in a junction, or on top of one another, sort themselves out; and a knot nobody's moved out of for longer than any red light lasts gets edged round.",
+                    "Far fewer cars going round in circles: leaving the highway by a slip road, U-turns on wide roads, and routes that run along the far side of a wide road from the lane being driven.",
+            },
             {
                     "10.41  -  Ramps kept clear, country police drive",
                     "Nothing joins an on or off ramp halfway along it any more (in new cities): no street, lane or drive runs into a ramp or alongside it, so the only ways on and off the highway are the ramps' own ends. (10.40's new frontage roads were running into some ramps: fixed.) Every ramp still leads somewhere.",

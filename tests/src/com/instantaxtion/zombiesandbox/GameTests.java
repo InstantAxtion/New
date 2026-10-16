@@ -2991,6 +2991,64 @@ public final class GameTests {
                 check(rolled, "they get in and drive off (crew " + car.crew.size() + ")");
             }
         });
+        test("10.42: cars drive the line of their lane - round corners, through junctions and back out - and traffic doesn't knot up", new Check() {
+            public void run() throws Exception {
+                CityConfig c = new CityConfig();
+                c.v[CityConfig.OPT_PRESET] = 2;
+                c.v[CityConfig.OPT_SIZE] = 3;
+                c.v[CityConfig.OPT_ZOMBIES] = 0;
+                c.seed = 5;
+                c.normalize();
+                c.seed = 5;
+                World w = new World(c);
+                w.rnd.setSeed(4);
+                w.populate(c);
+                long samples = 0, careful = 0, stuck = 0, overlaps = 0, laneN = 0, planned = 0, cornerCut = 0;
+                double laneErr = 0;
+                for (int f = 0; f < 30 * 60; f++) {
+                    w.update(1 / 30f);
+                    w.evCount = 0;
+                    if (f < 90 || f % 10 != 0) continue;
+                    java.util.List<Fleet.Vehicle> vs = w.fleet.vehicles;
+                    for (Fleet.Vehicle v : vs) {
+                        if (v.type != Fleet.CAR || v.parked || v.broken || v.player != null || v.field == null) continue;
+                        samples++;
+                        if (v.careful > 0) careful++;
+                        if (v.stillT > 30) stuck++;
+                        if (v.corN >= 3) planned++;
+                        // A turn in a junction is planned as one corner, entry lane to exit lane - not tile by tile.
+                        for (int i = 2; i < v.corN; i++) {
+                            float ax = v.cor[i * 2 - 2] - v.cor[i * 2 - 4], ay = v.cor[i * 2 - 1] - v.cor[i * 2 - 3];
+                            float bx = v.cor[i * 2] - v.cor[i * 2 - 2], by = v.cor[i * 2 + 1] - v.cor[i * 2 - 1];
+                            if (Math.abs(ax * by - ay * bx) > 1 && w.city.junctionIdAt(v.cor[i * 2 - 2], v.cor[i * 2 - 1]) >= 0) cornerCut++;
+                        }
+                        // Mid-block, heading straight along the road: how far off the middle of its lane.
+                        int tx = (int) (v.x / City.T), ty = (int) (v.y / City.T);
+                        if (w.city.junctionIdAt(v.x, v.y) >= 0 || Math.abs(v.speed) < 10 || v.passing > 0 || v.yieldT > 0 || v.careful > 0) continue;
+                        float cx = (float) Math.cos(v.angle), cy = (float) Math.sin(v.angle);
+                        int dx = Math.abs(cx) > Math.abs(cy) ? (int) Math.signum(cx) : 0, dy = dx == 0 ? (int) Math.signum(cy) : 0;
+                        if (w.city.tiles[ty * w.city.w + tx] != City.ROAD || Math.abs(dx * cx + dy * cy) < 0.97f) continue;
+                        float off = w.city.laneOffset(tx, ty, dx, dy);
+                        float lx = (tx + 0.5f) * City.T - dy * off, ly = (ty + 0.5f) * City.T + dx * off;
+                        laneErr += Math.abs((v.x - lx) * -dy + (v.y - ly) * dx);
+                        laneN++;
+                    }
+                    for (int i = 0; i < vs.size(); i++)
+                        for (int j = i + 1; j < vs.size(); j++) {
+                            Fleet.Vehicle a = vs.get(i), b = vs.get(j);
+                            if (a.type == Fleet.CAR && b.type == Fleet.CAR && !a.parked && !b.parked && Math.hypot(a.x - b.x, a.y - b.y) < 7) overlaps++;
+                        }
+                }
+                check(samples > 5000, "traffic (" + samples + ")");
+                check(planned > samples * 0.8, "cars plan the line they drive (" + planned + " of " + samples + ")");
+                check(cornerCut > 0, "turns are planned as corners through the junction");
+                double err = laneErr / Math.max(1, laneN);
+                check(laneN > 1000 && err < 1.5, String.format("cars keep to the middle of their lane (off by %.2f px on average)", err));
+                check(careful < samples * 0.015, "hardly anyone goes round in circles (" + careful + " of " + samples + ")");
+                check(stuck < samples * 0.02, "hardly anyone stuck for half a minute (" + stuck + " of " + samples + ")");
+                check(overlaps <= 10, "cars don't end up on top of one another (" + overlaps + ")");
+            }
+        });
         test("every screen draws", new Check() {
             public void run() throws Exception {
                 GameView v = new GameView(new android.app.Activity());

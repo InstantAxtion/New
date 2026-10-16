@@ -437,6 +437,10 @@ mounting up, and lighter running with big populations.
 
 **More police than soldiers (10.35):** the army on the map is never more than two in five of the police force.
 
+**Driving the road network (10.42):** the second part of the roads and vehicles overhaul: cars plan the line of
+their lane ahead of them and steer smoothly along it, turn through junctions from lane to lane, don't pull into a
+junction with no room to get out, and jams, knots and cars going round in circles are much rarer.
+
 **Ramps and country police (10.41):** nothing joins the highway's on and off ramps halfway along them, country
 police stations run their own patrol cars round their own patch, and officers at a station take a car to a call
 that's a long way off.

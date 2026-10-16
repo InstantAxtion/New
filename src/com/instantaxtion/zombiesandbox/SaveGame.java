@@ -17,7 +17,7 @@ import java.util.ArrayList;
  * damaged or collapsed buildings.
  */
 final class SaveGame {
-    private static final int VERSION = 40;
+    private static final int VERSION = 41;
 
     private SaveGame() {
     }
@@ -35,6 +35,7 @@ final class SaveGame {
             out.writeLong(cfg.seed);
             out.writeUTF(cfg.editString());
             out.writeInt(cfg.outskirts);
+            out.writeInt(cfg.exodus);
 
             out.writeFloat(w.time);
             out.writeInt(w.turned);
@@ -294,6 +295,13 @@ final class SaveGame {
             out.writeInt(pf.length);
             for (float f : pf) out.writeFloat(f);
             out.writeBoolean(w.fleet.evacStarted);
+            // (10.47) Those who've fled the city, and where it's got to.
+            out.writeInt(w.away.size());
+            for (Entity e : w.away) writeEntity(out, e, d);
+            out.writeBoolean(w.exodusStarted);
+            out.writeInt(w.fled);
+            out.writeInt(w.cameHome);
+            out.writeInt(w.exodusSaid);
         } finally {
             out.close();
         }
@@ -390,6 +398,7 @@ final class SaveGame {
             cfg.normalize();
             if (version >= 15) cfg.setEdits(in.readUTF());
             if (version >= 26) cfg.outskirts = in.readInt();
+            if (version >= 41) cfg.exodus = in.readInt();
             // (Cities saved before 10.4 were built without their government quarter.)
             cfg.civic = version >= 40 ? 20 : version >= 39 ? 19 : version >= 38 ? 18 : version >= 37 ? 17 : version >= 36 ? 16 : version >= 35 ? 15 : version >= 34 ? 14 : version >= 33 ? 13 : version >= 32 ? 12 : version >= 31 ? 11 : version >= 30 ? 11 : version >= 29 ? 10 : version >= 28 ? 9 : version >= 27 ? 8 : version >= 26 ? 7 : version >= 25 ? 6 : version >= 24 ? 5 : version >= 23 ? 4 : version >= 22 ? 3 : version >= 20 ? 2 : version >= 19 ? 1 : 0;
             // (Version 20 and later all build the same city.)
@@ -652,6 +661,19 @@ final class SaveGame {
                     if (i < pf.length) pf[i] = f;
                 }
                 w.fleet.evacStarted = in.readBoolean();
+            }
+            if (version >= 41) {
+                int away = in.readInt();
+                for (int i = 0; i < away; i++) {
+                    Entity e = readEntity(in, w, d, version);
+                    e.dead = true;
+                    e.removed = true;
+                    w.away.add(e);
+                }
+                w.exodusStarted = in.readBoolean();
+                w.fled = in.readInt();
+                w.cameHome = in.readInt();
+                w.exodusSaid = in.readInt();
             }
             d.copCount = copCount;
             d.soldierCount = soldierCount;

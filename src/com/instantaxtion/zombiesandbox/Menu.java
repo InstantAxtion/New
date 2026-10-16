@@ -1155,6 +1155,16 @@ final class Menu {
             y += 16 * dp;
         }
         y += 12 * dp;
+        y = segRow(c, CityConfig.OPT_EXODUS, "Fleeing citizens: whether the people leave the city", lx, y, lw);
+        plain.setTextSize(12.5f * dp);
+        plain.setColor(0xFF9AA0A8);
+        y -= 6 * dp;
+        for (String line : wrap(config.exodus() ? "On: once the news breaks, most people leave the city for the country, on foot and by car. They come home once the outbreak is over."
+                : "Off: the people stay in town and sit it out (or don't).", lw - 4 * dp, plain)) {
+            c.drawText(line, lx + 2 * dp, y + 10 * dp, plain);
+            y += 16 * dp;
+        }
+        y += 12 * dp;
         c.restore();
         contentHeight = y + scroll - listTop;
         clampScroll();

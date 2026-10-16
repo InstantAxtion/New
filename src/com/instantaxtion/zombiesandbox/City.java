@@ -8849,6 +8849,7 @@ final class City {
      */
     private void drawCurves(Canvas c, Paint p) {
         if (curves.isEmpty()) return;
+        if (!curvesTrimmed) trimCurves();
         boolean real = drawnRealistic;
         int road = real ? 0xFF38393C : 0xFF3A3D43, kerb = 0xFF7E7C77;
         Path path = new Path();
@@ -8891,6 +8892,42 @@ final class City {
         }
         p.setStyle(Paint.Style.FILL);
         p.setStrokeCap(Paint.Cap.BUTT);
+    }
+
+    private boolean curvesTrimmed;
+
+    /**
+     * (10.47) Only what's still road is drawn as a curved street: the crescents, winding streets and greens are
+     * laid out before the sea, the river or the harbour is cut in (and before some buildings), so a curve could
+     * be left drawn across the water or over a building with no road under it. Each line is cut down to its
+     * stretches over road; a turning circle goes if its middle isn't road.
+     */
+    private void trimCurves() {
+        curvesTrimmed = true;
+        List<float[]> kept = new ArrayList<float[]>();
+        for (float[] l : curves) {
+            if (l.length == 3) {
+                if (roadUnder(l[0], l[1])) kept.add(l);
+                continue;
+            }
+            int n = l.length / 2, start = -1;
+            for (int k = 0; k <= n; k++) {
+                boolean ok = k < n && roadUnder(l[k * 2], l[k * 2 + 1]);
+                if (ok && start < 0) start = k;
+                if (!ok && start >= 0) {
+                    if (start == 0 && k == n) kept.add(l);
+                    else if (k - start >= 4) kept.add(java.util.Arrays.copyOfRange(l, start * 2, k * 2));
+                    start = -1;
+                }
+            }
+        }
+        curves.clear();
+        curves.addAll(kept);
+    }
+
+    private boolean roadUnder(float x, float y) {
+        int tx = (int) Math.floor(x), ty = (int) Math.floor(y);
+        return tx >= 0 && ty >= 0 && tx < w && ty < h && tiles[ty * w + tx] == ROAD;
     }
 
     private boolean onCurveTile(float x, float y) {

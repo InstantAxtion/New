@@ -437,6 +437,11 @@ mounting up, and lighter running with big populations.
 
 **More police than soldiers (10.35):** the army on the map is never more than two in five of the police force.
 
+**Fleeing citizens (10.47):** a new option on the New Game screen. With it on, once the news breaks most people
+leave the city for the country (those indoors too, when the street outside is quiet), all but the few who won't
+leave home, survivor groups and anyone in a safe zone. Once the outbreak is over and the city is recovering, they
+come home. Also: curved streets are no longer drawn over the sea or over buildings with no road under them.
+
 **Infection zones (10.46):** wherever the dead gather, an infection zone is declared round them on its own, no
 call needed: police on patrol take up a perimeter round it and the army sets up checkpoints on the roads into it.
 It moves and grows with them, is only lifted once they're cleared out of it, and when there aren't enough units

@@ -1711,6 +1711,7 @@ final class World {
         updateBuildings(dt);
         updateHoldouts(dt);
         updateAftermath(dt);
+        updateExodus(dt);
         updatePickups(dt);
         updateEffects(dt);
         if (!boats.isEmpty()) moveBoats(dt);
@@ -3664,6 +3665,9 @@ final class World {
             case G_EVAC:
                 if (evacuate(e, dt)) return;
                 break;
+            case G_LEAVE:
+                if (leaveStep(e)) return;
+                break;
             case G_FOLLOW:
                 if (followLeader(e)) return;
                 break;
@@ -3699,7 +3703,7 @@ final class World {
     // ------------------------------------------------------------------ (10.37) the civilian's brain
 
     static final int G_ROUTINE = 0, G_FLEE = 1, G_FIGHT = 2, G_HIDE = 3, G_ZONE = 4, G_SHELTER = 5, G_GUNSTORE = 6,
-            G_RESTOCK = 7, G_PICKUP = 8, G_HEAL = 9, G_EVAC = 10, G_FOLLOW = 11, G_PATROL = 12, G_SUPPLY = 13, G_COUNT = 14;
+            G_RESTOCK = 7, G_PICKUP = 8, G_HEAL = 9, G_EVAC = 10, G_FOLLOW = 11, G_PATROL = 12, G_SUPPLY = 13, G_LEAVE = 14, G_COUNT = 15;
     private final float[] goalScore = new float[G_COUNT];
 
     /** How brave someone is (0 to 1), from who they are: the same person is always the same. */
@@ -3790,6 +3794,9 @@ final class World {
         // Family and friends together.
         if (e.leader != null && !e.leader.dead) goalScore[G_FOLLOW] = 0.5f + (threat != null ? 0.15f : 0);
         if (e.task == Dispatch.T_PATROL) goalScore[G_PATROL] = 0.5f;
+        // (10.47) Out of the city (or back home after): kept to, except to get away from one of the dead close by.
+        if (e.task == Dispatch.T_LEAVE) goalScore[G_LEAVE] = 0.62f + 0.1f * careful;
+        else if (e.task == Dispatch.T_HOMECOMING) goalScore[G_LEAVE] = 0.5f;
         if (e.task == Dispatch.T_CLEANUP || e.task == Dispatch.T_LOOT) goalScore[G_SUPPLY] = threat == null ? 0.48f : 0.1f;
         goalScore[G_ROUTINE] = 0.15f;
         // What they're already doing counts for more: they see it through unless something's clearly better.
@@ -11280,6 +11287,228 @@ final class World {
                 + ". I'm getting out of here.", e.x, e.y);
         walkToSpot(e, p[0], p[1], e.speed * 1.6f);
         return true;
+    }
+
+    // ------------------------------------------------------------------ fleeing the city (10.47)
+
+    /** Those who've fled the city (out of the world until they come home), and how it's gone. */
+    final ArrayList<Entity> away = new ArrayList<Entity>();
+    boolean exodusStarted;
+    int fled, cameHome, exodusSaid;
+    private float exodusTick;
+    /** Where the roads (or the causeway) leave the map: the ways out, and back in. */
+    private float[][] exits;
+
+    /**
+     * (10.47) With Fleeing citizens on: once the news breaks, people leave town - those out on the streets
+     * make for the nearest way out of the city, those sitting it out indoors come out and go too when the
+     * street outside is quiet - all but the few who won't leave their homes, survivor groups and anyone in a
+     * safe zone. Once the outbreak is over and the city's recovering, they come home, a few at a time.
+     */
+    private void updateExodus(float dt) {
+        if (!city.cfg.exodus()) return;
+        exodusTick -= dt;
+        if (exodusTick > 0) return;
+        exodusTick = 1;
+        if (exits == null) findExits();
+        if (exits.length == 0) return;
+        if (!outbreak || alert < 2) {
+            // (It's over: whoever was still on their way out turns round and goes home.)
+            for (int i = 0, m = entities.size(); i < m; i++) {
+                Entity e = entities.get(i);
+                if (!e.dead && e.task == Dispatch.T_LEAVE) {
+                    e.task = e.home != null ? Dispatch.T_HOMECOMING : Dispatch.T_NONE;
+                    e.path = null;
+                    e.goalCd = 0;
+                }
+            }
+            if (aftermath == AFTER_RECOVERY && afterTime > 30) homecoming();
+            return;
+        }
+        if (!exodusStarted) {
+            exodusStarted = true;
+            timeline("People are fleeing the city");
+            dispatch.say(Dispatch.WHO_INFO, null, "News: Thousands are leaving the city on foot and by car. Authorities urge everyone "
+                    + "leaving to keep to the main roads.", city.worldW() / 2, city.worldH() / 2);
+        }
+        // Out on the street: they decide to go (not all at once).
+        for (int i = 0, m = entities.size(); i < m; i++) {
+            Entity e = entities.get(i);
+            if (!mayFlee(e) || (e.task != Dispatch.T_NONE && e.task != Dispatch.T_EVACUATE) || rnd.nextFloat() > 0.2f) continue;
+            startLeaving(e);
+        }
+        // Indoors: out of the door and away, while there's none of the dead outside it.
+        ArrayList<Entity> out = null;
+        ArrayList<City.Building> from = null;
+        for (int i = 0, n = city.buildings.size(); i < n; i++) {
+            City.Building b = city.buildings.get(i);
+            if (b.occupants.isEmpty() && b.visitors.isEmpty()) continue;
+            boolean group = false;
+            for (int k = 0; k < holdouts.size(); k++) if (holdouts.get(k).b == b) group = true;
+            if (group || b.collapsed || countZombiesNear(b.doorX, b.doorY, 140) > 0) continue;
+            for (int pass = 0; pass < 2; pass++) {
+                java.util.List<Entity> inside = pass == 0 ? b.occupants : b.visitors;
+                for (int k = inside.size() - 1; k >= 0; k--) {
+                    Entity e = inside.get(k);
+                    if (e.type != Entity.CIVILIAN || e.infected || e == controlled || e.militia || e.holdout != null || stays(e)
+                            || rnd.nextFloat() > 0.04f) continue;
+                    inside.remove(k);
+                    if (out == null) {
+                        out = new ArrayList<Entity>();
+                        from = new ArrayList<City.Building>();
+                    }
+                    out.add(e);
+                    from.add(b);
+                }
+            }
+        }
+        if (out != null)
+            for (int k = 0; k < out.size(); k++) {
+                Entity e = out.get(k);
+                leaveBuilding(e, from.get(k), false);
+                e.leader = null;
+                startLeaving(e);
+            }
+    }
+
+    /** Someone on the street who might leave: an ordinary citizen on their own (families go with whoever leads them). */
+    private boolean mayFlee(Entity e) {
+        return !e.dead && e.type == Entity.CIVILIAN && !e.infected && e != controlled && e.leader == null && !e.militia
+                && e.holdout == null && !stays(e) && e.taskTimer <= 0;
+    }
+
+    /** One in eight won't leave their home whatever happens. */
+    private static boolean stays(Entity e) {
+        return (e.nameSeed & 7) == 0;
+    }
+
+    private void startLeaving(Entity e) {
+        float[] best = null;
+        float bd = Float.MAX_VALUE;
+        for (float[] x : exits) {
+            float d = (float) Math.hypot(x[0] - e.x, x[1] - e.y);
+            if (d < bd) {
+                bd = d;
+                best = x;
+            }
+        }
+        e.task = Dispatch.T_LEAVE;
+        e.postX = best[0];
+        e.postY = best[1];
+        e.evacTime = 0;
+        e.goalCd = 0;
+        e.paused = false;
+        if (rnd.nextFloat() < 0.02f)
+            dispatch.say(Dispatch.WHO_INFO, e, rnd.nextBoolean() ? "We're getting out of the city while we still can." : "I'm not staying here to die. I'm leaving.", e.x, e.y);
+    }
+
+    /** On the way out of town (or home again afterwards). False if there's nothing to do after all. */
+    private boolean leaveStep(Entity e) {
+        if (e.task == Dispatch.T_HOMECOMING) {
+            City.Building h = e.home;
+            if (h == null || h.collapsed || Math.hypot(h.doorX - e.x, h.doorY - e.y) < 24 || unreachable(e, h.doorX, h.doorY)) {
+                e.task = Dispatch.T_NONE;
+                e.taskTimer = 2;
+                return false;
+            }
+            walkToSpot(e, h.doorX, h.doorY, e.speed * 1.6f);
+            return true;
+        }
+        if (e.task != Dispatch.T_LEAVE) return false;
+        float m = City.T * 2.5f;
+        if (Math.hypot(e.postX - e.x, e.postY - e.y) < 40 || e.x < m || e.y < m || e.x > city.worldW() - m || e.y > city.worldH() - m) {
+            goAway(e);
+            return true;
+        }
+        if (unreachable(e, e.postX, e.postY)) {
+            // (No way there on foot: another way out, and if there's none of those either, they stay.)
+            e.evacTime++;
+            float[] x = exits[rnd.nextInt(exits.length)];
+            if (e.evacTime > 4) {
+                e.task = Dispatch.T_NONE;
+                e.taskTimer = 60;
+                return false;
+            }
+            e.postX = x[0];
+            e.postY = x[1];
+            e.path = null;
+        }
+        walkToSpot(e, e.postX, e.postY, e.fear > 0 ? e.runSpeed * 0.85f : e.speed * 1.5f);
+        return true;
+    }
+
+    /** The walk planner found no way to there on foot. */
+    private static boolean unreachable(Entity e, float x, float y) {
+        return e.path != null && e.path.length == 0 && e.pathDest == null && e.planX == x && e.planY == y && Math.hypot(x - e.x, y - e.y) > 60;
+    }
+
+    /** Out of the city: off the map until it's over, with the family that came with them. */
+    private void goAway(Entity e) {
+        for (int i = 0, m = entities.size(); i < m; i++) {
+            Entity o = entities.get(i);
+            if (o != e && o.leader == e && !o.dead && o != controlled && Math.hypot(o.x - e.x, o.y - e.y) < 140) gone(o);
+        }
+        gone(e);
+    }
+
+    private void gone(Entity e) {
+        e.dead = true;
+        e.removed = true;
+        e.vx = e.vy = 0;
+        e.task = Dispatch.T_NONE;
+        e.path = null;
+        fled++;
+        // (Out of it now: the war is between those still in the city.)
+        startHumans = Math.max(1, startHumans - 1);
+        // (Anyone bitten turns out on the road somewhere, and doesn't come back.)
+        if (!e.infected) away.add(e);
+    }
+
+    /** The city's on its feet again: those who fled come home, a family or two at a time, each to their own home. */
+    private void homecoming() {
+        if (away.isEmpty()) return;
+        if ((exodusSaid & 1) == 0) {
+            exodusSaid |= 1;
+            banner("COMING HOME", away.size() + " people who fled the city are on their way back.");
+            timeline("Those who fled start coming home");
+        }
+        float[] x = exits[rnd.nextInt(exits.length)];
+        int n = Math.min(away.size(), 2 + rnd.nextInt(4));
+        for (int k = 0; k < n; k++) {
+            Entity e = away.remove(0);
+            float[] p = city.findWalkable(x[0] + rnd.nextFloat() * 40 - 20, x[1] + rnd.nextFloat() * 40 - 20);
+            if (p == null) p = x;
+            e.x = p[0];
+            e.y = p[1];
+            e.vx = e.vy = 0;
+            e.dead = false;
+            e.removed = false;
+            e.fear = 0;
+            e.fleeTimer = 0;
+            e.task = e.leader == null ? Dispatch.T_HOMECOMING : Dispatch.T_NONE;
+            e.goalCd = 0;
+            entities.add(e);
+            cameHome++;
+        }
+        if (away.isEmpty() && (exodusSaid & 2) == 0) {
+            exodusSaid |= 2;
+            dispatch.say(Dispatch.WHO_INFO, null, "News: The last of those who fled are back. " + cameHome + " people have come home.",
+                    city.worldW() / 2, city.worldH() / 2);
+        }
+    }
+
+    /** The ways out of the map: where the roads (or the causeway) run off its edges. */
+    private void findExits() {
+        java.util.Random r = new java.util.Random(city.cfg.seed * 31 + 7);
+        ArrayList<float[]> list = new ArrayList<float[]>();
+        for (int k = 0; k < 40 && list.size() < 10; k++) {
+            float[] p = city.edgeRoad(r);
+            if (p == null) break;
+            boolean near = false;
+            for (float[] q : list) if (Math.hypot(q[0] - p[0], q[1] - p[1]) < 400) near = true;
+            if (!near) list.add(p);
+        }
+        exits = list.toArray(new float[0][]);
     }
 
     // ------------------------------------------------------------------ containment (10.16, infection zones 10.46)

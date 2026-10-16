@@ -2,11 +2,20 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.46";
-    static final int VERSION_CODE = 84;
+    static final String VERSION = "10.47";
+    static final int VERSION_CODE = 85;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.47  -  Fleeing citizens",
+                    "New option on the New Game screen: Fleeing citizens (off unless you turn it on).",
+                    "With it on, once the news breaks most people leave the city: those out on the streets make for the nearest road out of town, and those sitting it out indoors come out and go too whenever the street outside is quiet. Families go together. One in eight won't leave their home whatever happens, and survivor groups and anyone in a safe zone stay put.",
+                    "They're off the map while they're away and out of the war: the city is only lost if those still in it are. Anyone bitten on the way turns out on the road and doesn't come back.",
+                    "Once the outbreak is over and the city is recovering, they come home a family or two at a time, along the roads they left by, and walk back to their own homes. Anyone still on the way out when it ends turns round and goes home. If the city falls, they stay away until it's been taken back.",
+                    "Saved games keep the setting and who's away.",
+                    "Fixed: curved streets (crescents, winding streets and the roads round village greens) could be drawn out over the sea, a river or a harbour, or over a building, where there was no road under them - on Islands, Seaside and the real cities especially. Only what's really road is drawn now.",
+            },
             {
                     "10.46  -  Infection zones",
                     "Wherever the dead gather, an infection zone is declared round them - no call needed. It's drawn on the map and the tactical map as a dashed ring with its name: red while it's held, amber while it waits its turn.",

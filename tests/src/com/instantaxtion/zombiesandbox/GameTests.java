@@ -3307,6 +3307,60 @@ public final class GameTests {
                 check(left == 0, "and everyone on its perimeter stands down (" + left + ")");
             }
         });
+        test("10.47: with Fleeing citizens on, people leave the city once the news breaks and come home once it's over", new Check() {
+            public void run() throws Exception {
+                for (int on = 0; on < 2; on++) {
+                    CityConfig c = new CityConfig();
+                    c.v[CityConfig.OPT_PRESET] = 0;
+                    c.seed = 5;
+                    c.v[CityConfig.OPT_SIZE] = CityConfig.MEDIUM;
+                    c.v[CityConfig.OPT_ZOMBIES] = 0;
+                    c.normalize();
+                    c.seed = 5;
+                    c.exodus = on;
+                    check(c.get(CityConfig.OPT_EXODUS) == on && c.values(CityConfig.OPT_EXODUS).length == 2, "the option reads back");
+                    World w = new World(c);
+                    w.rnd.setSeed(4);
+                    w.populate(c);
+                    for (int f = 0; f < 150; f++) w.update(1 / 30f);
+                    java.util.Random r = new java.util.Random(7);
+                    float[] q0 = w.city.randomWalkableInTown(r);
+                    int sp = 0;
+                    for (int i = 0; i < 1600 && sp < 40; i++) {
+                        float[] q = w.city.findWalkable(q0[0] + (i % 40) * 8 - 160, q0[1] + (i / 40) * 8 - 160);
+                        if (q != null && w.spawn(Entity.ZOMBIE, q[0], q[1]) != null) sp++;
+                    }
+                    w.alert = 2;
+                    w.outbreak = true;
+                    int leaving = 0;
+                    for (int f = 0; f < 30 * 90; f++) {
+                        w.update(1 / 30f);
+                        if (f % 30 == 0) for (Entity e : w.entities) if (!e.dead && e.task == Dispatch.T_LEAVE) leaving++;
+                    }
+                    if (on == 0) {
+                        check(w.fled == 0 && leaving == 0 && w.away.isEmpty(), "with it off nobody leaves (" + w.fled + ")");
+                        continue;
+                    }
+                    check(leaving > 0 && w.fled > 0 && !w.away.isEmpty(), "with it on people head out of the city and leave it (" + w.fled + " gone)");
+                    // Saved and loaded: those away are still away.
+                    File f = File.createTempFile("exodus", ".sav");
+                    SaveGame.save(w, f);
+                    World l = SaveGame.load(f);
+                    f.delete();
+                    check(l.city.cfg.exodus() && l.away.size() == w.away.size(), "a saved game keeps the option and who's away (" + l.away.size() + ")");
+                    // Over: they come home.
+                    for (int k = 0; k < 30 * 200 && (w.aftermath != World.AFTER_RECOVERY || w.afterTime < 90); k++) {
+                        if (k % 15 == 0) w.clearZombies();
+                        w.update(1 / 30f);
+                    }
+                    check(w.aftermath == World.AFTER_RECOVERY, "the outbreak ends");
+                    int still = 0;
+                    for (Entity e : w.entities) if (!e.dead && e.task == Dispatch.T_LEAVE) still++;
+                    check(still == 0, "nobody's still leaving once it's over (" + still + ")");
+                    check(w.cameHome > 0, "and those who fled come home (" + w.cameHome + " of " + w.fled + ")");
+                }
+            }
+        });
         test("every screen draws", new Check() {
             public void run() throws Exception {
                 GameView v = new GameView(new android.app.Activity());

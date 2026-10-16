@@ -39,6 +39,9 @@ final class CityConfig implements OptionSet {
     /** The country round the town (10.20): not one of the eight in v (it's kept in outskirts). */
     static final int OPT_OUTSKIRTS = 8;
     private static final String[] OUTSKIRTS = {"Default", "Little nature"};
+    /** (10.47) Whether the people flee the city once the news breaks (not one of the eight in v either). */
+    static final int OPT_EXODUS = 9;
+    private static final String[] EXODUS = {"Off", "On"};
     private static final String[] LABELS = {"Map", "Map size", "Civilians", "Cops", "Military", "Zombies",
             "Reinforcements", "Country"};
     private static final String[][] VALUES = {
@@ -166,6 +169,13 @@ final class CityConfig implements OptionSet {
      * and farmland, few trees, no mountains). Part of the city code ("!" at the end).
      */
     int outskirts;
+    /**
+     * (10.47) Fleeing citizens: 0 off (everyone sits it out in town, as before), 1 on (once the news breaks, most
+     * of the people leave the city, and come home once the outbreak is over). Not part of the city code.
+     */
+    int exodus;
+
+    boolean exodus() { return exodus == 1; }
 
     boolean littleNature() { return outskirts == 1 && civic >= 7; }
     /**
@@ -503,11 +513,15 @@ final class CityConfig implements OptionSet {
 
     @Override public int count() { return LABELS.length; }
     @Override public String label(int i) { return LABELS[i]; }
-    @Override public String[] values(int i) { return i == OPT_OUTSKIRTS ? OUTSKIRTS : VALUES[i]; }
-    @Override public int get(int i) { return i == OPT_OUTSKIRTS ? outskirts : v[i]; }
+    @Override public String[] values(int i) { return i == OPT_OUTSKIRTS ? OUTSKIRTS : i == OPT_EXODUS ? EXODUS : VALUES[i]; }
+    @Override public int get(int i) { return i == OPT_OUTSKIRTS ? outskirts : i == OPT_EXODUS ? exodus : v[i]; }
     @Override public void set(int i, int value) {
         if (i == OPT_OUTSKIRTS) {
             outskirts = value;
+            return;
+        }
+        if (i == OPT_EXODUS) {
+            exodus = value;
             return;
         }
         v[i] = value;

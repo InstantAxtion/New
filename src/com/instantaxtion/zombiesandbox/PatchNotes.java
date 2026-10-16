@@ -2,11 +2,20 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.52";
-    static final int VERSION_CODE = 90;
+    static final String VERSION = "10.53";
+    static final int VERSION_CODE = 91;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.53  -  Unjammed junctions, better insides",
+                    "Cars crossing a bridge over the highway in their own lane were taken to be on the highway underneath and turned onto it, then went round and round the interchange: they now stay on the bridge.",
+                    "A car whose nose is already over the stop line carries on across the junction once nothing's crossing in front, instead of sitting there for the red and blocking it for everyone behind, green or not.",
+                    "Cars waiting to go on to a roundabout edge on after a few seconds when their way across is clear, instead of waiting for the whole roundabout to empty.",
+                    "Outside police and soldiers going home whose route fell short of the edge of the map plan it again, instead of being put out in the fields and fetched by car after car.",
+                    "Zoomed right in, the roof goes completely instead of leaving a faint blur of it over the rooms.",
+                    "Inside, homes and hotels have wooden boards, kitchens and bathrooms tiles and offices carpet squares; the furniture stands up off the floor with a shadow, doors are drawn swung open, offices and classrooms have chairs at the desks, and there are windows along the outside walls.",
+            },
             {
                     "10.52  -  The beltway, more police and army, shaped buildings",
                     "New land maps have a beltway: four lanes right round the map near its edge, the sides meeting at the corners, crossing the highway on a bridge (or joining it where the highway runs along that edge), going over ponds on bridges and across the railway, and driven at nearly highway speed. The country lanes and the ring road's spokes join it.",

@@ -2375,14 +2375,16 @@ final class GameView extends View implements Menu.Host {
             float dl = world.city.detail;
             roofSrc.set((int) (b.x0 * dl), (int) (b.y0 * dl), (int) Math.ceil(b.x1 * dl), (int) Math.ceil(b.y1 * dl));
             roofDst.set(rx0, ry0, rx1, ry1);
-            float roofA = 1 - 0.82f * see;
+            // ((10.53) All the way off when zoomed right in: a faint ghost of the roof - its skylights and plant - lay
+            // blurred over the rooms.)
+            float roofA = 1 - see;
             bmpPaint.setAlpha((int) (255 * roofA));
             c.drawBitmap(world.city.bitmap, roofSrc, roofDst, bmpPaint);
             bmpPaint.setAlpha(255);
             if (roofA >= 0.999f) sharpRoof(c, b, s, cx, cy);
             drawDamage(c, b, rx0, ry0, rx1, ry1, roofA);
             if (b.flash > 0) drawGunGlow(c, b, rx0, ry0, rx1, ry1);
-            drawRoofLabels(c, b, cx, cy, s, roofA);
+            drawRoofLabels(c, b, cx, cy, s, 1 - 0.82f * see);
         }
         wallFade = 1;
         drawStructures(c, vx0, vy0, vx1, vy1, true, cx, cy, camH);
@@ -3073,7 +3075,22 @@ final class GameView extends View implements Menu.Host {
         int dark = City.darken(floorCol, 0.62f);
         int inside = Interiors.insideOf(b);
         Interiors.Plan plan = inside >= 0 ? planOf(b, inside) : null;
-        if (plan != null) drawPlan(c, plan, a);
+        if (plan != null) {
+            drawPlan(c, plan, a);
+            // (10.53) Windows along the outside walls, a pane every few steps (none on a warehouse or a barn).
+            if (k != City.WAREHOUSE && k != City.BARN && k != City.GARAGE) {
+                fill.setColor(alpha(0xFF9CC4DA, a));
+                float pane = 4.5f, step = 10;
+                for (float u = x0 + 4; u + pane < x1 - 3; u += step) {
+                    c.drawRect(u, y0 - 0.6f, u + pane, y0 + 0.9f, fill);
+                    c.drawRect(u, y1 - 0.9f, u + pane, y1 + 0.6f, fill);
+                }
+                for (float u = y0 + 4; u + pane < y1 - 3; u += step) {
+                    c.drawRect(x0 - 0.6f, u, x0 + 0.9f, u + pane, fill);
+                    c.drawRect(x1 - 0.9f, u, x1 + 0.6f, u + pane, fill);
+                }
+            }
+        }
         else switch (k) {
             case City.HOUSE: case City.APARTMENT: {
                 // Rooms: a kitchen, a living room with a sofa and rug, bedrooms, a bathroom.
@@ -3366,22 +3383,110 @@ final class GameView extends View implements Menu.Host {
 
     /** Floors, furniture and inside walls of a floor plan. */
     private void drawPlan(Canvas c, Interiors.Plan p, float a) {
+        // (10.53) Floors with a grain to them: boards in the homes and hotel rooms, tiles in the kitchens and
+        // bathrooms, carpet tiles in the offices; then the furniture standing up off them, the walls with their
+        // doors, and windows round the outside.
         for (int i = 0, n = p.rooms.size(); i < n; i++) {
             float[] r = p.rooms.get(i);
-            box(c, r[0], r[1], r[2], r[3], Interiors.floorOf((int) r[4]));
+            int kind = (int) r[4], col = Interiors.floorOf(kind);
+            box(c, r[0], r[1], r[2], r[3], col);
+            floorGrain(c, r[0], r[1], r[2], r[3], kind, col, a);
         }
         for (int i = 0, n = p.items.size(); i < n; i++) {
             float[] it = p.items.get(i);
+            int col = (int) it[4];
             if (it[5] > 0) {
-                fill.setColor(alpha((int) it[4], a));
-                c.drawCircle((it[0] + it[2]) / 2, (it[1] + it[3]) / 2, (it[2] - it[0]) / 2, fill);
-            } else box(c, it[0], it[1], it[2], it[3], (int) it[4]);
+                float x = (it[0] + it[2]) / 2, y = (it[1] + it[3]) / 2, rad = (it[2] - it[0]) / 2;
+                fill.setColor(alpha(0x33000000, a));
+                c.drawCircle(x + 0.7f, y + 0.9f, rad, fill);
+                fill.setColor(alpha(col, a));
+                c.drawCircle(x, y, rad, fill);
+                fill.setColor(alpha(City.lighten(col, 0.25f), a));
+                c.drawCircle(x - rad * 0.3f, y - rad * 0.3f, rad * 0.45f, fill);
+            } else {
+                box(c, it[0] + 0.7f, it[1] + 0.9f, it[2] + 0.7f, it[3] + 0.9f, 0x33000000);
+                box(c, it[0], it[1], it[2], it[3], col);
+                // A lit edge along the top and left, a shaded one along the bottom: it stands up off the floor.
+                float e = Math.min(0.9f, Math.min(it[2] - it[0], it[3] - it[1]) * 0.18f);
+                if (e > 0.25f) {
+                    box(c, it[0], it[1], it[2], it[1] + e, City.lighten(col, 0.22f));
+                    box(c, it[0], it[1], it[0] + e, it[3], City.lighten(col, 0.12f));
+                    box(c, it[0], it[3] - e, it[2], it[3], City.darken(col, 0.78f));
+                }
+            }
         }
-        stroke.setColor(alpha(0xFF4A4440, a));
-        stroke.setStrokeWidth(1.4f);
-        for (int i = 0, n = p.walls.size(); i < n; i++) {
-            float[] wl = p.walls.get(i);
-            c.drawLine(wl[0], wl[1], wl[2], wl[3], stroke);
+        // Walls: a dark edge and a lighter top, like a wall seen from above.
+        for (int pass = 0; pass < 2; pass++) {
+            stroke.setColor(alpha(pass == 0 ? 0xFF3A3430 : 0xFF6E655C, a));
+            stroke.setStrokeWidth(pass == 0 ? 1.6f : 0.7f);
+            for (int i = 0, n = p.walls.size(); i < n; i++) {
+                float[] wl = p.walls.get(i);
+                c.drawLine(wl[0], wl[1], wl[2], wl[3], stroke);
+            }
+        }
+        // Each room's door, swung open into it.
+        stroke.setColor(alpha(0x99584C40, a));
+        stroke.setStrokeWidth(0.5f);
+        for (int i = 0, n = p.rooms.size(); i < n; i++) {
+            float[] r = p.rooms.get(i);
+            if (r.length < 7 || r[5] <= 0) continue;
+            float dx = r[5], dy = r[6];
+            if (dx < r[0] - 3 || dx > r[2] + 3 || dy < r[1] - 3 || dy > r[3] + 3) continue;
+            // (Which wall it's in: the nearest edge of the room.)
+            float dl = Math.abs(dx - r[0]), dr = Math.abs(dx - r[2]), dt = Math.abs(dy - r[1]), db = Math.abs(dy - r[3]);
+            float m = Math.min(Math.min(dl, dr), Math.min(dt, db)), len = 3.2f;
+            float hx = dx, hy = dy, ox = 0, oy = 0;
+            if (m == dl) { hx = r[0]; ox = 1; }
+            else if (m == dr) { hx = r[2]; ox = -1; }
+            else if (m == dt) { hy = r[1]; oy = 1; }
+            else { hy = r[3]; oy = -1; }
+            float px = hx - oy * len * 0.5f, py = hy - ox * len * 0.5f;
+            c.drawLine(px, py, px + ox * len, py + oy * len, stroke);
+            int steps = 5;
+            float lx = px + ox * len, ly = py + oy * len;
+            for (int k = 1; k <= steps; k++) {
+                double an = Math.PI / 2 * k / steps;
+                float qx = px + (float) (ox * Math.cos(an) + oy * Math.sin(an)) * len, qy = py + (float) (oy * Math.cos(an) + ox * Math.sin(an)) * len;
+                c.drawLine(lx, ly, qx, qy, stroke);
+                lx = qx;
+                ly = qy;
+            }
+        }
+    }
+
+    /** (10.53) The look of a floor: boards, tiles or carpet squares, faintly lined over its colour. */
+    private void floorGrain(Canvas c, float x0, float y0, float x1, float y1, int kind, int col, float a) {
+        int style;
+        switch (kind) {
+            case Interiors.LIVING: case Interiors.BEDROOM: case Interiors.DINING: case Interiors.HOTELROOM:
+            case Interiors.BARROOM: case Interiors.BOOKS: case Interiors.DORMROOM: case Interiors.GYMFLOOR: style = 1; break;
+            case Interiors.KITCHEN: case Interiors.BATH: case Interiors.COOKING: case Interiors.LAUNDRY: case Interiors.BAKERY:
+            case Interiors.LAB: case Interiors.WARD: case Interiors.SALON: style = 2; break;
+            case Interiors.OPENPLAN: case Interiors.MEETING: case Interiors.CLASS: case Interiors.LOBBY: style = 3; break;
+            default: return;
+        }
+        float w = x1 - x0, h = y1 - y0;
+        if (w < 4 || h < 4) return;
+        stroke.setColor(alpha(City.darken(col, style == 2 ? 0.86f : 0.9f), a * (style == 3 ? 0.5f : 0.75f)));
+        stroke.setStrokeWidth(0.3f);
+        if (style == 1) {
+            // Boards along the room's long side, their ends staggered.
+            boolean along = w >= h;
+            float gap = 2.2f;
+            int row = 0;
+            for (float v = (along ? y0 : x0) + gap; v < (along ? y1 : x1); v += gap, row++) {
+                if (along) c.drawLine(x0, v, x1, v, stroke);
+                else c.drawLine(v, y0, v, y1, stroke);
+                float off = (row * 7.3f) % 9;
+                for (float u = (along ? x0 : y0) + off; u < (along ? x1 : y1); u += 9) {
+                    if (along) c.drawLine(u, v - gap, u, v, stroke);
+                    else c.drawLine(v - gap, u, v, u, stroke);
+                }
+            }
+        } else {
+            float g = style == 2 ? 3f : 6f;
+            for (float x = x0 + g; x < x1; x += g) c.drawLine(x, y0, x, y1, stroke);
+            for (float y = y0 + g; y < y1; y += g) c.drawLine(x0, y, x1, y, stroke);
         }
     }
 

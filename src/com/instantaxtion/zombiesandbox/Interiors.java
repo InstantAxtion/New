@@ -18,6 +18,9 @@ final class Interiors {
             HOTELROOM = 16, GYMFLOOR = 17, BOOKS = 18, POOLS = 19, SEATS = 20, SALON = 21, LAUNDRY = 22, SHOWROOM = 23,
             ARCADE = 24, BAKERY = 25, LAB = 26, DORMROOM = 27, LOBBY = 28, APPARATUS = 29;
 
+    /** (10.53) Office and classroom chairs. */
+    private static final int CHAIR = 0xFF34383E;
+
     static final class Plan {
         /** Rooms: {x0, y0, x1, y1, kind, doorX, doorY}. */
         final ArrayList<float[]> rooms = new ArrayList<float[]>();
@@ -386,8 +389,12 @@ final class Interiors {
                     for (float tx = x0 + 4; tx < x1 - stepX + 4; tx += stepX) {
                         if (kind == CLASS) {
                             item(p, tx, ty, tx + 5, ty + 3, desk);
+                            // ((10.53) A chair at each desk.)
+                            round(p, tx + 2.5f, ty + 5, 1.3f, CHAIR);
                             spot(p, tx + 2.5f, ty + 5, idx, -1.57f);
                         } else {
+                            round(p, tx + 2.5f, ty + 7.5f, 1.5f, CHAIR);
+                            round(p, tx + 7.5f, ty + 7.5f, 1.5f, CHAIR);
                             item(p, tx, ty, tx + 10, ty + 5, desk);
                             item(p, tx + 1, ty + 0.5f, tx + 4, ty + 1.8f, kind == LAB ? 0xFF3FB8B0 : SCREEN);
                             item(p, tx + 6, ty + 0.5f, tx + 9, ty + 1.8f, kind == LAB ? 0xFFE0C050 : SCREEN);

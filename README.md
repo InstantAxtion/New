@@ -424,6 +424,12 @@ mounting up, and lighter running with big populations.
 
 **More police than soldiers (10.35):** the army on the map is never more than two in five of the police force.
 
+**Unjammed junctions, better insides (10.53):** cars crossing a bridge over the highway no longer drop onto
+the highway under it; a car already over the stop line carries on across instead of blocking the box for the red;
+cars waiting at a roundabout edge on when their way is clear; outside help going home that falls short of the edge
+plans again instead of leaving its officers in the fields. Zoomed right in, the roof is gone entirely, and the
+rooms have boards, tiles and carpet, furniture that stands off the floor, doors swung open, desk chairs and windows.
+
 **The beltway, more police and army, shaped buildings (10.52):** new land maps have a four-lane beltway right
 round them near the edge, joined at the corners, over the highway on a bridge, over ponds and across the railway,
 driven at nearly highway speed (on the water maps the roads round the edge of town and along the shore, and the

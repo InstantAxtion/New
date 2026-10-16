@@ -1130,6 +1130,9 @@ public final class GameTests {
                 inc.x = cx;
                 inc.y = cy;
                 inc.place = w.city.placeName(cx, cy);
+                // ((10.53) With the way there on foot, as every real call has: without it the officers who'd got out
+                // of a car held up on the way stopped short.)
+                inc.field = w.city.walkField16(cx, cy);
                 java.lang.reflect.Method pb = Dispatch.class.getDeclaredMethod("policeBackup", Dispatch.Incident.class);
                 pb.setAccessible(true);
                 // (Not a city that rolled "unprepared", with no backup to call.)

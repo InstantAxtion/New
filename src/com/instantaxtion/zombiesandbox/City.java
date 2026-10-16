@@ -6427,9 +6427,12 @@ final class City {
     }
 
     int overpassAt(float x, float y) {
+        // ((10.53) Half a tile to spare either side of the deck: a car keeping to its lane runs along the bridge's
+        // edge, and a pixel over it was taken to be down on the highway underneath, and turned onto it.)
+        float mx = hwyAxis == 0 ? T * 0.5f : 0, my = hwyAxis == 1 ? T * 0.5f : 0;
         for (int i = 0; i < overpasses.size(); i++) {
             float[] o = overpasses.get(i);
-            if (x >= o[0] && x < o[2] && y >= o[1] && y < o[3]) return i;
+            if (x >= o[0] - mx && x < o[2] + mx && y >= o[1] - my && y < o[3] + my) return i;
         }
         return -1;
     }

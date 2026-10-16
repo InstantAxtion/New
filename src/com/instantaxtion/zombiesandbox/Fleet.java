@@ -2122,6 +2122,12 @@ final class Fleet {
         if (j[4] == City.J_BEND) return Float.MAX_VALUE;
         // (10.42) Don't block the box: whatever the lights say, nobody pulls into the junction until there's room
         // on the far side to get out of it again (unless it's been waiting so long the queue must be going nowhere).
+        // (10.53) Already over the line, its nose in the junction: it carries on across once nothing's crossing in
+        // front. Stopping there for the red blocked the box, and the queue behind it sat for good, green or not.
+        if (stopAt < -6 && j[4] != City.J_ROUNDABOUT && crossClear(id, v, dirx, diry)) {
+            v.clearedJ = id;
+            return Float.MAX_VALUE;
+        }
         if (!emergency && v.player == null && stopAt < 30 && v.stillT < 20 && exitBlocked(v, id)) {
             v.held = stopAt < 6;
             return approach;
@@ -2154,7 +2160,9 @@ final class Fleet {
         }
         if (v.waitJ != id) {
             if (j[4] == City.J_ROUNDABOUT) {
-                if (stopAt < 10 && junctionClear(id, v)) {
+                // ((10.53) Not for ever, though: after a few seconds at the line it edges on when its own way across
+                // is clear. Something stalled on the far side of the roundabout had the way in shut for good.)
+                if (stopAt < 10 && (junctionClear(id, v) || (v.stillT > 6 && crossClear(id, v, dirx, diry)))) {
                     v.clearedJ = id;
                     return Float.MAX_VALUE;
                 }
@@ -2915,6 +2923,13 @@ final class Fleet {
             if (v.state == RETURN && v.leaving) {
                 // Off the map: they're home, and back in the pool if they're needed again.
                 if (Math.hypot(v.x - v.homeX, v.y - v.homeY) > 120) {
+                    // ((10.53) Not there yet: the way planned ran out short of the edge (or it was put off it).
+                    // Plan it again from here rather than put them out in the fields to be fetched all over again.)
+                    if (v.rerouteCd <= 0 && route(v, v.homeX, v.homeY)) {
+                        v.rerouteCd = 2;
+                        return false;
+                    }
+                    if (v.rerouteCd > 0) return false;
                     if (!v.crew.isEmpty()) crewOut(v, true);
                     return true;
                 }

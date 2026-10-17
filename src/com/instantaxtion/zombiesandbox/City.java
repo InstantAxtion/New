@@ -816,6 +816,7 @@ final class City {
     /** After live edits: routes to the police stations, base and hospital are worked out again. */
     void editsDone() {
         facilityFields.clear();
+        fieldsNeeded = 0;
     }
 
     /**
@@ -826,10 +827,24 @@ final class City {
     private final java.util.LinkedHashMap<Facility, char[]> facilityFields = new java.util.LinkedHashMap<Facility, char[]>(16, 0.75f, true) {
         @Override
         protected boolean removeEldestEntry(java.util.Map.Entry<Facility, char[]> eldest) {
-            return size() > Math.max(8, (int) (16L * 1024 * 1024 / (2L * w * h)));
+            // ((10.55) But never fewer than there are stations, bases and hospitals: on a Gigantic map with twenty of
+            // them, keeping only a dozen meant people heading for the nearest station had theirs worked out again
+            // and again, and the game crawled with hardly a zombie about.)
+            return size() > Math.max(fieldsNeeded(), (int) (24L * 1024 * 1024 / (2L * w * h)));
         }
     };
     private int[] fieldTmp;
+    private int fieldsNeeded;
+
+    /** (10.55) How many facilities anyone walks to (all but the fire stations), and a couple to spare. */
+    private int fieldsNeeded() {
+        if (fieldsNeeded == 0) {
+            int n = 2;
+            for (Facility f : facilities) if (f.kind != FACILITY_FIRE) n++;
+            fieldsNeeded = Math.max(8, n);
+        }
+        return fieldsNeeded;
+    }
 
     /** (Kept as 16-bit distances, half the memory: FAR_C means out of reach.) */
     char[] field(Facility f) {
@@ -850,8 +865,13 @@ final class City {
 
     /** (10.31) A 16-bit walking field to (x, y) (half the memory: calls each have one). */
     char[] walkField16(float x, float y) {
+        return walkField16(x, y, FAR);
+    }
+
+    /** (10.55) The same, only searching out to limit (people walk to a park nearby, not across the map). */
+    char[] walkField16(float x, float y, int limit) {
         if (fieldTmp == null) fieldTmp = new int[w * h];
-        walkFieldFromPoints(fieldTmp, new float[]{x}, new float[]{y}, 1);
+        walkFieldFromPoints(fieldTmp, new float[]{x}, new float[]{y}, 1, limit);
         char[] a = new char[w * h];
         for (int i = 0; i < a.length; i++) a[i] = (char) Math.min(FAR_C, fieldTmp[i]);
         return a;

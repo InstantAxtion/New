@@ -2,11 +2,15 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.54";
-    static final int VERSION_CODE = 92;
+    static final String VERSION = "10.55";
+    static final int VERSION_CODE = 93;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.55  -  Big maps run smoothly again",
+                    "Fixed the lag on the big maps with only a few zombies about, which 10.54 made worse: the ways on foot to the parks and to the police stations and bases weren't all kept, so people out for a walk or heading for the nearest station had them worked out again and again. Now every station and base keeps its way, and the walks are kept in half the memory, so twice as many fit.",
+            },
             {
                     "10.54  -  No crash on the biggest maps, room to pass, units move on",
                     "Fixed the game running out of memory and crashing on the biggest maps with a big outbreak (twenty thousand people and hundreds of dead): the 911 calls no longer each keep their own map of the whole city, the way-finding caches are kept smaller, and if memory does run short the game lets go of what it can rebuild instead of crashing.",

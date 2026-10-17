@@ -424,6 +424,10 @@ mounting up, and lighter running with big populations.
 
 **More police than soldiers (10.35):** the army on the map is never more than two in five of the police force.
 
+**Big maps run smoothly again (10.55):** the lag on the big maps with only a few zombies about is fixed: every
+police station and base keeps its way on foot instead of having it worked out again and again, and the walks to the
+parks are kept in half the memory so twice as many fit.
+
 **No crash on the biggest maps, room to pass, units move on (10.54):** the biggest maps with a big outbreak no
 longer run out of memory (911 calls share way-finding instead of each keeping a map of the whole city, smaller caches,
 and the game frees what it can rebuild if memory runs short); cars giving way to police and army vehicles pull right

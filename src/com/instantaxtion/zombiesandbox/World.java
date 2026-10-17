@@ -4345,18 +4345,20 @@ final class World {
     /**
      * Walking routes to the parks and plazas (each one a whole map of distances), the most recently used
      * kept up to a memory budget: on the biggest maps they used to pile up until the phone ran out of memory.
-     * One that's dropped is worked out again when it's next needed.
+     * One that's dropped is worked out again when it's next needed. ((10.55) Kept at 16 bits, so twice as many
+     * fit: with too few kept, people setting out on their walks had them worked out again and again, and the
+     * big maps lagged with hardly anything happening.)
      */
-    private final java.util.LinkedHashMap<float[], int[]> fieldCache = new java.util.LinkedHashMap<float[], int[]>(32, 0.75f, true) {
+    private final java.util.LinkedHashMap<float[], char[]> fieldCache = new java.util.LinkedHashMap<float[], char[]>(32, 0.75f, true) {
         @Override
-        protected boolean removeEldestEntry(java.util.Map.Entry<float[], int[]> eldest) {
+        protected boolean removeEldestEntry(java.util.Map.Entry<float[], char[]> eldest) {
             return size() > fieldBudget();
         }
     };
 
-    /** How many walking routes to keep: about 32 MB worth. */
+    /** How many walking routes to keep: about 24 MB worth. */
     private int fieldBudget() {
-        return Math.max(8, (int) (16L * 1024 * 1024 / (4L * city.w * city.h)));
+        return Math.max(12, (int) (24L * 1024 * 1024 / (2L * city.w * city.h)));
     }
 
     private float[] pickArea(Entity e, boolean plaza) {
@@ -4399,15 +4401,14 @@ final class World {
         float[] p = areaPoint(a);
         float ddx = p[0] - e.x, ddy = p[1] - e.y, d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
         if (d < near) return true;
-        int[] f = fieldCache.get(a);
+        char[] f = fieldCache.get(a);
         if (f == null) {
             if (pathBudget < 1) {
                 wander(e, speed * 0.7f);
                 return false;
             }
             pathBudget -= 1;
-            f = new int[city.w * city.h];
-            city.walkFieldFromPoints(f, new float[]{p[0]}, new float[]{p[1]}, 1, 260);
+            f = city.walkField16(p[0], p[1], 260);
             fieldCache.put(a, f);
         }
         if (d < 24 || !followField(e, f, speed)) steer(e, ddx / d, ddy / d, speed);

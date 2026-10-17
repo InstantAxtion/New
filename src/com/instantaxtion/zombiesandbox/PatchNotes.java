@@ -2,11 +2,17 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.53";
-    static final int VERSION_CODE = 91;
+    static final String VERSION = "10.54";
+    static final int VERSION_CODE = 92;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.54  -  No crash on the biggest maps, room to pass, units move on",
+                    "Fixed the game running out of memory and crashing on the biggest maps with a big outbreak (twenty thousand people and hundreds of dead): the 911 calls no longer each keep their own map of the whole city, the way-finding caches are kept smaller, and if memory does run short the game lets go of what it can rebuild instead of crashing.",
+                    "Cars getting out of the way of police and army vehicles pull right over to the kerb and slow to a crawl, so there's room to get past them.",
+                    "When an area is cleared of the dead, the police and soldiers there with ammo left are sent on together to the nearest call or outbreak that still has the dead about, instead of being left standing about on their own.",
+            },
             {
                     "10.53  -  Unjammed junctions, better insides",
                     "Cars crossing a bridge over the highway in their own lane were taken to be on the highway underneath and turned onto it, then went round and round the interchange: they now stay on the bridge.",

@@ -695,12 +695,20 @@ final class GameView extends View implements Menu.Host {
             // Never spend much more than about half a frame simulating: when that's used up, what's left of the
             // time goes in one last, longer step (up to a tenth of a second) instead of being lost.
             long simStart = System.nanoTime();
-            for (int i = 0; i < steps; i++) {
-                world.update(step);
-                if (i < steps - 1 && System.nanoTime() - simStart > 14000000L) {
-                    world.update(Math.min(0.1f, step * (steps - 1 - i)));
-                    break;
+            try {
+                for (int i = 0; i < steps; i++) {
+                    world.update(step);
+                    if (i < steps - 1 && System.nanoTime() - simStart > 14000000L) {
+                        world.update(Math.min(0.1f, step * (steps - 1 - i)));
+                        break;
+                    }
                 }
+            } catch (OutOfMemoryError oom) {
+                // (10.54) Out of memory in the middle of a huge outbreak: let go of everything that can be worked out
+                // again (the ways on foot, the sharp close-ups of the map) and carry on, rather than crash.
+                world.freeMemory();
+                chunks.clear();
+                System.gc();
             }
         }
         if (inGame && hintTime > 0) hintTime -= dt;

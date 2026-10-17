@@ -1868,6 +1868,17 @@ final class Fleet {
         }
     }
 
+    /** (10.54) How far a car at (x, y) can move towards the kerb along (nx, ny) before its side is against it. */
+    private float kerbGap(float x, float y, float nx, float ny) {
+        for (int k = 1; k <= 30; k++) {
+            int tx = (int) ((x + nx * k) / City.T), ty = (int) ((y + ny * k) / City.T);
+            if (tx < 0 || ty < 0 || tx >= city.w || ty >= city.h) return Math.max(0, k - 6.5f);
+            if (city.tiles[ty * city.w + tx] != City.ROAD || city.onHighway(x + nx * k, y + ny * k) != city.onHighway(x, y))
+                return Math.max(0, k - 6.5f);
+        }
+        return 23.5f;
+    }
+
     /** Arrived at a scene: pull in to the kerb, nose angled in, rather than stopping in the middle of the lane. */
     private void kerbAtScene(Vehicle v, float dt) {
         if (!v.kerbed) {
@@ -3392,7 +3403,23 @@ final class Fleet {
             // Giving way: over to the kerb and slow (or held back from the junction).
             if (v.yieldStop) max = Math.min(max, city.junctionIdAt(v.x, v.y) >= 0 ? max : 2);
             else {
-                off += City.T * 0.45f * (city.country.leftHand ? -1 : 1);
+                // ((10.54) Right over against the kerb, however wide the road: a car only edging over left too
+                // little room, and the police car or army truck behind it still couldn't get by.)
+                int hand = city.country.leftHand ? -1 : 1;
+                float ln = (float) Math.sqrt(ddx * ddx + ddy * ddy);
+                float nx = -ddy / ln * hand, ny = ddx / ln * hand;
+                float lx = bx * City.T + City.T / 2f - ddy * off, ly = by * City.T + City.T / 2f + ddx * off;
+                off += hand * kerbGap(lx, ly, nx, ny);
+                // (And it slides over there now, not only once it's rolled forward enough to steer across.)
+                float here = kerbGap(v.x, v.y, (float) -Math.sin(v.angle) * hand, (float) Math.cos(v.angle) * hand);
+                if (here > 0.5f) {
+                    float step = Math.min(here, 18 * dt);
+                    float sx = (float) -Math.sin(v.angle) * hand * step, sy = (float) Math.cos(v.angle) * hand * step;
+                    if (city.drivable(v.x + sx, v.y + sy)) {
+                        v.x += sx;
+                        v.y += sy;
+                    }
+                }
                 max = Math.min(max, 7);
             }
         }

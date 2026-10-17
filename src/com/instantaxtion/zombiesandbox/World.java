@@ -251,6 +251,14 @@ final class World {
         return viewX1 >= 0 && e.x > viewX0 - 80 && e.x < viewX1 + 80 && e.y > viewY0 - 80 && e.y < viewY1 + 80;
     }
 
+    /** (10.54) Lets go of everything that can be worked out again when it's next needed, when memory runs short. */
+    void freeMemory() {
+        fieldCache.clear();
+        city.clearFieldCaches();
+        for (Dispatch.Incident inc : dispatch.incidents) inc.field = null;
+        for (int i = 0, n = entities.size(); i < n; i++) if (entities.get(i).incident != null) entities.get(i).orderField = null;
+    }
+
     /** Sets the population cap; 0 means Auto, sized to the city: everyone who lives there, and room for the dead. */
     void setMaxPopulation(int cap) {
         maxEntities = cap > 0 ? cap : Math.max(2500, city.totalResidents * 2 + 1000);
@@ -4348,7 +4356,7 @@ final class World {
 
     /** How many walking routes to keep: about 32 MB worth. */
     private int fieldBudget() {
-        return Math.max(8, (int) (32L * 1024 * 1024 / (4L * city.w * city.h)));
+        return Math.max(8, (int) (16L * 1024 * 1024 / (4L * city.w * city.h)));
     }
 
     private float[] pickArea(Entity e, boolean plaza) {
@@ -6979,7 +6987,11 @@ final class World {
                 float ang = (float) Math.atan2(e.y - inc.y, e.x - inc.x) + ((e.member % 3) - 1) * 0.35f;
                 float px = inc.x + (float) Math.cos(ang) * pr, py = inc.y + (float) Math.sin(ang) * pr;
                 if (d > pr + 80) {
-                    if (!followField(e, inc.field, e.runSpeed * 0.95f)) steer(e, ddx / d, ddy / d, e.runSpeed * 0.95f);
+                    if (!followField(e, inc.field, e.runSpeed * 0.95f)) {
+                        // ((10.54) A call without a way worked out (past the budget): find the way there as anyone would.)
+                        if (inc.field == null && d > 60) walkToSpot(e, inc.x, inc.y, e.runSpeed * 0.95f);
+                        else steer(e, ddx / d, ddy / d, e.runSpeed * 0.95f);
+                    }
                     return;
                 }
                 if (!e.onScene) {
@@ -6998,7 +7010,11 @@ final class World {
             if (soldier && e.onScene && city.fieldAt(city.zombieDist, e.x, e.y) < 30
                     && followField(e, city.zombieDist, e.runSpeed * 0.8f)) return;
             if (d > 40) {
-                if (!followField(e, inc.field, e.runSpeed * 0.95f)) steer(e, ddx / d, ddy / d, e.runSpeed * 0.95f);
+                if (!followField(e, inc.field, e.runSpeed * 0.95f)) {
+                        // ((10.54) A call without a way worked out (past the budget): find the way there as anyone would.)
+                        if (inc.field == null && d > 60) walkToSpot(e, inc.x, inc.y, e.runSpeed * 0.95f);
+                        else steer(e, ddx / d, ddy / d, e.runSpeed * 0.95f);
+                    }
                 return;
             }
             if (!e.onScene) {

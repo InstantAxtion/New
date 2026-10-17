@@ -458,7 +458,7 @@ final class Dispatch {
         inc.y = y;
         inc.place = city.placeName(x, y);
         inc.reported = inc.lastLogged = count;
-        inc.field = city.walkField16(inc.x, inc.y);
+        giveField(inc);
         incidents.add(inc);
         return inc;
     }
@@ -707,7 +707,7 @@ final class Dispatch {
             inc.y = p[1];
             inc.place = city.placeName(p[0], p[1]);
             inc.reported = inc.lastLogged = Math.max(1, w.countZombiesNear(p[0], p[1], 140));
-            inc.field = city.walkField16(inc.x, inc.y);
+            giveField(inc);
             incidents.add(inc);
             say(WHO_POLICE, null, "Dispatch: Patrols report " + inc.reported + " of them at " + inc.place
                     + ". All available units.", inc.x, inc.y);
@@ -964,7 +964,11 @@ final class Dispatch {
     private final ArrayList<Incident> byNeed = new ArrayList<Incident>();
     private float rebalanceCd;
 
+    /** (10.54) Calls given a new way there this round (see updateIncidents). */
+    private int refields;
+
     private void updateIncidents(float step) {
+        refields = 0;
         int open = incidents.size();
         // (10.33) Several outbreaks at once: the worst calls are served first, each gets its fair share of the
         // officers there are (rather than the first call seen taking everyone), some are kept back for the next
@@ -1024,8 +1028,12 @@ final class Dispatch {
                     inc.x = nx;
                     inc.y = ny;
                     inc.zombiesNear = w.countZombiesNear(inc.x, inc.y, 140);
-                    if (mx * mx + my * my > 60 * 60) {
-                        inc.field = city.walkField16(inc.x, inc.y);
+                    // ((10.54) Not every time it shifts a little: on a Gigantic map each is 2 MB and a search of the
+                    // whole city, and sixty calls following their dead about made the game stutter and run out of
+                    // memory. A couple a round, once it has moved off a fair way.)
+                    if (mx * mx + my * my > 60 * 60 && (city.w * city.h < 300 * 300 || (refields < 2 && mx * mx + my * my > 160 * 160))) {
+                        refields++;
+                        giveField(inc);
                         inc.place = city.placeName(inc.x, inc.y);
                         for (int k = 0, n = w.entities.size(); k < n; k++) {
                             Entity e = w.entities.get(k);
@@ -1153,21 +1161,88 @@ final class Dispatch {
     private void resolve(Incident inc) {
         inc.resolved = true;
         incidents.remove(inc);
+        // (10.54) Where those who were here go next, together: the nearest call that still has the dead at it, or
+        // failing that the nearest zone of the infection the city knows about. Before, they were let go where they
+        // stood, and wandered off one by one.
+        Incident next = null;
+        float bd = MOVE_ON * MOVE_ON;
+        for (int i = 0; i < incidents.size(); i++) {
+            Incident o = incidents.get(i);
+            if (o.resolved || o.zombiesNear <= 0) continue;
+            float d = (o.x - inc.x) * (o.x - inc.x) + (o.y - inc.y) * (o.y - inc.y);
+            if (d < bd) {
+                bd = d;
+                next = o;
+            }
+        }
+        if (next == null) {
+            World.InfectionZone zone = null;
+            for (World.InfectionZone z : w.infection) {
+                if (z.zombies <= 0) continue;
+                float d = (z.x - inc.x) * (z.x - inc.x) + (z.y - inc.y) * (z.y - inc.y);
+                if (d < bd) {
+                    bd = d;
+                    zone = z;
+                }
+            }
+            if (zone != null) next = sighting(zone.x, zone.y, null);
+        }
         Entity speaker = null;
+        int moved = 0;
         for (int i = 0, n = w.entities.size(); i < n; i++) {
             Entity e = w.entities.get(i);
             if (e.task == T_RESPOND && e.incident == inc) {
                 if (speaker == null) speaker = e;
-                release(e);
+                if (next != null && e.ammo + e.reserve > 0) {
+                    e.incident = next;
+                    e.onScene = false;
+                    e.orderField = null;
+                    moved++;
+                } else release(e);
             }
         }
-        if (speaker != null && inc.onScene) {
+        if (speaker != null && moved > 0) {
+            say(speaker.type == Entity.COP ? WHO_POLICE : WHO_MILITARY, speaker,
+                    inc.place + " is clear. Moving on to " + next.place + ".", inc.x, inc.y);
+        } else if (speaker != null && inc.onScene) {
             say(speaker.type == Entity.COP ? WHO_POLICE : WHO_MILITARY, speaker,
                     inc.place + " is clear. Returning to patrol.", inc.x, inc.y);
         } else {
             say(WHO_POLICE, null, "Dispatch: No sign of hostiles at " + inc.place + ". Closing the call.", inc.x, inc.y);
         }
     }
+
+    /**
+     * (10.54) The way on foot to a call, within a budget: each is a whole map's worth (2 MB on a Gigantic map), and
+     * with sixty calls open at once on one the phone ran out of memory and the game crashed. Past the budget, the
+     * least serious call that has one gives it up to a worse one (those going to it head straight there instead).
+     */
+    void giveField(Incident inc) {
+        int budget = Math.max(6, (int) (24L * 1024 * 1024 / (2L * city.w * city.h)));
+        int have = 0;
+        Incident least = null;
+        for (int i = 0; i < incidents.size(); i++) {
+            Incident o = incidents.get(i);
+            if (o == inc || o.field == null) continue;
+            have++;
+            if (least == null || severity(o) < severity(least)) least = o;
+        }
+        if (have >= budget) {
+            if (least == null || (inc.field == null && severity(least) >= severity(inc))) {
+                inc.field = null;
+                return;
+            }
+            least.field = null;
+            for (int k = 0, n = w.entities.size(); k < n; k++) {
+                Entity e = w.entities.get(k);
+                if (e.incident == least) e.orderField = null;
+            }
+        }
+        inc.field = city.walkField16(inc.x, inc.y);
+    }
+
+    /** (10.54) How far those at a call that's over go on to the next one together (further, they stand down). */
+    private static final float MOVE_ON = 2600;
 
     /** Picks up to n of the nearest free units of a type. */
     private ArrayList<Entity> nearestFree(int type, float x, float y, int n, float maxDist) {

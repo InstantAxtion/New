@@ -424,6 +424,11 @@ mounting up, and lighter running with big populations.
 
 **More police than soldiers (10.35):** the army on the map is never more than two in five of the police force.
 
+**No crash on the biggest maps, room to pass, units move on (10.54):** the biggest maps with a big outbreak no
+longer run out of memory (911 calls share way-finding instead of each keeping a map of the whole city, smaller caches,
+and the game frees what it can rebuild if memory runs short); cars giving way to police and army vehicles pull right
+over to the kerb; and police and soldiers whose area is cleared move on together to the next call or outbreak.
+
 **Unjammed junctions, better insides (10.53):** cars crossing a bridge over the highway no longer drop onto
 the highway under it; a car already over the stop line carries on across instead of blocking the box for the red;
 cars waiting at a roundabout edge on when their way is clear; outside help going home that falls short of the edge

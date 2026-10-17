@@ -821,12 +821,12 @@ final class City {
     /**
      * (10.31) The way on foot to each facility (police stations, the base, the hospital...), worked out the first
      * time someone needs it, and only the most recently used kept: a Gigantic city has dozens of facilities, and
-     * one of these for each took most of a phone's memory.
+     * one of these for each took most of a phone's memory. ((10.54) 32 MB of them at most, not 96.)
      */
     private final java.util.LinkedHashMap<Facility, char[]> facilityFields = new java.util.LinkedHashMap<Facility, char[]>(16, 0.75f, true) {
         @Override
         protected boolean removeEldestEntry(java.util.Map.Entry<Facility, char[]> eldest) {
-            return size() > Math.max(8, (int) (96L * 1024 * 1024 / (2L * w * h)));
+            return size() > Math.max(8, (int) (16L * 1024 * 1024 / (2L * w * h)));
         }
     };
     private int[] fieldTmp;
@@ -842,6 +842,11 @@ final class City {
     }
 
     static final int FAR_C = 0xFFFF;
+
+    /** (10.54) Drops the facilities' ways on foot (they're worked out again when next wanted). */
+    void clearFieldCaches() {
+        facilityFields.clear();
+    }
 
     /** (10.31) A 16-bit walking field to (x, y) (half the memory: calls each have one). */
     char[] walkField16(float x, float y) {

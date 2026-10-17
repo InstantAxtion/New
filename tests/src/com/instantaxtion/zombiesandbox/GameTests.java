@@ -3165,8 +3165,14 @@ public final class GameTests {
                 Entity shooter = null, helper = null;
                 for (Entity e : w.entities) {
                     if (e.dead || e.type != Entity.COP || e.task != Dispatch.T_NONE || e.rig != null) continue;
-                    if (shooter == null) shooter = e;
-                    else if (helper == null && Math.hypot(e.x - shooter.x, e.y - shooter.y) < 200) helper = e;
+                    // ((10.56) Not one standing with a crowd at the station: they shot the dead down before
+                    // anyone needed to hear a thing.)
+                    if (shooter == null) {
+                        int armed = 0;
+                        for (Entity o : w.entities)
+                            if (o != e && !o.dead && (o.type == Entity.COP || o.type == Entity.SOLDIER) && Math.hypot(o.x - e.x, o.y - e.y) < 160) armed++;
+                        if (armed <= 1) shooter = e;
+                    } else if (helper == null && Math.hypot(e.x - shooter.x, e.y - shooter.y) < 200) helper = e;
                 }
                 if (shooter != null && helper == null) {
                     float[] hp = w.city.findWalkable(shooter.x + 120, shooter.y);
@@ -3176,8 +3182,19 @@ public final class GameTests {
                 helper.fear = 0;
                 helper.aiming = false;
                 Entity target = null;
-                // (Four together: round one open spot, so none is put somewhere else by a wall in the way.)
+                // (Four together: round one open spot, so none is put somewhere else by a wall in the way. (10.56) Off
+                // the road: officers start out on the pavements now, and a passing car ran them over.)
                 float[] q0 = w.city.findWalkable(shooter.x + 40, shooter.y + 10);
+                for (int k = 0; k < 60; k++) {
+                    float[] q = w.city.findWalkable(shooter.x + 40 * (float) Math.cos(k * 0.7f), shooter.y + 40 * (float) Math.sin(k * 0.7f));
+                    if (q == null) continue;
+                    boolean road = false;
+                    for (int j = 0; j < 4; j++) if (w.city.tiles[w.city.tileIndex(q[0] + (j % 2) * 6, q[1] + (j / 2) * 6)] == City.ROAD) road = true;
+                    if (!road) {
+                        q0 = q;
+                        break;
+                    }
+                }
                 for (int k = 0; k < 4; k++) {
                     float[] q = w.city.findWalkable(q0[0] + (k % 2) * 6, q0[1] + (k / 2) * 6);
                     Entity zz = w.spawn(Entity.ZOMBIE, q[0], q[1]);
@@ -3346,6 +3363,72 @@ public final class GameTests {
                     check(still == 0, "nobody's still leaving once it's over (" + still + ")");
                     check(w.cameHome > 0, "and those who fled come home (" + w.cameHome + " of " + w.fled + ")");
                 }
+            }
+        });
+        test("10.56: the Garrison State (military police, bases, an island prison, checkpoints), counts that add up, people on the streets", new Check() {
+            public void run() throws Exception {
+                CityConfig c = new CityConfig();
+                c.v[CityConfig.OPT_PRESET] = CityConfig.GARRISON;
+                c.seed = 9;
+                c.v[CityConfig.OPT_SIZE] = CityConfig.MEDIUM;
+                c.v[CityConfig.OPT_ZOMBIES] = 0;
+                c.normalize();
+                c.seed = 9;
+                check(c.size() == CityConfig.LARGE, "the Garrison State is never smaller than Default");
+                World w = new World(c);
+                City city = w.city;
+                int bases = 0;
+                for (City.Facility f : city.facilities) if (f.kind == City.FACILITY_BASE) bases++;
+                check(bases >= 4, "bases out in the country and compounds in town (" + bases + ")");
+                check(city.prison != null && city.jail == city.prison, "a prison, and it's the jail");
+                // On an island: water all round it, and one way across.
+                int tx = (int) ((city.prison.x0 + city.prison.x1) / 2 / City.T), ty = (int) ((city.prison.y0 + city.prison.y1) / 2 / City.T);
+                int water = 0;
+                for (int k = 0; k < 4; k++) {
+                    int dx = k == 0 ? 1 : k == 1 ? -1 : 0, dy = k == 2 ? 1 : k == 3 ? -1 : 0;
+                    for (int r = 1; r < 30; r++) {
+                        int x = tx + dx * r, y = ty + dy * r;
+                        if (x < 0 || y < 0 || x >= city.w || y >= city.h) break;
+                        if (city.tiles[y * city.w + x] == City.WATER) {
+                            water++;
+                            break;
+                        }
+                    }
+                }
+                check(water >= 3, "the prison stands on an island (water on " + water + " sides)");
+                check(city.checkpoints.size() >= 6, "checkpoints on the roads from the start (" + city.checkpoints.size() + ")");
+                int[] fc = World.forecast(c, city, 0);
+                w.setMaxPopulation(0);
+                w.populate(c);
+                w.recount();
+                check(w.counts[Entity.SOLDIER] > w.counts[Entity.COP], "more soldiers (" + w.counts[Entity.SOLDIER] + ") than military police (" + w.counts[Entity.COP] + ")");
+                Entity mp = null;
+                for (Entity e : w.entities) if (e.type == Entity.COP && e.agency == 0 && e.role == 0) mp = e;
+                check(mp != null && mp.body == Country.MP_SHIRT && mp.magSize == 30 && Dispatch.name(mp).startsWith("MP "), "the police are military police, with rifles");
+                int guards = 0;
+                for (float[] p : city.checkpointPosts)
+                    for (Entity e : w.entities) if (e.type == Entity.SOLDIER && e.task == Dispatch.T_POST && Math.hypot(e.x - p[0], e.y - p[1]) < 30) {
+                        guards++;
+                        break;
+                    }
+                check(guards * 2 >= city.checkpointPosts.size(), "soldiers on the checkpoints (" + guards + " of " + city.checkpointPosts.size() + ")");
+                // The New Game screen's numbers are the game's.
+                check(fc[0] == w.civilians, "people forecast " + fc[0] + ", in the game " + w.civilians);
+                check(Math.abs(fc[1] - w.counts[Entity.COP]) <= Math.max(6, fc[1] / 12), "police forecast " + fc[1] + ", in the game " + w.counts[Entity.COP]);
+                check(Math.abs(fc[2] - w.counts[Entity.SOLDIER]) <= Math.max(6, fc[2] / 12), "soldiers forecast " + fc[2] + ", in the game " + w.counts[Entity.SOLDIER]);
+                // People out and about start on the streets, not in the fields.
+                int out = 0, grass = 0;
+                for (Entity e : w.entities) {
+                    if (e.dead || e.removed || e.type != Entity.CIVILIAN || e.home == null) continue;
+                    out++;
+                    if (city.tiles[city.tileIndex(e.x, e.y)] == City.GRASS) grass++;
+                }
+                check(out > 50 && grass * 4 < out, "people start on the streets (" + grass + " of " + out + " on grass)");
+                // Nobody counted twice: as many people as live here and are about.
+                int indoors = 0;
+                for (City.Building b : city.buildings) indoors += b.visitors.size() + b.occupants.size();
+                check(w.counts[Entity.CIVILIAN] + indoors >= w.civilians && w.civilians <= c.civilians(city.totalResidents) + 200,
+                        "the count of people adds up (" + w.civilians + ")");
             }
         });
         test("10.48: an empty police car is taken by officers on foot nearby; (10.49) people leave by evacuation bus and train", new Check() {

@@ -56,8 +56,8 @@ final class Country {
     final int centreLine;
     final int[] houseRoofs, houseWalls, shopRoofs, shopWalls, apartmentWalls;
     /** Police cars: body colour, door panels, a contrasting roof (0 for none), and a chequered band down the sides. */
-    final int cruiserBody, cruiserDoor, cruiserRoof;
-    final boolean cruiserChecks;
+    int cruiserBody, cruiserDoor, cruiserRoof;
+    boolean cruiserChecks;
     /** The two colours of the chequered band. */
     int checkA, checkB;
     final String[] streets, mainWords, localWords;
@@ -66,7 +66,8 @@ final class Country {
     final String ringRoad;
     final String[] townStart, townEnd, districtWords, hamletEnds;
     final String[] churches, schools, markets, pharmacies, gunStores, bases;
-    final String hospital, policeStation, fireStation;
+    final String hospital, fireStation;
+    String policeStation;
     final String[] first, last, dogs;
     /** Pavement, grass and plaza colours (0 keeps the usual), and roofs/walls for offices and old buildings (null keeps the usual). */
     int pavement, grass, plaza;
@@ -76,6 +77,36 @@ final class Country {
     int[] officeRoofs, officeWalls, oldWalls, oldRoofs;
 
     private static final Country[] ALL = new Country[NAMES.length];
+
+    /**
+     * (10.56) The Garrison State: the country's own streets, names and buildings, but its police are the
+     * military police (khaki and red berets, olive cars marked MP, posts instead of stations). A copy of its own,
+     * never the shared one, so no other map is touched.
+     */
+    boolean garrison;
+
+    static Country garrison(int id) {
+        id = Math.max(0, Math.min(NAMES.length - 1, id));
+        Country c = new Country(id);
+        c.garrison = true;
+        c.policeStation = "Military Police Post ";
+        c.cruiserBody = 0xFF4E5A36;
+        c.cruiserDoor = 0xFFE8E4D8;
+        c.cruiserRoof = 0xFF3A4428;
+        c.cruiserChecks = false;
+        c.hpShirt = MP_SHIRT;
+        c.hpBody = c.cruiserBody;
+        c.hpDoor = c.cruiserDoor;
+        if (c.ruralShirt != 0) c.ruralShirt = MP_SHIRT;
+        if (c.ruralBody != 0) {
+            c.ruralBody = c.cruiserBody;
+            c.ruralDoor = c.cruiserDoor;
+        }
+        return c;
+    }
+
+    /** (10.56) The military police: khaki shirts and red berets. */
+    static final int MP_SHIRT = 0xFF8A7E58, MP_BERET = 0xFF9A1E1E;
 
     static Country get(int id) {
         // (The newer countries are added after the original five.)

@@ -348,6 +348,7 @@ final class Dispatch {
             if (e.agency == 4) return federal(c) + " " + e.callsign;
             if (e.role == Entity.ROLE_PILOT) return "Pilot " + e.callsign;
             if (e.role == Entity.ROLE_SAR) return "Rescue " + e.callsign;
+            if (c != null && c.garrison) return "MP " + e.callsign;
             return "Unit " + e.callsign;
         }
         if (e.type == Entity.SOLDIER && e.role == Entity.ROLE_PILOT) return "Air " + e.callsign + " pilot";
@@ -386,7 +387,10 @@ final class Dispatch {
     }
 
     void say(int who, Entity speaker, String text, float x, float y) {
-        String label = who == WHO_911 ? "911" : who == WHO_POLICE ? "Police" : who == WHO_MILITARY ? "Military" : "Info";
+        // ((10.56) In the Garrison State the police are the military police.)
+        boolean mp = city.country.garrison;
+        if (mp) text = text.replace("Police Command", "MP Command").replace("Police helicopter", "MP helicopter").replace("police", "military police");
+        String label = who == WHO_911 ? "911" : who == WHO_POLICE ? (mp ? "MP" : "Police") : who == WHO_MILITARY ? "Military" : "Info";
         if (speaker != null) {
             label = name(speaker);
             speaker.talkTimer = 2.5f;
@@ -1008,18 +1012,18 @@ final class Dispatch {
                 Entity z = w.nearestZombie(inc.x, inc.y, 320);
                 Incident other = z == null || z.hidden ? null : callAt(z.x, z.y, inc);
                 if (other != null) {
-                    // (Already a call where they've gone: everyone on this one goes on to that, and this one closes.)
+                    // (Already a call where they've gone: this one closes and those on it go on to that one, or
+                    // ((10.56) when it has all it needs) another near that's short, or back to patrol.)
+                    w.fleet.redirect(inc, other);
+                    moving.clear();
                     for (int k = 0, n = w.entities.size(); k < n; k++) {
                         Entity e = w.entities.get(k);
-                        if (e.incident == inc && e.task == T_RESPOND) {
-                            e.incident = other;
-                            e.orderField = null;
-                            e.onScene = false;
-                        }
+                        if (e.incident == inc && e.task == T_RESPOND) moving.add(e);
                     }
-                    w.fleet.redirect(inc, other);
                     inc.resolved = true;
                     incidents.remove(inc);
+                    moveOn(moving, inc, other.x, other.y, null);
+                    for (int k = 0; k < moving.size(); k++) if (moving.get(k).incident == inc) release(moving.get(k));
                     continue;
                 }
                 if (z != null && !z.hidden) {
@@ -1070,6 +1074,7 @@ final class Dispatch {
                 // Nobody free in town to send (or far too few for a big one): help from outside.
                 if (outsideNeeded(inc) && ((got == 0 && have == 0) || (have < need / 2 && inc.zombiesNear >= 6) || (inc.backupNeed > have && got == 0))) policeBackup(inc);
             }
+            if (have > need + 6 && !severe) trim(inc, have - need - 2);
             if (inc.backupNeed > 0 && have >= inc.backupNeed) inc.backupNeed = 0;
             // A big one, or officers down: the SWAT team goes in (before the army is asked).
             inc.swatWait -= step;
@@ -1161,22 +1166,24 @@ final class Dispatch {
     private void resolve(Incident inc) {
         inc.resolved = true;
         incidents.remove(inc);
-        // (10.54) Where those who were here go next, together: the nearest call that still has the dead at it, or
-        // failing that the nearest zone of the infection the city knows about. Before, they were let go where they
-        // stood, and wandered off one by one.
-        Incident next = null;
-        float bd = MOVE_ON * MOVE_ON;
-        for (int i = 0; i < incidents.size(); i++) {
-            Incident o = incidents.get(i);
-            if (o.resolved || o.zombiesNear <= 0) continue;
-            float d = (o.x - inc.x) * (o.x - inc.x) + (o.y - inc.y) * (o.y - inc.y);
-            if (d < bd) {
-                bd = d;
-                next = o;
+        // (10.54) Where those who were here go next: calls that still have the dead at them, or failing that the
+        // nearest zone of the infection the city knows about. ((10.56) Shared out by what each call needs, not all
+        // to the nearest: as one call after another was cleared, everyone ended up at the same one, three hundred
+        // officers on one street. Those not needed anywhere near go back to patrol, free for the next call.)
+        moving.clear();
+        Entity speaker = null;
+        for (int i = 0, n = w.entities.size(); i < n; i++) {
+            Entity e = w.entities.get(i);
+            if (e.task == T_RESPOND && e.incident == inc) {
+                if (speaker == null) speaker = e;
+                if (e.ammo + e.reserve > 0) moving.add(e);
+                else release(e);
             }
         }
-        if (next == null) {
+        Incident next = moveOn(moving, inc, inc.x, inc.y, null);
+        if (next == null && !moving.isEmpty()) {
             World.InfectionZone zone = null;
+            float bd = MOVE_ON * MOVE_ON;
             for (World.InfectionZone z : w.infection) {
                 if (z.zombies <= 0) continue;
                 float d = (z.x - inc.x) * (z.x - inc.x) + (z.y - inc.y) * (z.y - inc.y);
@@ -1185,23 +1192,13 @@ final class Dispatch {
                     zone = z;
                 }
             }
-            if (zone != null) next = sighting(zone.x, zone.y, null);
-        }
-        Entity speaker = null;
-        int moved = 0;
-        for (int i = 0, n = w.entities.size(); i < n; i++) {
-            Entity e = w.entities.get(i);
-            if (e.task == T_RESPOND && e.incident == inc) {
-                if (speaker == null) speaker = e;
-                if (next != null && e.ammo + e.reserve > 0) {
-                    e.incident = next;
-                    e.onScene = false;
-                    e.orderField = null;
-                    moved++;
-                } else release(e);
+            if (zone != null) {
+                Incident z = sighting(zone.x, zone.y, null);
+                if (z != null) next = moveOn(moving, inc, inc.x, inc.y, z);
             }
         }
-        if (speaker != null && moved > 0) {
+        for (int i = 0; i < moving.size(); i++) if (moving.get(i).incident == inc) release(moving.get(i));
+        if (speaker != null && next != null) {
             say(speaker.type == Entity.COP ? WHO_POLICE : WHO_MILITARY, speaker,
                     inc.place + " is clear. Moving on to " + next.place + ".", inc.x, inc.y);
         } else if (speaker != null && inc.onScene) {
@@ -1210,6 +1207,85 @@ final class Dispatch {
         } else {
             say(WHO_POLICE, null, "Dispatch: No sign of hostiles at " + inc.place + ". Closing the call.", inc.x, inc.y);
         }
+    }
+
+    private final ArrayList<Entity> moving = new ArrayList<Entity>(), riders = new ArrayList<Entity>();
+
+    /**
+     * (10.56) Far more officers on a call than it needs: up to n of those not there yet (the furthest off first)
+     * are stood down, free for the other calls, instead of all piling onto one street.
+     */
+    private void trim(Incident inc, int n) {
+        for (int pass = 0; pass < 2 && n > 0; pass++) {
+            for (int i = 0, m = w.entities.size(); i < m && n > 0; i++) {
+                Entity e = w.entities.get(i);
+                if (e.dead || e.type != Entity.COP || e.task != T_RESPOND || e.incident != inc || e.onScene || e.rig != null) continue;
+                float dx = e.x - inc.x, dy = e.y - inc.y;
+                if (pass == 0 && dx * dx + dy * dy < 400 * 400) continue;
+                release(e);
+                inc.cops--;
+                n--;
+            }
+        }
+    }
+
+    /** (10.56) How many a call can use before more there are just in the way: what it wants, and a few to spare. */
+    private int roomAt(Incident o) {
+        return needAt(o) + 2 + (o.militaryRequested ? 8 : 0) - o.cops - o.soldiers - w.fleet.inbound(o);
+    }
+
+    /**
+     * (10.56) Sends those in units still on call from on to the calls near (x, y) that are short, nearest first,
+     * each taking only as many as it has room for (only to call only, if given). Those left keep from (the caller
+     * lets them go). Returns the call most of them went to, or null if none went anywhere.
+     */
+    private Incident moveOn(ArrayList<Entity> units, Incident from, float x, float y, Incident only) {
+        Incident most = null;
+        int mostN = 0;
+        int left = units.size();
+        for (int round = 0; round < 8 && left > 0; round++) {
+            Incident best = null;
+            float bd = MOVE_ON * MOVE_ON;
+            int room = 0;
+            for (int i = 0; i < incidents.size(); i++) {
+                Incident o = incidents.get(i);
+                if (o.resolved || (only != null ? o != only : o.zombiesNear <= 0)) continue;
+                int r = roomAt(o);
+                if (r <= 0) continue;
+                float d = (o.x - x) * (o.x - x) + (o.y - y) * (o.y - y);
+                if (d < bd) {
+                    bd = d;
+                    best = o;
+                    room = r;
+                }
+            }
+            if (best == null) break;
+            int sent = 0;
+            for (int i = 0; i < units.size() && sent < room; i++) {
+                Entity e = units.get(i);
+                if (e.incident != from) continue;
+                e.incident = best;
+                e.onScene = false;
+                e.orderField = null;
+                if (e.type == Entity.COP) best.cops++;
+                else best.soldiers++;
+                sent++;
+            }
+            left -= sent;
+            // ((10.56) Soldiers going a long way ride, in their truck if it's standing by near them.)
+            riders.clear();
+            for (int i = 0; i < units.size(); i++) {
+                Entity e = units.get(i);
+                if (e.incident == best && e.type == Entity.SOLDIER && e.rig == null && Math.hypot(e.x - best.x, e.y - best.y) > 600) riders.add(e);
+            }
+            if (!riders.isEmpty()) w.fleet.mountUp(riders, best);
+            if (sent > mostN) {
+                mostN = sent;
+                most = best;
+            }
+            if (sent == 0 || only != null) break;
+        }
+        return most;
     }
 
     /**

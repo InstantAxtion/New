@@ -106,6 +106,8 @@ final class Fleet {
         Route field;
         int passengerType, passengers;
         Dispatch.Incident incident;
+        /** (10.56) A patrol car at a call that's over: the next call its officers are sent to, to drive them there. */
+        Dispatch.Incident onward;
         Dispatch.SafeZone zone;
         String place;
         /** Lights flash on cruisers; the helicopter's rotor spins. */
@@ -256,7 +258,9 @@ final class Fleet {
             case CRUISER:
                 if (v.kind == K_BIKE) return "Police motorcycle  -  " + callsign(v);
                 if (v.agency == 3) return "Park rangers' truck  -  " + callsign(v);
-                return v.number > 0 ? "Police car  -  " + callsign(v) : "Police car";
+                // ((10.56) The Garrison State's are the military police's.)
+                String car = city.country.garrison ? "MP car" : "Police car";
+                return v.number > 0 ? car + "  -  " + callsign(v) : car;
             case TRUCK:
                 if (v.kind == K_APC) return "Armoured personnel carrier" + (v.guardUnit ? "  -  " + Country.guard(city.country.id)[1] : "");
                 if (v.kind == K_HUMVEE) return (v.guardUnit ? Country.guard(city.country.id)[1] + " " : "") + "Humvee" + (v.loop ? "  -  base patrol" : "");
@@ -2781,6 +2785,7 @@ final class Fleet {
             if (v.timer <= 0 || v.quiet > 20) {
                 v.state = RETURN;
                 v.speed = 0;
+                v.standby = false;
                 return !route(v, v.homeX, v.homeY);
             }
             return false;
@@ -2999,6 +3004,17 @@ final class Fleet {
                     v.timer = 90;
                     v.quiet = 0;
                     v.speed = 0;
+                    v.standby = true;
+                    return false;
+                }
+                // ((10.56) A troop truck that's brought a squad into town waits near them for a while, standing by:
+                // when they're sent on to the next fight, they climb back in (Fleet.mountUp) instead of walking.)
+                if (v.type == TRUCK && v.supply == 0 && v.passengerType == Entity.SOLDIER && v.incident != null && city.inTown(v.x, v.y)) {
+                    v.state = SCENE;
+                    v.timer = 150;
+                    v.quiet = -40;
+                    v.speed = 0;
+                    v.standby = true;
                     return false;
                 }
                 // (10.28) A police car waits at the scene while its officers deal with the call, then takes them home.
@@ -4807,6 +4823,19 @@ final class Fleet {
                             || Math.hypot(e.x - v.x, e.y - v.y) > 500) e.rig = null;
                 }
                 boolean busy = w.countZombiesNear(v.x, v.y, 130) > 0;
+                // ((10.56) Its officers sent on to another call a fair way off, and nothing left here: they come
+                // back to the car and it drives them there, instead of it waiting here while they walk.)
+                if (!busy && v.onward == null) {
+                    for (int i = 0, n = w.entities.size(); i < n; i++) {
+                        Entity e = w.entities.get(i);
+                        if (e.dead || e.rig != v || e.task != Dispatch.T_RESPOND || e.incident == null || e.incident == v.incident || e.incident.resolved) continue;
+                        if (Math.hypot(e.incident.x - v.x, e.incident.y - v.y) < 450) continue;
+                        v.onward = e.incident;
+                        v.state = RECALL;
+                        v.timer = 0;
+                        return false;
+                    }
+                }
                 for (int i = 0, n = w.entities.size(); i < n && !busy; i++) {
                     Entity e = w.entities.get(i);
                     if (!e.dead && e.rig == v && e.task == Dispatch.T_RESPOND) busy = true;
@@ -4825,13 +4854,16 @@ final class Fleet {
             }
             v.timer += 0.5f;
             int out = recall(v);
-            if (out > 0 && v.timer < 40) return false;
+            if (out > 0 && v.timer < (v.onward != null ? 20 : 40)) return false;
             dropCrew(v);
+            Dispatch.Incident onward = v.onward;
+            v.onward = null;
             if (v.crew.isEmpty()) {
                 v.parked = true;
                 v.state = ABANDONED;
                 return false;
             }
+            if (onward != null && !onward.resolved && respond(v, onward)) return false;
             v.state = PATROL;
             v.incident = null;
             if (!newDestination(v)) v.stuckTimer = 99;

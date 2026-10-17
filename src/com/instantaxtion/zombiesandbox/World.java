@@ -493,6 +493,75 @@ final class World {
         return true;
     }
 
+    /**
+     * (10.56) The city's own police and army as the game starts them: {officers in town (the small towns' own
+     * stations included), soldiers at the town's base, soldiers at each base out in the country}.
+     */
+    static int[] forces(CityConfig cfg, City city) {
+        City.Facility base = city.mainBase();
+        int cops = cfg.cops(city.totalResidents), soldiers = cfg.soldiers(city.totalResidents);
+        // (A small town's own police station out in the country has its own officers, on top of the city's.)
+        for (City.Facility f : city.facilities) if (f.kind == City.FACILITY_POLICE && f.satellite) cops += 6;
+        // ((10.56) The Garrison State: no two-in-five rule. The army outnumbers the military police, shared out
+        // between its bases and compounds, the town's base a double share.)
+        if (cfg.militarized() && soldiers > 0) {
+            int others = 0;
+            for (City.Facility f : city.facilities) if (f.kind == City.FACILITY_BASE && f.satellite && f != base) others++;
+            int share = soldiers / (others + (base != null ? 2 : 0));
+            return new int[]{cops, base != null ? share * 2 : 0, others > 0 ? share : 0};
+        }
+        // (10.35) The police always outnumber the army: every soldier on the map (both bases and the checkpoints)
+        // comes to no more than two in five of the police force, the town's base taking most of it.
+        int satBases = 0;
+        for (City.Facility f : city.facilities) if (f.kind == City.FACILITY_BASE && f.satellite && f != base) satBases++;
+        int military = Math.max(6, Math.round(cops * 0.4f) - city.checkpointPosts.size());
+        int townShare = satBases > 0 && base != null ? military * 3 / 5 : military;
+        int satEach = satBases > 0 ? Math.max(6, (military - (base != null ? townShare : 0)) / satBases) : 0;
+        if (soldiers > 0) soldiers = Math.min(soldiers, Math.max(6, townShare));
+        return new int[]{cops, soldiers, satEach};
+    }
+
+    /**
+     * (10.56) Everyone the game will start with on this city, for the New Game screen: {people, police, soldiers},
+     * counted the way the game counts them (the highway patrol and sheriff's deputies,
+     * the rangers, the marksmen, the checkpoint guards and the guardsmen at the armory all included). Before, it
+     * showed only the residents and the town's own officers, a good deal short of what the game then had.
+     */
+    static int[] forecast(CityConfig cfg, City city, int maxPopulation) {
+        int[] f = forces(cfg, city);
+        int cap = maxPopulation > 0 ? maxPopulation : Math.max(2500, city.totalResidents * 2 + 1000);
+        int people = Math.min(cfg.civilians(city.totalResidents), cap * 4 / 5);
+        if (cfg.wilds()) people += city.fireTowers.size();
+        int stations = 0, satBases = 0;
+        City.Facility base = city.mainBase();
+        for (City.Facility x : city.facilities) {
+            if (x.kind == City.FACILITY_POLICE) stations++;
+            if (x.kind == City.FACILITY_BASE && x.satellite && x != base) satBases++;
+        }
+        int cops = f[0];
+        if (cfg.nature()) cops += stations;
+        if (city.hwyAxis >= 0) cops += Math.max(4, (city.hwyAxis == 0 ? city.w : city.h) / 50);
+        if (city.country.ruralName != null && city.townX0 > 0) cops += city.w > 300 ? 3 : 2;
+        // (Two rangers at the station and at each outpost, and one more out in each of their trucks.)
+        if (cfg.wilds() && cops > 0) {
+            if (city.rangerStationName != null) cops += 3;
+            cops += 3 * city.outpostNames.size();
+        }
+        int soldiers = 0;
+        if (f[1] > 0) {
+            soldiers = f[1] + city.checkpointPosts.size() + satBases * f[2] + (f[1] >= 5 ? 1 : 0);
+        }
+        // (The helicopters' crews on their pads: a rescue helicopter's four, a pilot for each of the others.)
+        for (float[] p : city.helipads()) {
+            int kind = City.padKind(p);
+            if (kind == City.PAD_RESCUE) cops += 4;
+            else if (kind == City.PAD_POLICE) cops++;
+            else soldiers++;
+        }
+        if (city.armory != null && city.armoryGate != null) soldiers += 4;
+        return new int[]{people, cops, soldiers};
+    }
+
     void populate(CityConfig cfg) {
         City.progress(0.82f, "Moving everyone in");
         scatterWeapons();
@@ -502,7 +571,7 @@ final class World {
         dispatch.swatTeams = city.nearestFacility(City.FACILITY_POLICE, 0, 0) == null ? 0 : city.w >= 300 ? 2 : 1;
         launchBoats();
         if (courtArmoury != null) courtArmoury.ammo = 1200;
-        inmates = city.jail != null ? 6 + rnd.nextInt(9) : 0;
+        inmates = city.jail != null ? (city.prison != null ? 40 + rnd.nextInt(21) : 6 + rnd.nextInt(9)) : 0;
         int people = Math.min(cfg.civilians(city.totalResidents), maxEntities * 4 / 5);
         residents(people);
         // A few strays.
@@ -516,17 +585,8 @@ final class World {
         City.Facility base = city.mainBase();
         int stations = 0;
         for (City.Facility f : city.facilities) if (f.kind == City.FACILITY_POLICE) stations++;
-        int cops = cfg.cops(city.totalResidents), soldiers = cfg.soldiers(city.totalResidents);
-        // (A small town's own police station out in the country has its own officers, on top of the city's.)
-        for (City.Facility f : city.facilities) if (f.kind == City.FACILITY_POLICE && f.satellite) cops += 6;
-        // (10.35) The police always outnumber the army: every soldier on the map (both bases and the checkpoints)
-        // comes to no more than two in five of the police force, the town's base taking most of it.
-        int satBases = 0;
-        for (City.Facility f : city.facilities) if (f.kind == City.FACILITY_BASE && f.satellite && f != base) satBases++;
-        int military = Math.max(6, Math.round(cops * 0.4f) - city.checkpointPosts.size());
-        int townShare = satBases > 0 && base != null ? military * 3 / 5 : military;
-        int satEach = satBases > 0 ? Math.max(6, (military - (base != null ? townShare : 0)) / satBases) : 0;
-        if (soldiers > 0) soldiers = Math.min(soldiers, Math.max(6, townShare));
+        int[] force = forces(cfg, city);
+        int cops = force[0], soldiers = force[1], satEach = force[2];
         // Most officers are out in patrol cars, two to a car; the rest are at their precinct.
         int cars = stations > 0 ? Math.max(1, (int) (cops * 0.65f / 2)) : 0;
         fleet.patrolTarget = cars;
@@ -538,22 +598,35 @@ final class World {
         int town = 0;
         for (City.Facility f : precincts) if (f != null && !f.satellite) town++;
         int ci = 0;
+        // ((10.56) Counting who's aboard, not two to a car: a motorcycle has one, and the one short was never made,
+        // so a big city had dozens fewer officers than it should.)
+        int aboard = 0;
         for (City.Facility f : precincts)
             if (f != null && f.satellite && cfg.civic >= 19)
-                for (int k = 0; k < 2 && ci < cars; k++, ci++) if (fleet.startPatrol(f) != null) made++;
+                for (int k = 0; k < 2 && ci < cars; k++, ci++) {
+                    Fleet.Vehicle v = fleet.startPatrol(f);
+                    if (v != null) {
+                        made++;
+                        aboard += v.crew.size();
+                    }
+                }
         for (int i = 0; ci < cars; i++, ci++) {
             City.Facility f = precincts[i % precincts.length];
             if (cfg.civic >= 19 && town > 0) while (f.satellite) f = precincts[++i % precincts.length];
-            if (fleet.startPatrol(f) != null) made++;
+            Fleet.Vehicle v = fleet.startPatrol(f);
+            if (v != null) {
+                made++;
+                aboard += v.crew.size();
+            }
         }
-        int copsAtStations = stations > 0 ? cops - made * 2 : 0;
+        int copsAtStations = stations > 0 ? cops - aboard : 0;
         int k = 0;
         for (City.Facility f : city.facilities) {
             if (f.kind != City.FACILITY_POLICE) continue;
             int n = copsAtStations / stations + (k++ < copsAtStations % stations ? 1 : 0);
             for (int i = 0; i < n; i++) spawn(Entity.COP, f.x + rnd.nextFloat() * 40 - 20, f.y + rnd.nextFloat() * 40 - 20);
         }
-        spawnRandom(Entity.COP, cops - copsAtStations - made * 2);
+        spawnRandom(Entity.COP, cops - copsAtStations - aboard);
         // A marksman at each precinct (since 10.10).
         if (cfg.nature())
             for (City.Facility f : city.facilities)
@@ -759,13 +832,14 @@ final class World {
                     n -= size;
                     boolean together = size >= 2 && rnd.nextFloat() < 0.3f;
                     boolean out = rnd.nextFloat() < 0.4f;
-                    float[] p = out ? city.randomWalkableInTown(rnd) : new float[]{b.doorX + rnd.nextFloat() * 16 - 8, b.doorY + rnd.nextFloat() * 16 - 8};
+                    // ((10.56) Those out are out on the streets, not dotted about the fields.)
+                    float[] p = out ? city.randomStreetSpot(rnd) : new float[]{b.doorX + rnd.nextFloat() * 16 - 8, b.doorY + rnd.nextFloat() * 16 - 8};
                     Entity leader = null;
                     for (int k = 0; k < size; k++) {
                         Entity e;
                         if (together && leader != null) e = follower(leader, Entity.CIVILIAN);
                         else {
-                            float[] q = k == 0 || together ? p : rnd.nextFloat() < 0.4f ? city.randomWalkableInTown(rnd)
+                            float[] q = k == 0 || together ? p : rnd.nextFloat() < 0.4f ? city.randomStreetSpot(rnd)
                                     : new float[]{b.doorX + rnd.nextFloat() * 16 - 8, b.doorY + rnd.nextFloat() * 16 - 8};
                             e = spawn(Entity.CIVILIAN, q[0], q[1]);
                         }
@@ -959,8 +1033,10 @@ final class World {
 
     private void spawnRandom(int type, int n) {
         for (int i = 0; i < n; i++) {
-            // Where there's countryside, most people are in town.
-            float[] p = rnd.nextFloat() < 0.85f ? city.randomWalkableInTown(rnd) : city.randomWalkable(rnd);
+            // Where there's countryside, most people are in town. ((10.56) People and officers on the streets;
+            // only a stray dog might be out in a field.)
+            float[] p = type == Entity.CIVILIAN || type == Entity.COP ? city.randomStreetSpot(rnd)
+                    : rnd.nextFloat() < 0.85f ? city.randomWalkableInTown(rnd) : city.randomWalkable(rnd);
             spawn(type, p[0], p[1]);
         }
     }
@@ -1037,6 +1113,14 @@ final class World {
                 e.reserve = 45;
                 e.body = 0xFF23408E;
                 e.head = 0xFF141C38;
+                // ((10.56) The Garrison State's military police: khaki and red berets, a rifle and body armour.)
+                if (city.country.garrison) {
+                    e.hp = 80;
+                    e.magSize = 30;
+                    e.reserve = 120;
+                    e.body = Country.MP_SHIRT;
+                    e.head = Country.MP_BERET;
+                }
                 break;
             case Entity.SOLDIER:
                 e.hp = 100;
@@ -1604,6 +1688,9 @@ final class World {
         commanders.clear();
         for (int i = 0, n = entities.size(); i < n; i++) {
             Entity e = entities.get(i);
+            // ((10.56) Not those who've just gone indoors and not been cleared out of the list yet: they're
+            // counted in their building below. At the start of a game that was everyone at home, twice.)
+            if (e.removed) continue;
             counts[e.type]++;
             if (e.role == Entity.ROLE_COMMANDER && e.type == Entity.SOLDIER) commanders.add(e);
         }

@@ -2,11 +2,19 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.55";
-    static final int VERSION_CODE = 93;
+    static final String VERSION = "10.56";
+    static final int VERSION_CODE = 94;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.56  -  The Garrison State, police spread out, everyone counted",
+                    "A new map, the Garrison State: a militarized country where the police are the military police (khaki shirts, red berets, rifles, olive cars marked MP and military police posts), with far more soldiers than police, huge army bases out in the country full of barracks and parked trucks, walled army compounds in town, checkpoints already manned across the main roads, and the State Prison on an island in its own lake, one bridge across with a checkpoint on it. Default size and up.",
+                    "Calls no longer end up with hundreds of police on them: when a call is cleared, those there are shared out between the calls nearby that are short of officers, and the rest go back on patrol; a call with far more than it needs stands the extra officers down for the others.",
+                    "Police and soldiers drive far more: a patrol car whose officers are sent on to another call calls them back and drives them there, and an army truck that's brought its squad into town waits near them, so they ride to the next fight instead of walking across town.",
+                    "The New Game screen's numbers are what the game starts with: everyone it will have, the highway patrol, deputies, rangers, marksmen, helicopter crews, checkpoint guards and guardsmen included. The game itself now makes every officer it should (a motorcycle has one rider, and the one short was never made), and at the very start no longer counts the people at home twice.",
+                    "People out and about when the game starts are on the pavements and squares, not standing in a field.",
+            },
             {
                     "10.55  -  Big maps run smoothly again",
                     "Fixed the lag on the big maps with only a few zombies about, which 10.54 made worse: the ways on foot to the parks and to the police stations and bases weren't all kept, so people out for a walk or heading for the nearest station had them worked out again and again. Now every station and base keeps its way, and the walks are kept in half the memory, so twice as many fit.",

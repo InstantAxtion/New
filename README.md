@@ -10,7 +10,7 @@ away from the middle of the screen as you pan, and the game plays in both portra
 ## Main menu
 
 - **New Game** opens the city setup, with a live preview of the city and these options: the map (Suburbs,
-  Metropolis, or the water maps Seaside and River City, or Islands), map size (Default, Large or
+  Metropolis, or the water maps Seaside and River City, or Islands, or the Garrison State), map size (Default, Large or
   Massive), the **country** (USA, Australia, Japan, France,
   Mexico, Russia, Sweden, Norway or Canada) and how many reinforcements can
   be called in (Off, Low, Medium or High, each spelled out: waves of police backup, army squads, tanks
@@ -423,6 +423,14 @@ of the highway, towns of different shapes, mountains spread about with lone hill
 mounting up, and lighter running with big populations.
 
 **More police than soldiers (10.35):** the army on the map is never more than two in five of the police force.
+
+**The Garrison State, police spread out, everyone counted (10.56):** a new map, the Garrison State: military police
+instead of the police (khaki, red berets, rifles, olive MP cars and posts), more soldiers than police, huge army bases
+out in the country, walled army compounds in town, checkpoints manned on the main roads from the start, and the State
+Prison on an island with one bridge. Cleared calls share their officers out between the calls that are short instead
+of all going to one; patrol cars drive their officers on to the next call and army trucks wait to take their squads on;
+the New Game screen shows exactly who the game starts with, and the game makes every officer it should; people start
+out on the pavements, not in fields.
 
 **Big maps run smoothly again (10.55):** the lag on the big maps with only a few zombies about is fixed: every
 police station and base keeps its way on foot instead of having it worked out again and again, and the walks to the

@@ -100,6 +100,8 @@ final class Menu {
     private volatile String previewKey, buildingKey;
     /** How many people the previewed city's homes house. */
     private volatile int previewResidents;
+    /** (10.56) Everyone the previewed city will start with: {people, police, soldiers} (World.forecast). */
+    private volatile int[] previewForce;
 
     private static final class Row {
         final RectF r = new RectF(), prev = new RectF();
@@ -924,6 +926,7 @@ final class Menu {
                     if (key.equals(buildingKey)) {
                         preview = city.bitmap;
                         previewResidents = city.totalResidents;
+                        previewForce = World.forecast(copy, city, settings.maxPopulation());
                         previewKey = key;
                     }
                 } catch (Throwable ignored) {
@@ -1123,20 +1126,22 @@ final class Menu {
         }
         y += 12 * dp;
         }
-        int homes = previewResidents;
-        boolean known = homes > 0 && config.code().equals(previewKey);
+        int[] fc = previewForce;
+        boolean known = fc != null && previewResidents > 0 && config.code().equals(previewKey);
         // (10.50) How many people are about isn't a choice: they come and go from their homes as they please.
+        // ((10.56) The numbers are the game's own count as it starts, not just the residents and the town's
+        // officers: it used to show a good deal fewer police and soldiers than there then were.)
         plain.setTextSize(12.5f * dp);
         plain.setColor(0xFF9AA0A8);
         if (known) {
-            c.drawText(homes + " people live here.", lx + 2 * dp, y + 10 * dp, plain);
+            c.drawText(fc[0] + " people in the city.", lx + 2 * dp, y + 10 * dp, plain);
             y += 16 * dp;
         }
         // Police and the army are set by the size of the city.
         plain.setTextSize(12.5f * dp);
         plain.setColor(0xFF9AA0A8);
-        String force = known ? "Police and army are set by the city: " + config.cops(homes) + " officers on duty"
-                + (config.soldiers(homes) > 0 ? " and " + config.soldiers(homes) + " soldiers at the base." : ", and no army base on this map.")
+        String force = known ? "Police and army are set by the city: " + fc[1] + " police"
+                + (fc[2] > 0 ? " and " + fc[2] + " soldiers." : ", and no army on this map.")
                 : "Police and army are set by the size of the city.";
         for (String line : wrap(force, lw - 4 * dp, plain)) {
             c.drawText(line, lx + 2 * dp, y + 10 * dp, plain);

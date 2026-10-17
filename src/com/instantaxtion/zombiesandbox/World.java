@@ -248,7 +248,9 @@ final class World {
     }
 
     private boolean onScreen(Entity e) {
-        return viewX1 >= 0 && e.x > viewX0 - 80 && e.x < viewX1 + 80 && e.y > viewY0 - 80 && e.y < viewY1 + 80;
+        // ((10.57) Zoomed right out, people are a dot or two across: they count as out of sight, and get the
+        // lighter treatment, instead of the whole city thinking every frame because it's all on screen.)
+        return viewX1 >= 0 && viewX1 - viewX0 < 2000 && e.x > viewX0 - 80 && e.x < viewX1 + 80 && e.y > viewY0 - 80 && e.y < viewY1 + 80;
     }
 
     /** (10.54) Lets go of everything that can be worked out again when it's next needed, when memory runs short. */
@@ -1577,6 +1579,14 @@ final class World {
                 int every = quality == Q_LOW ? 3 : lodBusy;
                 if ((i + lodFrame) % every != 0) continue;
                 think(e, dt * every);
+            } else if ((e.type == Entity.COP || e.type == Entity.SOLDIER) && e != controlled && !e.aiming && e.rig == null
+                    && (e.task == Dispatch.T_NONE || e.task == Dispatch.T_POST || e.task == Dispatch.T_GUARD)
+                    && !onScreen(e) && city.fieldAt(city.zombieDist, e.x, e.y) > 40) {
+                // ((10.57) Police and soldiers with nothing near them, on patrol, at a post or guarding a zone, off
+                // screen: every other frame too, like everyone else with nothing going on.)
+                e.lodStep = (i + lodFrame) % lodBusy == 0 ? lodBusy : 0;
+                if ((i + lodFrame) % lodBusy != 0) continue;
+                think(e, dt * lodBusy);
             } else if (e.type == Entity.CIVILIAN && e != controlled && !onScreen(e) && city.fieldAt(city.zombieDist, e.x, e.y) > 30) {
                 // (10.31) And people off screen who know what's going on but have none of the dead near them:
                 // every other frame (a Gigantic city in a panic is tens of thousands of them).
@@ -9374,8 +9384,19 @@ final class World {
         if (e.want > 5 && went < e.want * dt * 0.2f) e.stuckTime += dt;
         else e.stuckTime = Math.max(0, e.stuckTime - dt * 2);
         float sp = (float) Math.sqrt(e.vx * e.vx + e.vy * e.vy);
-        if (sp > 2 && !e.aiming) e.angle = turn(e.angle, (float) Math.atan2(e.vy, e.vx), dt * 10);
+        if (sp > 2 && !e.aiming) e.angle = turn(e.angle, fastAtan2(e.vy, e.vx), dt * 10);
         e.phase += sp * dt * 0.35f;
+    }
+
+    /** (10.57) atan2 to within a third of a degree, several times quicker: which way someone faces as they walk. */
+    static float fastAtan2(float y, float x) {
+        float ax = Math.abs(x), ay = Math.abs(y);
+        if (ax < 1e-9f && ay < 1e-9f) return 0;
+        float a = Math.min(ax, ay) / Math.max(ax, ay), s = a * a;
+        float r = ((-0.0464964749f * s + 0.15931422f) * s - 0.327622764f) * s * a + a;
+        if (ay > ax) r = 1.57079637f - r;
+        if (x < 0) r = 3.14159274f - r;
+        return y < 0 ? -r : r;
     }
 
     private void lookAhead(Entity e) {

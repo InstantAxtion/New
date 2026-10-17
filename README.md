@@ -424,6 +424,10 @@ mounting up, and lighter running with big populations.
 
 **More police than soldiers (10.35):** the army on the map is never more than two in five of the police force.
 
+**Much lighter on the phone (10.57):** the simulation runs thirty times a second however fast the screen redraws
+(half the work on a 60 Hz phone, a quarter on a 120 Hz one); zoomed right out, everyone gets the lighter off-screen
+treatment; idle police and soldiers off screen think every other frame.
+
 **The Garrison State, police spread out, everyone counted (10.56):** a new map, the Garrison State: military police
 instead of the police (khaki, red berets, rifles, olive MP cars and posts), more soldiers than police, huge army bases
 out in the country, walled army compounds in town, checkpoints manned on the main roads from the start, and the State

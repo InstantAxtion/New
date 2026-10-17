@@ -643,6 +643,10 @@ final class GameView extends View implements Menu.Host {
 
     // ------------------------------------------------------------------ loop
 
+    /** (10.57) Time not yet simulated, and the shortest step the simulation takes (a thirtieth of a second). */
+    private float simAcc;
+    private static final float SIM_STEP = 1 / 30f;
+
     @Override
     protected void onDraw(Canvas c) {
         long now = System.nanoTime();
@@ -684,9 +688,18 @@ final class GameView extends View implements Menu.Host {
 
         boolean inGame = !menu.isOpen();
         boolean simulate = inGame ? !simPaused : menu.liveBackground();
+        if (!simulate) simAcc = 0;
+        // ((10.57) The city is worked out at most thirty times a second, however fast the screen redraws: a 60 Hz
+        // phone used to run the whole simulation every frame, twice the work for the same game (four times on a
+        // 120 Hz one). Frames in between just draw it again.)
+        if (simulate) {
+            simAcc = Math.min(0.25f, simAcc + dt * (inGame ? SPEEDS[speedIdx] : 1));
+            if (simAcc < SIM_STEP * 0.97f) simulate = false;
+        }
         if (simulate) {
             int speed = inGame ? SPEEDS[speedIdx] : 1;
-            float total = dt * speed;
+            float total = simAcc;
+            simAcc = 0;
             // (10.50) Faster speeds take longer steps rather than only more of them: on a phone the extra steps
             // used to be cut short by the time limit below, and 2x, 4x and 8x hardly ran any faster.
             float maxStep = speed >= 8 ? 0.08f : speed >= 4 ? 0.066f : speed >= 2 ? 0.05f : 0.034f;

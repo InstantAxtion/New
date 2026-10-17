@@ -2,11 +2,17 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.56";
-    static final int VERSION_CODE = 94;
+    static final String VERSION = "10.57";
+    static final int VERSION_CODE = 95;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.57  -  Much lighter on the phone",
+                    "The city is worked out thirty times a second however fast the screen redraws: on a 60 Hz phone the whole simulation used to run every frame, twice the work for the same game (four times on a 120 Hz one). The screen still redraws at full speed in between.",
+                    "Zoomed right out, where everyone is a dot, the people and the dead get the same lighter treatment as those off screen, instead of the whole city thinking every frame because it's all in view.",
+                    "Police and soldiers with nothing near them, off screen, on patrol, at a post or guarding a zone, think every other frame, like everyone else with nothing going on; and a quicker way of working out which way people face as they walk.",
+            },
             {
                     "10.56  -  The Garrison State, police spread out, everyone counted",
                     "A new map, the Garrison State: a militarized country where the police are the military police (khaki shirts, red berets, rifles, olive cars marked MP and military police posts), with far more soldiers than police, huge army bases out in the country full of barracks and parked trucks, walled army compounds in town, checkpoints already manned across the main roads, and the State Prison on an island in its own lake, one bridge across with a checkpoint on it. Default size and up.",

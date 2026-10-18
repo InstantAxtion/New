@@ -2,11 +2,19 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.58";
-    static final int VERSION_CODE = 96;
+    static final String VERSION = "10.59";
+    static final int VERSION_CODE = 97;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.59  -  Veterans, roaming hordes and a live graph",
+                    "Big outbreaks are steadier: if something goes wrong in one moment of a vast outbreak, that moment is skipped instead of the game closing, and with far fewer bodies and bloodstains kept about, a long war takes less memory.",
+                    "Bodies are cleared after a minute (two hundred at most at once), and blood fades away after half a minute, gone by fifty seconds; drips and smears dry up sooner too.",
+                    "Veteran ranks: police and soldiers who keep putting the dead down become Blooded, Seasoned, Veteran and then Elite. Each rank makes them a little tougher, steadier under pressure and better with their weapon. Gold chevrons show over the higher ranks close up, and their card shows the rank and the next goal.",
+                    "Roaming hordes drift more slowly and lazily through the city, but gunfire or noise near any of them sends the whole horde surging towards it at a run.",
+                    "A live graph in the stats panel shows the living, the dead and the armed over the course of the game.",
+            },
             {
                     "10.58  -  Survivors hold out longer",
                     "People sheltering together no longer all bolt out into the streets the moment one of the dead gets in: a crowd stands its ground against one or two, and only runs when it's badly outnumbered. Running out into streets full of the dead was what killed most of those who'd found somewhere to hide.",

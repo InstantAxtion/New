@@ -108,6 +108,8 @@ final class Entity {
      * for longer.
      */
     float doorTime, ignoreUntil;
+    /** (10.59) A horde that heard something charges for it as one: how long this one's still running, and (on the leader) how soon it can be set off again. */
+    float surge, surgeCd;
     City.Building doorAt, ignoreB;
     int hordeSize;
     boolean hordeAnnounced;

@@ -625,10 +625,10 @@ final class GameView extends View implements Menu.Host {
         float lh = 17 * dp;
         if (portrait) {
             float top = 10 * dp + th + 8 * dp;
-            statsRect.set(10 * dp, top, 10 * dp + Math.min(260 * dp, w - 20 * dp), top + lh * 8 + 12 * dp);
+            statsRect.set(10 * dp, top, 10 * dp + Math.min(260 * dp, w - 20 * dp), top + lh * 8 + 12 * dp + GRAPH_H * dp);
             feedRect.set(10 * dp, statsRect.bottom + 8 * dp, w - 10 * dp, statsRect.bottom + 8 * dp + 4 * 24 * dp);
         } else {
-            statsRect.set(10 * dp, 10 * dp, 200 * dp, 10 * dp + lh * 11 + 12 * dp);
+            statsRect.set(10 * dp, 10 * dp, 200 * dp, 10 * dp + lh * 11 + 12 * dp + GRAPH_H * dp);
             feedRect.set(topRects[0].left, topRects[0].bottom + 8 * dp, w - 10 * dp, topRects[0].bottom + 8 * dp + 4 * 24 * dp);
         }
         if (oldw == 0) {
@@ -645,7 +645,82 @@ final class GameView extends View implements Menu.Host {
 
     /** (10.57) Time not yet simulated, and the shortest step the simulation takes (a thirtieth of a second). */
     private float simAcc;
+    /** (10.59) Simulation steps that failed and were skipped (see onDraw). */
+    int simErrors;
     private static final float SIM_STEP = 1 / 30f;
+
+    /** (10.59) One splat on the ground: blood, a puddle, glass, tyre marks; fade is how much of it is left. */
+    private void drawDecal(Canvas c, int i, float x, float y, float r, byte kind, float fade) {
+        if (kind == World.D_SKID) {
+            // Tyre marks.
+            stroke.setColor(fadeCol(world.dcol[i], fade));
+            stroke.setStrokeWidth(1.4f);
+            float ca = (float) Math.cos(world.dang[i]) * r, sa = (float) Math.sin(world.dang[i]) * r;
+            c.drawLine(x - ca, y - sa, x, y, stroke);
+        } else if (kind == World.D_ACID) {
+            fill.setColor(fadeCol(world.dcol[i], fade));
+            c.drawCircle(x, y, r, fill);
+            fill.setColor(fadeCol(0x55E8FF7A, fade));
+            c.drawCircle(x + r * 0.3f, y - r * 0.2f, r * 0.3f, fill);
+            c.drawCircle(x - r * 0.4f, y + r * 0.3f, r * 0.2f, fill);
+        } else if (kind == World.D_GLASS) {
+            stroke.setColor(fadeCol(world.dcol[i], fade));
+            stroke.setStrokeWidth(0.6f);
+            float ca = (float) Math.cos(world.dang[i]) * r, sa = (float) Math.sin(world.dang[i]) * r;
+            c.drawLine(x - ca, y - sa, x + ca, y + sa, stroke);
+        } else if (kind == World.D_PUDDLE) {
+            fill.setColor(fadeCol(world.dcol[i], fade));
+            c.drawCircle(x, y, r, fill);
+            fill.setColor(fadeCol(0x20FFFFFF, fade));
+            c.drawCircle(x - r * 0.3f, y - r * 0.3f, r * 0.35f, fill);
+        } else {
+            fill.setColor(fadeCol(world.dcol[i], fade));
+            c.drawCircle(x, y, r, fill);
+        }
+    }
+
+    /** (10.59) Room for the live graph in the stats panel (dp). */
+    private static final float GRAPH_H = 58;
+
+    /** (10.59) The living (blue), the dead (green) and the armed (gold) over the game so far, in the box given. */
+    private void drawLiveGraph(Canvas c, float x0, float y0, float x1, float y1) {
+        int n = world.histCount;
+        if (y1 - y0 < 20 * dp || x1 - x0 < 40 * dp) return;
+        fill.setColor(0x40000000);
+        c.drawRect(x0, y0, x1, y1, fill);
+        if (n < 2) {
+            text.setColor(0xFF7A808A);
+            text.setTextSize(10.5f * dp);
+            c.drawText("Graph fills in as the game goes on", x0 + 6 * dp, (y0 + y1) / 2 + 4 * dp, text);
+            return;
+        }
+        int max = 10;
+        for (int i = 0; i < n; i++) max = Math.max(max, Math.max(world.histHumans[i], world.histZombies[i]));
+        int[][] series = {world.histHumans, world.histZombies, world.histArmed};
+        int[] colors = {0xFF6FA8FF, 0xFF7CC24E, 0xFFE8C547};
+        float pw = x1 - x0 - 4 * dp, ph = y1 - y0 - 6 * dp, bx = x0 + 2 * dp, by = y1 - 3 * dp;
+        // (No more than one segment a couple of pixels: a long game has hundreds of samples.)
+        int step = Math.max(1, (int) Math.ceil(n / (pw / (2 * dp))));
+        stroke.setStrokeWidth(1.6f * dp);
+        for (int sIdx = 0; sIdx < 3; sIdx++) {
+            stroke.setColor(colors[sIdx]);
+            int[] h = series[sIdx];
+            float px = bx, py = by - ph * h[0] / max;
+            for (int i = step; i < n; i += step) {
+                float nx = bx + pw * i / (n - 1), ny = by - ph * h[i] / max;
+                c.drawLine(px, py, nx, ny, stroke);
+                px = nx;
+                py = ny;
+            }
+        }
+    }
+
+    /** (10.59) A colour with its alpha scaled down by f. */
+    private static int fadeCol(int col, float f) {
+        if (f >= 1) return col;
+        int a = (int) (((col >>> 24) & 0xFF) * f);
+        return (a << 24) | (col & 0xFFFFFF);
+    }
 
     @Override
     protected void onDraw(Canvas c) {
@@ -722,6 +797,10 @@ final class GameView extends View implements Menu.Host {
                 world.freeMemory();
                 chunks.clear();
                 System.gc();
+            } catch (RuntimeException ex) {
+                // ((10.59) Something odd in one step of a vast outbreak: that step is lost, not the whole game.)
+                simErrors++;
+                System.err.println("Zombie City: a simulation step failed: " + ex);
             }
         }
         if (inGame && hintTime > 0) hintTime -= dt;
@@ -1702,32 +1781,10 @@ final class GameView extends View implements Menu.Host {
             float x = world.dx[i], y = world.dy[i], r = world.dr[i];
             if (r <= 0 || x < vx0 || x > vx1 || y < vy0 || y > vy1) continue;
             byte kind = world.dkind[i];
-            if (kind == World.D_SKID) {
-                // Tyre marks.
-                stroke.setColor(world.dcol[i]);
-                stroke.setStrokeWidth(1.4f);
-                float ca = (float) Math.cos(world.dang[i]) * r, sa = (float) Math.sin(world.dang[i]) * r;
-                c.drawLine(x - ca, y - sa, x, y, stroke);
-            } else if (kind == World.D_ACID) {
-                fill.setColor(world.dcol[i]);
-                c.drawCircle(x, y, r, fill);
-                fill.setColor(0x55E8FF7A);
-                c.drawCircle(x + r * 0.3f, y - r * 0.2f, r * 0.3f, fill);
-                c.drawCircle(x - r * 0.4f, y + r * 0.3f, r * 0.2f, fill);
-            } else if (kind == World.D_GLASS) {
-                stroke.setColor(world.dcol[i]);
-                stroke.setStrokeWidth(0.6f);
-                float ca = (float) Math.cos(world.dang[i]) * r, sa = (float) Math.sin(world.dang[i]) * r;
-                c.drawLine(x - ca, y - sa, x + ca, y + sa, stroke);
-            } else if (kind == World.D_PUDDLE) {
-                fill.setColor(world.dcol[i]);
-                c.drawCircle(x, y, r, fill);
-                fill.setColor(0x20FFFFFF);
-                c.drawCircle(x - r * 0.3f, y - r * 0.3f, r * 0.35f, fill);
-            } else {
-                fill.setColor(world.dcol[i]);
-                c.drawCircle(x, y, r, fill);
-            }
+            // ((10.59) Fading away.)
+            float fade = world.decalFade(i);
+            if (fade <= 0) continue;
+            drawDecal(c, i, x, y, r, kind, fade);
         }
 
         if (scale > 0.7f) drawMarks(c, vx0, vy0, vx1, vy1);
@@ -5801,6 +5858,18 @@ final class GameView extends View implements Menu.Host {
             c.drawRect(bx, by, bx + bw * Math.max(f, 0.05f), by + 0.8f, fill);
         }
 
+        // ((10.59) A veteran's rank: a gold chevron for each, zoomed in.)
+        int rk = e.isZombie() ? 0 : World.rank(e);
+        if (rk >= 2 && scale > 2.2f) {
+            stroke.setColor(0xFFF2C94C);
+            stroke.setStrokeWidth(0.5f);
+            float cy = e.y - r - 6.5f;
+            for (int k = 0; k < rk - 1; k++) {
+                float yy = cy - k * 1.1f;
+                c.drawLine(e.x - 1.6f, yy, e.x, yy - 0.9f, stroke);
+                c.drawLine(e.x, yy - 0.9f, e.x + 1.6f, yy, stroke);
+            }
+        }
         if (healthBar && e.hp < e.maxHp && e.hp > 0) {
             float bw = Math.max(10, r * 3), bx = e.x - bw / 2, by = e.y - r - 4.5f;
             fill.setColor(0xAA000000);
@@ -6035,6 +6104,8 @@ final class GameView extends View implements Menu.Host {
             y += lh;
             int secs = (int) world.time;
             c.drawText(String.format("Time %d:%02d", secs / 60, secs % 60), pad + 12 * dp, y, text);
+            // ((10.59) The war so far: the living, the dead and those with guns, over the whole game.)
+            drawLiveGraph(c, statsRect.left + 12 * dp, y + 8 * dp, statsRect.right - 12 * dp, statsRect.bottom - 8 * dp);
         }
 
         // The minimap and war meter go first so the radio feed can stack round them, then the feed so
@@ -6274,7 +6345,11 @@ final class GameView extends View implements Menu.Host {
         if (e.fresh > 0) health += "   Freshly turned";
         lines.add(health);
         if (e.canShoot()) lines.add("Ammo " + e.ammo + " + " + e.reserve + (e.grenades > 0 ? "   Grenades " + e.grenades : "")
-                + "   Aim +" + Math.round(World.aimBonus(e) * 100) + "%" + (e.kills > 0 ? "   Kills " + e.kills : ""));
+                + "   Aim +" + Math.round((World.aimBonus(e) + 0.05f * World.rank(e)) * 100) + "%" + (e.kills > 0 ? "   Kills " + e.kills : ""));
+        // ((10.59) Their rank, with a star for each.)
+        int rk = World.rank(e);
+        if (rk > 0 && !e.isZombie()) lines.add(World.RANK_NAMES[rk] + " " + "\u2605\u2605\u2605\u2605".substring(0, rk)
+                + (rk < World.RANK_KILLS.length - 1 ? "   next at " + World.RANK_KILLS[rk + 1] + " kills" : ""));
         if (e.leader != null && !e.isZombie()) {
             String who = e.leader.type == Entity.DOG ? Names.dog(e.leader.nameSeed) : Names.person(e.leader.nameSeed);
             lines.add(e.type == Entity.DOG ? "Owner: " + who : e.type == Entity.SOLDIER ? "Sticking with " + who : "With " + who);

@@ -139,7 +139,8 @@ final class World {
     int mcount;
     private int mnext;
     /** How long each kind of mark lasts, in seconds. */
-    static final float[] MARK_LIFE = {45, 150, 120, 300, 40};
+    // ((10.59) Blood drips and smears, and spent cases, go sooner: a big outbreak left the streets red for minutes.)
+    static final float[] MARK_LIFE = {45, 50, 40, 120, 40};
 
     // Gunsmoke hanging over a firefight (10.17): slow puffs drifting off on the breeze.
     static final int MAXH = 260;
@@ -220,6 +221,15 @@ final class World {
     static final int MAXD = 700;
     final float[] dx = new float[MAXD], dy = new float[MAXD], dr = new float[MAXD];
     final int[] dcol = new int[MAXD];
+    /** (10.59) How old each splat is: blood and the like fade away (see decalFade). */
+    final float[] dage = new float[MAXD];
+    static final float DECAL_FADE = 30, DECAL_LIFE = 50;
+
+    /** (10.59) How much of a splat is left to see (1 fresh, 0 gone). Tyre marks and glass too. */
+    float decalFade(int i) {
+        float a = dage[i];
+        return a <= DECAL_FADE ? 1 : Math.max(0, 1 - (a - DECAL_FADE) / (DECAL_LIFE - DECAL_FADE));
+    }
     /** Decal shape: a round splat, a skid streak (dang = direction, dr = length) or a puddle. */
     static final byte D_SPLAT = 0, D_SKID = 1, D_PUDDLE = 2, D_ACID = 3, D_GLASS = 4;
     final byte[] dkind = new byte[MAXD];
@@ -1600,6 +1610,8 @@ final class World {
             Entity e = entities.get(i);
             if (!e.dead && e.lodStep > 0) move(e, dt * e.lodStep);
         }
+        for (int i = 0; i < surging.size(); i++) surge(surging.get(i));
+        surging.clear();
         separate();
         stampedeNews(dt);
         fleet.update(dt);
@@ -1990,6 +2002,30 @@ final class World {
     }
 
     /** Makes zombies within a radius head for a noise (gunfire, explosions, a screamer). */
+    /** (10.59) Hordes set off by a noise this round (see noise and surge). */
+    private final ArrayList<Entity> surging = new ArrayList<Entity>();
+    private float surgeSaid;
+
+    /** (10.59) Every one of the horde behind lead runs for where it heard the noise. */
+    private void surge(Entity lead) {
+        float x = lead.noiseX, y = lead.noiseY;
+        int n = 0;
+        for (int i = 0, m = entities.size(); i < m; i++) {
+            Entity o = entities.get(i);
+            if (o.dead || (o != lead && o.hordeLeader != lead)) continue;
+            o.noiseX = x + rnd.nextFloat() * 40 - 20;
+            o.noiseY = y + rnd.nextFloat() * 40 - 20;
+            o.noiseTimer = 16;
+            o.surge = 12;
+            n++;
+        }
+        if (n >= 15 && time - surgeSaid > 20) {
+            surgeSaid = time;
+            dispatch.say(Dispatch.WHO_INFO, null, "A horde of about " + (n / 5 * 5) + " heard the noise on " + city.placeName(x, y)
+                    + " and is surging towards it!", x, y);
+        }
+    }
+
     void noise(float x, float y, float radius) {
         scareBirds(x, y, radius);
         // (10.32) How loud the fighting has been round here lately, for hordes further off to come to.
@@ -2017,6 +2053,14 @@ final class World {
                     o.noiseX = x + rnd.nextFloat() * 30 - 15;
                     o.noiseY = y + rnd.nextFloat() * 30 - 15;
                     o.noiseTimer = 14;
+                    // ((10.59) One of a horde heard it: the whole horde wakes and surges for it.)
+                    Entity lead = o.leadsHorde ? o : o.hordeLeader;
+                    if (lead != null && !lead.dead && lead.surgeCd <= 0 && surging.size() < 8 && !surging.contains(lead)) {
+                        lead.surgeCd = 8;
+                        lead.noiseX = x;
+                        lead.noiseY = y;
+                        surging.add(lead);
+                    }
                 }
                 // People who hear it know something is wrong (once there's anything to be wrong about).
                 if (zombies > 0)
@@ -2044,6 +2088,31 @@ final class World {
     }
 
     /** How much better than the standard this one shoots: 0 to 0.15, fixed for the person (from their name). */
+    /**
+     * (10.59) Veteran ranks: kills earned in the fighting make a better shot and a steadier hand. 0 none, 1 blooded
+     * (5 kills), 2 seasoned (15), 3 veteran (35), 4 elite (70).
+     */
+    static final int[] RANK_KILLS = {0, 5, 15, 35, 70};
+    static final String[] RANK_NAMES = {"", "Blooded", "Seasoned", "Veteran", "Elite"};
+
+    static int rank(Entity e) {
+        int r = 0;
+        while (r + 1 < RANK_KILLS.length && e.kills >= RANK_KILLS[r + 1]) r++;
+        return r;
+    }
+
+    /** (10.59) A kill made: up a rank at the thresholds, a little tougher, and it gets said. */
+    private void killMade(Entity e) {
+        int before = rank(e);
+        e.kills++;
+        int after = rank(e);
+        if (after > before && !e.isZombie()) {
+            e.maxHp *= 1.08f;
+            e.hp = Math.min(e.maxHp, e.hp + e.maxHp * 0.25f);
+            if (after >= 2) highlight(Names.person(e.nameSeed) + " is now " + RANK_NAMES[after].toLowerCase(), e.x, e.y);
+        }
+    }
+
     static float aimBonus(Entity e) {
         int h = e.nameSeed * 0x9E3779B1;
         h ^= h >>> 15;
@@ -2139,6 +2208,8 @@ final class World {
     private void thinkZombie(Entity z, float dt) {
         if (z.blocked && !barriers.isEmpty()) bashBarrier(z, dt);
         z.chargeCd -= dt;
+        if (z.surge > 0) z.surge -= dt;
+        if (z.surgeCd > 0) z.surgeCd -= dt;
         if (z.charge > 0) {
             charging(z, dt);
             return;
@@ -2400,7 +2471,7 @@ final class World {
             else {
                 // (Round the buildings in the way, not into their walls: the noise is often a fight indoors. (10.39)
                 // All the dead drawn by one noise share the one route there.)
-                zombieLure(z, z.noiseX, z.noiseY, z.speed * 1.2f);
+                zombieLure(z, z.noiseX, z.noiseY, z.surge > 0 ? z.runSpeed * 0.85f : z.speed * 1.2f);
                 if (z.stuckTime > 3) {
                     z.noiseTimer = 0;
                     z.path = null;
@@ -2861,7 +2932,8 @@ final class World {
             return;
         }
         // ((10.32) A horde on the move goes round things, by the streets and lanes, not straight into them.)
-        float pace = z.speed * (z.hordeWait ? 0.25f : 0.5f);
+        // ((10.59) A sleepy drift, until something wakes them: see surge.)
+        float pace = z.speed * (z.hordeWait ? 0.22f : 0.38f);
         if (z.leadsHorde && d > 150) zombieWalkTo(z, z.roamX, z.roamY, pace);
         else steer(z, ddx / d, ddy / d, pace);
     }
@@ -3084,7 +3156,7 @@ final class World {
         tryMove(z, ddx / d * (axe ? 5 : 9) / z.mass, ddy / d * (axe ? 5 : 9) / z.mass);
         bloodBurst(z.x, z.y, 3, ddx / d, ddy / d);
         emit(Sfx.THUD, z.x, z.y);
-        if (z.hp <= 0 && z.isZombie()) e.kills++;
+        if (z.hp <= 0 && z.isZombie()) killMade(e);
     }
 
     /** Shotgun pellets catch whoever is standing next to the target too. */
@@ -3100,7 +3172,7 @@ final class World {
                     if ((o.x - t.x) * (o.x - t.x) + (o.y - t.y) * (o.y - t.y) > 16 * 16) continue;
                     o.hp -= dmg * 0.4f * GUN_DAMAGE;
                     o.hurt = 1;
-                    if (o.hp <= 0) e.kills++;
+                    if (o.hp <= 0) killMade(e);
                 }
             }
     }
@@ -7281,6 +7353,8 @@ final class World {
                     float odds = near / (float) Math.max(1, armedNear(e.x, e.y, 130));
                     // (Soldiers sent in close are meant to be there: it takes a lot more to turn them.)
                     float nerve = soldier ? (e.task == Dispatch.T_RESPOND ? 7 : 5) : 4;
+                    // ((10.59) A veteran stands longer.)
+                    nerve += rank(e) * 0.75f;
                     if (odds >= nerve - (e.goal == A_FALLBACK ? 1.5f : 0))
                         armedScore[A_FALLBACK] = 0.6f + 0.05f * (odds - nerve) + (stock < 0.4f ? 0.15f : 0) + 0.15f * (caution(e) - 0.5f)
                                 + (e.kills > 10 ? -0.05f : 0);
@@ -8428,7 +8502,7 @@ final class World {
         // Soldiers near their commander fight better.
         if (soldier && e.role != Entity.ROLE_COMMANDER && !commanders.isEmpty() && commanded(e)) accuracy += 0.12f;
         // (10.20) Some shoot better than others: each one anywhere from as before to 15% better, for good.
-        accuracy = Math.min(0.99f, accuracy * (1 + aimBonus(e)));
+        accuracy = Math.min(0.99f, accuracy * (1 + aimBonus(e) + 0.05f * rank(e)));
         if (e.ammo <= 0 && e.reserve > 0) e.reload = soldier ? (e.role == Entity.ROLE_GUNNER ? 4f : 2.2f) : 1.6f;
         // (10.45) How far the shot carries depends on the gun: a pistol's crack, a shotgun's boom, a rifle's
         // report, a machine gun's chatter.
@@ -8466,7 +8540,7 @@ final class World {
             }
             t.hurt = 1;
             if (t.hp <= 0 && t.isZombie()) {
-                e.kills++;
+                killMade(e);
                 if (e.kills == 10 || e.kills == 25 || e.kills == 50 || e.kills == 100) killStreak(e);
             }
             t.killedByZombie = false;
@@ -8752,7 +8826,7 @@ final class World {
                 Entity o = b.occupants.get(k);
                 if (o.canShoot() || hero == null) hero = o;
             }
-            if (hero != null) hero.kills++;
+            if (hero != null) killMade(hero);
             if (gore) bloodBurst(b.doorX, b.doorY, 3, 0, 0);
         }
         // The dead: each one inside catches someone now and then (the unarmed first).
@@ -9639,7 +9713,7 @@ final class World {
             if (rnd.nextBoolean()) return;
         }
         corpses.add(c);
-        if (corpses.size() > (quality == Q_FULL ? 350 : quality == Q_REDUCED ? 220 : 130)) {
+        if (corpses.size() > (quality == Q_FULL ? 200 : quality == Q_REDUCED ? 140 : 90)) {
             for (int i = 0; i < corpses.size(); i++)
                 if (corpses.get(i).rise < 0) {
                     corpses.remove(i);
@@ -9662,6 +9736,9 @@ final class World {
         if (roll < brute) return Entity.BRUTE;
         return Entity.ZOMBIE;
     }
+
+    /** (10.59) How long a body that won't get up stays where it fell, in seconds. */
+    static final float CORPSE_LIFE = 60;
 
     private void updateCorpses(float dt) {
         for (int i = corpses.size() - 1; i >= 0; i--) {
@@ -9709,7 +9786,8 @@ final class World {
                     bloodBurst(c.x, c.y, 5, 0, 0);
                     emit(Sfx.GROAN, c.x, c.y);
                 }
-            } else if (c.age > 150) {
+            } else if (c.age > CORPSE_LIFE) {
+                // ((10.59) Cleared away after a minute, not two and a half: a big outbreak left the streets carpeted.)
                 corpses.remove(i);
             }
         }
@@ -10184,6 +10262,7 @@ final class World {
         dcol[i] = color;
         dkind[i] = kind;
         dang[i] = angle;
+        dage[i] = 0;
     }
 
     /** Rubber left on the road by a car braking hard or skidding in a crash. */
@@ -10195,6 +10274,11 @@ final class World {
 
     private void updateEffects(float dt) {
         updateMarks(dt);
+        for (int i = 0; i < dcount; i++) {
+            if (dr[i] <= 0) continue;
+            dage[i] += dt;
+            if (dage[i] >= DECAL_LIFE) dr[i] = 0;
+        }
         for (int i = 0; i < MAXP; i++) {
             if (plife[i] <= 0) continue;
             plife[i] -= dt;

@@ -424,6 +424,13 @@ mounting up, and lighter running with big populations.
 
 **More police than soldiers (10.35):** the army on the map is never more than two in five of the police force.
 
+**Veterans, roaming hordes and a live graph (10.59):** a rare failure in one moment of a vast outbreak skips that
+moment instead of closing the game. Bodies are cleared after a minute (at most two hundred at once) and blood fades out
+between thirty and fifty seconds. Police and soldiers rise through the ranks Blooded, Seasoned, Veteran and Elite as
+they rack up kills (5, 15, 35, 70), getting tougher, steadier and more accurate, with gold chevrons close up. Roaming
+hordes drift slowly but surge as one towards gunfire or noise. The stats panel has a live graph of the living, the
+dead and the armed.
+
 **Survivors hold out longer (10.58):** people sheltering together stand their ground against one or two of the dead
 inside instead of all running out into the streets, and often deal with someone bitten who turns among them; the dead
 give up on a door that holds and drift off; doors last longer and bites infect a little less often. In an overrun city

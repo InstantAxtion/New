@@ -304,11 +304,12 @@ public final class GameTests {
                 check(w.hallLost && !w.broadcasting(), "City Hall overrun: no more broadcasts");
                 check(w.callsLost, "the 911 centre overrun");
                 // The power fails: the cell doors open.
-                int before = w.counts[Entity.CIVILIAN];
                 w.blackout = true;
                 for (int f = 0; f < 30 * 2; f++) w.update(1 / 30f);
-                check(w.jailBroken && w.inmates == 0 && w.counts[Entity.CIVILIAN] > before, "jailbreak when the power fails ("
-                        + (w.counts[Entity.CIVILIAN] - before) + " escaped)");
+                // (The inmates who get out run in prison orange; the rest of the city's numbers swing with the outbreak.)
+                int escaped = 0;
+                for (Entity e : w.entities) if (e.type == Entity.CIVILIAN && !e.dead && e.body == 0xFFE07A2A) escaped++;
+                check(w.jailBroken && w.inmates == 0 && escaped > 0, "jailbreak when the power fails (" + escaped + " escaped)");
             }
         });
         test("water maps: the sea, a river with bridges, a lake and a port; nobody ends up in the water", new Check() {

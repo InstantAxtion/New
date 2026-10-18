@@ -424,6 +424,11 @@ mounting up, and lighter running with big populations.
 
 **More police than soldiers (10.35):** the army on the map is never more than two in five of the police force.
 
+**Survivors hold out longer (10.58):** people sheltering together stand their ground against one or two of the dead
+inside instead of all running out into the streets, and often deal with someone bitten who turns among them; the dead
+give up on a door that holds and drift off; doors last longer and bites infect a little less often. In an overrun city
+about 1.7 times as many people are alive four minutes on.
+
 **Much lighter on the phone (10.57):** the simulation runs thirty times a second however fast the screen redraws
 (half the work on a 60 Hz phone, a quarter on a 120 Hz one); zoomed right out, everyone gets the lighter off-screen
 treatment; idle police and soldiers off screen think every other frame.

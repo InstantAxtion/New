@@ -102,6 +102,13 @@ final class Entity {
     Entity hordeLeader;
     boolean leadsHorde;
     float roamX, roamY, feedTimer;
+    /**
+     * (10.58) The dead at a door that holds: how long this one has been at it, and the building it gave up on (and
+     * till when). Quiet survivors behind a good door are left alone for a while, so a fallen city has people in it
+     * for longer.
+     */
+    float doorTime, ignoreUntil;
+    City.Building doorAt, ignoreB;
     int hordeSize;
     boolean hordeAnnounced;
     /** Civilians: already asked to sign up (and said no), and where they are going to enlist. */

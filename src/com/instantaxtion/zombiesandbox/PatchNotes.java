@@ -2,11 +2,18 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.57";
-    static final int VERSION_CODE = 95;
+    static final String VERSION = "10.58";
+    static final int VERSION_CODE = 96;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.58  -  Survivors hold out longer",
+                    "People sheltering together no longer all bolt out into the streets the moment one of the dead gets in: a crowd stands its ground against one or two, and only runs when it's badly outnumbered. Running out into streets full of the dead was what killed most of those who'd found somewhere to hide.",
+                    "Someone bitten who turns while hiding with others is more often than not dealt with by them before it can attack anyone.",
+                    "The dead at a door that holds give up after a while and drift off, leaving quiet survivors behind it alone for a minute or two; doors stand up to them longer; and a bite is a little less likely to infect.",
+                    "With the city overrun and no police or army left, about 1.7 times as many people are still alive four minutes on.",
+            },
             {
                     "10.57  -  Much lighter on the phone",
                     "The city is worked out thirty times a second however fast the screen redraws: on a 60 Hz phone the whole simulation used to run every frame, twice the work for the same game (four times on a 120 Hz one). The screen still redraws at full speed in between.",

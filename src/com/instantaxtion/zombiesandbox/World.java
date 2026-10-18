@@ -280,7 +280,7 @@ final class World {
     /** How fast sprinting uses up stamina (per second, out of 1). */
     static float STAMINA_DRAIN = 0.1f;
     /** Balance: how much of a gun's damage counts against zombies, and how likely a bite is to infect. */
-    static float GUN_DAMAGE = 0.3f, BITE_INFECT = 1.85f;
+    static float GUN_DAMAGE = 0.3f, BITE_INFECT = 1.35f;
     /** Chance any hit on a zombie is a headshot that drops it on the spot. */
     static float HEADSHOT = 0.04f;
     /** How far (in tiles of walking) idle zombies can smell the living. */
@@ -2299,6 +2299,7 @@ final class World {
                 for (int i = 0, n = cell.size(); i < n; i++) {
                     City.Building b = cell.get(i);
                     if (b.occupants.isEmpty() && b.visitors.isEmpty()) continue;
+                    if (b == z.ignoreB && time < z.ignoreUntil) continue;
                     float ddx = b.doorX - z.x, ddy = b.doorY - z.y, d2 = ddx * ddx + ddy * ddy;
                     if (d2 < best) {
                         best = d2;
@@ -2309,6 +2310,20 @@ final class World {
         if (target != null) {
             float ddx = target.doorX - z.x, ddy = target.doorY - z.y;
             float d = (float) Math.sqrt(ddx * ddx + ddy * ddy) + 0.001f;
+            // ((10.58) A door that's held for a good while, with nobody to be seen: this one loses interest and
+            // drifts off, and leaves the place be for a minute or two.)
+            if (z.doorAt != target) {
+                z.doorAt = target;
+                z.doorTime = 0;
+            }
+            if (d < 70) z.doorTime += dt;
+            if (z.doorTime > 25 + (z.nameSeed & 0xFF) / 10f && target.barricade > 20 && target.lurkers == 0) {
+                z.ignoreB = target;
+                z.ignoreUntil = time + 60 + rnd.nextFloat() * 60;
+                z.doorTime = 0;
+                z.noiseTimer = 0;
+                return;
+            }
             // At the door, or pressed up behind the others at it: batter it.
             boolean atDoor = d < 14 || (d < 30 && (z.blocked || countZombiesNear(target.doorX, target.doorY, 16) >= 2));
             // Crowded out of the door, or up against the building's wall: claw at the walls and windows
@@ -2331,7 +2346,7 @@ final class World {
                 float wx = Math.max(target.x0, Math.min(target.x1, z.x)) - z.x, wy = Math.max(target.y0, Math.min(target.y1, z.y)) - z.y;
                 steer(z, 0, 0, 0);
                 z.angle = turn(z.angle, (float) Math.atan2(wy, wx), dt * 4);
-                target.barricade -= (z.type == Entity.BRUTE ? 3 : 1.2f) * dt;
+                target.barricade -= (z.type == Entity.BRUTE ? 2.4f : 0.8f) * dt;
                 target.calmTimer = 0;
                 if (rnd.nextFloat() < dt * 0.6f) emit(Sfx.THUD, z.x, z.y);
                 z.stuckTime = 0;
@@ -2341,7 +2356,8 @@ final class World {
                 if (d > 9 && !z.blocked) steer(z, ddx / d, ddy / d, z.speed * 0.5f);
                 else steer(z, 0, 0, 0);
                 z.angle = turn(z.angle, (float) Math.atan2(ddy, ddx), dt * 4);
-                float dps = (z.type == Entity.BRUTE ? 13 : z.type == Entity.CRAWLER ? 3 : 7) * (d < 14 ? 1 : 0.5f);
+                // ((10.58) Doors hold longer: a minute or two against a handful, not seconds.)
+                float dps = (z.type == Entity.BRUTE ? 10 : z.type == Entity.CRAWLER ? 2 : 4.5f) * (d < 14 ? 1 : 0.5f);
                 // (A group's fortified door holds a lot longer.)
                 if (target.holdout != null) dps *= 1 - target.holdout.fort * 0.006f;
                 target.barricade -= dps * dt;
@@ -8625,6 +8641,12 @@ final class World {
                 if (o.infectTimer <= 0) {
                     b.occupants.remove(k);
                     if (o.type == Entity.CIVILIAN) civiliansLost++;
+                    // ((10.58) The others had seen the bite and were watching: with a few of them there, more often
+                    // than not they deal with it before it can turn on anyone.)
+                    if (b.occupants.size() >= 3 && rnd.nextFloat() < 0.55f) {
+                        emit(Sfx.SCREAM, b.doorX, b.doorY);
+                        continue;
+                    }
                     turned++;
                     noteTurn(b.doorX, b.doorY);
                     b.lurkers++;
@@ -8757,7 +8779,9 @@ final class World {
             }
         }
         // Falling back: when the dead outnumber the guns, people make a run for it out of the other side.
-        if (b.lurkers > shooters && rnd.nextFloat() < dt * 0.8f) {
+        // ((10.58) Not a crowd against one or two of them: a dozen with chair legs hold their ground, and running out
+        // into streets full of the dead was what killed most of the people who'd found somewhere to hide.)
+        if (b.lurkers > shooters && b.lurkers * 3 > others && rnd.nextFloat() < dt * 0.8f) {
             for (int k = b.occupants.size() - 1; k >= 0; k--) {
                 Entity o = b.occupants.get(k);
                 if (o.canShoot() && o.ammo + o.reserve > 0 && shooters <= b.lurkers + 1) continue;

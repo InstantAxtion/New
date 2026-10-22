@@ -733,6 +733,8 @@ public final class GameTests {
                 gw.outbreakTime = 120;
                 // (A big one for the size of the place: busier outskirts since 10.20 mean more people.)
                 int big = Math.max(80, gw.humanCount() / 8 + 20);
+                // ((10.63) Room for them: a city this full reaches the test's population cap.)
+                gw.maxEntities += big + 50;
                 for (int i = 0; i < big; i++) gw.spawn(Entity.ZOMBIE, gw.city.worldW() / 2 + i % 120, gw.city.worldH() / 2 + i / 120 * 4);
                 gw.callNationalGuard();
                 check(gw.guardCalled, "the governor calls out the Guard for a big outbreak, with army reserves still to come");
@@ -1364,9 +1366,14 @@ public final class GameTests {
                 check(home.occupants.contains(hid), "hiding inside");
                 w.alert = 2;
                 float out = -1;
+                // ((10.63) Anyone hiding there coming out: with a whole household home with them now, the one put
+                // in may not be the first out of the door.)
+                java.util.ArrayList<Entity> inside = new java.util.ArrayList<Entity>(home.occupants);
                 for (int f = 0; f < 30 * 25 && out < 0; f++) {
                     w.update(1 / 30f);
-                    if (!home.occupants.contains(hid)) out = f / 30f;
+                    for (Entity o : inside) if (!o.dead && !home.occupants.contains(o)) out = f / 30f;
+                    inside.clear();
+                    inside.addAll(home.occupants);
                 }
                 check(out >= 0 && out < 20, "out of hiding " + out + " s after it went quiet");
                 // Supply trucks after it's over: they come in and fill the shelves and armouries.
@@ -1520,7 +1527,9 @@ public final class GameTests {
                 hw.dispatch.armyEta = 5;
                 // ((10.60) A convoy due with the city quiet stands by outside: so there's an outbreak still going.)
                 java.util.Random zr = new java.util.Random(3);
-                for (int k = 0; k < 60; k++) {
+                // ((10.63) Room for them: a city this full reaches the test's population cap.)
+                hw.maxEntities += 300;
+                for (int k = 0; k < 200; k++) {
                     float[] zq = hw.city.randomStreetSpot(zr);
                     hw.spawn(Entity.ZOMBIE, zq[0], zq[1]);
                 }

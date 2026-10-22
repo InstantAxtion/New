@@ -564,6 +564,8 @@ final class City {
             servicePads();
             padsOnly = false;
         }
+        // ((10.63) Map version 25: every map about as populous as the next, whatever its size or kind.)
+        if (cfg.civic >= 25 && real == null) balancePopulation(cfg.residentsTarget());
         clearDoorways();
         Arrays.fill(humanDist, FAR);
         Arrays.fill(zombieDist, FAR);
@@ -3872,6 +3874,50 @@ final class City {
             for (int k = 0; k < i && n != null; k++) if (n.equals(islandNames[k])) n = null;
             islandNames[i] = n != null ? n : country.townName(new Random(cfg.seed * 977L + i));
         }
+    }
+
+    /**
+     * (10.63) Brings the number who live in the city to about target: the homes the layout gave each building are
+     * scaled up (or down) together. A house keeps to a household (nine at the most); what's left over goes into the
+     * flats (apartment blocks, offices and shops with flats upstairs), in proportion to how many they had.
+     */
+    private void balancePopulation(int target) {
+        if (totalResidents <= 0 || target <= 0) return;
+        float k = target / (float) totalResidents;
+        int total = 0, flats = 0;
+        for (Building b : buildings) {
+            if (b.residents <= 0) continue;
+            int cap = b.kind == HOUSE ? 9 : b.kind == SHOP ? 8 : 2000;
+            b.residents = Math.max(1, Math.min(cap, Math.round(b.residents * k)));
+            total += b.residents;
+            if (b.kind != HOUSE && b.kind != SHOP) flats += b.residents;
+        }
+        // (Houses full: the rest into the flats.)
+        if (total < target && flats > 0) {
+            float k2 = 1 + (target - total) / (float) flats;
+            total = 0;
+            for (Building b : buildings) {
+                if (b.residents <= 0) continue;
+                if (b.kind != HOUSE && b.kind != SHOP) b.residents = Math.min(2000, Math.round(b.residents * k2));
+                total += b.residents;
+            }
+        }
+        // (Few flats, as in a town of houses: bigger households, up to fourteen.)
+        if (total < target) {
+            int houses = 0;
+            for (Building b : buildings) if (b.residents > 0 && (b.kind == HOUSE || b.kind == SHOP)) houses += b.residents;
+            if (houses > 0) {
+                float k3 = 1 + (target - total) / (float) houses;
+                total = 0;
+                for (Building b : buildings) {
+                    if (b.residents <= 0) continue;
+                    if (b.kind == HOUSE || b.kind == SHOP) b.residents = Math.min(14, Math.round(b.residents * k3));
+                    total += b.residents;
+                }
+            }
+        }
+        for (Building b : buildings) if (b.residents > 0) b.capacity = Math.max(b.capacity, Math.min(b.residents, 40));
+        totalResidents = total;
     }
 
     /** Which islands are joined by a bridge: {from, to, 1 if one is above the other}; and the causeway's island. */

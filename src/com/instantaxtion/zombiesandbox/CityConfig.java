@@ -203,9 +203,9 @@ final class CityConfig implements OptionSet {
      * 2 and the National Guard armory (10.5), 3 the bigger maps of 10.10 with hills, mountains, lakes, streams
      * and nature parks out in the country, 4 the wilds of 10.14 (streams you can wade, trails that cross the
      * lanes, a ranger station and fire lookout towers), 5 the lanes of 10.18 (no stretch of tarmac in the
-     * middle of a dirt lane) and the real cities, 6 the driveways of 10.19, 7 the helipads and busier outskirts of 10.20, 8 dirt lanes that stay dirt into town (10.23), 9 streets that line up, more kinds of road and hills in town (10.24), 10 curved streets in the suburbs (10.25), 11 farm fields and park paths kept clear (10.26), 12 the ring road, wider avenues and stations on the road network (10.28), 13 highway interchanges with slip roads instead of crossroads (10.29), 14 fuller country on the Massive maps with a big army base and its checkpoints (10.30), 15 one-way slip roads that run in alongside the highway, and the Gigantic size (10.31), 16 bridges over the highway at the interchanges, the army base checkpoints (10.32), 17 nothing joining the highway but its slip roads, and fuller maps (10.33), 18 every road joined up, and livelier maps (10.34), 21 another police station on every map from the Default size up, 22 the beltway right round the map, 23 an army base out in the country from the Default size up (bigger on the Massive maps) and a police headquarters, 24 buildings of more shapes than a box (10.52). Saved games rebuild with what they had.
+     * middle of a dirt lane) and the real cities, 6 the driveways of 10.19, 7 the helipads and busier outskirts of 10.20, 8 dirt lanes that stay dirt into town (10.23), 9 streets that line up, more kinds of road and hills in town (10.24), 10 curved streets in the suburbs (10.25), 11 farm fields and park paths kept clear (10.26), 12 the ring road, wider avenues and stations on the road network (10.28), 13 highway interchanges with slip roads instead of crossroads (10.29), 14 fuller country on the Massive maps with a big army base and its checkpoints (10.30), 15 one-way slip roads that run in alongside the highway, and the Gigantic size (10.31), 16 bridges over the highway at the interchanges, the army base checkpoints (10.32), 17 nothing joining the highway but its slip roads, and fuller maps (10.33), 18 every road joined up, and livelier maps (10.34), 21 another police station on every map from the Default size up, 22 the beltway right round the map, 23 an army base out in the country from the Default size up (bigger on the Massive maps) and a police headquarters, 24 buildings of more shapes than a box (10.52), 25 about the same number of people on every map (10.63). Saved games rebuild with what they had.
      */
-    int civic = 24;
+    int civic = 25;
 
     /** Hills, mountains, streams, lakes, parks and campsites (cities built since 10.10). */
     boolean nature() { return civic >= 3; }
@@ -452,6 +452,16 @@ final class CityConfig implements OptionSet {
      */
     int streetPairs(int residents) {
         return militarized() ? Math.max(10, Math.min(70, Math.round(residents / 60f))) : 0;
+    }
+
+    /**
+     * (10.63) How many should live in the city (cities built since map version 25): enough that with most of them
+     * about (the usual setting) there are some 15,000 people on the Default size, rising to 20,000 on the Gigantic.
+     */
+    int residentsTarget() {
+        int s = v[OPT_SIZE];
+        float people = s <= LARGE ? 15000 : s == MASSIVE ? 16500 : s == HUGE ? 18000 : 20000;
+        return Math.round(people / RESIDENT_SHARE[PEOPLE_ABOUT]);
     }
 
     /** What each Reinforcements setting means, in plain words. */

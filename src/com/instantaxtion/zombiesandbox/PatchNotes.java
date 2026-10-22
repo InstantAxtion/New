@@ -2,11 +2,16 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.62";
-    static final int VERSION_CODE = 100;
+    static final String VERSION = "10.63";
+    static final int VERSION_CODE = 101;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.63  -  Every map a city of 15,000 to 20,000",
+                    "Every map is about as populous as the next: some 15,000 people on the Default size, 16,500 on the Large, 18,000 on the Massive and 20,000 on the Gigantic (with most of them out and about, as usual). Before, it ran from barely a thousand in the Mountain Valley to over 30,000 on a Gigantic River City. Houses stay family homes; the rest live in the flats.",
+                    "People you've pinned (starred) no longer carry over to a new map as a star lying on the ground where they stood in the last one.",
+            },
             {
                     "10.62  -  Weaker grenades, slower help, no fire stations on the map",
                     "Grenades are a lot weaker: a smaller blast (36 across instead of 48) that kills only what's right on it and wounds the rest. Riflemen carry two instead of three and grenadiers four instead of eight; they throw only into a thick crowd (seven of the dead, five for a launcher) and wait longer between throws.",

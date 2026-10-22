@@ -281,6 +281,9 @@ final class GameView extends View implements Menu.Host {
         world.populate(cfg);
         follow = null;
         followV = null;
+        // ((10.63) Pins belong to the city they were made in: a new map starts with none, not stars left lying on
+        // the ground where those people stood in the last one.)
+        pinned.clear();
         inspectB = null;
         if (getWidth() > 0) centerCamera();
     }
@@ -508,6 +511,9 @@ final class GameView extends View implements Menu.Host {
         hasGame = true;
         follow = null;
         followV = null;
+        // ((10.63) Pins belong to the city they were made in: a new map starts with none, not stars left lying on
+        // the ground where those people stood in the last one.)
+        pinned.clear();
         selection.clear();
         inspectB = null;
         lastAction.clear();
@@ -533,6 +539,9 @@ final class GameView extends View implements Menu.Host {
         loading = false;
         follow = null;
         followV = null;
+        // ((10.63) Pins belong to the city they were made in: a new map starts with none, not stars left lying on
+        // the ground where those people stood in the last one.)
+        pinned.clear();
         inspectB = null;
         if (getWidth() > 0) centerCamera();
         records.gameStarted();

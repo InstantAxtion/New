@@ -424,6 +424,10 @@ mounting up, and lighter running with big populations.
 
 **More police than soldiers (10.35):** the army on the map is never more than two in five of the police force.
 
+**Every map a city of 15,000 to 20,000 (10.63):** new cities are balanced to about 15,000 people on the Default size
+up to 20,000 on the Gigantic, whatever the map (houses stay family-sized; the rest live in flats). Saved games keep the
+city they had. Pinned people no longer leave a star behind on a new map.
+
 **Weaker grenades, slower help, no fire stations on the map (10.62):** grenades have a smaller, weaker blast, soldiers
 carry fewer and throw them only into thick crowds, less often. Outside help takes longer to arrive (police about half
 a minute, the quick reaction force about two minutes, the main convoy four to eight, air assaults a minute) and comes

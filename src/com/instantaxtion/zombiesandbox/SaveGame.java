@@ -60,7 +60,7 @@ final class SaveGame {
             Dispatch d = w.dispatch;
             out.writeInt(d.calls);
             out.writeInt(d.policeReserve);
-            out.writeInt(d.squadReserve);
+            out.writeInt(d.squadReserve + d.airReserve);
             out.writeInt(d.airSorties);
             out.writeInt(d.tankReserve);
             out.writeInt(d.copCount);

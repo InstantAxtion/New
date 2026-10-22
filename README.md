@@ -424,6 +424,17 @@ mounting up, and lighter running with big populations.
 
 **More police than soldiers (10.35):** the army on the map is never more than two in five of the police force.
 
+**Reinforcements, two new maps, ammo that runs out properly (10.60):** police and soldiers out of rounds borrow a
+magazine from a partner nearby, or their patrol car drives them to the station to restock (cars short of rounds restock
+before taking another call), and on foot they head for the station instead of fleeing away from it. Armed civilians
+look further for rounds and drop an empty gun when there's none left. Help from outside is bigger (about 320 police,
+240 soldiers), comes when the city is losing, goes to the call that needs it most, and the army arrives in three waves:
+a quick reaction force in Humvees, the main armoured convoy, and helicopter air assaults. The Garrison State has about
+twice the military police and soldiers, with pairs on street corners. New maps: Archipelago (a big central island city
+with two to five bridged island towns round it) and Mountain Valley (a town between two mountain ranges, with a
+reservoir and dam). People waiting for buses and trains spread out, and once an outbreak is over nobody keeps running
+or hiding from nothing.
+
 **Veterans, roaming hordes and a live graph (10.59):** a rare failure in one moment of a vast outbreak skips that
 moment instead of closing the game. Bodies are cleared after a minute (at most two hundred at once) and blood fades out
 between thirty and fifty seconds. Police and soldiers rise through the ranks Blooded, Seasoned, Veteran and Elite as

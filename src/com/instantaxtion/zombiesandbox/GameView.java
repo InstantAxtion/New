@@ -645,6 +645,8 @@ final class GameView extends View implements Menu.Host {
 
     /** (10.57) Time not yet simulated, and the shortest step the simulation takes (a thirtieth of a second). */
     private float simAcc;
+    /** (10.60) How the city is doing, as the stats panel says it (see Dispatch.pressure). */
+    private static final String[] PRESSURE = {"", "Stretched", "Losing", "Overrun"};
     /** (10.59) Simulation steps that failed and were skipped (see onDraw). */
     int simErrors;
     private static final float SIM_STEP = 1 / 30f;
@@ -6098,8 +6100,9 @@ final class GameView extends View implements Menu.Host {
             c.drawText("Sheltered " + d.sheltered + "   Hiding " + world.hiding + "   In cars " + world.riding,
                     pad + 12 * dp, y, text);
             y += lh;
-            c.drawText("Outside help: " + d.policeReserve + " police, " + d.squadReserve + " army"
-                    + (d.armyCalled && !d.armyArrived ? " (convoy in " + Math.max(0, (int) d.armyEta) + "s)" : ""),
+            c.drawText("Outside help: " + d.policeReserve + " police, " + (d.squadReserve + d.airReserve) + " army"
+                    + (d.armyCalled && !d.armyArrived ? " (convoy in " + Math.max(0, (int) d.armyEta) + "s)" : "")
+                    + (d.pressure > 0 ? "   " + PRESSURE[d.pressure] : ""),
                     pad + 12 * dp, y, text);
             y += lh;
             int secs = (int) world.time;

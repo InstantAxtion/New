@@ -1518,6 +1518,12 @@ public final class GameTests {
                 java.util.Set<String> forces = new java.util.HashSet<String>();
                 int maxConvoy = 0;
                 hw.dispatch.armyEta = 5;
+                // ((10.60) A convoy due with the city quiet stands by outside: so there's an outbreak still going.)
+                java.util.Random zr = new java.util.Random(3);
+                for (int k = 0; k < 60; k++) {
+                    float[] zq = hw.city.randomStreetSpot(zr);
+                    hw.spawn(Entity.ZOMBIE, zq[0], zq[1]);
+                }
                 for (int f = 0; f < 30 * 60; f++) {
                     hw.update(1 / 30f);
                     for (Dispatch.Convoy cv : hw.dispatch.convoys) {

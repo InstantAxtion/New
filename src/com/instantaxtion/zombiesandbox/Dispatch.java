@@ -164,6 +164,8 @@ final class Dispatch {
         boolean swat;
         String label;
         int tries;
+        /** (10.60) The army's first wave (a quick reaction force in Humvees), or an air assault by helicopter. */
+        boolean qrf, air;
         Incident incident;
         SafeZone zone;
         float x, y;
@@ -319,12 +321,13 @@ final class Dispatch {
     final ArrayList<Convoy> convoys = new ArrayList<Convoy>();
 
     /**
-     * Help from outside the city (10.20) is either on or off. On: about 220 police officers in waves from the
-     * towns around (other cities' police, highway patrol, sheriff's deputies, SWAT teams and federal agents),
-     * quick to come; and about 120 soldiers, slow to come but all at once in one big convoy with armour, flown
-     * cover by the helicopters on the map. No helicopters come from outside.
+     * Help from outside the city (10.20) is either on or off. On ((10.60) more than before): about 320 police
+     * officers in waves from the towns around (other cities' police, highway patrol, sheriff's deputies, SWAT teams
+     * and federal agents), quick to come, more often and in bigger waves the worse the city is losing; and about
+     * 240 soldiers in three waves: a quick reaction force in Humvees, the main convoy with armour, and air assaults
+     * by helicopter put down wherever it's worst.
      */
-    static final int OUTSIDE_POLICE = 220, OUTSIDE_SOLDIERS = 120;
+    static final int OUTSIDE_POLICE = 320, OUTSIDE_SOLDIERS = 240;
 
     Dispatch(World w, int reinforcementLevel) {
         this.w = w;
@@ -531,6 +534,10 @@ final class Dispatch {
         for (int i = 0; i < log.size(); i++) log.get(i).age += dt;
         for (int i = callouts.size() - 1; i >= 0; i--) if ((callouts.get(i).age += dt) > 6) callouts.remove(i);
         updateArmy(dt);
+        if ((pressureCd -= dt) <= 0) {
+            pressureCd = 2;
+            updatePressure();
+        }
         feedColumns(dt);
         updateAir(dt);
         updateConvoys(dt);
@@ -1479,18 +1486,47 @@ final class Dispatch {
         callout(x, y, "ARMY REQUESTED", WHO_COLORS[WHO_MILITARY]);
         if (armyCalled) return true;
         armyCalled = true;
-        armyEta = Math.max(150, 330 - w.outbreakTime) + rnd.nextFloat() * 60;
+        // ((10.60) In three waves rather than all at once at the end: a quick reaction force within a minute or
+        // so, the main convoy with the armour, and air assault teams kept back to be flown in where it's worst.)
+        int qrf = Math.min(squadReserve, Math.max(16, squadReserve / 5) / 4 * 4);
+        squadReserve -= qrf;
+        int air = Math.min(squadReserve, Math.max(16, squadReserve / 3) / 8 * 8);
+        squadReserve -= air;
+        airReserve += air;
+        if (qrf > 0) {
+            Arrival a = new Arrival();
+            a.type = Entity.SOLDIER;
+            a.count = qrf;
+            a.qrf = true;
+            a.label = "Quick Reaction Force";
+            a.time = 45 + rnd.nextFloat() * 25;
+            a.incident = inc;
+            a.x = x;
+            a.y = y;
+            a.place = place;
+            arrivals.add(a);
+        }
+        armyEta = Math.max(120, 280 - w.outbreakTime) + rnd.nextFloat() * 50;
+        airCd = Math.max(airCd, 90);
         int mins = Math.max(2, Math.round(armyEta / 60f));
-        say(WHO_MILITARY, null, "Military: Request approved. A full convoy is mobilising outside the city: " + squadReserve
-                + " soldiers, armour and air cover from the base. It moves as one. ETA about " + mins + " minutes.", x, y);
+        say(WHO_MILITARY, null, "Military: Request approved. A quick reaction force of " + qrf + " soldiers in Humvees is about a minute out. "
+                + (squadReserve > 0 ? "The main convoy, " + squadReserve + " soldiers with armour, is mobilising: ETA about " + mins + " minutes. " : "")
+                + (air > 0 ? air + " more stand by to be flown in by helicopter wherever they're needed." : ""), x, y);
         return true;
     }
 
     boolean armyCalled, armyArrived;
     float armyEta;
+    /** (10.60) Soldiers from outside held back for air assaults, and seconds until the next can go. */
+    int airReserve;
+    private float airCd;
+    /** (10.60) How badly the city is losing, 0 (holding) to 3 (being overrun): see pressure(). */
+    int pressure;
+    private float pressureCd;
     private boolean armySaid;
 
     private void updateArmy(float dt) {
+        airCd -= dt;
         if (!armyCalled || armyArrived) return;
         // (A city with no army of its own, losing badly, gets the convoy without waiting to be asked.)
         armyEta -= dt;
@@ -1503,6 +1539,15 @@ final class Dispatch {
 
     /** The army comes in: one column of trucks, Humvees, APCs and tanks along the highway, to the worst of it. */
     private void armyConvoy() {
+        // ((10.60) The city has it in hand by the time the convoy's ready: it stands by outside, and comes if it's
+        // needed after all.)
+        if (pressure == 0 && w.zombies < 30) {
+            armyCalled = false;
+            armySaid = false;
+            say(WHO_MILITARY, null, "Military: The city has the outbreak in hand. The main convoy, " + squadReserve
+                    + " soldiers, is standing by outside the city if it's needed.", city.worldW() / 2, city.worldH() / 2);
+            return;
+        }
         w.timeline("Army convoy sent in from outside");
         armyArrived = true;
         // Where the dead are thickest.
@@ -1516,6 +1561,7 @@ final class Dispatch {
         java.util.List<float[]> from = entries(tx, ty);
         if (from.isEmpty()) return;
         int soldiers = squadReserve;
+        if (soldiers <= 0) return;
         squadReserve = 0;
         float[] p = null;
         for (float[] q : from)
@@ -1646,9 +1692,70 @@ final class Dispatch {
         if (worst == null) return;
         // (A serious outbreak: the towns around don't wait to be asked twice.)
         if (w.alert >= 2 || w.zombies >= 40) outsideStarted = true;
-        if (outsideStarted && policeReserve > 0 && policeCd <= 0 && w.zombies >= 20 && outsideNeeded(worst)) policeBackup(worst);
-        if (!armyCalled && squadReserve > 0 && w.alert >= 2 && w.zombies >= 60)
-            sendReserveSquad(worst.x, worst.y, worst.place, worst, null);
+        // ((10.60) Help goes where it's needed most: the call the fewest are answering for the dead at it.)
+        Incident need = neediest(worst.x, worst.y, null);
+        if (need == null) need = worst;
+        if (outsideStarted && policeReserve > 0 && policeCd <= 0 && w.zombies >= 20 && (pressure >= 1 || (outsideNeeded(worst) && worst.officersDown > 0))) policeBackup(need);
+        if (!armyCalled && squadReserve > 0 && w.zombies >= 60 && (w.alert >= 2 || pressure >= 2))
+            sendReserveSquad(need.x, need.y, need.place, need, null);
+        // (10.60) Air assaults: once the army is on its way, while the city is still losing.
+        if (armyCalled && airReserve > 0 && airCd <= 0 && pressure >= 2) {
+            airCd = 55;
+            Arrival a = new Arrival();
+            a.type = Entity.SOLDIER;
+            a.count = Math.min(airReserve, 24);
+            airReserve -= a.count;
+            a.air = true;
+            a.label = "Air Assault";
+            a.time = 20;
+            a.incident = need;
+            a.x = need.x;
+            a.y = need.y;
+            a.place = need.place;
+            arrivals.add(a);
+            say(WHO_MILITARY, null, "Military: Air assault approved for " + need.place + ": " + a.count + " soldiers, helicopters inbound in under a minute.", need.x, need.y);
+        }
+    }
+
+    /**
+     * (10.60) How badly the city is losing: calls with the dead at them that nobody is answering, officers down,
+     * and how far the police and soldiers are outnumbered. 0 holding, 1 stretched, 2 losing, 3 being overrun.
+     */
+    private void updatePressure() {
+        int uncovered = 0, down = 0;
+        for (int i = 0; i < incidents.size(); i++) {
+            Incident inc = incidents.get(i);
+            if (inc.resolved || inc.cordonPost >= 0 || inc.zombiesNear < 3) continue;
+            if (inc.age > 12 && inc.cops + inc.soldiers + w.fleet.inbound(inc) + w.fleet.inboundSoldiers(inc) == 0) uncovered++;
+            down += inc.officersDown;
+        }
+        int armed = Math.max(1, w.counts[Entity.COP] + w.counts[Entity.SOLDIER]);
+        float ratio = w.zombies / (float) armed;
+        int p = 0;
+        if (uncovered >= 1 || down >= 1 || ratio > 1.5f) p = 1;
+        if (uncovered >= 3 || down >= 3 || ratio > 3) p = 2;
+        if (uncovered >= 6 || down >= 6 || ratio > 6) p = 3;
+        pressure = p;
+    }
+
+    /**
+     * (10.60) The open call most in need of help, nearer ones first among equals: the dead there (and officers
+     * down) against those there or on the way. Null if none has the dead at it.
+     */
+    Incident neediest(float x, float y, Incident not) {
+        Incident best = null;
+        float bs = 0;
+        for (int i = 0; i < incidents.size(); i++) {
+            Incident inc = incidents.get(i);
+            if (inc == not || inc.resolved || inc.cordonPost >= 0 || inc.zombiesNear < 2) continue;
+            int have = inc.cops + inc.soldiers + w.fleet.inbound(inc) + w.fleet.inboundSoldiers(inc);
+            float score = inc.zombiesNear + inc.officersDown * 4 - have * 1.5f - (float) Math.hypot(inc.x - x, inc.y - y) / 600f;
+            if (best == null || score > bs) {
+                bs = score;
+                best = inc;
+            }
+        }
+        return best;
     }
     private final ArrayList<String> neighbours = new ArrayList<String>();
 
@@ -1669,7 +1776,9 @@ final class Dispatch {
 
     private boolean policeBackup(Incident inc) {
         if (policeReserve <= 0 || policeCd > 0) return false;
-        policeCd = 25;
+        // ((10.60) The worse it's going, the sooner the next wave: every 25 seconds when stretched, every 10 when
+        // the city is being overrun, and the waves bigger.)
+        policeCd = pressure >= 3 ? 10 : pressure == 2 ? 16 : 25;
         outsideStarted = true;
         Country c = city.country;
         // (Who comes next is a random mix: each force in turn from a shuffled round, so any of them can be first.)
@@ -1716,6 +1825,7 @@ final class Dispatch {
                 sentence = "The " + neighbour(policeWaves) + " police are sending %d officers";
                 break;
         }
+        if (pressure >= 2 && !a.swat) a.count = a.count * (pressure >= 3 ? 2 : 3) / (pressure >= 3 ? 1 : 2);
         a.count = Math.min(a.count, policeReserve);
         policeReserve -= a.count;
         a.time = 4 + rnd.nextFloat() * 5;
@@ -1725,7 +1835,7 @@ final class Dispatch {
         a.place = inc.place;
         arrivals.add(a);
         w.timeline("Outside police called in: " + a.label);
-        say(WHO_POLICE, null, "Dispatch: All our units are committed. Requesting outside help for " + inc.place + ". "
+        say(WHO_POLICE, null, "Dispatch: " + (pressure >= 2 ? "We're losing ground. " : "All our units are committed. ") + "Requesting outside help for " + inc.place + ". "
                 + String.format(sentence, a.count) + ", less than a minute out." + (policeReserve == 0 ? " That's the last of the help from outside." : ""), inc.x, inc.y);
         callout(inc.x, inc.y, "OUTSIDE BACKUP", WHO_COLORS[WHO_POLICE]);
         return true;
@@ -1909,9 +2019,19 @@ final class Dispatch {
         }
     }
 
-    private int arrivedWaves, airWaves;
+    private int arrivedWaves;
 
     private void arrive(Arrival a) {
+        // ((10.60) The call they were sent to is over by the time they get here: on to whichever needs them most.)
+        if (a.zone == null && (a.incident == null || a.incident.resolved || a.incident.zombiesNear == 0)) {
+            Incident n = neediest(a.x, a.y, a.incident);
+            if (n != null) {
+                a.incident = n;
+                a.x = n.x;
+                a.y = n.y;
+                a.place = n.place;
+            }
+        }
         java.util.List<float[]> from = entries(a.x, a.y);
         if (from.isEmpty()) return;
         if (a.type == Entity.SOLDIER) soldierCount = (soldierCount + 3) / 4 * 4;
@@ -1919,7 +2039,8 @@ final class Dispatch {
         String label = a.label != null ? a.label.toUpperCase() : army ? "ARMY RESERVES" : "POLICE BACKUP";
         // (10.52) Every other army wave comes in by air: helicopters from the edge of the map, eight soldiers to
         // each, put down near the call; they cover them for a while and fly back out.
-        if (army && !a.swat && a.count >= 6 && (airWaves++ & 1) == 1) {
+        // ((10.60) Now only the air assault teams, kept back for it.)
+        if (army && a.air) {
             float[] p = from.get(0);
             int before = w.fleet.vehicles.size(), helis = 0, landed = 0;
             for (int left = a.count; left > 0; left -= 8) {
@@ -1957,12 +2078,14 @@ final class Dispatch {
                 column.get(column.size() - 1).swat = true;
                 cars = 1;
             } else
-                for (int left = a.count; left > 0; left -= army ? 8 : 2, cars++) {
-                    enqueue(cv, a.type, Math.min(left, army ? 8 : 2), p, gx, gy, a.incident, a.zone, a.place);
+                for (int per = a.qrf ? 4 : army ? 8 : 2, left = a.count; left > 0; left -= per, cars++) {
+                    enqueue(cv, a.type, Math.min(left, per), p, gx, gy, a.incident, a.zone, a.place);
                     column.get(column.size() - 1).agency = a.agency;
+                    // ((10.60) The quick reaction force comes in Humvees.)
+                    if (a.qrf && city.cfg.nature()) column.get(column.size() - 1).vkind = Fleet.K_HUMVEE;
                 }
             boolean hwy = city.onHighway(p[0], p[1]);
-            say(army ? WHO_MILITARY : WHO_POLICE, null, (army ? "Military: Reserve truck" : "Dispatch: " + (a.label != null ? a.label : "Backup") + ", " + cars + (a.swat ? " armoured van," : cars == 1 ? " car," : " cars,"))
+            say(army ? WHO_MILITARY : WHO_POLICE, null, (army ? (a.qrf ? "Military: Quick reaction force, " + cars + " Humvees," : "Military: Reserve truck") : "Dispatch: " + (a.label != null ? a.label : "Backup") + ", " + cars + (a.swat ? " armoured van," : cars == 1 ? " car," : " cars,"))
                     + " entering the city from " + sideOfMap(p[0], p[1]) + (hwy && city.hwyName != null ? " on " + city.hwyName : "")
                     + ". " + a.count + (army ? " soldiers" : " officers") + " for " + a.place + ".", p[0], p[1]);
             return;

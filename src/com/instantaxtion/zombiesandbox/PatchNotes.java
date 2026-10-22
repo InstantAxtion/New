@@ -2,11 +2,21 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.59";
-    static final int VERSION_CODE = 97;
+    static final String VERSION = "10.60";
+    static final int VERSION_CODE = 98;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.60  -  Reinforcements, two new maps, ammo that runs out properly",
+                    "Police and soldiers out of rounds now get more: a magazine off a partner close by first; if the station's far, their patrol car drives them there to restock instead of on to the next call; and heading back on foot they make for the station, round the dead rather than straight away from them (they used to end up further away, gun up and empty). Patrol cars with their officers short of rounds restock before taking another call.",
+                    "Armed civilians who run dry look further afield for rounds, go even with the dead still a way off, and hurry; with nowhere left that has any, they let the empty gun go rather than stand about as if they could still shoot.",
+                    "Help from outside: more of it (about 320 police and 240 soldiers), sent when the city is losing (calls nobody is answering, officers down, the police outnumbered) and more often the worse it gets, to whichever call needs it most, and on to another if theirs is over before they arrive. The army comes in three waves: a quick reaction force in Humvees within a minute or so, the main convoy with armour, and air assaults by helicopter wherever it's worst. A convoy no longer needed waits outside the city. The stats panel says how the city is doing.",
+                    "Garrison State: about twice the military police and twice the soldiers, with pairs of soldiers posted on street corners all over town.",
+                    "Two new maps. Archipelago: a big island city in the middle of the sea with two to five smaller island towns round it, all lived in and bridged to it. Mountain Valley: a town along a valley floor between two mountain ranges, with lanes winding up into the passes and a reservoir behind a dam.",
+                    "People waiting for evacuation buses and trains spread out round the stop and along the platform instead of crowding onto one spot.",
+                    "Once an outbreak is over, people stop running and hiding from what isn't there: a panic used to keep feeding itself, each person running setting the next one off.",
+            },
             {
                     "10.59  -  Veterans, roaming hordes and a live graph",
                     "Big outbreaks are steadier: if something goes wrong in one moment of a vast outbreak, that moment is skipped instead of the game closing, and with far fewer bodies and bloodstains kept about, a long war takes less memory.",

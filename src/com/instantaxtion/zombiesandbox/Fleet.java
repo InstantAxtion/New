@@ -108,6 +108,8 @@ final class Fleet {
         Dispatch.Incident incident;
         /** (10.56) A patrol car at a call that's over: the next call its officers are sent to, to drive them there. */
         Dispatch.Incident onward;
+        /** (10.60) A patrol car taking its officers to restock: where it's driving them (a station or an armoury). */
+        City.Facility ammoRun;
         Dispatch.SafeZone zone;
         String place;
         /** Lights flash on cruisers; the helicopter's rotor spins. */
@@ -2873,6 +2875,20 @@ final class Fleet {
             v.speed = Math.max(0, v.speed - dt * 150);
             return false;
         }
+        // ((10.60) Help from outside on its way to a call that's over: on to the one that needs it most instead.)
+        if (v.reinforcement && v.state == DRIVE && v.zone == null && v.incident != null && v.rerouteCd <= 0
+                && (v.incident.resolved || (v.incident.zombiesNear == 0 && v.incident.age > 20))) {
+            v.rerouteCd = 4;
+            Dispatch.Incident n = w.dispatch.neediest(v.x, v.y, v.incident);
+            if (n != null) {
+                float[] road = city.nearestDrivable(n.x, n.y);
+                if (road != null && route(v, road[0], road[1])) {
+                    v.incident = n;
+                    v.place = n.place;
+                    v.state = DRIVE;
+                }
+            }
+        }
         // ((10.51) Quicker on a call, the army above all: the trucks used to trundle to a fight.)
         boolean call = emergency(v) && v.state != RETURN;
         float top = v.type == CRUISER ? (call ? 120 : 105) : v.kind == K_APC ? (call ? 85 : 68) : v.kind == K_HUMVEE ? (call ? 115 : 100)
@@ -4229,7 +4245,7 @@ final class Fleet {
             v.checkCd -= dt;
             if (v.checkCd > 0) return false;
             v.checkCd = 0.5f;
-            if (st != null) w.boardEvac(v, v.evacStop, st.x, st.y, 70, BUS_SEATS - v.riders.size());
+            if (st != null) w.boardEvac(v, v.evacStop, st.x, st.y, World.STOP_REACH + 8, BUS_SEATS - v.riders.size());
             boolean full = v.riders.size() >= BUS_SEATS, danger = w.countZombiesNear(v.x, v.y, 60) >= 2;
             boolean nobody = st == null || w.waitingFor(v.evacStop, st.x, st.y, true) == 0;
             if (full || danger || (v.timer > 12 && nobody) || v.timer > 40) leaveWithBus(v, st);
@@ -4799,6 +4815,7 @@ final class Fleet {
                 dropCrew(v);
                 // ((10.41) Mounted up for a call: off to it with the lights on; a patrol car after.)
                 Dispatch.Incident inc = v.incident;
+                if (crewNeedsAmmo(v) && ammoRun(v)) return false;
                 if (inc != null && !inc.resolved && respond(v, inc)) return false;
                 v.incident = null;
                 v.state = PATROL;
@@ -4821,6 +4838,18 @@ final class Fleet {
                     if (e.dead || e.rig != v) continue;
                     if (e.task == Dispatch.T_CORDON || e.task == Dispatch.T_POST || e.task == Dispatch.T_GUARD
                             || Math.hypot(e.x - v.x, e.y - v.y) > 500) e.rig = null;
+                }
+                // ((10.60) One of its officers out of rounds, with the station a long walk off: everyone back in
+                // the car, and it drives them there to restock instead of them walking it with the dead behind.)
+                for (int i = 0, n = w.entities.size(); i < n; i++) {
+                    Entity e = w.entities.get(i);
+                    if (e.dead || e.rig != v || e.task != Dispatch.T_RESUPPLY || Math.hypot(e.x - v.x, e.y - v.y) > 320) continue;
+                    City.Facility f = w.restockFor(e);
+                    if (f == null || Math.hypot(f.x - v.x, f.y - v.y) < 450) continue;
+                    v.onward = null;
+                    v.state = RECALL;
+                    v.timer = 0;
+                    return false;
                 }
                 boolean busy = w.countZombiesNear(v.x, v.y, 130) > 0;
                 // ((10.56) Its officers sent on to another call a fair way off, and nothing left here: they come
@@ -4863,6 +4892,8 @@ final class Fleet {
                 v.state = ABANDONED;
                 return false;
             }
+            // ((10.60) Out of rounds: to the station to restock first, not on to the next call with empty guns.)
+            if (crewNeedsAmmo(v) && ammoRun(v)) return false;
             if (onward != null && !onward.resolved && respond(v, onward)) return false;
             v.state = PATROL;
             v.incident = null;
@@ -4894,6 +4925,7 @@ final class Fleet {
             }
             return false;
         }
+        if (v.state == DRIVE && v.ammoRun != null) return ammoRunStep(v, dt);
         if (v.state == DRIVE) {
             Dispatch.Incident inc = v.incident;
             if (inc == null || inc.resolved) {
@@ -4934,6 +4966,7 @@ final class Fleet {
             v.parked = true;
             return false;
         }
+        if (check && crewNeedsAmmo(v) && ammoRun(v)) return false;
         float limit = junctionRule(v, dt);
         boolean person = w.personAhead(v.x, v.y, v.angle);
         // Brake for someone in the road, then creep through (in a crowd nobody gets anywhere otherwise).
@@ -4950,6 +4983,54 @@ final class Fleet {
             v.stuckTimer = 0;
             newDestination(v);
         }
+        return false;
+    }
+
+    /** (10.60) Officers aboard short of rounds: any of them down to less than a magazine, spare rounds and all. */
+    private boolean crewNeedsAmmo(Vehicle v) {
+        for (int i = 0; i < v.crew.size(); i++) {
+            Entity e = v.crew.get(i);
+            if (e.hasGun && e.magSize > 0 && e.ammo + e.reserve < e.magSize) return true;
+        }
+        return false;
+    }
+
+    /**
+     * (10.60) A patrol car drives its officers to the nearest station or armoury with ammunition left, lights on,
+     * and they restock there without getting out. False if there's nowhere left with any, or no road to it.
+     */
+    private boolean ammoRun(Vehicle v) {
+        if (v.crew.isEmpty() || v.player != null) return false;
+        City.Facility f = w.restockFor(v.crew.get(0));
+        if (f == null || !route(v, f.x, f.y)) return false;
+        v.state = DRIVE;
+        v.incident = null;
+        v.onward = null;
+        v.ammoRun = f;
+        v.stuckTimer = 0;
+        w.dispatch.say(Dispatch.WHO_POLICE, v.crew.get(0), callsign(v) + ", we're nearly out of rounds. Heading to " + f.name + " to restock.", v.x, v.y);
+        return true;
+    }
+
+    /** (10.60) On the way to restock; there, everyone aboard fills up and the car goes back on patrol, free for calls. */
+    private boolean ammoRunStep(Vehicle v, float dt) {
+        City.Facility f = v.ammoRun;
+        v.stuckTimer += dt;
+        boolean moving = driveStep(v, dt, 100, carAhead(v) ? 0.5f : 1f);
+        if (moving) hit(v, w.runOver(v.x, v.y, 8, v.speed, v.angle));
+        float d = (float) Math.hypot(f.x - v.x, f.y - v.y);
+        if (moving && d > Math.max(60, f.r) && v.stuckTimer < 8) return false;
+        v.speed = 0;
+        v.ammoRun = null;
+        if (d < f.r + 160 && w.restockCrew(v.crew, f) > 0 && !v.crew.isEmpty())
+            w.dispatch.say(Dispatch.WHO_POLICE, v.crew.get(0), callsign(v) + ", restocked at " + f.name + ". Available.", v.x, v.y);
+        else if (crewNeedsAmmo(v)) {
+            // (Couldn't get through: out, and the rest of the way on foot.)
+            crewOut(v, false);
+            return false;
+        }
+        v.state = PATROL;
+        if (!newDestination(v)) v.stuckTimer = 99;
         return false;
     }
 

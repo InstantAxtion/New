@@ -2405,6 +2405,19 @@ final class City {
                 shiftY = (by0 + by1) / 2 - h / 2;
             }
         }
+        if (cfg.valley() && m > 0) {
+            // ((10.60) The Mountain Valley: the town strung out along the valley floor from west to east, the
+            // mountains rising either side of it (see Terrain), and the far north kept wild.)
+            int half = Math.round(h * 0.17f);
+            // (Room at the west end for the reservoir.)
+            bx0 = Math.round(w * 0.2f);
+            bx1 = w - Math.max(8, m / 2);
+            by0 = h / 2 - half;
+            by1 = h / 2 + half;
+            shiftX = 0;
+            shiftY = 0;
+            wildSide = 2;
+        }
         townX0 = bx0;
         townY0 = by0;
         townX1 = bx1;
@@ -3789,6 +3802,10 @@ final class City {
     private void islandLayout() {
         Random r = new Random(cfg.seed * 41L + 3);
         int j = w / 64;
+        if (cfg.archipelago()) {
+            archipelagoLayout(r, j);
+            return;
+        }
         // (Since 10.10 there are two, three or four islands, laid out a few different ways.)
         int count = cfg.nature() ? 2 + new Random(cfg.seed * 73L + 9).nextInt(3) : 3;
         float[][] f;
@@ -3813,6 +3830,41 @@ final class City {
         for (int i = 0; i < count; i++)
             islandRects[i] = new int[]{(int) (w * f[i][0]) + r.nextInt(j), (int) (h * f[i][1]) + r.nextInt(j),
                     (int) (w * f[i][2]) - r.nextInt(j), (int) (h * f[i][3]) - r.nextInt(j)};
+        islandNames = new String[count];
+        islandNames[0] = name;
+        for (int i = 1; i < count; i++) {
+            String n = country.townName(new Random(cfg.seed * 131L + i * 17));
+            for (int k = 0; k < i && n != null; k++) if (n.equals(islandNames[k])) n = null;
+            islandNames[i] = n != null ? n : country.townName(new Random(cfg.seed * 977L + i));
+        }
+    }
+
+    /**
+     * (10.60) The Archipelago: one big island in the middle with the city on it, and two to five smaller island
+     * towns round it (south, west, east, north, then the north-east), each joined to the big one by a bridge (the
+     * north-east one by way of the east), and the causeway from the southern one to the mainland.
+     */
+    private void archipelagoLayout(Random r, int j) {
+        int extra = 2 + new Random(cfg.seed * 73L + 9).nextInt(4);
+        float[][] all = {
+                {0.27f, 0.26f, 0.73f, 0.72f},     // the big island
+                {0.32f, 0.775f, 0.66f, 0.95f},    // south
+                {0.03f, 0.34f, 0.215f, 0.64f},    // west
+                {0.785f, 0.30f, 0.97f, 0.58f},    // east
+                {0.36f, 0.03f, 0.64f, 0.205f},    // north
+                {0.785f, 0.04f, 0.97f, 0.245f},   // north-east
+        };
+        int[][] links = {{0, 1, 1}, {2, 0, 0}, {0, 3, 0}, {4, 0, 1}, {5, 3, 1}};
+        int count = 1 + extra;
+        islandLinks = new int[extra][];
+        for (int k = 0; k < extra; k++) islandLinks[k] = links[k];
+        causewayIsland = 1;
+        islandRects = new int[count][];
+        for (int i = 0; i < count; i++) {
+            float[] f = all[i];
+            islandRects[i] = new int[]{(int) (w * f[0]) + r.nextInt(j), (int) (h * f[1]) + r.nextInt(j),
+                    (int) (w * f[2]) - r.nextInt(j), (int) (h * f[3]) - r.nextInt(j)};
+        }
         islandNames = new String[count];
         islandNames[0] = name;
         for (int i = 1; i < count; i++) {

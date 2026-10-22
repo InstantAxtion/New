@@ -1081,12 +1081,13 @@ final class Menu {
             y = mapCards(c, shown, 1, preset, lx, y, cw, ch, gap, perRow);
         }
         boolean real = RealCities.isReal(preset);
-        if (preset == CityConfig.ISLANDS || real) {
+        if (preset == CityConfig.ISLANDS || preset == CityConfig.ARCHIPELAGO || real) {
             // Islands comes in one size only; a real city is always the same city.
             plain.setTextAlign(Paint.Align.LEFT);
             plain.setTextSize(13 * dp);
             plain.setColor(0xFFB8BDC4);
             String note = real ? "Map size: Massive, and always the same city, in " + Country.NAMES[config.v[CityConfig.OPT_COUNTRY]] + "."
+                    : preset == CityConfig.ARCHIPELAGO ? "Map size: Archipelago is always one size, " + CityConfig.ARCHIPELAGO_TILES + " tiles across (just over Massive)."
                     : "Map size: Islands is always one size, " + CityConfig.ISLANDS_TILES + " tiles across (between Large and Massive).";
             for (String line : wrap(note, lw - 4 * dp, plain)) {
                 c.drawText(line, lx + 2 * dp, y + 14 * dp, plain);

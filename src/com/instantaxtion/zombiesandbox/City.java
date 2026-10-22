@@ -11503,7 +11503,9 @@ final class City {
                 for (float sx = x0 + 10; sx < x1 - 10; sx += 18)
                     for (float sy = y0 + 10; sy < y1 - 10; sy += 18) c.drawRect(sx - 3, sy - 2, sx + 3, sy + 2, p);
             }
-            String label = country.sign(kind == FIRE_STATION ? "FIRE" : kind == MARKET ? "MARKET" : kind == SCHOOL ? "SCHOOL" : "GAS");
+            // ((10.62) No sign on the fire stations: there's no fire service in the game any more.)
+            if (kind == FIRE_STATION) return;
+            String label = country.sign(kind == MARKET ? "MARKET" : kind == SCHOOL ? "SCHOOL" : "GAS");
             p.setColor(kind == FIRE_STATION ? 0xFFFFFFFF : kind == KIOSK ? 0xFFD83A3A : 0xFF3A3A3A);
             p.setTextAlign(Paint.Align.CENTER);
             p.setTextSize(Math.min(10f, bw / (label.length() * 0.75f)));

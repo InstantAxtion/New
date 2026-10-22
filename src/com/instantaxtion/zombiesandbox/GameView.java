@@ -1324,10 +1324,12 @@ final class GameView extends View implements Menu.Host {
             stroke.setStrokeWidth(1 * dp);
             c.drawRect(x - 3.5f * dp, y - 3.5f * dp, x + 3.5f * dp, y + 3.5f * dp, stroke);
         }
-        // Bases, police and fire stations, hospitals.
+        // Bases, police stations, hospitals.
         text.setTextSize(9 * dp);
         for (int i = 0; i < city.facilities.size(); i++) {
             City.Facility f = city.facilities.get(i);
+            // ((10.62) The fire stations aren't marked: there's no fire service any more.)
+            if (f.kind == City.FACILITY_FIRE) continue;
             float x = tacRect.left + f.x * sx, y = tacRect.top + f.y * sy;
             int col = f.kind == City.FACILITY_BASE ? (f.fallen ? 0xFF8A3A30 : 0xFF6F8F3F) : f.kind == City.FACILITY_POLICE ? 0xFF3A6EC5
                     : f.kind == City.FACILITY_FIRE ? 0xFFD0402A : 0xFFE8E8E8;
@@ -5172,6 +5174,7 @@ final class GameView extends View implements Menu.Host {
         }
         for (int i = 0, n = world.city.facilities.size(); i < n; i++) {
             City.Facility f = world.city.facilities.get(i);
+            if (f.kind == City.FACILITY_FIRE) continue;
             boolean zoned = false;
             for (int k = 0; k < world.dispatch.zones.size(); k++) {
                 Dispatch.SafeZone z = world.dispatch.zones.get(k);

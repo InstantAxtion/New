@@ -459,7 +459,7 @@ final class CityConfig implements OptionSet {
             "Off: nobody else comes. Only the police, soldiers and helicopters already in the city fight.",
             "On: help comes from outside the city.",
             "On: help comes from outside the city.",
-            "On: police come first, within a minute of being asked: some 320 officers in waves from the towns around "
+            "On: police come first, half a minute or so after being asked: some 320 officers in waves from the towns around "
                     + "(their police, highway patrol, SWAT teams, sheriff's deputies and federal agents), sooner and bigger "
                     + "the worse the city is losing. Then some 240 soldiers in three waves: a quick reaction force in Humvees, "
                     + "the main convoy with armour, and air assaults by helicopter wherever it's worst."};

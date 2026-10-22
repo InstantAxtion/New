@@ -1143,7 +1143,7 @@ final class World {
                 // A standard load: seven 30-round magazines.
                 e.magSize = 30;
                 e.reserve = 180;
-                e.grenades = 3;
+                e.grenades = 2;
                 e.body = 0xFF55623A;
                 e.head = 0xFF3C4628;
                 e.mass = 1.3f;
@@ -1309,7 +1309,7 @@ final class World {
                 e.hp = e.maxHp = 100;
                 e.magSize = 30;
                 e.reserve = 150;
-                e.grenades = 8;
+                e.grenades = 4;
                 break;
             case Entity.ROLE_MARKSMAN:
                 // A scoped bolt-action rifle and a handful of rounds.
@@ -7162,11 +7162,11 @@ final class World {
             }
             boolean launcher = soldier && e.role == Entity.ROLE_GRENADIER;
             if (soldier && (e.role == Entity.ROLE_RIFLE || launcher) && e.grenades > 0 && e.grenadeCd <= 0 && d > (launcher ? 60 : 70)
-                    && d < (launcher ? 280 : 200) && countZombiesNear(t.x, t.y, 40) >= (launcher ? 3 : 5) && !peopleNear(t.x, t.y, 60)) {
+                    && d < (launcher ? 280 : 200) && countZombiesNear(t.x, t.y, 40) >= (launcher ? 5 : 7) && !peopleNear(t.x, t.y, 60)) {
                 throwGrenade(e, t.x, t.y);
                 // (A launcher reloads quicker than a man can pull another pin.)
                 if (launcher) {
-                    e.grenadeCd = 3.5f;
+                    e.grenadeCd = 7;
                     emit(Sfx.PISTOL, e.x, e.y);
                 }
             }
@@ -9266,7 +9266,7 @@ final class World {
 
     private void throwGrenade(Entity e, float x, float y) {
         e.grenades--;
-        e.grenadeCd = 6;
+        e.grenadeCd = 10;
         Grenade g = new Grenade();
         g.sx = e.x;
         g.sy = e.y;
@@ -10271,7 +10271,9 @@ final class World {
             g.t += dt;
             if (g.t >= g.dur) {
                 grenades.remove(i);
-                explode(g.tx, g.ty, 48, 140);
+                // ((10.62) Smaller and weaker than before (48 across, 140): it kills what's right on it and hurts
+                // the rest, rather than clearing a street.)
+                explode(g.tx, g.ty, 36, 110);
             }
         }
     }

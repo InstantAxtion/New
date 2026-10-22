@@ -424,6 +424,11 @@ mounting up, and lighter running with big populations.
 
 **More police than soldiers (10.35):** the army on the map is never more than two in five of the police force.
 
+**Weaker grenades, slower help, no fire stations on the map (10.62):** grenades have a smaller, weaker blast, soldiers
+carry fewer and throw them only into thick crowds, less often. Outside help takes longer to arrive (police about half
+a minute, the quick reaction force about two minutes, the main convoy four to eight, air assaults a minute) and comes
+less often. Fire stations no longer have labels on the map or the roof.
+
 **Cleaner calls on the map, safer landings (10.61):** instead of straight lines from every responding vehicle, each
 call shows a badge with the police and soldiers on their way and a thin ring; the unit or vehicle you follow shows its
 real route along the streets. Helicopters land troops on open ground clear of the dead, wave off if the dead close in,

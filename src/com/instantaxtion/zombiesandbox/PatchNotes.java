@@ -2,11 +2,17 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.61";
-    static final int VERSION_CODE = 99;
+    static final String VERSION = "10.62";
+    static final int VERSION_CODE = 100;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.62  -  Weaker grenades, slower help, no fire stations on the map",
+                    "Grenades are a lot weaker: a smaller blast (36 across instead of 48) that kills only what's right on it and wounds the rest. Riflemen carry two instead of three and grenadiers four instead of eight; they throw only into a thick crowd (seven of the dead, five for a launcher) and wait longer between throws.",
+                    "Help from outside takes longer: police waves are half a minute or so out instead of a few seconds, and come at most every 25 seconds to a minute; the army's quick reaction force about two minutes; the main convoy four to eight minutes; air assaults a minute out, at most one every 100 seconds.",
+                    "Fire stations are no longer labelled: no name on the map, no FIRE on the roof, and not on the tactical map.",
+            },
             {
                     "10.61  -  Cleaner calls on the map, safer landings",
                     "No more straight lines across the rooftops from every car and truck on its way to a call. Each call being answered has a small badge with how many police (blue) and soldiers (green) are coming and a thin ring in their colour; follow a unit or a vehicle and you see the way it will actually go, along the streets, to a dot where it's headed.",

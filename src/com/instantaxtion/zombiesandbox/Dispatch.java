@@ -1499,17 +1499,18 @@ final class Dispatch {
             a.count = qrf;
             a.qrf = true;
             a.label = "Quick Reaction Force";
-            a.time = 45 + rnd.nextFloat() * 25;
+            a.time = 100 + rnd.nextFloat() * 40;
             a.incident = inc;
             a.x = x;
             a.y = y;
             a.place = place;
             arrivals.add(a);
         }
-        armyEta = Math.max(120, 280 - w.outbreakTime) + rnd.nextFloat() * 50;
-        airCd = Math.max(airCd, 90);
+        // ((10.62) All of it slower to come than before.)
+        armyEta = Math.max(240, 420 - w.outbreakTime) + rnd.nextFloat() * 90;
+        airCd = Math.max(airCd, 180);
         int mins = Math.max(2, Math.round(armyEta / 60f));
-        say(WHO_MILITARY, null, "Military: Request approved. A quick reaction force of " + qrf + " soldiers in Humvees is about a minute out. "
+        say(WHO_MILITARY, null, "Military: Request approved. A quick reaction force of " + qrf + " soldiers in Humvees is about two minutes out. "
                 + (squadReserve > 0 ? "The main convoy, " + squadReserve + " soldiers with armour, is mobilising: ETA about " + mins + " minutes. " : "")
                 + (air > 0 ? air + " more stand by to be flown in by helicopter wherever they're needed." : ""), x, y);
         return true;
@@ -1700,20 +1701,20 @@ final class Dispatch {
             sendReserveSquad(need.x, need.y, need.place, need, null);
         // (10.60) Air assaults: once the army is on its way, while the city is still losing.
         if (armyCalled && airReserve > 0 && airCd <= 0 && pressure >= 2) {
-            airCd = 55;
+            airCd = 100;
             Arrival a = new Arrival();
             a.type = Entity.SOLDIER;
             a.count = Math.min(airReserve, 24);
             airReserve -= a.count;
             a.air = true;
             a.label = "Air Assault";
-            a.time = 20;
+            a.time = 45;
             a.incident = need;
             a.x = need.x;
             a.y = need.y;
             a.place = need.place;
             arrivals.add(a);
-            say(WHO_MILITARY, null, "Military: Air assault approved for " + need.place + ": " + a.count + " soldiers, helicopters inbound in under a minute.", need.x, need.y);
+            say(WHO_MILITARY, null, "Military: Air assault approved for " + need.place + ": " + a.count + " soldiers, helicopters inbound in about a minute.", need.x, need.y);
         }
     }
 
@@ -1776,9 +1777,9 @@ final class Dispatch {
 
     private boolean policeBackup(Incident inc) {
         if (policeReserve <= 0 || policeCd > 0) return false;
-        // ((10.60) The worse it's going, the sooner the next wave: every 25 seconds when stretched, every 10 when
-        // the city is being overrun, and the waves bigger.)
-        policeCd = pressure >= 3 ? 10 : pressure == 2 ? 16 : 25;
+        // ((10.60) The worse it's going, the sooner the next wave, and the waves bigger: (since 10.62) every minute when
+        // stretched, every 25 seconds when the city is being overrun.)
+        policeCd = pressure >= 3 ? 25 : pressure == 2 ? 40 : 60;
         outsideStarted = true;
         Country c = city.country;
         // (Who comes next is a random mix: each force in turn from a shuffled round, so any of them can be first.)
@@ -1828,7 +1829,7 @@ final class Dispatch {
         if (pressure >= 2 && !a.swat) a.count = a.count * (pressure >= 3 ? 2 : 3) / (pressure >= 3 ? 1 : 2);
         a.count = Math.min(a.count, policeReserve);
         policeReserve -= a.count;
-        a.time = 4 + rnd.nextFloat() * 5;
+        a.time = 25 + rnd.nextFloat() * 15;
         a.incident = inc;
         a.x = inc.x;
         a.y = inc.y;
@@ -1836,7 +1837,7 @@ final class Dispatch {
         arrivals.add(a);
         w.timeline("Outside police called in: " + a.label);
         say(WHO_POLICE, null, "Dispatch: " + (pressure >= 2 ? "We're losing ground. " : "All our units are committed. ") + "Requesting outside help for " + inc.place + ". "
-                + String.format(sentence, a.count) + ", less than a minute out." + (policeReserve == 0 ? " That's the last of the help from outside." : ""), inc.x, inc.y);
+                + String.format(sentence, a.count) + ", about half a minute out." + (policeReserve == 0 ? " That's the last of the help from outside." : ""), inc.x, inc.y);
         callout(inc.x, inc.y, "OUTSIDE BACKUP", WHO_COLORS[WHO_POLICE]);
         return true;
     }

@@ -1139,8 +1139,8 @@ public final class GameTests {
                 // (Not a city that rolled "unprepared", with no backup to call.)
                 w.dispatch.policeReserve = Math.max(2, w.dispatch.policeReserve);
                 check((Boolean) pb.invoke(w.dispatch, inc), "police backup called");
-                // (Since 10.20 they come from the towns around: well under a minute away.)
-                for (int f = 0; f < 30 * 30 && w.dispatch.convoys.isEmpty(); f++) w.update(1 / 30f);
+                // (Since 10.20 they come from the towns around: (since 10.62) half a minute or so away.)
+                for (int f = 0; f < 30 * 45 && w.dispatch.convoys.isEmpty(); f++) w.update(1 / 30f);
                 check(!w.dispatch.convoys.isEmpty(), "the backup shows on the map");
                 Dispatch.Convoy cv = w.dispatch.convoys.get(0);
                 float edge = Math.min(Math.min(cv.fromX, cv.fromY), Math.min(w.city.worldW() - cv.fromX, w.city.worldH() - cv.fromY));
@@ -1524,7 +1524,8 @@ public final class GameTests {
                     float[] zq = hw.city.randomStreetSpot(zr);
                     hw.spawn(Entity.ZOMBIE, zq[0], zq[1]);
                 }
-                for (int f = 0; f < 30 * 60; f++) {
+                // ((10.62) The police half a minute or so out, and longer when the way in is blocked.)
+                for (int f = 0; f < 30 * 100; f++) {
                     hw.update(1 / 30f);
                     for (Dispatch.Convoy cv : hw.dispatch.convoys) {
                         forces.add(cv.label);

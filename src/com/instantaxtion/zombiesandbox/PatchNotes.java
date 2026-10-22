@@ -2,11 +2,17 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.60";
-    static final int VERSION_CODE = 98;
+    static final String VERSION = "10.61";
+    static final int VERSION_CODE = 99;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "10.61  -  Cleaner calls on the map, safer landings",
+                    "No more straight lines across the rooftops from every car and truck on its way to a call. Each call being answered has a small badge with how many police (blue) and soldiers (green) are coming and a thin ring in their colour; follow a unit or a vehicle and you see the way it will actually go, along the streets, to a dot where it's headed.",
+                    "Helicopters putting troops down pick open ground well clear of the dead, on the side they're coming from, and watch it all the way down: if the dead close in (the rotors draw them), they wave off and find another spot instead of letting everyone out on top of them. They don't unload with the dead right under them.",
+                    "Coming back to their pad, or setting rescued people down at the hospital, helicopters hold overhead while the dead are round it, and climb away again if they come for it as it settles.",
+            },
             {
                     "10.60  -  Reinforcements, two new maps, ammo that runs out properly",
                     "Police and soldiers out of rounds now get more: a magazine off a partner close by first; if the station's far, their patrol car drives them there to restock instead of on to the next call; and heading back on foot they make for the station, round the dead rather than straight away from them (they used to end up further away, gun up and empty). Patrol cars with their officers short of rounds restock before taking another call.",

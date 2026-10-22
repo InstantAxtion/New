@@ -154,8 +154,40 @@ final class GameView extends View implements Menu.Host {
     private final java.util.ArrayList<Entity> selection = new java.util.ArrayList<Entity>();
     private float orderX, orderY, orderMarker;
     private Entity follow;
-    /** The vehicle leading the way to each call (police, and army keyed apart), for the lines to calls. */
-    private final java.util.HashMap<Object, Fleet.Vehicle> leadToCall = new java.util.HashMap<Object, Fleet.Vehicle>();
+    /** (10.60) Police and soldiers on their way to each call, for its badge; and the followed vehicle's route. */
+    private final java.util.HashMap<Dispatch.Incident, int[]> inbound = new java.util.HashMap<Dispatch.Incident, int[]>();
+    private final int[] routeBuf = new int[700];
+    private final RectF badgeRect = new RectF();
+    private final Path routePath = new Path();
+
+    private void tally(Dispatch.Incident inc, boolean army, int n) {
+        int[] k = inbound.get(inc);
+        if (k == null) inbound.put(inc, k = new int[2]);
+        k[army ? 1 : 0] += n;
+    }
+
+    /** (10.60) A faint line along the streets through tiles[from..to), from (x, y), with a dot where it ends. */
+    private void drawRoute(Canvas c, float x, float y, int[] tiles, int from, int to, int col, float u) {
+        if (to - from < 1) return;
+        int w = world.city.w;
+        routePath.reset();
+        routePath.moveTo(x, y);
+        float ex = x, ey = y;
+        for (int i = from; i < to; i++) {
+            ex = (tiles[i] % w + 0.5f) * City.T;
+            ey = (tiles[i] / w + 0.5f) * City.T;
+            routePath.lineTo(ex, ey);
+        }
+        // (A dark edge under it, so it reads on the grey of the road.)
+        stroke.setStrokeWidth(5.5f * u);
+        stroke.setColor(0x55000000);
+        c.drawPath(routePath, stroke);
+        stroke.setStrokeWidth(3.2f * u);
+        stroke.setColor(alpha(col, 0.8f));
+        c.drawPath(routePath, stroke);
+        fill.setColor(alpha(col, 0.8f));
+        c.drawCircle(ex, ey, 3.5f * u, fill);
+    }
     /** A vehicle the camera is following (tap one), with its card. */
     private Fleet.Vehicle followV;
     private boolean wasControlling;
@@ -2198,56 +2230,70 @@ final class GameView extends View implements Menu.Host {
             stroke.setColor(0xCCFF4A3A);
             c.drawCircle(inc.x, inc.y, 5, stroke);
         }
-        // Who's on their way to a call: a faint line from each responder to it (10.20), so a call for backup
-        // can be seen being answered.
+        // ((10.60) Who's on their way to a call. No more straight lines across the rooftops from each car and truck:
+        // a badge over each call with how many police and soldiers are coming, a thin ring in their colour round it,
+        // and for whoever you're following, the way they'll actually go, faintly, along the streets.)
         {
-            float lx0 = camX - 40, ly0 = camY - 40, lx1 = camX + getWidth() / scale + 40, ly1 = camY + getHeight() / scale + 40;
-            stroke.setStrokeWidth(1.1f / Math.max(0.5f, scale) + 0.3f);
+            float lx0 = camX - 60, ly0 = camY - 60, lx1 = camX + getWidth() / scale + 60, ly1 = camY + getHeight() / scale + 60;
+            inbound.clear();
             for (int i = 0, n = world.entities.size(); i < n; i++) {
                 Entity e = world.entities.get(i);
-                if (e.dead || e.task != Dispatch.T_RESPOND || e.incident == null || e.onScene) continue;
-                // (10.31) Only for whoever you're following: a line from every officer on foot was a tangle. The
-                // police cars and army trucks on their way still show theirs, below.
-                if (e != follow) continue;
-                Dispatch.Incident inc = e.incident;
-                if (Math.max(e.x, inc.x) < lx0 || Math.min(e.x, inc.x) > lx1 || Math.max(e.y, inc.y) < ly0 || Math.min(e.y, inc.y) > ly1) continue;
-                stroke.setColor(e.type == Entity.SOLDIER ? 0x9990C060 : 0x9960A0FF);
-                c.drawLine(e.x, e.y, inc.x, inc.y, stroke);
-            }
-            // (10.24) Police cars and army trucks on their way to a call: a bold marching line from the vehicle to
-            // the call, and a ring in their colour round the call itself, so a response is plain to see.
-            stroke.setStrokeWidth(2.2f / Math.max(0.5f, scale) + 0.6f);
-            float march = (world.time * 40) % 18;
-            // (10.31) One line to each call for the police and one for the army, from whichever of their vehicles
-            // is nearest it, not one from every car in the convoy.
-            leadToCall.clear();
-            for (int i = 0, n = world.fleet.vehicles.size(); i < n; i++) {
-                Fleet.Vehicle v = world.fleet.vehicles.get(i);
-                Dispatch.Incident inc = v.incident;
-                if (inc == null || v.state != Fleet.DRIVE || v.broken || inc.resolved) continue;
-                boolean army = v.type == Fleet.TRUCK || v.type == Fleet.TANK;
-                Object key = army ? (Object) java.util.Arrays.asList(inc, Boolean.TRUE) : inc;
-                Fleet.Vehicle o = leadToCall.get(key);
-                if (o == null || Math.hypot(v.x - inc.x, v.y - inc.y) < Math.hypot(o.x - inc.x, o.y - inc.y)) leadToCall.put(key, v);
+                if (e.dead || e.task != Dispatch.T_RESPOND || e.incident == null || e.onScene || e.incident.resolved) continue;
+                tally(e.incident, e.type == Entity.SOLDIER, 1);
             }
             for (int i = 0, n = world.fleet.vehicles.size(); i < n; i++) {
                 Fleet.Vehicle v = world.fleet.vehicles.get(i);
                 Dispatch.Incident inc = v.incident;
-                if (inc == null || v.state != Fleet.DRIVE || v.broken || inc.resolved) continue;
-                if (Math.max(v.x, inc.x) < lx0 || Math.min(v.x, inc.x) > lx1 || Math.max(v.y, inc.y) < ly0 || Math.min(v.y, inc.y) > ly1) continue;
-                boolean army = v.type == Fleet.TRUCK || v.type == Fleet.TANK;
-                if (leadToCall.get(army ? (Object) java.util.Arrays.asList(inc, Boolean.TRUE) : inc) != v) continue;
-                int col = army ? 0xE0A8E070 : 0xE070B0FF;
-                stroke.setColor(col);
-                float dx = inc.x - v.x, dy = inc.y - v.y, len = (float) Math.sqrt(dx * dx + dy * dy);
-                if (len < 1) continue;
-                float ux = dx / len, uy = dy / len;
-                for (float t = march; t < len; t += 18) {
-                    float t1 = Math.min(len, t + 10);
-                    c.drawLine(v.x + ux * t, v.y + uy * t, v.x + ux * t1, v.y + uy * t1, stroke);
-                }
-                stroke.setColor(alpha(col, 0.5f + 0.5f * (float) Math.sin(world.time * 5)));
+                if (inc == null || inc.resolved || v.broken || (v.state != Fleet.DRIVE && v.state != Fleet.MUSTER)) continue;
+                int aboard = v.crew.size() + v.passengers;
+                if (aboard > 0) tally(inc, v.type == Fleet.TRUCK || v.type == Fleet.TANK || v.passengerType == Entity.SOLDIER, aboard);
+            }
+            float u = 1f / Math.max(0.35f, scale);
+            text.setTextSize(10.5f * dp * u);
+            text.setTextAlign(Paint.Align.LEFT);
+            for (java.util.Map.Entry<Dispatch.Incident, int[]> en : inbound.entrySet()) {
+                Dispatch.Incident inc = en.getKey();
+                int[] k = en.getValue();
+                // (A lone officer on the way needs no badge: only calls with a response worth showing.)
+                if (k[0] + k[1] < 2 || inc.x < lx0 || inc.x > lx1 || inc.y < ly0 || inc.y > ly1) continue;
+                int col = k[1] > k[0] ? 0xFFA8E070 : 0xFF70B0FF;
+                stroke.setStrokeWidth(1.4f * u);
+                stroke.setColor(alpha(col, 0.45f + 0.25f * (float) Math.sin(world.time * 4)));
                 c.drawCircle(inc.x, inc.y, 30, stroke);
+                // The badge: a dark pill with a blue dot and the police coming, a green one and the soldiers.
+                String sp = k[0] > 0 ? String.valueOf(k[0]) : null, ss = k[1] > 0 ? String.valueOf(k[1]) : null;
+                float dot = 3.2f * dp * u, gap = 3 * dp * u, padX = 5 * dp * u, hh = 8 * dp * u;
+                float wP = sp == null ? 0 : dot * 2 + gap + text.measureText(sp), wS = ss == null ? 0 : dot * 2 + gap + text.measureText(ss);
+                float wTot = padX * 2 + wP + wS + (sp != null && ss != null ? 6 * dp * u : 0);
+                float bx = inc.x - wTot / 2, by = inc.y - 30 - 6 * dp * u - hh * 2;
+                fill.setColor(0xD0101418);
+                badgeRect.set(bx, by, bx + wTot, by + hh * 2);
+                c.drawRoundRect(badgeRect, hh, hh, fill);
+                float x = bx + padX, cy = by + hh;
+                if (sp != null) {
+                    fill.setColor(0xFF70B0FF);
+                    c.drawCircle(x + dot, cy, dot, fill);
+                    text.setColor(0xFFE8F0FF);
+                    c.drawText(sp, x + dot * 2 + gap, cy + text.getTextSize() * 0.36f, text);
+                    x += wP + 6 * dp * u;
+                }
+                if (ss != null) {
+                    fill.setColor(0xFFA8E070);
+                    c.drawCircle(x + dot, cy, dot, fill);
+                    text.setColor(0xFFEFFFE0);
+                    c.drawText(ss, x + dot * 2 + gap, cy + text.getTextSize() * 0.36f, text);
+                }
+            }
+            // The followed one's way there.
+            if (follow != null && !follow.dead && follow.task == Dispatch.T_RESPOND && follow.incident != null && !follow.onScene
+                    && follow.path != null && follow.path.length > 0) {
+                int col = follow.type == Entity.SOLDIER ? 0xFFA8E070 : 0xFF70B0FF;
+                drawRoute(c, follow.x, follow.y, follow.path, follow.pathIdx, follow.path.length, col, u);
+            }
+            if (followV != null && followV.state == Fleet.DRIVE && followV.field != null) {
+                int n = world.fleet.traceRoute(followV, routeBuf);
+                int col = followV.type == Fleet.TRUCK || followV.type == Fleet.TANK ? 0xFFA8E070 : 0xFF70B0FF;
+                drawRoute(c, followV.x, followV.y, routeBuf, 0, n, col, u);
             }
         }
         // Calls for help on the radio: rings going out from where the call was made.

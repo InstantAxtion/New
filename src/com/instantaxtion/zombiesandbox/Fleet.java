@@ -110,6 +110,9 @@ final class Fleet {
         Dispatch.Incident onward;
         /** (10.60) A patrol car taking its officers to restock: where it's driving them (a station or an armoury). */
         City.Facility ammoRun;
+        /** (10.60) A helicopter putting troops down: seconds to the next look at its landing zone, and wave-offs so far. */
+        float lzCheck, holdSaidCd;
+        int lzTries;
         Dispatch.SafeZone zone;
         String place;
         /** Lights flash on cruisers; the helicopter's rotor spins. */
@@ -712,6 +715,36 @@ final class Fleet {
 
         /** (10.49) The next tile down from each tile, once worked out (+1, so 0 is not yet): a route doesn't change. */
         int[] next;
+    }
+
+    /**
+     * (10.60) The tiles v's route takes from where it is to where it's going (downhill along its route, a tile at a
+     * time), into out; how many. For the map to show the way a vehicle you're following will go.
+     */
+    int traceRoute(Vehicle v, int[] out) {
+        Route r = v.field;
+        if (r == null) return 0;
+        int w = city.w, h = city.h;
+        int t = city.tileIndex(v.x, v.y), cur = r.get(t), n = 0;
+        while (cur > 0 && cur < City.FAR && n < out.length) {
+            int x = t % w, y = t / w, best = -1, bv = cur;
+            for (int oy = -1; oy <= 1; oy++)
+                for (int ox = -1; ox <= 1; ox++) {
+                    int nx = x + ox, ny = y + oy;
+                    if ((ox == 0 && oy == 0) || nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+                    int val = r.get(ny * w + nx);
+                    if (val < bv) {
+                        bv = val;
+                        best = ny * w + nx;
+                    }
+                }
+            if (best < 0) break;
+            t = best;
+            cur = bv;
+            // (Every other tile is plenty for a line.)
+            if ((n == 0 || (cur & 1) == 0)) out[n++] = t;
+        }
+        return n;
     }
 
     /** One whole-map buffer the route searches share. */
@@ -1804,6 +1837,7 @@ final class Fleet {
             v.soundCd -= dt;
             v.destCd -= dt;
             v.rerouteCd -= dt;
+            v.holdSaidCd -= dt;
             v.crashCd -= dt;
             boolean done;
             if (v.player != null) done = updatePlayerVehicle(v, dt);
@@ -5126,7 +5160,9 @@ final class Fleet {
             } else if (v.kind != K_POLICE_HELI && v.kind != K_RESCUE_HELI && v.troops > 0 && d < 220) {
                 // Air assault: put the troops down first, clear of the dead.
                 v.state = DROP;
-                float[] lz = landingZone(v.tx, v.ty);
+                v.lzTries = 0;
+                v.lzCheck = 1;
+                float[] lz = landingZone(v.tx, v.ty, v.x, v.y);
                 v.homeX = lz[0];
                 v.homeY = lz[1];
             } else if (d < 170 && v.kind != K_RESCUE_HELI) {
@@ -5149,8 +5185,26 @@ final class Fleet {
             gy = v.homeY;
             speed = 45;
             float d = (float) Math.hypot(gx - v.x, gy - v.y);
+            // ((10.60) Watching the landing zone all the way down: the dead closing on it (the rotors draw them), and
+            // it climbs away and picks another, rather than putting the squad down on top of them.)
+            v.lzCheck -= dt;
+            if (v.lzCheck <= 0) {
+                v.lzCheck = 0.5f;
+                if (w.countZombiesNear(gx, gy, 70) > 0 && v.lzTries < 4) {
+                    v.lzTries++;
+                    float[] lz = landingZone(v.tx, v.ty, v.x, v.y);
+                    v.homeX = lz[0];
+                    v.homeY = lz[1];
+                    gx = v.homeX;
+                    gy = v.homeY;
+                    d = (float) Math.hypot(gx - v.x, gy - v.y);
+                    v.alt = Math.max(v.alt, 0.5f);
+                    if (v.lzTries == 1)
+                        w.dispatch.say(Dispatch.WHO_MILITARY, null, "Air " + v.number + ": LZ's hot, waving off. Finding another.", v.x, v.y);
+                }
+            }
             if (d < 25) v.alt += (0.12f - v.alt) * Math.min(1, dt * 0.9f);
-            if (d < 6 && v.alt < 0.2f && v.speed < 8) {
+            if (d < 6 && v.alt < 0.2f && v.speed < 8 && (w.countZombiesNear(v.x, v.y, 45) == 0 || v.lzTries >= 4)) {
                 unloadTroops(v);
                 v.state = CIRCLE;
                 v.circle = (float) Math.atan2(v.y - v.ty, v.x - v.tx);
@@ -5253,7 +5307,16 @@ final class Fleet {
             gy = v.homeY;
             speed = 110;
             float d = (float) Math.hypot(gx - v.x, gy - v.y);
-            if (d < 6 && v.speed < 12) {
+            // ((10.60) The dead round the pad, or the hospital doors: it holds overhead until they're dealt with,
+            // rather than setting down and letting everyone out among them.)
+            if (d < 6 && v.speed < 12 && w.countZombiesNear(gx, gy, 70) > 0) {
+                if (v.holdSaidCd <= 0) {
+                    v.holdSaidCd = 30;
+                    w.dispatch.say(v.kind == K_POLICE_HELI || v.kind == K_RESCUE_HELI ? Dispatch.WHO_POLICE : Dispatch.WHO_MILITARY, null,
+                            (v.kind == K_RESCUE_HELI ? "Rescue " : v.kind == K_POLICE_HELI ? "Police helicopter " : "Air ") + v.number
+                                    + ": The dead are all round where we set down. Holding overhead till it's clear.", v.x, v.y);
+                }
+            } else if (d < 6 && v.speed < 12) {
                 if (v.kind == K_RESCUE_HELI && v.passengers > 0) {
                     // Set them down at the hospital, then home.
                     w.dropRescued(v);
@@ -5271,7 +5334,11 @@ final class Fleet {
             speed = 8;
             face = v.angle;
             v.alt -= dt * 0.2f;
-            if (v.alt <= 0) {
+            // ((10.60) And back up if they come for it as it settles.)
+            if (v.alt > 0.05f && w.countZombiesNear(gx, gy, 50) > 0) {
+                v.state = FLY_OUT;
+                v.alt += dt * 0.4f;
+            } else if (v.alt <= 0) {
                 if (v.padAt == null) return true;
                 if (v.kind == K_RESCUE_HELI && v.standby) {
                     v.alt = 0;
@@ -5317,20 +5384,39 @@ final class Fleet {
     }
 
     /** Somewhere open to put troops down near (x, y), a little way back from the nearest of the dead. */
-    private float[] landingZone(float x, float y) {
-        Entity z = w.nearestZombie(x, y, 300);
-        float ax = 0, ay = 1;
-        if (z != null) {
-            float d = (float) Math.hypot(x - z.x, y - z.y) + 0.01f;
-            ax = (x - z.x) / d;
-            ay = (y - z.y) / d;
-        }
-        for (float back = 90; back < 260; back += 30) {
-            float[] p = city.findWalkable(x + ax * back, y + ay * back);
-            if (p != null && w.countZombiesNear(p[0], p[1], 50) == 0) return p;
-        }
-        float[] p = city.findWalkable(x, y);
-        return p != null ? p : new float[]{x, y};
+    /**
+     * (10.60) Where to put troops down for a fight at (x, y), coming in from (fx, fy): open ground (a street, a square,
+     * a field) a good way off the fighting, with none of the dead near it and as few as can be further out,
+     * on the near side if it can; with nowhere clear, the quietest spot found. It used to look only away
+     * from the nearest one, check a few steps round the spot, and with nothing clear set down on the fight itself.
+     */
+    private float[] landingZone(float x, float y, float fx, float fy) {
+        float[] best = null, quiet = null;
+        float bs = Float.MAX_VALUE, qs = Float.MAX_VALUE;
+        float ax = fx - x, ay = fy - y, al = (float) Math.hypot(ax, ay) + 0.01f;
+        for (float r = 140; r <= 420; r += 40)
+            for (int k = 0; k < 16; k++) {
+                float a = k * (float) Math.PI / 8 + r * 0.01f;
+                float ca = (float) Math.cos(a), sa = (float) Math.sin(a);
+                float[] p = city.findWalkable(x + ca * r, y + sa * r);
+                if (p == null || city.circleBlocked(p[0], p[1], 10)) continue;
+                int near = w.countZombiesNear(p[0], p[1], 90), around = w.countZombiesNear(p[0], p[1], 180);
+                // (Nearer the fight is better, and on the side it's coming from; the dead about count most.)
+                float score = r * 0.4f + around * 60 - (ca * ax + sa * ay) / al * 30;
+                if (near == 0 && score < bs) {
+                    bs = score;
+                    best = p;
+                }
+                float qscore = near * 100 + around * 20 + r * 0.1f;
+                if (qscore < qs) {
+                    qs = qscore;
+                    quiet = p;
+                }
+            }
+        if (best != null) return best;
+        if (quiet != null) return quiet;
+        float[] p = city.findWalkable(fx, fy);
+        return p != null ? p : new float[]{fx, fy};
     }
 
     /** The troops jump down: everyone aboard but the pilot and two door gunners, off to the fighting. */

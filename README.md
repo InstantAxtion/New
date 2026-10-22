@@ -424,6 +424,11 @@ mounting up, and lighter running with big populations.
 
 **More police than soldiers (10.35):** the army on the map is never more than two in five of the police force.
 
+**Cleaner calls on the map, safer landings (10.61):** instead of straight lines from every responding vehicle, each
+call shows a badge with the police and soldiers on their way and a thin ring; the unit or vehicle you follow shows its
+real route along the streets. Helicopters land troops on open ground clear of the dead, wave off if the dead close in,
+and hold overhead rather than set down at a pad or the hospital with the dead around it.
+
 **Reinforcements, two new maps, ammo that runs out properly (10.60):** police and soldiers out of rounds borrow a
 magazine from a partner nearby, or their patrol car drives them to the station to restock (cars short of rounds restock
 before taking another call), and on foot they head for the station instead of fleeing away from it. Armed civilians

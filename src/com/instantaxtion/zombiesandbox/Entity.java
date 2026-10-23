@@ -53,6 +53,9 @@ final class Entity {
 
     float cooldown, reload, biteCd, grenadeCd, meleeCd, stun;
     float wanderAngle, wanderTimer, fleeTimer, infectTimer;
+    /** (11.1) Police and soldiers with nothing on: where their beat or duty takes them next, and how long they wait there. */
+    float dutyX, dutyY, dutyWait, dutyFor;
+    int dutyStep;
     float hurt, phase;
     float threatX, threatY;
     /** Rounds in the magazine, magazine size and spare rounds. Nobody gets more without resupplying. */
@@ -182,7 +185,9 @@ final class Entity {
             J_JOGGER = 6, J_PARK = 7, J_POSTIE = 8, J_VENDOR = 9,
             // Out in the wilds (10.14): hiking the trails, fishing at a lake, round the campfire, and the fire
             // lookouts: on duty up a tower, on the way to start a shift, and heading home after one.
-            J_HIKER = 10, J_FISHER = 11, J_CAMPER = 12, J_LOOKOUT = 13, J_RELIEF = 14, J_OFFDUTY = 15;
+            J_HIKER = 10, J_FISHER = 11, J_CAMPER = 12, J_LOOKOUT = 13, J_RELIEF = 14, J_OFFDUTY = 15,
+            // (11.1) A day at the beach: on a towel in the sun, or a walk along the water's edge.
+            J_BEACH = 16;
     /** Up a fire lookout tower: the dead have to climb the stairs to get at them. */
     boolean aloft;
     /** A walk along a trail (see City.hikes): how far along, and which way (1 out, -1 back). */

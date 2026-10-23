@@ -1021,6 +1021,8 @@ public final class GameTests {
                 w.populate(c);
                 for (int f = 0; f < 30 * 10; f++) w.update(1 / 30f);
                 float cx = w.city.worldW() / 2f, cy = w.city.worldH() / 2f;
+                // (Open ground near the middle: since 11.1 a big block can sit right on it.)
+                for (int r = 0; r < 40 && w.city.findWalkable(cx, cy) == null; r++) cx += City.T * 4;
                 // Every kind of officer can be spawned.
                 check(w.spawnCop(-1, cx, cy).agency == 1 && w.spawnCop(-2, cx, cy).agency == 2 && w.spawnCop(-3, cx, cy).agency == 3
                         && w.spawnCop(Entity.ROLE_SAR, cx, cy).role == Entity.ROLE_SAR, "highway patrol, deputies, rangers and rescuers spawn");
@@ -1868,15 +1870,21 @@ public final class GameTests {
                 }
                 check(rolling, "and drives to the call");
                 // Woods don't grow over the farm fields.
-                CityConfig fc = new CityConfig();
-                fc.v[CityConfig.OPT_PRESET] = 0;
-                fc.seed = 7;
-                fc.normalize();
-                fc.seed = 7;
-                City city = new City(fc, 0.05f);
+                // (Not every map has farms: the first of a few that does.)
                 java.lang.reflect.Field ff = City.class.getDeclaredField("fieldTile");
                 ff.setAccessible(true);
-                boolean[] field = (boolean[]) ff.get(city);
+                City city = null;
+                boolean[] field = null;
+                for (int seed : new int[]{7, 8, 1, 4}) {
+                    CityConfig fc = new CityConfig();
+                    fc.v[CityConfig.OPT_PRESET] = 0;
+                    fc.seed = seed;
+                    fc.normalize();
+                    fc.seed = seed;
+                    city = new City(fc, 0.05f);
+                    field = (boolean[]) ff.get(city);
+                    if (field != null) break;
+                }
                 check(field != null, "farms with fields");
                 int trees = 0, cells = 0;
                 for (int i = 0; i < field.length; i++)
@@ -2985,10 +2993,16 @@ public final class GameTests {
                     }
                 check(own >= 2 && near >= 2, sat.name + " has its own cars round it (" + near + " of " + own + ")");
                 // Its officers sent a long way take one of its cars.
+                // (Since 11.1 they're out on the beat round it: the nearest two.)
                 java.util.List<Entity> two = new java.util.ArrayList<Entity>();
-                for (Entity e : w.entities)
-                    if (e.type == Entity.COP && e.task == Dispatch.T_NONE && e.rig == null && two.size() < 2 && Math.hypot(e.x - sat.x, e.y - sat.y) < 200) two.add(e);
-                check(two.size() == 2, "officers at the station");
+                for (int k = 0; k < 2; k++) {
+                    Entity best = null;
+                    for (Entity e : w.entities)
+                        if (e.type == Entity.COP && e.task == Dispatch.T_NONE && e.rig == null && !two.contains(e) && Math.hypot(e.x - sat.x, e.y - sat.y) < 900
+                                && (best == null || Math.hypot(e.x - sat.x, e.y - sat.y) < Math.hypot(best.x - sat.x, best.y - sat.y))) best = e;
+                    if (best != null) two.add(best);
+                }
+                check(two.size() == 2, "officers on the beat round the station");
                 float[] far = null;
                 java.util.Random r = new java.util.Random(4);
                 for (int k = 0; k < 2000 && far == null; k++) {
@@ -3005,7 +3019,7 @@ public final class GameTests {
                 check(w.fleet.stationCar(two, sat, inc) && w.fleet.vehicles.size() == before + 1, "a car for them at the station");
                 Fleet.Vehicle car = w.fleet.vehicles.get(w.fleet.vehicles.size() - 1);
                 boolean rolled = false;
-                for (int f = 0; f < 30 * 20 && !rolled; f++) {
+                for (int f = 0; f < 30 * 60 && !rolled; f++) {
                     w.update(1 / 30f);
                     w.evCount = 0;
                     rolled = car.crew.size() == 2 && car.speed > 5;
@@ -3050,7 +3064,8 @@ public final class GameTests {
                         float cx = (float) Math.cos(v.angle), cy = (float) Math.sin(v.angle);
                         int dx = Math.abs(cx) > Math.abs(cy) ? (int) Math.signum(cx) : 0, dy = dx == 0 ? (int) Math.signum(cy) : 0;
                         if (w.city.tiles[ty * w.city.w + tx] != City.ROAD || Math.abs(dx * cx + dy * cy) < 0.97f) continue;
-                        float off = w.city.laneOffset(tx, ty, dx, dy);
+                        // (Its own lane, since 11.1, on a road with more than one each way.)
+                        float off = w.city.laneOffset(tx, ty, dx, dy, v.lightsOn() ? 0 : v.lane);
                         float lx = (tx + 0.5f) * City.T - dy * off, ly = (ty + 0.5f) * City.T + dx * off;
                         laneErr += Math.abs((v.x - lx) * -dy + (v.y - ly) * dx);
                         laneN++;
@@ -3557,8 +3572,14 @@ public final class GameTests {
                     check(bridges > 20, name + ": bridges over it (" + bridges + ")");
                     check(city.buildings.size() > 300, name + ": a town round it (" + city.buildings.size() + ")");
                     // Marines come in over the water to the shore by the fighting, and get out on dry land.
-                    float[] q = city.randomStreetSpot(new java.util.Random(3));
-                    check(w.fleet.marineLanding(16, q[0], q[1], "here", null), name + ": a way in by water");
+                    // (A street the sea can reach: one a long way inland has no landing near it.)
+                    java.util.Random qr = new java.util.Random(3);
+                    boolean landed = false;
+                    for (int k = 0; k < 12 && !landed; k++) {
+                        float[] q = city.randomStreetSpot(qr);
+                        landed = w.fleet.marineLanding(16, q[0], q[1], "here", null);
+                    }
+                    check(landed, name + ": a way in by water");
                     int boats = 0;
                     for (Fleet.Vehicle v : w.fleet.vehicles) if (v.type == Fleet.BOAT) boats++;
                     check(boats == 2, name + ": two landing craft (" + boats + ")");
@@ -3570,6 +3591,9 @@ public final class GameTests {
                             int t = city.tileIndex(e.x, e.y);
                             if (t >= 0 && city.tiles[t] == City.WATER) wet++;
                         }
+                    // (Ashore and since given a lift by a truck counts too.)
+                    for (Fleet.Vehicle v : w.fleet.vehicles)
+                        if (v.type != Fleet.BOAT && !v.broken) for (Entity e : v.crew) if (e.role == Entity.ROLE_MARINE && e.hp > 0) marines++;
                     check(marines >= 12, name + ": the Marines ashore (" + marines + ")");
                     check(wet == 0, name + ": none of them left in the water (" + wet + ")");
                     CityConfig back = new CityConfig();

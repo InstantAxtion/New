@@ -2,11 +2,22 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "11.0";
-    static final int VERSION_CODE = 102;
+    static final String VERSION = "11.1";
+    static final int VERSION_CODE = 103;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "11.1  -  On duty, multi-lane roads, beaches",
+                    "Police on foot walk a beat in pairs round their precinct streets instead of milling about (with the city under attack, a tighter beat, and one in three guarding the precinct). Soldiers on base are on duty: sentries at the posts, patrols round the perimeter, PT laps of the parade ground, and crews standing by at the motor pool; once the alarm goes they fall in by squad on the parade ground.",
+                    "Every new unit can be spawned: the bomb squad (Cop), Marines and recon scouts (Military), and a BearCat and a recon Humvee (Place).",
+                    "Rooftop air conditioning laid out the way it's installed: units in a neat row with their duct, clear of the edges and signs, instead of dotted about at random.",
+                    "Beaches people use: by the sea, beach lovers go down to the sand for a while, sunbathing on a towel (some under a parasol) or walking along the water's edge.",
+                    "Main roads have two lanes each way that traffic actually uses (slower traffic and trucks on the outside, lights and sirens on the inside), clearly marked, and new maps get six-lane boulevards across town. Traffic keeps to its own side on curved streets (it used to drive down the middle).",
+                    "Police and army vehicles on a call go round others of their own stopped at a scene or a roadblock, and use the next lane over to get round anything stopped.",
+                    "Bridges carry the main roads: between islands they run in line with a main road (of both islands where they can), and over canals and channels they meet the streets on both banks, clear of the other crossings. New maps keep the whole town in a solid block, and every corner where land meets a junction is rounded off.",
+                    "People going the same way spread across the pavement rather than walking in single file.",
+            },
             {
                     "11.0  -  Water cities, new units, drones and quarantine walls",
                     "Four new maps on the water. Bay City: a city wrapped round a deep bay, with a long bridge across it and another over its mouth. Delta Marsh: a river splitting into three channels on its way to the sea, the town on the land between and salt marsh along the shore. Fjord Town: a long narrow fjord cut deep inland, rocky shores and two bridges across. Canal City: canals in a grid through the town, quays along both banks and little bridges every few blocks.",

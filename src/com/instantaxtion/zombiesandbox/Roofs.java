@@ -118,12 +118,59 @@ final class Roofs {
     }
 
     private static void acUnit(Canvas c, Paint p, float x, float y) {
-        p.setColor(0x44000000);
-        c.drawRect(x + 1, y + 1, x + 6, y + 5, p);
-        p.setColor(0xFFC8CCD0);
-        c.drawRect(x, y, x + 5, y + 4, p);
-        p.setColor(0xFF7D8185);
-        c.drawCircle(x + 2.5f, y + 2, 1.3f, p);
+        rtu(c, p, x, y, 5.5f, 4.5f);
+    }
+
+    /** (11.1) One rooftop air-conditioning unit: a shadow, the grey casing with its frame, and the fan grille. */
+    static void rtu(Canvas c, Paint p, float x, float y, float uw, float uh) {
+        p.setColor(0x48000000);
+        c.drawRect(x + 1.1f, y + 1.3f, x + uw + 1.1f, y + uh + 1.3f, p);
+        p.setColor(0xFF8E9296);
+        c.drawRect(x, y, x + uw, y + uh, p);
+        p.setColor(0xFFC2C6CA);
+        c.drawRect(x + 0.5f, y + 0.5f, x + uw - 0.5f, y + uh - 0.5f, p);
+        float fr = Math.min(uw, uh) * 0.34f, fx = x + uw - fr - 0.9f, fy = y + uh / 2;
+        p.setColor(0xFF3E4246);
+        c.drawCircle(fx, fy, fr, p);
+        p.setColor(0xFF9A9EA2);
+        c.drawCircle(fx, fy, fr * 0.32f, p);
+        if (uw - fr * 2 > 2.4f) {
+            p.setColor(0xFFA4A8AC);
+            c.drawRect(x + 0.9f, y + 0.9f, fx - fr - 0.6f, y + uh - 0.9f, p);
+        }
+    }
+
+    /**
+     * (11.1) Rooftop air conditioning laid out the way it's installed: the units in a straight, evenly spaced row
+     * along one side of the roof, clear of the edges, with the duct running along behind them to a riser. Fewer
+     * than asked for if they won't fit.
+     */
+    static void hvac(Canvas c, Paint p, float x0, float y0, float x1, float y1, Random r, int n) {
+        float aw = x1 - x0 - 9, ah = y1 - y0 - 9;
+        if (n <= 0 || aw < 9 || ah < 8) return;
+        boolean across = aw >= ah;
+        float uw = across ? 7 : 6, uh = across ? 6 : 7, gap = 2.5f;
+        float len = across ? aw : ah, step = (across ? uw : uh) + gap;
+        n = Math.min(Math.min(n, 2 + (int) (len / 45)), Math.max(1, (int) ((len + gap) / step)));
+        float row = n * step - gap;
+        float start = (across ? x0 : y0) + 4.5f + (len - row) * (0.1f + r.nextFloat() * 0.8f);
+        boolean near = r.nextBoolean();
+        float cross = (across ? y0 : x0) + 4.5f + (across ? ah - uh : aw - uw) * (near ? 0.08f : 0.92f);
+        // The duct: along behind the row, then in to its riser.
+        float dw = 1.8f, dc = cross + (across ? (near ? uh + 1.2f : -1.2f - dw) : (near ? uw + 1.2f : -1.2f - dw));
+        p.setColor(0x38000000);
+        if (across) c.drawRect(start + 0.6f, dc + 0.6f, start + row + 0.6f, dc + dw + 0.6f, p);
+        else c.drawRect(dc + 0.6f, start + 0.6f, dc + dw + 0.6f, start + row + 0.6f, p);
+        p.setColor(0xFFB0B4B8);
+        if (across) c.drawRect(start, dc, start + row, dc + dw, p);
+        else c.drawRect(dc, start, dc + dw, start + row, p);
+        float rx = across ? start + row + 1 : dc - 1, ry = across ? dc - 1 : start + row + 1;
+        p.setColor(0xFF8A8E92);
+        c.drawRect(rx, ry, rx + 3.6f, ry + 3.6f, p);
+        for (int k = 0; k < n; k++) {
+            float ux = across ? start + k * step : cross, uy = across ? cross : start + k * step;
+            rtu(c, p, ux, uy, uw, uh);
+        }
     }
 
     private static void washing(Canvas c, Paint p, float x0, float y, float x1, Random r) {
@@ -322,8 +369,8 @@ final class Roofs {
         c.drawRect(tx, ty, tx + 7, ty + 7, p);
         p.setColor(0xFFB8C4CC);
         c.drawRect(tx + 1, ty + 1, tx + 6, ty + 6, p);
-        int n = Math.max(2, (int) (bw * bh / 300));
-        for (int i = 0; i < Math.min(n, 14); i++) acUnit(c, p, x0 + 4 + r.nextFloat() * Math.max(1, bw - 12), y0 + 15 + r.nextFloat() * Math.max(1, bh - 21));
+        // (Rows of units, one per flat, lined up across the roof.)
+        for (float ry = y0 + 14; ry + 10 <= y1 - 3; ry += 12) hvac(c, p, x0, ry - 3, x1, ry + 10, r, 8);
         if (!flats && bw >= 30 && r.nextInt(3) == 0) {
             // A rooftop billboard frame facing the street.
             p.setColor(0xFF4A4E52);
@@ -1390,10 +1437,7 @@ final class Roofs {
     }
 
     private static void units(Canvas c, Paint p, float x0, float y0, float x1, float y1, Random r, int n) {
-        for (int k = 0; k < n; k++) {
-            float ux = x0 + 4 + r.nextFloat() * Math.max(1, x1 - x0 - 12), uy = y0 + 4 + r.nextFloat() * Math.max(1, y1 - y0 - 10);
-            acUnit(c, p, ux, uy);
-        }
+        hvac(c, p, x0, y0, x1, y1, r, n);
     }
 
     /** The name of the place on a board on the roof (so it can be read from above). */

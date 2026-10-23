@@ -30,36 +30,39 @@ final class GameView extends View implements Menu.Host {
     private static boolean hiddenTool(int t) {
         return t == 5 || t == TOOL_ORDER || t == TOOL_PLACE || t == TOOL_EVENT || t == TOOL_BUILD || t == TOOL_ZONE;
     }
-    private static final String[] PLACE_NAMES = {"Car", "Police car", "Tank", "Barricade", "Crate", "Medkit"};
+    private static final String[] PLACE_NAMES = {"Car", "Police car", "Tank", "Barricade", "Crate", "Medkit", "BearCat", "Recon Humvee"};
     private static final String[] EVENT_NAMES = {"Horde", "Panic", "Outbreak", "Supply drop", "Airstrike",
             "City alarm", "Infect"};
     private static final int TOOL_COP = 3;
     // (Negative roles are the other agencies: World.spawnCop.)
     private static final int[] COP_ROLES = {0, Entity.ROLE_RIOT, Entity.ROLE_SWAT, Entity.ROLE_MARKSMAN,
-            -1, -2, -3, Entity.ROLE_SAR};
+            -1, -2, -3, Entity.ROLE_SAR, Entity.ROLE_EOD};
     private static final String[] COP_NAMES = {"Cop", "Riot cop", "SWAT", "Marksman", "Highway patrol", "Sheriff's deputy",
-            "Park ranger", "Search & rescue"};
+            "Park ranger", "Search & rescue", "Bomb squad"};
     private static final String[] CLEAR_NAMES = {"Everyone", "Zombies only", "Bodies & blood", "Wrecks",
             "Barricades"};
     private static final int[] ZOMBIE_VARIANTS = {Entity.ZOMBIE, Entity.RUNNER, Entity.BRUTE};
     private static final int[] CIV_VARIANTS = {Entity.CIVILIAN};
     private static final int[] MIL_ROLES = {Entity.ROLE_RIFLE, Entity.ROLE_COMMANDER, Entity.ROLE_SNIPER, Entity.ROLE_GUNNER,
-            Entity.ROLE_GUARD, Entity.ROLE_GRENADIER};
+            Entity.ROLE_GUARD, Entity.ROLE_GRENADIER, Entity.ROLE_MARINE, Entity.ROLE_RECON};
     private static final String[] MIL_NAMES = {"Soldier", "Commander", "Sniper", "Machine gunner", "National Guard",
-            "Grenadier"};
+            "Grenadier", "Marine", "Recon scout"};
     // One line about each option in the pickers.
     private static final String[] CIV_INFO = {"Goes about their day, runs and hides from zombies"};
     private static final String[] COP_INFO = {"Pistol, answers 911 calls", "Shield blocks bites from the front",
             "Body armour and a carbine; sent to the worst trouble",
             "Scoped rifle: picks off the dead from a long way off", "State trooper: works the highways, backs up the town",
             "County deputy: patrols the back roads", "Patrols the trails and dirt roads, guards the ranger station",
-            "Rescue specialist: finds the cut-off and gets them out"};
+            "Rescue specialist: finds the cut-off and gets them out",
+            "Blast suit and a shotgun; blows the doors of buildings full of the dead"};
     private static final String[] MIL_INFO = {"Rifle in bursts, grenades for crowds", "Boosts soldiers nearby, calls in support",
             "Long-range scoped rifle", "Belt-fed machine gun", "Guardsmen who protect civilians and safe zones",
-            "Grenade launcher for packs of the dead"};
+            "Grenade launcher for packs of the dead", "Well armed, tough, lands from the sea",
+            "Quick and light: scouts ahead and marks hordes"};
     private static final String[] ZOMBIE_INFO = {"Slow, relentless shambler", "Fast and fragile", "Big and tough, shoves people aside"};
     private static final String[] PLACE_INFO = {"A car in traffic", "A police car with two officers", "Holds the area for a few minutes",
-            "Drag to build a wall zombies must batter down", "Ammo for anyone passing", "Heals the hurt nearby"};
+            "Drag to build a wall zombies must batter down", "Ammo for anyone passing", "Heals the hurt nearby",
+            "Armoured truck with six tactical officers, off to the worst call", "Two scouts who roam the town and mark every horde"};
     private static final String[] EVENT_INFO = {"A horde arrives from the edge of town", "People panic and run",
             "An outbreak inside a building", "A crate on a parachute",
             "A jet bombs the spot", "Sirens send everyone indoors", "Someone here is bitten"};
@@ -5756,6 +5759,24 @@ final class GameView extends View implements Menu.Host {
     }
 
     private void drawEntity(Canvas c, Entity e, boolean healthBar) {
+        if (e.type == Entity.CIVILIAN && world.onTowel(e)) {
+            // ((11.1) A beach towel on the sand, and now and then a parasol.)
+            int[] towels = {0xFFE0505A, 0xFF3A8AD8, 0xFFF0C040, 0xFF40B080, 0xFFE07AB0};
+            float tx = e.spot[0], ty = e.spot[1];
+            fill.setColor(towels[e.nameSeed % towels.length & 0x7FFFFFFF]);
+            c.drawRect(tx - 3.5f, ty - 6.5f, tx + 3.5f, ty + 6.5f, fill);
+            fill.setColor(0xCCF4F4F0);
+            c.drawRect(tx - 3.5f, ty - 6.5f, tx + 3.5f, ty - 5.2f, fill);
+            c.drawRect(tx - 3.5f, ty + 5.2f, tx + 3.5f, ty + 6.5f, fill);
+            if ((e.nameSeed & 3) == 0) {
+                fill.setColor(0x30000000);
+                c.drawCircle(tx + 7, ty - 1, 7, fill);
+                fill.setColor((e.nameSeed & 4) == 0 ? 0xFFE8463A : 0xFF2E7DC8);
+                c.drawCircle(tx + 6, ty - 3, 6.5f, fill);
+                fill.setColor(0xFFF4F4F0);
+                c.drawCircle(tx + 6, ty - 3, 3.2f, fill);
+            }
+        }
         if (e.type == Entity.CIVILIAN && world.atStall(e)) {
             // The food cart: a striped umbrella over a little stall.
             float cx = e.x + 7, cy = e.y - 2;
@@ -7480,7 +7501,7 @@ final class GameView extends View implements Menu.Host {
                 c.drawRect(cx - size * 0.45f, cy - size * 0.12f, cx + size * 0.45f, cy + size * 0.12f, fill);
                 break;
             default: {
-                int col = placeVariant == 0 ? 0xFF2E5FB0 : placeVariant == 1 ? 0xFF1C1D22 : 0xFF55623A;
+                int col = placeVariant == 0 ? 0xFF2E5FB0 : placeVariant == 1 || placeVariant == 6 ? 0xFF1C1D22 : placeVariant == 7 ? 0xFF9C8A5E : 0xFF55623A;
                 fill.setColor(col);
                 oval.set(cx - size, cy - size * 0.5f, cx + size, cy + size * 0.5f);
                 c.drawRoundRect(oval, size * 0.25f, size * 0.25f, fill);
@@ -8035,6 +8056,8 @@ final class GameView extends View implements Menu.Host {
             case 2: made = world.fleet.placeTank(wx, wy); break;
             case 3: made = world.placeBarricade(wx, wy); break;
             case 4: made = world.placeCrate(wx, wy, 0); break;
+            case 6: made = world.fleet.placeBearCat(wx, wy); break;
+            case 7: made = world.fleet.startReconAt(wx, wy); break;
             default: made = world.placeMedkit(wx, wy); break;
         }
         if (made != null) lastAction.add(made);

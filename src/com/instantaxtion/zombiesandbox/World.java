@@ -1244,7 +1244,7 @@ final class World {
             e.speed = 18;
             e.runSpeed = 32;
             e.mass = 1.4f;
-        } else if (role == Entity.ROLE_SWAT || role == Entity.ROLE_MARKSMAN) {
+        } else if (role == Entity.ROLE_SWAT || role == Entity.ROLE_MARKSMAN || role == Entity.ROLE_EOD) {
             applyRole(e, role);
         } else if (role == Entity.ROLE_SAR) {
             applyRole(e, Entity.ROLE_SWAT);
@@ -4527,7 +4527,8 @@ final class World {
         else if (r < 0.70f) e.job = Entity.J_ERRANDS;
         else if (r < 0.79f) e.job = Entity.J_SHOPKEEPER;
         else if (r < 0.88f) e.job = Entity.J_JOGGER;
-        else if (r < 0.95f) e.job = Entity.J_PARK;
+        // ((11.1) By the sea, half of those who'd go to the park go to the beach instead.)
+        else if (r < 0.95f) e.job = r < 0.915f && !city.beachSpots().isEmpty() ? Entity.J_BEACH : Entity.J_PARK;
         else e.job = Entity.J_STUDENT;
         if (e.job == Entity.J_POSTIE) jobsGiven[0]++;
         if (e.job == Entity.J_VENDOR) jobsGiven[1]++;
@@ -4663,6 +4664,35 @@ final class World {
     }
 
     /** A street vendor at their stall. */
+    /**
+     * (11.1) A spot on the beach within reach of (x, y), at least min away (a walk along the sand goes on in
+     * much the same direction), or null.
+     */
+    private float[] pickBeach(Entity e, float x, float y, float reach, float min) {
+        java.util.List<float[]> spots = city.beachSpots();
+        float[] best = null;
+        float bs = -Float.MAX_VALUE;
+        for (int k = 0, n = spots.size(); k < n; k++) {
+            float[] s = spots.get(k);
+            float dx = s[0] - x, dy = s[1] - y, d = (float) Math.sqrt(dx * dx + dy * dy);
+            if (d > reach || d < min) continue;
+            float score = rnd.nextFloat() * 60 - d * (min > 0 ? 0.1f : 0.03f);
+            if (min > 0) score += 40 * (float) Math.cos(Math.atan2(dy, dx) - e.wanderAngle);
+            if (score > bs) {
+                bs = score;
+                best = s;
+            }
+        }
+        if (best != null && min > 0) e.wanderAngle = (float) Math.atan2(best[1] - y, best[0] - x);
+        return best;
+    }
+
+    /** (11.1) On a towel at the beach. */
+    boolean onTowel(Entity e) {
+        return e.job == Entity.J_BEACH && e.jobStep == 0 && e.spot != null && e.task == Dispatch.T_NONE
+                && Math.abs(e.spot[0] - e.x) < 12 && Math.abs(e.spot[1] - e.y) < 12 && e.vx * e.vx + e.vy * e.vy < 9;
+    }
+
     boolean atStall(Entity e) {
         if (e.job != Entity.J_VENDOR || e.spot == null) return false;
         float[] p = areaPoint(e.spot);
@@ -4726,6 +4756,34 @@ final class World {
                     else wander(e, e.speed * 0.4f);
                 }
                 if (e.jobTimer > 60 + (e.nameSeed & 127)) {
+                    e.spot = null;
+                    break;
+                }
+                return true;
+            }
+            case Entity.J_BEACH: {
+                // (11.1) Down to the beach: a towel on the sand for a while, or a walk along the water's edge.
+                if (e.spot == null) {
+                    e.spot = pickBeach(e, e.x, e.y, 1800, 0);
+                    if (e.spot == null) return false;
+                    e.jobTimer = 0;
+                    e.dutyWait = 0;
+                    e.jobStep = (e.nameSeed >> 3) % 3 == 0 ? 1 : 0;
+                }
+                float bx = e.spot[0] - e.x, by = e.spot[1] - e.y;
+                if (bx * bx + by * by > 12 * 12) {
+                    // (Time on the way there counts too, so a beach that can't be reached is given up on.)
+                    e.dutyWait += dt;
+                    walkToSpot(e, e.spot[0], e.spot[1], e.jobStep == 1 && e.jobTimer > 0 ? e.speed * 0.55f : e.speed);
+                } else {
+                    e.jobTimer += dt;
+                    if (e.jobStep == 1) {
+                        float[] next = pickBeach(e, e.spot[0], e.spot[1], 110, 30);
+                        if (next != null) e.spot = next;
+                        else steer(e, 0, 0, 0);
+                    } else steer(e, 0, 0, 0);
+                }
+                if (e.jobTimer > 90 + (e.nameSeed & 127) || e.dutyWait > 240) {
                     e.spot = null;
                     break;
                 }
@@ -4920,6 +4978,7 @@ final class World {
             case Entity.J_ERRANDS: return "Always out and about";
             case Entity.J_JOGGER: return "Keen runner";
             case Entity.J_PARK: return "Loves the park";
+            case Entity.J_BEACH: return "Beach lover";
             case Entity.J_POSTIE: return "Postal worker";
             case Entity.J_VENDOR: return "Street food vendor";
             case Entity.J_HIKER: return "Out hiking the trails";
@@ -4954,6 +5013,9 @@ final class World {
                 break;
             case Entity.J_PARK:
                 if (e.spot != null) return "Spending time at " + city.areaName(e.spot);
+                break;
+            case Entity.J_BEACH:
+                if (e.spot != null) return onTowel(e) ? "Sunbathing at the beach" : e.jobStep == 1 ? "Walking along the beach" : "Off to the beach";
                 break;
             case Entity.J_VENDOR:
                 if (e.spot != null)
@@ -6729,6 +6791,21 @@ final class World {
         while (e.pathIdx < p.length) {
             int t = p[e.pathIdx];
             float px = (t % w + 0.5f) * City.T, py = (t / w + 0.5f) * City.T;
+            // ((11.1) Each person a little to one side of the line between the corners, their own way, so a crowd
+            // going the same way spreads across the pavement instead of walking in single file. Not the last
+            // corner: that's where they're going.)
+            if (e.type == Entity.CIVILIAN && e.pathIdx > 0 && e.pathIdx < p.length - 1) {
+                int q = p[e.pathIdx - 1];
+                float sx = px - (q % w + 0.5f) * City.T, sy = py - (q / w + 0.5f) * City.T, sl = (float) Math.sqrt(sx * sx + sy * sy);
+                if (sl > 1) {
+                    float side = (((e.nameSeed >>> 5) & 31) / 31f - 0.5f) * City.T * 0.8f;
+                    float ox = px - sy / sl * side, oy = py + sx / sl * side;
+                    if (!city.solidAt(ox, oy)) {
+                        px = ox;
+                        py = oy;
+                    }
+                }
+            }
             float dx = px - e.x, dy = py - e.y, dd = (float) Math.sqrt(dx * dx + dy * dy) + 0.001f;
             if (dd < 8 && e.pathIdx < p.length - 1) {
                 e.pathIdx++;
@@ -7488,6 +7565,8 @@ final class World {
                 return;
             }
         }
+        // ((11.1) In peacetime, soldiers on base are on duty, not loafing about.)
+        if (soldier && e.task == Dispatch.T_NONE && alert == 0 && e.fear <= 0 && soldierDuty(e, dt)) return;
         // Soldiers keep their squad together.
         if (soldier && e.task == Dispatch.T_NONE) {
             if (e.taskTimer <= 0) {
@@ -7537,6 +7616,8 @@ final class World {
         int hunt = soldier ? 200 : 40;
         if ((e.ammo > 0 || e.reserve > 0) && dist < hunt && followField(e, city.zombieDist, e.speed * 1.3f)) return;
         if (e.agency == 3 && e.task == Dispatch.T_NONE && e.rig == null && rangerOnFoot(e, dt)) return;
+        // ((11.1) Officers with no call walk a beat.)
+        if (!soldier && e.task == Dispatch.T_NONE && e.rig == null && e.fear <= 0 && policeBeat(e, dt)) return;
         if (!soldier && alert >= 1 && e.task == Dispatch.T_NONE && e.rig == null) {
             // The city is under attack: officers with no call guard their precinct, spread round it facing out,
             // instead of milling about.
@@ -7562,9 +7643,122 @@ final class World {
             if (base != null) {
                 float bx = base.x - e.x, by = base.y - e.y;
                 if (bx * bx + by * by > base.r * base.r * 2.2f && followField(e, city.field(base), e.speed * 0.8f)) return;
+                // ((11.1) And once there, fall in: squads in ranks on the parade ground, ready to go.)
+                if (alert >= 1 && bx * bx + by * by < base.r * base.r * 2.2f) {
+                    int rank = e.squad % 4, file = e.member % 8;
+                    float px = base.x + (file - 3.5f) * 9, py = base.y + (rank - 1.5f) * 16;
+                    if (!city.solidAt(px, py)) {
+                        standAt(e, px, py, 0.6f);
+                        if (e.want < 1) e.angle = turn(e.angle, (float) (Math.PI / 2), dt * 3);
+                        return;
+                    }
+                }
             }
         }
         wander(e, e.speed * 0.6f);
+    }
+
+    /**
+     * (11.1) A police officer's beat: out of the precinct in pairs, along the streets round it from one spot to
+     * the next, a few moments at each, then on. With the city under attack it's a tighter beat round the precinct,
+     * and one in three stays guarding the precinct itself (see thinkArmed). False if there's no precinct to work
+     * from (or this one is on guard).
+     */
+    private boolean policeBeat(Entity e, float dt) {
+        City.Facility st = city.nearestFacility(City.FACILITY_POLICE, e.x, e.y);
+        if (st == null || (alert >= 1 && e.callsign % 3 == 0)) return false;
+        float reach = alert >= 1 ? 320 : 760;
+        float tx = e.dutyX - e.x, ty = e.dutyY - e.y;
+        boolean there = e.dutyFor > 0 && tx * tx + ty * ty < 22 * 22;
+        e.dutyFor -= dt;
+        if (there) {
+            if (e.dutyWait <= 0) e.dutyWait = 3 + rnd.nextFloat() * 6;
+            e.dutyWait -= dt;
+            steer(e, 0, 0, 0);
+            if (e.dutyWait > 0) return true;
+        }
+        if (e.dutyFor <= 0 || there || Math.hypot(e.dutyX - st.x, e.dutyY - st.y) > reach + 60) {
+            // (Partners pick the same next spot: it's chosen from their pair and how far along the beat they are.)
+            e.dutyStep++;
+            Random r = new Random((long) e.callsign / 2 * 7919 + e.dutyStep * 104729L + (long) st.x);
+            float[] p = null;
+            for (int k = 0; k < 8 && p == null; k++) {
+                double a = r.nextDouble() * TAU;
+                float d = 120 + r.nextFloat() * (reach - 120);
+                float[] q = city.findWalkable(st.x + (float) Math.cos(a) * d, st.y + (float) Math.sin(a) * d);
+                int t = q == null ? -1 : city.tileIndex(q[0], q[1]);
+                if (t >= 0 && (city.tiles[t] == City.SIDEWALK || city.tiles[t] == City.PLAZA) && !city.outOfTown(q[0], q[1])) p = q;
+            }
+            if (p == null) return false;
+            float side = (e.callsign & 1) == 0 ? 6 : -6;
+            e.dutyX = p[0] + side;
+            e.dutyY = p[1];
+            e.dutyFor = 90;
+            e.dutyWait = 0;
+        }
+        walkToSpot(e, e.dutyX, e.dutyY, e.speed * 0.7f);
+        return true;
+    }
+
+    /**
+     * (11.1) Soldiers on base in peacetime: each has a duty by squad and place in it - sentry at one of the posts,
+     * a patrol round the perimeter, PT laps round the parade ground, or standing by at the motor pool. False if
+     * they're nowhere near a base (they make their way back first).
+     */
+    private boolean soldierDuty(Entity e, float dt) {
+        City.Facility base = city.nearestFacility(City.FACILITY_BASE, e.x, e.y);
+        if (base == null || base.fallen) return false;
+        float bx = base.x - e.x, by = base.y - e.y;
+        if (bx * bx + by * by > base.r * base.r * 6) return false;
+        int duty = (e.squad * 3 + (e.member >> 1)) % 4;
+        if (e.role == Entity.ROLE_COMMANDER) duty = 3;
+        if (duty == 0 && !base.posts.isEmpty()) {
+            // Sentry: at a post, facing out.
+            float[] p = base.posts.get((e.squad * 5 + e.member) % base.posts.size());
+            walkToSpot(e, p[0], p[1], e.speed * 0.8f);
+            if (Math.hypot(p[0] - e.x, p[1] - e.y) < 6) {
+                steer(e, 0, 0, 0);
+                e.angle = turn(e.angle, (float) Math.atan2(e.y - base.y, e.x - base.x), dt * 2);
+            }
+            return true;
+        }
+        if (duty == 1 || duty == 0) {
+            // A pair walking the perimeter, from one corner of it to the next.
+            float r = base.r * 0.9f;
+            if (e.dutyFor <= 0 || Math.hypot(e.dutyX - e.x, e.dutyY - e.y) < 14) {
+                e.dutyStep++;
+                double a = (e.squad * 1.3 + e.dutyStep * TAU / 8);
+                float[] q = city.findWalkable(base.x + (float) Math.cos(a) * r, base.y + (float) Math.sin(a) * r);
+                if (q == null) return false;
+                e.dutyX = q[0] + ((e.member & 1) == 0 ? 5 : -5);
+                e.dutyY = q[1];
+                e.dutyFor = 40;
+            }
+            e.dutyFor -= dt;
+            walkToSpot(e, e.dutyX, e.dutyY, e.speed * 0.75f);
+            return true;
+        }
+        if (duty == 2) {
+            // PT: laps round the parade ground, the squad running together.
+            float r = Math.max(30, base.r * 0.35f);
+            float a = time * 0.22f + e.squad * 1.1f - e.member * 0.08f;
+            float px = base.x + (float) Math.cos(a) * r, py = base.y + (float) Math.sin(a) * r * 0.7f;
+            if (city.solidAt(px, py)) {
+                standAt(e, base.x + (e.member - 4) * 8, base.y + e.squad % 3 * 10, 0.6f);
+                return true;
+            }
+            float dx = px - e.x, dy = py - e.y, d = (float) Math.sqrt(dx * dx + dy * dy) + 0.001f;
+            steer(e, dx / d, dy / d, Math.min(e.runSpeed * 0.75f, d * 3));
+            return true;
+        }
+        // Standing by at the motor pool, by the gate, ready to roll.
+        float gx = base.gateX + ((e.member % 4) - 1.5f) * 10, gy = base.gateY - 24 - (e.member / 4) * 10;
+        if (city.solidAt(gx, gy)) {
+            gx = base.x + ((e.member % 4) - 1.5f) * 10;
+            gy = base.y + 30;
+        }
+        standAt(e, gx, gy, 0.6f);
+        return true;
     }
 
     // ------------------------------------------------------------------ (10.37) police and soldiers' brain

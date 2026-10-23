@@ -196,6 +196,8 @@ final class Fleet {
         /** The station it belongs to (fire engines and patrol cars), and how many it waits to take aboard. */
         City.Facility station;
         int crewWanted, crewSpawns;
+        /** (11.1) Which lane it keeps to on a road with more than one each way (0 the inside one). */
+        int lane;
         /** (11.0) A reserve pilot on their way to fly it. */
         Entity pilotComing;
         /** (11.0) An army recon vehicle (roams, reports, doesn't stop), and how long since it last radioed a horde in. */
@@ -403,9 +405,16 @@ final class Fleet {
         vehicles.clear();
     }
 
+    /** (11.1) The lane a vehicle keeps to: on a call, the inside one, to get by. */
+    private static int laneOf(Vehicle v) {
+        return v.lightsOn() ? 0 : v.lane;
+    }
+
     private Vehicle make(int type) {
         Vehicle v = new Vehicle();
         v.type = type;
+        // ((11.1) A third keep to the inside lane, the rest (and every truck and bus) to the outside.)
+        v.lane = type == TRUCK || type == TANK ? 2 : w.rnd.nextInt(3);
         v.hp = v.maxHp = MAX_HP[type];
         // (10.32) Ordinary cars set off with anything from a third of a tank to a full one.
         v.fuel = type == CAR ? 0.3f + w.rnd.nextFloat() * 0.7f : 1;
@@ -800,7 +809,9 @@ final class Fleet {
             int px = path[q] % W, py = path[q] / W;
             // (Along the highway, both carriageways and the verges: a car that ends up on the other side of the
             // barrier must still know which way is on.)
-            int R = city.nearHighway((px + 0.5f) * City.T, (py + 0.5f) * City.T, 6 * City.T) ? 9 : 3;
+            // ((11.1) Four tiles either side elsewhere: the whole of a main road, both its lanes, from a route that
+            // runs down one side of it - at three, a car in the outside lane was off its route, and planned it again.)
+            int R = city.nearHighway((px + 0.5f) * City.T, (py + 0.5f) * City.T, 6 * City.T) ? 9 : 4;
             for (int j = Math.max(0, py - R); j <= Math.min(H - 1, py + R); j++)
                 for (int i = Math.max(0, px - R); i <= Math.min(W - 1, px + R); i++) {
                     int f = field[j * W + i];
@@ -1135,8 +1146,13 @@ final class Fleet {
      * dead off it).
      */
     boolean startRecon(City.Facility base) {
-        float[] g = city.nearestDrivable(base.gateX > 0 ? base.gateX : base.x, base.gateY > 0 ? base.gateY : base.y);
-        if (g == null) return false;
+        return startReconAt(base.gateX > 0 ? base.gateX : base.x, base.gateY > 0 ? base.gateY : base.y) != null;
+    }
+
+    /** (11.1) A recon Humvee starting from the nearest road to (x, y) (placed with the Place tool too). */
+    Vehicle startReconAt(float x, float y) {
+        float[] g = city.nearestDrivable(x, y);
+        if (g == null) return null;
         Vehicle v = make(TRUCK);
         setKind(v, K_HUMVEE);
         v.recon = true;
@@ -1144,7 +1160,7 @@ final class Fleet {
         v.y = v.homeY = g[1];
         v.number = ++reconNumber;
         v.state = DRIVE;
-        if (!reconDestination(v)) return false;
+        if (!reconDestination(v)) return null;
         for (int k = 0; k < 2; k++) {
             Entity e = w.create(Entity.SOLDIER, v.x, v.y);
             w.applyRole(e, Entity.ROLE_RECON);
@@ -1152,7 +1168,31 @@ final class Fleet {
             v.crew.add(e);
         }
         vehicles.add(v);
-        return true;
+        return v;
+    }
+
+    /**
+     * (11.1) The Place tool's BearCat: six tactical officers in their armoured truck, off from where it's put to
+     * the worst call going (or out on patrol if there isn't one).
+     */
+    Vehicle placeBearCat(float x, float y) {
+        Dispatch.Incident worst = null;
+        for (int i = 0; i < w.dispatch.incidents.size(); i++) {
+            Dispatch.Incident inc = w.dispatch.incidents.get(i);
+            if (!inc.resolved && (worst == null || inc.zombiesNear > worst.zombiesNear)) worst = inc;
+        }
+        float[] d = worst != null ? new float[]{worst.x, worst.y} : randomRoad();
+        if (d == null) return null;
+        int before = vehicles.size();
+        fromParked = false;
+        boolean sent = send(Entity.SOLDIER, 6, x, y, d[0], d[1], worst, null, city.placeName(d[0], d[1]));
+        fromParked = true;
+        if (!sent || vehicles.size() == before) return null;
+        Vehicle v = vehicles.get(vehicles.size() - 1);
+        setKind(v, K_BEARCAT);
+        v.passengerType = Entity.COP;
+        v.timer = 0.3f;
+        return v;
     }
 
     private int reconNumber;
@@ -2572,7 +2612,7 @@ final class Fleet {
                 float le = 0;
                 if (out) {
                     int E = ts[k];
-                    float oe = city.laneOffset(E % W, E / W, ex, ey);
+                    float oe = city.laneOffset(E % W, E / W, ex, ey, laneOf(v));
                     le = ex != 0 ? (E / W + 0.5f) * City.T + ex * oe : (E % W + 0.5f) * City.T - ey * oe;
                 }
                 int ax = jEntryX, ay = jEntryY;
@@ -2629,7 +2669,7 @@ final class Fleet {
                     px = rbCx + (float) Math.cos(ra) * rbR;
                     py = rbCy + (float) Math.sin(ra) * rbR;
                 } else if (!jSmooth) {
-                    float o = city.laneOffset(tx, ty, sdx, sdy);
+                    float o = city.laneOffset(tx, ty, sdx, sdy, laneOf(v));
                     px = cx - sdy * o;
                     py = cy + sdx * o;
                 } else if (out && !Float.isNaN(li) && ax * ex + ay * ey == 0) {
@@ -2662,16 +2702,18 @@ final class Fleet {
                     if (ex != 0) py = le;
                     else px = le;
                 } else {
-                    float o = city.laneOffset(tx, ty, sdx, sdy);
+                    float o = city.laneOffset(tx, ty, sdx, sdy, laneOf(v));
                     px = cx - sdy * o;
                     py = cy + sdx * o;
                 }
                 sx = sdx;
                 sy = sdy;
             } else {
-                float off = city.laneOffset(tx, ty, sx, sy);
+                float off = city.laneOffset(tx, ty, sx, sy, laneOf(v));
                 // (On a diagonal, or a curved street: no lanes to measure across it; near the middle.)
-                if (city.curveAt(tx, ty)) off = 0;
+                // ((11.1) But on a curved street still on your own side of it, a lane's width from the one coming
+                // the other way: down the middle, they met head on.)
+                if (city.curveAt(tx, ty)) off = City.T * 0.27f * (city.country.leftHand ? -1 : 1);
                 else if (Math.min(Math.abs(dx), Math.abs(dy)) > 0.3f) off = Math.max(-City.T * 0.4f, Math.min(City.T * 0.4f, off));
                 px = (tx + 0.5f) * City.T - dy * off;
                 py = (ty + 0.5f) * City.T + dx * off;
@@ -2680,7 +2722,9 @@ final class Fleet {
                 // (Only where that keeps it on the route, though: not off the end of a slip road and on along the
                 // highway it should have left.)
                 if (i > 0 && sx == lastAxisX && sy == lastAxisY && !lastJ && !Float.isNaN(lastAlong)) {
-                    float maxShift = City.T * 0.3f, qx = px, qy = py;
+                    // ((11.1) Quicker into a lane over on the far side of a wide road: at a third of a tile a step it
+                    // was half a block on the wrong half of the road getting there.)
+                    float maxShift = City.T * (Math.abs((sx == 0 ? px : py) - lastAlong) > City.T * 1.2f ? 0.7f : 0.3f), qx = px, qy = py;
                     if (sx == 0) qx = lastAlong + Math.max(-maxShift, Math.min(maxShift, px - lastAlong));
                     else qy = lastAlong + Math.max(-maxShift, Math.min(maxShift, py - lastAlong));
                     int q = city.tileIndex(qx, qy), fq = v.field.get(q);
@@ -2957,7 +3001,11 @@ final class Fleet {
                     || (o.stillT > 6 && v.stillT > 6 && !o.held && !o.queuedHeld)
                     // (10.42) Or a knot where everyone's waiting on everyone else at once: longer than any red
                     // light lasts and it isn't a queue, it's stuck.
-                    || (o.stillT > 25 && v.stillT > 10 && o.type == CAR && o.player == null);
+                    || (o.stillT > 25 && v.stillT > 10 && o.type == CAR && o.player == null)
+                    // ((11.1) Police and army on a call don't sit behind another of their own stopped at a scene, a
+                    // roadblock or a pickup either - only one waiting at a red light.)
+                    || ((v.lightsOn() || (v.type == TRUCK && v.state == DRIVE && v.incident != null)) && o.type != CAR && o.player == null
+                        && !o.held && !o.queuedHeld && o.stillT > (o.state == DRIVE ? 4f : 1.5f));
             if (stuckThere && v.player == null && v.type != TANK) {
                 if (gap < 40) v.passing = 1.4f;
                 limit = Math.min(limit, 30 + Math.max(0, gap));
@@ -3684,10 +3732,30 @@ final class Fleet {
                             v.pathT = y * W + x;
                         }
                     }
+            byte under = city.tiles[ti];
+            if (v.pathT < 0 && v.rerouteCd <= 0 && under != City.ROAD && under != City.DIRT && under != City.CAR && under != City.LOT) {
+                // ((11.1) Right off the road - in a yard, a park, inside a block - with no road under it to find the
+                // way from: back onto the nearest road (it had nowhere else to drive from, and tried again for ever),
+                // then plan from there.)
+                for (int r = 1, found = 0; r <= 12 && found == 0; r++)
+                    for (int y = ty0 - r; y <= ty0 + r && found == 0; y++)
+                        for (int x = tx0 - r; x <= tx0 + r; x++) {
+                            if (Math.max(Math.abs(x - tx0), Math.abs(y - ty0)) != r || x < 0 || y < 0 || x >= W || y >= city.h) continue;
+                            if (city.tiles[y * W + x] != City.ROAD || (city.oneWay != null && city.oneWay[y * W + x] != 0)) continue;
+                            v.x = (x + 0.5f) * City.T;
+                            v.y = (y + 0.5f) * City.T;
+                            v.speed = 0;
+                            found = 1;
+                            break;
+                        }
+            }
             if (v.pathT < 0) {
                 // Off the route's corridor altogether (shoved aside, or round something): plan it again from here.
-                if (v.rerouteCd > 0 || !route(v, v.tx, v.ty)) return false;
+                // ((11.1) The wait before the next try whether or not this one finds a way: one that didn't was
+                // tried again every frame, a whole-city search each time.)
+                if (v.rerouteCd > 0) return false;
                 v.rerouteCd = 3;
+                if (!route(v, v.tx, v.ty)) return false;
                 v.pathField = null;
                 return driveStep(v, dt, max, throttle);
             }
@@ -3725,19 +3793,25 @@ final class Fleet {
         if (bx == tx && by == ty) return false;
         int ddx = Integer.signum(bx - tx), ddy = Integer.signum(by - ty);
         // Keep to your own side of the road (left in Australia and Japan), in the middle of the lane.
-        float off = city.laneOffset(bx, by, ddx, ddy);
+        float off = city.laneOffset(bx, by, ddx, ddy, laneOf(v));
         if (v.careful > 0) v.careful -= dt;
         // (Going round something stopped in the lane: out towards the middle of the road for a moment.)
         if (v.passing > 0) {
             v.passing -= dt;
             // (In a junction only to get out of a jam: there a stopped car is usually just waiting to turn.)
-            if (city.junctionIdAt(v.x, v.y) < 0 || v.stillT > 0 || v.speed < 20) off -= (off == 0 ? 1 : Math.signum(off)) * City.T * 1.1f;
+            if (city.junctionIdAt(v.x, v.y) < 0 || v.stillT > 0 || v.speed < 20) {
+                // ((11.1) Where there's more than one lane each way, round it by the next lane over, not the
+                // oncoming one.)
+                if (city.lanesEachWay(bx, by, ddx, ddy) > 1 && city.junctionIdAt(v.x, v.y) < 0)
+                    off = city.laneOffset(bx, by, ddx, ddy, laneOf(v) == 0 ? 2 : 0);
+                else off -= (off == 0 ? 1 : Math.signum(off)) * City.T * 1.1f;
+            }
         }
         // Into a junction in your own lane (measured on the road you're on): the turn is made inside it,
         // not by cutting across the lanes before the stop line.
         if (ddx * v.pdx + ddy * v.pdy > 0 && city.junctionIdAt((bx + 0.5f) * City.T, (by + 0.5f) * City.T) >= 0
                 && city.junctionIdAt((tx + 0.5f) * City.T, (ty + 0.5f) * City.T) < 0)
-            off = city.laneOffset(tx, ty, ddx, ddy);
+            off = city.laneOffset(tx, ty, ddx, ddy, laneOf(v));
         // A step across the road outside a junction (a U-turn mid-block, or pulling out from the far kerb):
         // straight over, slowly, not along a "lane" that runs the wrong way.
         // ((10.49) Not along a curved road, though: there every step is half sideways.)
@@ -3838,7 +3912,7 @@ final class Fleet {
                 if (n == t) break;
                 int sx = Integer.signum(n % W - t % W), sy = Integer.signum(n / W - t / W);
                 if (city.junctionIdAt((n % W + 0.5f) * City.T, (n / W + 0.5f) * City.T) < 0) {
-                    float o2 = city.laneOffset(bx, by, sx, sy);
+                    float o2 = city.laneOffset(bx, by, sx, sy, laneOf(v));
                     gx = bx * City.T + City.T / 2f - sy * o2;
                     gy = by * City.T + City.T / 2f + sx * o2;
                     break;
@@ -5209,6 +5283,15 @@ final class Fleet {
      * A patrol car: drives its beat by the rules of the road, stops and gets out when the officers see
      * one of them, answers calls with lights and siren, and drives on once its officers are back in.
      */
+    /** (11.1) Someone of the crew still walking up to the car and nearly there (they come in off the beat now). */
+    private boolean partnerComing(Vehicle v) {
+        for (int i = 0, n = w.entities.size(); i < n; i++) {
+            Entity e = w.entities.get(i);
+            if (!e.dead && e.rig == v && e.task == Dispatch.T_BOARD && Math.abs(e.x - v.x) < 160 && Math.abs(e.y - v.y) < 160) return true;
+        }
+        return false;
+    }
+
     private boolean updatePatrol(Vehicle v, float dt) {
         v.checkCd -= dt;
         boolean check = v.checkCd <= 0;
@@ -5216,7 +5299,7 @@ final class Fleet {
         if (v.state == MUSTER) {
             v.speed = 0;
             v.timer += dt;
-            if (v.crew.size() >= v.crewWanted || (v.timer > 8 && !v.crew.isEmpty())) {
+            if (v.crew.size() >= v.crewWanted || (v.timer > 8 && !v.crew.isEmpty() && (v.timer > 25 || !partnerComing(v)))) {
                 dropCrew(v);
                 // ((10.41) Mounted up for a call: off to it with the lights on; a patrol car after.)
                 Dispatch.Incident inc = v.incident;

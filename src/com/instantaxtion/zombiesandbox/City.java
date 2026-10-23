@@ -2228,6 +2228,9 @@ final class City {
     }
 
     /** Lays road tiles for a street, marking junctions where it crosses another. */
+    /** (11.1) The tiles of the six-lane boulevards (seven across). */
+    private boolean[] boulevard;
+
     private void carve(Street st) {
         for (int y = st.y0; y < st.y1; y++)
             for (int x = st.x0; x < st.x1; x++) {
@@ -2236,6 +2239,10 @@ final class City {
                 roadDir[i] = roadDir[i] != 0 ? 3 : (byte) (st.vertical ? 1 : 2);
                 tiles[i] = ROAD;
                 if (st.main) mainRoad[i] = true;
+                if (st.width >= 7) {
+                    if (boulevard == null) boulevard = new boolean[w * h];
+                    boulevard[i] = true;
+                }
             }
         streets.add(st);
     }
@@ -2290,6 +2297,8 @@ final class City {
         // (Since 10.28 more of the bigger streets are avenues: two lanes each way.)
         if (cfg.civic >= 12 && !rural && depth < 4 && Math.max(bw, bh) > (w > 220 ? 60 : 52)) big = true;
         int roadW = big ? 5 : 3, minSide = 16;
+        // ((11.1) The great cross-town routes, the first splits of a big town, are boulevards: three lanes each way.)
+        if (cfg.civic >= 27 && big && depth <= 1 && Math.max(bw, bh) > 150) roadW = 7;
         boolean vertical;
         if (bw > bh * 1.3f) vertical = true;
         else if (bh > bw * 1.3f) vertical = false;
@@ -2481,7 +2490,8 @@ final class City {
         } else {
             split(bx0 + in, by0 + in, bx1 - in, by1 - in, 0, -1, -1);
         }
-        if (organic) erodeTown(bx0, by0, bx1, by1);
+        // ((11.1) Not since the thin band of country: whole corners of town left as fields undid it.)
+        if (organic && cfg.civic < 27) erodeTown(bx0, by0, bx1, by1);
         if (seaY > 0) coast();
         if (!channels.isEmpty()) finishChannels();
 
@@ -2753,7 +2763,8 @@ final class City {
             if (curDistrict != DT_SUBURB && curDistrict != DT_PARKSIDE && curDistrict != DT_OLDTOWN) farmChance = 0;
             // (A massive map's town runs right out to the country band: only the odd farm inside it.)
             if (w >= 400) farmChance *= 0.25f;
-            if (fd > 0.8f && iw >= 7 && ih >= 7 && rnd.nextFloat() < farmChance) {
+            // ((11.1) The town's edge isn't worn away any more: the farms start a ring further in.)
+            if (fd > (cfg.civic >= 27 ? 0.68f : 0.8f) && iw >= 7 && ih >= 7 && rnd.nextFloat() < farmChance) {
                 farm(ix, iy, iw, ih);
                 continue;
             }
@@ -4087,11 +4098,16 @@ final class City {
         // Bridges, street to street between neighbouring islands, and a causeway out to the mainland.
         for (int[] l : islandLinks) {
             int[] a = islandRects[l[0]], b = islandRects[l[1]];
-            if (l[2] == 0) linkRoad(false, (Math.max(a[1], b[1]) + Math.min(a[3], b[3])) / 2 - 1, (a[2] + b[0]) / 2, true);
-            else linkRoad(true, (Math.max(a[0], b[0]) + Math.min(a[2], b[2])) / 2 - 1, (a[3] + b[1]) / 2, true);
+            if (l[2] == 0) {
+                int lo = Math.max(a[1], b[1]), hi = Math.min(a[3], b[3]);
+                linkRoad(false, mainLine(false, lo, hi, (lo + hi) / 2 - 1, a, b), (a[2] + b[0]) / 2, true);
+            } else {
+                int lo = Math.max(a[0], b[0]), hi = Math.min(a[2], b[2]);
+                linkRoad(true, mainLine(true, lo, hi, (lo + hi) / 2 - 1, a, b), (a[3] + b[1]) / 2, true);
+            }
         }
         int[] c = islandRects[causewayIsland];
-        int cx = (c[0] + c[2]) / 2 - 1;
+        int cx = mainLine(true, c[0], c[2], (c[0] + c[2]) / 2 - 1, c, null);
         linkRoad(true, cx, h - 1, false);
         causewayEnd = new float[]{(cx + 1.5f) * T, (h - 1.5f) * T};
         // Islets offshore: rocks with a tree or two, clear of the bridges. (Not since 10.10: people ended up
@@ -4198,6 +4214,43 @@ final class City {
      * gap it runs both ways (or one way, from the map edge) until it meets a street, cutting through any
      * block in its way, with footpaths each side; over the water it's a bridge.
      */
+    /**
+     * (11.1) Where a bridge across from an island (rectangle a, to b if there is one) should run: in line with a
+     * main road of the town there, one that still reaches the shore, and of both towns if they have one in
+     * line, so the bridge carries the road on; failing that, the middle (fallback). Map version 27 on.
+     */
+    private int mainLine(boolean vertical, int lo, int hi, int fallback, int[] a, int[] b) {
+        if (cfg.civic < 27) return fallback;
+        int best = fallback;
+        float bs = -Float.MAX_VALUE;
+        for (Street st : streets) {
+            if (st.vertical != vertical || !st.main) continue;
+            int c0 = vertical ? st.x0 : st.y0, c1 = vertical ? st.x1 : st.y1;
+            int at = (c0 + c1) / 2 - 1;
+            if (at < lo + 3 || at + 3 > hi - 3) continue;
+            boolean inA = inRect(st, a), inB = b != null && inRect(st, b);
+            if (!inA && !inB) continue;
+            // (Still road somewhere along it: not a street the coast took away.)
+            int rx = vertical ? at + 1 : (st.x0 + st.x1) / 2, ry = vertical ? (st.y0 + st.y1) / 2 : at + 1;
+            if (!paved(rx, ry)) continue;
+            float score = (inA ? 10 : 0) + (inB ? 10 : 0) + (c1 - c0) - Math.abs(at - fallback) * 0.05f;
+            // In line with one on the other island too: best of all.
+            if (b != null)
+                for (Street o : streets)
+                    if (o != st && o.vertical == vertical && o.main && Math.abs((vertical ? o.x0 + o.x1 : o.y0 + o.y1) - (c0 + c1)) <= 2
+                            && (inRect(o, a) != inA || inRect(o, b) != inB)) score += 30;
+            if (score > bs) {
+                bs = score;
+                best = at;
+            }
+        }
+        return best;
+    }
+
+    private static boolean inRect(Street st, int[] r) {
+        return r != null && st.x0 >= r[0] - 1 && st.x1 <= r[2] + 1 && st.y0 >= r[1] - 1 && st.y1 <= r[3] + 1;
+    }
+
     private void linkRoad(boolean vertical, int at, int mid, boolean both) {
         int len = vertical ? h : w;
         int lo = reachRoad(vertical, at, mid, -1), hi = both ? reachRoad(vertical, at, mid, 1) : len;
@@ -4907,7 +4960,7 @@ final class City {
 
     /** A piece of water (see {@link #channels}) with its quays along both banks. */
     private void channel(int x0, int y0, int x1, int y1, boolean vertical, int shore, int shoreW) {
-        channels.add(new int[]{x0, y0, x1, y1, vertical ? 1 : 0, shore, shoreW});
+        channels.add(new int[]{x0, y0, x1, y1, vertical ? 1 : 0, shore, shoreW, 0});
         if (vertical) {
             carve(new Street(x0 - 3, y0, x0, y1, true, true));
             carve(new Street(x1, y0, x1 + 3, y1, true, true));
@@ -4922,12 +4975,50 @@ final class City {
         boolean vertical = c[4] == 1;
         int lo = vertical ? c[1] : c[0], hi = vertical ? c[3] : c[2];
         int n = Math.max(1, (hi - lo) / every);
+        // The streets that come down to each bank, by where they cross it (doubled centre), the way across.
+        List<Integer> nearSide = new ArrayList<Integer>(), farSide = new ArrayList<Integer>();
+        for (Street st : streets) {
+            if (st.vertical == vertical) continue;
+            int cc = vertical ? st.y0 + st.y1 : st.x0 + st.x1;
+            if (cc / 2 < lo + 4 || cc / 2 > hi - 5) continue;
+            if (vertical ? st.x1 == c[0] - 3 : st.y1 == c[1] - 3) nearSide.add(cc);
+            if (vertical ? st.x0 == c[2] + 3 : st.y0 == c[3] + 3) farSide.add(cc);
+        }
         for (int k = 0; k < n; k++) {
             int at = lo + (hi - lo) * (2 * k + 1) / (2 * n) - 1 + rnd.nextInt(5) - 2;
             at = Math.max(lo + 4, Math.min(hi - 7, at));
+            // The street nearest the even spacing: one met on the far bank too, if one's within reach.
+            int pick = Integer.MIN_VALUE;
+            float bd = Math.max(every * 0.4f, 12);
+            for (int s = 0; s < 2 && pick == Integer.MIN_VALUE; s++)
+                for (int cc : nearSide) {
+                    // ((Not right beside a crossing already there: another canal's quay, or a bridge just built.))
+                    if (crossingNear(c, cc / 2 - 1, 8)) continue;
+                    boolean met = false;
+                    for (int o : farSide) if (Math.abs(o - cc) <= 2) met = true;
+                    if (s == 0 && !met) continue;
+                    float d = Math.abs(cc / 2f - (at + 1.5f));
+                    if (d < bd) {
+                        bd = d;
+                        pick = cc;
+                    }
+                }
+            if (pick != Integer.MIN_VALUE) at = pick / 2 - 1;
+            else if (crossingNear(c, at, 8)) continue;
             if (vertical) carve(new Street(c[0], at, c[2], at + 3, false, k == n / 2));
             else carve(new Street(at, c[1], at + 3, c[3], true, k == n / 2));
         }
+    }
+
+    /** (11.1) A road already across this water within reach of the band from 'at' (three wide). */
+    private boolean crossingNear(int[] c, int at, int reach) {
+        boolean vertical = c[4] == 1;
+        int mid = vertical ? (c[0] + c[2]) / 2 : (c[1] + c[3]) / 2;
+        for (int k = at - reach; k < at + 3 + reach; k++) {
+            int x = vertical ? mid : k, y = vertical ? k : mid;
+            if (x >= 0 && y >= 0 && x < w && y < h && tiles[y * w + x] == ROAD) return true;
+        }
+        return false;
     }
 
     /** The town round its water: the water and its quays first, then the land between laid out in streets. */
@@ -4943,7 +5034,7 @@ final class City {
             int y0 = by0 + Math.round(th * (bay ? 0.36f + rnd.nextFloat() * 0.08f : 0.14f + rnd.nextFloat() * 0.06f));
             channel(x0, y0, x1, by1, true, bay ? GRASS : ROCK, bay ? 4 : 5);
             carve(new Street(x0 - 3, y0 - 3, x1 + 3, y0, false, true));
-            bridges(channels.get(0), bay ? 1000 : Math.max(40, (by1 - y0) / 2));
+            channels.get(0)[7] = bay ? 1000 : Math.max(40, (by1 - y0) / 2);
             cells.add(new int[]{bx0 + in, by0 + in, bx1 - in, y0 - 3});
             cells.add(new int[]{bx0 + in, y0 - 3, x0 - 3, by1 - in});
             cells.add(new int[]{x1 + 3, y0 - 3, bx1 - in, by1 - in});
@@ -4957,7 +5048,7 @@ final class City {
             }
             for (int k = 0; k < n; k++) channel(bx0 + in, ys[k], bx1 - in, ys[k] + cw, false, SIDEWALK, 0);
             for (int k = 0; k < n; k++) channel(xs[k], by0 + in, xs[k] + cw, by1, true, SIDEWALK, 0);
-            for (int[] c : new ArrayList<int[]>(channels)) bridges(c, 30);
+            for (int[] c : channels) c[7] = 30;
             int[] cx = new int[n * 2 + 2], cy = new int[n * 2 + 2];
             cx[0] = bx0 + in;
             cy[0] = by0 + in;
@@ -4981,7 +5072,7 @@ final class City {
             channel(mx0, 0, mx1, hy0, true, GRASS, 2);
             channel(vc[0] - dw / 2, hy0, vc[2] - dw / 2 + dw, hy1, false, GRASS, 1);
             for (int k = 0; k < 3; k++) channel(vc[k] - dw / 2, hy1 + 3, vc[k] - dw / 2 + dw, by1, true, GRASS, 2);
-            for (int[] c : new ArrayList<int[]>(channels)) bridges(c, 46);
+            for (int[] c : channels) c[7] = 46;
             int l0 = vc[0] - dw / 2, l1 = l0 + dw, c0 = vc[1] - dw / 2, c1 = c0 + dw, r0 = vc[2] - dw / 2, r1 = r0 + dw;
             cells.add(new int[]{bx0 + in, by0 + in, mx0 - 3, hy0 - 3});
             cells.add(new int[]{mx1 + 3, by0 + in, bx1 - in, hy0 - 3});
@@ -5001,6 +5092,9 @@ final class City {
             }
             if (y1 - c[1] >= 6) split(c[0], c[1], c[2], y1, 0, -1, -1);
         }
+        // ((11.1) The bridges once the streets are laid: each where a street comes down to the water on one bank,
+        // in line with one on the other where there is, so the street carries on across.)
+        for (int[] c : new ArrayList<int[]>(channels)) bridges(c, c[7]);
         // The water itself: a walk along the bank, then the shore (rocks, or grass with trees), then the water.
         double ph = rnd.nextDouble() * 10;
         for (int[] c : channels) {
@@ -5028,6 +5122,29 @@ final class City {
                     roadDir[i] = 0;
                 }
         }
+    }
+
+    private List<float[]> beachSpots;
+
+    /**
+     * (11.1) Spots on the sand by the water, for a day at the beach: {x, y} at tile centres, every few tiles
+     * along every beach on the map (the seaside, the bays, the islands' coves). Empty with no beach.
+     */
+    List<float[]> beachSpots() {
+        if (beachSpots != null) return beachSpots;
+        beachSpots = new ArrayList<float[]>();
+        for (int y = 2; y < h - 2; y++)
+            for (int x = 2; x < w - 2; x++) {
+                if (tiles[y * w + x] != SAND || ((x * 3 + y * 5) % 7) != 0) continue;
+                boolean water = false;
+                for (int d = 1; d <= 6 && !water; d++)
+                    for (int[] v : new int[][]{{d, 0}, {-d, 0}, {0, d}, {0, -d}}) {
+                        int nx = x + v[0], ny = y + v[1];
+                        if (nx >= 0 && ny >= 0 && nx < w && ny < h && tiles[ny * w + nx] == WATER) water = true;
+                    }
+                if (water && !solid[y * w + x]) beachSpots.add(new float[]{(x + 0.5f) * T, (y + 0.5f) * T});
+            }
+        return beachSpots;
     }
 
     /** Where the Delta Marsh's marsh begins (rows below it, above the shore, are marsh), or -1. */
@@ -9939,6 +10056,7 @@ final class City {
     /** Rounds off the block corners where two streets meet: wide kerbs on big blocks, tight on small ones. */
     private void roundCorners(Canvas c, Paint p) {
         Path path = new Path();
+        java.util.HashSet<Integer> done = new java.util.HashSet<Integer>();
         for (int[] b : blocks) {
             int bw = b[2] - b[0], bh = b[3] - b[1];
             float r = Math.min(bw, bh) >= 8 ? T * 2.2f : T * 1.1f;
@@ -9949,6 +10067,7 @@ final class City {
                 int ix = k[2] > 0 ? k[0] : k[0] - 1, iy = k[3] > 0 ? k[1] : k[1] - 1;
                 if (!paved(ox, iy) || !paved(ix, oy)) continue;
                 if (ix < 0 || iy < 0 || ix >= w || iy >= h || tiles[iy * w + ix] != SIDEWALK) continue;
+                done.add((iy * w + ix) * 4 + (k[2] > 0 ? 0 : 1) + (k[3] > 0 ? 0 : 2));
                 float cx = k[0] * T, cy = k[1] * T;
                 path.reset();
                 path.moveTo(cx, cy);
@@ -9969,6 +10088,49 @@ final class City {
                 p.setStyle(Paint.Style.FILL);
             }
         }
+        // ((11.1) And every other corner of land that juts into a junction - a lot, a park, a quay, a compound, a
+        // block changed after the streets were laid - not just the street blocks' own: rounded off the same way.)
+        if (cfg.civic < 27) return;
+        for (int iy = Math.max(1, gy0()); iy < Math.min(h - 1, gy1()); iy++)
+            for (int ix = Math.max(1, gx0()); ix < Math.min(w - 1, gx1()); ix++) {
+                byte t = tiles[iy * w + ix];
+                if (t != SIDEWALK && t != GRASS && t != PLAZA && t != LOT && t != TREE && t != SAND) continue;
+                for (int q = 0; q < 4; q++) {
+                    int dx = (q & 1) == 0 ? -1 : 1, dy = (q & 2) == 0 ? -1 : 1;
+                    if (!paved(ix + dx, iy) || !paved(ix, iy + dy) || !paved(ix + dx, iy + dy)) continue;
+                    if (paved(ix - dx, iy) || paved(ix, iy - dy)) continue;
+                    if (done.contains((iy * w + ix) * 4 + (dx < 0 ? 0 : 1) + (dy < 0 ? 0 : 2))) continue;
+                    if (hwyTile(ix + dx, iy + dy) || (bridge != null && bridge[iy * w + ix]))
+                        continue;
+                    // The corner point, and the curve cut from it back into the land.
+                    float cx = (dx < 0 ? ix : ix + 1) * T, cy = (dy < 0 ? iy : iy + 1) * T, r = T * 0.9f;
+                    path.reset();
+                    path.moveTo(cx, cy);
+                    path.lineTo(cx - dx * r, cy);
+                    path.quadTo(cx, cy, cx, cy - dy * r);
+                    path.close();
+                    p.setStyle(Paint.Style.FILL);
+                    p.setColor(roadSurfaceColour(ix + dx, iy + dy));
+                    c.drawPath(path, p);
+                    path.reset();
+                    path.moveTo(cx - dx * r, cy);
+                    path.quadTo(cx, cy, cx, cy - dy * r);
+                    p.setStyle(Paint.Style.STROKE);
+                    p.setStrokeWidth(1.2f);
+                    p.setColor(0xFF7E7C77);
+                    c.drawPath(path, p);
+                    p.setStyle(Paint.Style.FILL);
+                }
+            }
+    }
+
+    /** (11.1) The colour of the road surface at a tile, as the ground is first painted. */
+    private int roadSurfaceColour(int x, int y) {
+        int sf = roadSurface(x, y);
+        if (sf == SURF_COBBLE) return 0xFF5F5A55;
+        if (sf == SURF_CONCRETE) return 0xFF77777A;
+        if (sf == SURF_CHIPSEAL) return 0xFF4A4946;
+        return drawnRealistic ? 0xFF38393C : 0xFF3A3D43;
     }
 
     private void drawBaseDetails(Canvas c, Paint p) {
@@ -11300,16 +11462,20 @@ final class City {
                 // The right-hand side of someone driving that way.
                 float rx = -hy, ry = hx;
                 float along = (st.vertical ? cy : cx) + 0.5f;
-                for (int lane = 0; lane < 2; lane++) {
-                    float off = (lane == 0 ? 2.0f : 1.0f) * drive;
+                // ((11.1) The lanes where traffic drives them: the inside one turns across, the outside one goes
+                // straight on or turns off, a middle one (on a boulevard) straight on.)
+                int per = st.width >= 7 ? 3 : 2;
+                float lw = st.width / 2f / per;
+                for (int lane = 0; lane < per; lane++) {
+                    float off = (lane + 0.5f) * lw * drive;
                     float lx = st.vertical ? mid + rx * off : along, ly = st.vertical ? along : mid + ry * off;
                     float px = lx * T, py = ly * T;
-                    if (lane == 0) {
+                    if (lane == per - 1) {
                         arrow(c, p, px, py, hx, hy, 0);
                         arrow(c, p, px, py, hx, hy, drive);
-                    } else {
+                    } else if (lane == 0) {
                         arrow(c, p, px, py, hx, hy, -drive);
-                    }
+                    } else arrow(c, p, px, py, hx, hy, 0);
                 }
             }
         }
@@ -11587,7 +11753,7 @@ final class City {
                 if (!whole) continue;
                 float base = (st.vertical ? st.x0 : st.y0) * T, span = st.width * T;
                 // Wear: darker tracks where the wheels run, two to each lane.
-                int lanes = st.width >= 5 ? 4 : 2;
+                int lanes = st.width >= 7 ? 6 : st.width >= 5 ? 4 : 2;
                 p.setColor(0x14000000);
                 for (int ln = 0; ln < lanes; ln++) {
                     float lc = base + span * (ln + 0.5f) / lanes;
@@ -11607,14 +11773,26 @@ final class City {
                     else c.drawRect(x * T, e, x * T + T, e + 0.8f, p);
                 }
                 p.setStrokeWidth(1.5f);
-                if (st.width == 5) {
+                if (st.width >= 5) {
+                    // ((11.1) Two lanes each way (three on a boulevard), evenly split, dashed between them, and the
+                    // centre line down the middle.)
+                    int per = st.width >= 7 ? 3 : 2;
+                    float mid = base + span / 2, lw = span / 2 / per;
                     p.setColor(0xCCE8E8E8);
-                    if (st.vertical) {
-                        c.drawLine((st.x0 + 1) * T, y * T + 4, (st.x0 + 1) * T, y * T + 10, p);
-                        c.drawLine((st.x0 + 4) * T, y * T + 4, (st.x0 + 4) * T, y * T + 10, p);
-                    } else {
-                        c.drawLine(x * T + 4, (st.y0 + 1) * T, x * T + 10, (st.y0 + 1) * T, p);
-                        c.drawLine(x * T + 4, (st.y0 + 4) * T, x * T + 10, (st.y0 + 4) * T, p);
+                    for (int ln = 1; ln < per; ln++)
+                        for (int sd = -1; sd <= 1; sd += 2) {
+                            float l = mid + sd * ln * lw;
+                            if (st.vertical) c.drawLine(l, y * T + 4, l, y * T + 10, p);
+                            else c.drawLine(x * T + 4, l, x * T + 10, l, p);
+                        }
+                    if (!country.ringRoad.equals(st.name)) {
+                        p.setColor(country.centreLine);
+                        p.setStrokeWidth(1f);
+                        for (int sd = -1; sd <= 1; sd += 2) {
+                            float l = mid + sd * 1.1f;
+                            if (st.vertical) c.drawLine(l, y * T, l, y * T + T, p);
+                            else c.drawLine(x * T, l, x * T + T, l, p);
+                        }
                     }
                 } else if (st.width == 3 && !country.ringRoad.equals(st.name)) {
                     p.setColor(country.centreLine);
@@ -11623,7 +11801,7 @@ final class City {
                 }
                 p.setStrokeWidth(1.2f);
             }
-            if (st.width == 5) turnLanes(c, p, st, n);
+            if (st.width >= 5) turnLanes(c, p, st, n);
             stopLines(c, p, st, n);
             // Zebra crossings where the street meets a junction.
             p.setColor(0xCCE8E8E8);
@@ -12075,17 +12253,8 @@ final class City {
         }
         float unitsH = deco < 3 ? bh / 2 : bh;
         int units = 1 + r.nextInt(Math.max(1, (int) (bw * bh / 1500f)) + 1);
-        for (int i = 0; i < units; i++) {
-            float uw = 6 + r.nextInt(6), uh = 5 + r.nextInt(5);
-            float ux = x0 + 7 + r.nextFloat() * Math.max(1, bw - 14 - uw);
-            float uy = y0 + 7 + r.nextFloat() * Math.max(1, unitsH - 14 - uh);
-            p.setColor(0x44000000);
-            c.drawRect(ux + 1.5f, uy + 1.5f, ux + uw + 1.5f, uy + uh + 1.5f, p);
-            p.setColor(0xFFA7ABAF);
-            c.drawRect(ux, uy, ux + uw, uy + uh, p);
-            p.setColor(0xFF7D8185);
-            c.drawCircle(ux + uw / 2, uy + uh / 2, Math.min(uw, uh) * 0.3f, p);
-        }
+        // ((11.1) In a tidy row with their duct, not dotted about at random.)
+        Roofs.hvac(c, p, x0 + 3, y0 + 3, x1 - 3, y0 + unitsH - 3, r, units + 1);
         if (bw >= 64 && bh >= 64 && b[7] >= 8 && r.nextFloat() < 0.35f) {
             float cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
             p.setColor(0xFF3F4347);
@@ -12736,7 +12905,10 @@ final class City {
                 if (!paved(x, y)) { y++; continue; }
                 int s = y;
                 while (y < h && paved(x, y)) y++;
-                for (int k = s; k < y; k++) if (y - s >= 7 && run[k * w + x] >= 7) junction[k * w + x] = true;
+                for (int k = s; k < y; k++)
+                    // ((11.1) A boulevard is seven across all along it: only where something crosses it is a junction.)
+                    if (y - s >= 7 && run[k * w + x] >= 7 && (boulevard == null || !boulevard[k * w + x] || Math.min(y - s, run[k * w + x]) > 7))
+                        junction[k * w + x] = true;
             }
         }
         // (10.29) Nothing on the highway is a junction: slip roads merge into it, and the gaps in the median
@@ -12949,6 +13121,33 @@ final class City {
      * other side of a median counts as the same road.
      */
     float laneOffset(int tx, int ty, int dx, int dy) {
+        return laneOffset(tx, ty, dx, dy, -1);
+    }
+
+    /**
+     * (11.1) How many lanes each way a road has here: one on an ordinary street, two on a main road five tiles
+     * across, three on a boulevard seven across.
+     */
+    int lanesEachWay(int tx, int ty, int dx, int dy) {
+        int rx = -dy, ry = dx, n = 1;
+        for (int s = 1; s <= 6; s++) {
+            if (!paved(tx + rx * s, ty + ry * s) || hwyTile(tx + rx * s, ty + ry * s)) break;
+            n++;
+        }
+        for (int s = 1; s <= 6; s++) {
+            if (!paved(tx - rx * s, ty - ry * s) || hwyTile(tx - rx * s, ty - ry * s)) break;
+            n++;
+        }
+        return n >= 7 ? 3 : n >= 5 ? 2 : 1;
+    }
+
+    /**
+     * Where to drive across the road at (tx, ty) heading (dx, dy): the offset from the tile's middle to the
+     * middle of the lane. (11.1) With lane >= 0, which of the lanes on that side of a road with more than one
+     * each way: 0 the inside (overtaking) lane, then outwards (a higher number than there are lanes is the
+     * outside one). -1 is the old single line, between them.
+     */
+    float laneOffset(int tx, int ty, int dx, int dy, int laneNo) {
         // On the highway: the inside lane of your own carriageway.
         if (oneWay != null && oneWay[ty * w + tx] != 0) {
             float c = hwyCentre(tx, ty), here = hwyAxis == 0 ? (ty + 0.5f) * T : (tx + 0.5f) * T;
@@ -12980,6 +13179,11 @@ final class City {
             else break;
         }
         float centre = (right - left) / 2f, half = (right + left + 1) / 2f;
+        int per = half >= 3.4f ? 3 : half >= 2.4f ? 2 : 1;
+        if (laneNo >= 0 && per > 1) {
+            float lw = half / per;
+            return (centre + (Math.min(laneNo, per - 1) + 0.5f) * lw * (country.leftHand ? -1 : 1)) * T;
+        }
         float lane = half * 0.42f * (country.leftHand ? -1 : 1);
         return (centre + lane) * T;
     }

@@ -112,7 +112,6 @@ final class SaveGame {
                     if (v.swat) w.applyRole(p, Entity.ROLE_SWAT);
                     if (v.kind == Fleet.K_RIOT_VAN) w.applyRole(p, Entity.ROLE_RIOT);
                     if (v.kind == Fleet.K_BEARCAT) w.applyRole(p, Entity.ROLE_SWAT);
-                    if (v.kind == Fleet.K_EOD) w.applyRole(p, Entity.ROLE_EOD);
                     if (boat) w.applyRole(p, Entity.ROLE_MARINE);
                     all.add(p);
                 }
@@ -654,11 +653,10 @@ final class SaveGame {
             else d.swatTeams = w.city.nearestFacility(City.FACILITY_POLICE, 0, 0) == null ? 0 : 1;
             if (version >= 22) {
                 d.riotVans = in.readInt();
-                // ((11.0) Not saved: a loaded game gets its BearCats and bomb squads back, and sends recon again.)
+                // ((11.0) Not saved: a loaded game gets its BearCats back, and sends recon again.)
                 int st = 0;
                 for (City.Facility f : w.city.facilities) if (f.kind == City.FACILITY_POLICE) st++;
                 d.bearcats = w.city.cfg.nature() ? Math.min(3, st) : 0;
-                d.bombSquads = w.city.cfg.nature() ? Math.min(2, st) : 0;
                 d.policeAir = in.readInt();
                 w.guardWave = in.readInt();
             }
@@ -733,6 +731,8 @@ final class SaveGame {
         e.postX = in.readFloat();
         e.postY = in.readFloat();
         if (version >= 3) e.role = in.readInt();
+        // ((11.3) The bomb squad is gone: a bomb technician in an older save is a SWAT officer now.)
+        if (e.role == 13) e.role = Entity.ROLE_SWAT;
         if (version >= 4) e.asked = in.readBoolean();
         if (version >= 5) {
             e.nameSeed = in.readInt();

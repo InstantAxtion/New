@@ -514,14 +514,6 @@ final class World {
         int cops = cfg.cops(city.totalResidents), soldiers = cfg.soldiers(city.totalResidents);
         // (A small town's own police station out in the country has its own officers, on top of the city's.)
         for (City.Facility f : city.facilities) if (f.kind == City.FACILITY_POLICE && f.satellite) cops += 6;
-        // ((10.56) The Garrison State: no two-in-five rule. The army outnumbers the military police, shared out
-        // between its bases and compounds, the town's base a double share.)
-        if (cfg.militarized() && soldiers > 0) {
-            int others = 0;
-            for (City.Facility f : city.facilities) if (f.kind == City.FACILITY_BASE && f.satellite && f != base) others++;
-            int share = soldiers / (others + (base != null ? 2 : 0));
-            return new int[]{cops, base != null ? share * 2 : 0, others > 0 ? share : 0};
-        }
         // (10.35) The police always outnumber the army: every soldier on the map (both bases and the checkpoints)
         // comes to no more than two in five of the police force, the town's base taking most of it.
         int satBases = 0;
@@ -561,7 +553,7 @@ final class World {
         }
         int soldiers = 0;
         if (f[1] > 0) {
-            soldiers = f[1] + city.checkpointPosts.size() + satBases * f[2] + (f[1] >= 5 ? 1 : 0) + 2 * cfg.streetPairs(city.totalResidents);
+            soldiers = f[1] + city.checkpointPosts.size() + satBases * f[2] + (f[1] >= 5 ? 1 : 0);
         }
         // (The helicopters' crews on their pads: a rescue helicopter's four, a pilot for each of the others.)
         for (float[] p : city.helipads()) {
@@ -583,7 +575,7 @@ final class World {
         dispatch.swatTeams = city.nearestFacility(City.FACILITY_POLICE, 0, 0) == null ? 0 : city.w >= 300 ? 2 : 1;
         launchBoats();
         if (courtArmoury != null) courtArmoury.ammo = 1200;
-        inmates = city.jail != null ? (city.prison != null ? 40 + rnd.nextInt(21) : 6 + rnd.nextInt(9)) : 0;
+        inmates = city.jail != null ? 6 + rnd.nextInt(9) : 0;
         int people = Math.min(cfg.civilians(city.totalResidents), maxEntities * 4 / 5);
         residents(people);
         // A few strays.
@@ -645,7 +637,6 @@ final class World {
                 if (f.kind == City.FACILITY_POLICE) spawnCop(Entity.ROLE_MARKSMAN, f.x + rnd.nextFloat() * 20 - 10, f.y + rnd.nextFloat() * 20 - 10);
         dispatch.riotVans = cfg.nature() ? Math.min(3, stations) : 0;
         dispatch.bearcats = cfg.nature() ? Math.min(3, stations) : 0;
-        dispatch.bombSquads = cfg.nature() ? Math.min(2, stations) : 0;
         dispatch.policeAir = cfg.nature() && stations > 0 ? 2 : 0;
         populateWilds(cops > 0);
         fleet.stationHelis();
@@ -662,7 +653,6 @@ final class World {
                 g.postX = g.x;
                 g.postY = g.y;
             }
-        if (soldiers > 0) streetPosts(cfg.streetPairs(city.totalResidents));
         int firstSoldier = entities.size();
         if (base != null) {
             for (int i = 0; i < soldiers; i++)
@@ -698,9 +688,9 @@ final class World {
             float[] p = base != null ? new float[]{base.x, base.y} : city.randomWalkable(rnd);
             spawnSoldier(Entity.ROLE_COMMANDER, p[0], p[1]);
         }
-        // Guards on the precinct doors and the base gates.
+        // Guards on the base gates. ((11.3) Not the precinct doors: every officer is out on the beat.)
         for (City.Facility f : city.facilities) {
-            int type = f.kind == City.FACILITY_POLICE ? Entity.COP : f.kind == City.FACILITY_BASE ? Entity.SOLDIER : -1;
+            int type = f.kind == City.FACILITY_BASE ? Entity.SOLDIER : -1;
             if (type < 0) continue;
             for (float[] post : f.posts) {
                 Entity best = null;
@@ -1128,14 +1118,6 @@ final class World {
                 e.reserve = 45;
                 e.body = 0xFF23408E;
                 e.head = 0xFF141C38;
-                // ((10.56) The Garrison State's military police: khaki and red berets, a rifle and body armour.)
-                if (city.country.garrison) {
-                    e.hp = 80;
-                    e.magSize = 30;
-                    e.reserve = 120;
-                    e.body = Country.MP_SHIRT;
-                    e.head = Country.MP_BERET;
-                }
                 break;
             case Entity.SOLDIER:
                 e.hp = 100;
@@ -1244,7 +1226,7 @@ final class World {
             e.speed = 18;
             e.runSpeed = 32;
             e.mass = 1.4f;
-        } else if (role == Entity.ROLE_SWAT || role == Entity.ROLE_MARKSMAN || role == Entity.ROLE_EOD) {
+        } else if (role == Entity.ROLE_SWAT || role == Entity.ROLE_MARKSMAN) {
             applyRole(e, role);
         } else if (role == Entity.ROLE_SAR) {
             applyRole(e, Entity.ROLE_SWAT);
@@ -1321,19 +1303,6 @@ final class World {
                 e.reserve = 40;
                 e.body = 0xFF2A3446;
                 e.head = 0xFF1A2230;
-                break;
-            case Entity.ROLE_EOD:
-                // ((11.0) The bomb squad: a heavy blast suit, slow; a shotgun for close in.)
-                e.hp = e.maxHp = 200;
-                e.magSize = 8;
-                e.reserve = 40;
-                e.grenades = 0;
-                e.mass = 1.7f;
-                e.speed *= 0.75f;
-                e.runSpeed *= 0.7f;
-                // ((11.1) The police's navy suit, not army green.)
-                e.body = 0xFF2E3F5E;
-                e.head = 0xFF1F2B42;
                 break;
             case Entity.ROLE_MARINE:
                 // ((11.0) Marines, landed from the sea: well armed, in blue-grey camouflage.)
@@ -7667,7 +7636,7 @@ final class World {
      */
     private boolean policeBeat(Entity e, float dt) {
         City.Facility st = city.nearestFacility(City.FACILITY_POLICE, e.x, e.y);
-        if (st == null || (alert >= 1 && e.callsign % 3 == 0)) return false;
+        if (st == null) return false;
         float reach = alert >= 1 ? 320 : 760;
         // ((11.2) Partners: the one with the higher callsign keeps to the other's side, a step behind.)
         Entity mate = beatMate(e, st);
@@ -7771,7 +7740,24 @@ final class World {
                 hy = dirs[k][1];
             }
             if (p == null) {
-                // (Nowhere on along the street: start again from the precinct.)
+                // (Nowhere straight on along the street - in the precinct's yard, say: off to a spot of pavement on
+                // the beat by whatever way gets there, and on along the street from there.)
+                for (int k = 0; k < 10 && p == null; k++) {
+                    double an = r.nextDouble() * TAU;
+                    float d = 80 + r.nextFloat() * (reach - 80);
+                    float[] q = city.findWalkable(st.x + (float) Math.cos(an) * d, st.y + (float) Math.sin(an) * d);
+                    int t = q == null ? -1 : city.tileIndex(q[0], q[1]);
+                    if (t >= 0 && (city.tiles[t] == City.SIDEWALK || city.tiles[t] == City.PLAZA) && !city.outOfTown(q[0], q[1])) {
+                        p = q;
+                        float hx2 = q[0] - bx, hy2 = q[1] - by;
+                        boolean ew = Math.abs(hx2) > Math.abs(hy2);
+                        hx = ew ? Math.signum(hx2) : 0;
+                        hy = ew ? 0 : Math.signum(hy2);
+                    }
+                }
+            }
+            if (p == null) {
+                // (Nowhere at all: start again from the precinct in a while.)
                 e.dutyHx = e.dutyHy = 0;
                 e.dutyFor = -31;
                 return false;
@@ -7838,8 +7824,6 @@ final class World {
     String dutyText(Entity e) {
         if (e.type == Entity.COP) {
             City.Facility st = city.nearestFacility(City.FACILITY_POLICE, e.x, e.y);
-            if (st != null && alert >= 1 && e.callsign % 3 == 0 && Math.hypot(st.x - e.x, st.y - e.y) < 160)
-                return "Guarding " + (st.name != null ? st.name.trim() : "the station");
             if (e.dutyFor > 0) {
                 String street = city.placeName(e.x, e.y);
                 boolean stopped = Math.abs(e.vx) + Math.abs(e.vy) < 3;
@@ -7852,19 +7836,17 @@ final class World {
         City.Facility base = city.nearestFacility(City.FACILITY_BASE, e.x, e.y);
         if (base == null || base.fallen || Math.hypot(base.x - e.x, base.y - e.y) > base.r * 2.4f) return null;
         if (alert >= 1) return "Formed up on the parade ground";
-        int duty = (e.squad * 3 + (e.member >> 1)) % 4;
-        if (e.role == Entity.ROLE_COMMANDER) duty = 3;
-        switch (duty) {
-            case 0: return base.posts.isEmpty() ? "Patrolling the perimeter" : "On sentry at " + (base.name != null ? base.name.trim() : "the base");
-            case 1: return "Patrolling the perimeter";
-            case 2: return "PT laps round the parade ground";
+        switch (soldierDutyOf(e, base)) {
+            case 0: return "On sentry at " + (base.name != null ? base.name.trim() : "the base");
+            case 1: return "Walking the perimeter fence";
+            case 2: return "Drill on the parade ground";
             default: return e.role == Entity.ROLE_COMMANDER ? "Running the motor pool" : "Standing by at the motor pool";
         }
     }
 
     /**
      * (11.1) Soldiers on base in peacetime: each has a duty by squad and place in it - sentry at one of the posts,
-     * a patrol round the perimeter, PT laps round the parade ground, or standing by at the motor pool. False if
+     * a pair walking the perimeter fence, drill in ranks on the parade ground, or standing by at the motor pool. False if
      * they're nowhere near a base (they make their way back first).
      */
     private boolean soldierDuty(Entity e, float dt) {
@@ -7872,45 +7854,55 @@ final class World {
         if (base == null || base.fallen) return false;
         float bx = base.x - e.x, by = base.y - e.y;
         if (bx * bx + by * by > base.r * base.r * 6) return false;
-        int duty = (e.squad * 3 + (e.member >> 1)) % 4;
-        if (e.role == Entity.ROLE_COMMANDER) duty = 3;
-        if (duty == 0 && !base.posts.isEmpty()) {
-            // Sentry: at a post, facing out.
-            float[] p = base.posts.get((e.squad * 5 + e.member) % base.posts.size());
-            walkToSpot(e, p[0], p[1], e.speed * 0.8f);
-            if (Math.hypot(p[0] - e.x, p[1] - e.y) < 6) {
-                steer(e, 0, 0, 0);
-                e.angle = turn(e.angle, (float) Math.atan2(e.y - base.y, e.x - base.x), dt * 2);
+        int duty = soldierDutyOf(e, base);
+        if (duty == 0) {
+            // ((11.3) Sentry: one each side of a post, standing still and facing out - not milling round it.)
+            int slot = e.squad * 8 + e.member;
+            float[] p = base.posts.get((slot >> 1) % base.posts.size());
+            float out = (float) Math.atan2(p[1] - base.y, p[0] - base.x);
+            float side = (slot & 1) == 0 ? 6 : -6;
+            float px = p[0] - (float) Math.sin(out) * side, py = p[1] + (float) Math.cos(out) * side;
+            if (city.solidAt(px, py)) {
+                px = p[0];
+                py = p[1];
             }
+            holdPost(e, px, py, out, dt);
             return true;
         }
-        if (duty == 1 || duty == 0) {
-            // A pair walking the perimeter, from one corner of it to the next.
-            float r = base.r * 0.9f;
-            if (e.dutyFor <= 0 || Math.hypot(e.dutyX - e.x, e.dutyY - e.y) < 14) {
-                e.dutyStep++;
-                double a = (e.squad * 1.3 + e.dutyStep * TAU / 8);
-                float[] q = city.findWalkable(base.x + (float) Math.cos(a) * r, base.y + (float) Math.sin(a) * r);
-                if (q == null) return false;
-                e.dutyX = q[0] + ((e.member & 1) == 0 ? 5 : -5);
-                e.dutyY = q[1];
-                e.dutyFor = 40;
+        if (duty == 1) {
+            // ((11.3) The perimeter: a pair walking one stretch of the fence, end to end and back, with a pause
+            // at each end - not round and round the base.)
+            float r = base.r * 0.82f;
+            int sideNo = (e.squad + (e.member >> 1)) % 4;
+            boolean along = sideNo < 2;
+            float fixed = (sideNo % 2 == 0 ? -r : r);
+            float end = (e.dutyStep & 1) == 0 ? -r * 0.8f : r * 0.8f;
+            float off = (e.member & 1) == 0 ? 4 : -4;
+            float tx = base.x + (along ? end + off : fixed), ty = base.y + (along ? fixed : end + off);
+            float[] q = city.solidAt(tx, ty) ? city.findWalkable(tx, ty) : new float[]{tx, ty};
+            if (q == null) return false;
+            float dx = q[0] - e.x, dy = q[1] - e.y;
+            if (dx * dx + dy * dy < 10 * 10) {
+                // At the end of the stretch: a look round, then back the other way.
+                if (e.dutyWait <= 0) e.dutyWait = 4 + rnd.nextFloat() * 4;
+                e.dutyWait -= dt;
+                steer(e, 0, 0, 0);
+                e.angle = turn(e.angle, (float) Math.atan2(along ? fixed : 0, along ? 0 : fixed), dt * 1.5f);
+                if (e.dutyWait <= 0) e.dutyStep++;
+                return true;
             }
-            e.dutyFor -= dt;
-            walkToSpot(e, e.dutyX, e.dutyY, e.speed * 0.75f);
+            walkToSpot(e, q[0], q[1], e.speed * 0.7f);
             return true;
         }
         if (duty == 2) {
-            // PT: laps round the parade ground, the squad running together.
-            float r = Math.max(30, base.r * 0.35f);
-            float a = time * 0.22f + e.squad * 1.1f - e.member * 0.08f;
-            float px = base.x + (float) Math.cos(a) * r, py = base.y + (float) Math.sin(a) * r * 0.7f;
+            // ((11.3) Drill: the squad in ranks on the parade ground, all facing the same way (no more laps round
+            // in circles).)
+            float px = base.x + ((e.member % 4) - 1.5f) * 9, py = base.y - 20 + (e.squad % 3) * 26 + (e.member / 4) * 9;
             if (city.solidAt(px, py)) {
-                standAt(e, base.x + (e.member - 4) * 8, base.y + e.squad % 3 * 10, 0.6f);
-                return true;
+                px = base.x + ((e.member % 4) - 1.5f) * 9;
+                py = base.y + (e.member / 4) * 9;
             }
-            float dx = px - e.x, dy = py - e.y, d = (float) Math.sqrt(dx * dx + dy * dy) + 0.001f;
-            steer(e, dx / d, dy / d, Math.min(e.runSpeed * 0.75f, d * 3));
+            holdPost(e, px, py, (float) (-Math.PI / 2), dt);
             return true;
         }
         // Standing by at the motor pool, by the gate, ready to roll.
@@ -7919,8 +7911,48 @@ final class World {
             gx = base.x + ((e.member % 4) - 1.5f) * 10;
             gy = base.y + 30;
         }
-        standAt(e, gx, gy, 0.6f);
+        holdPost(e, gx, gy, (float) Math.atan2(base.gateY - gy, base.gateX - gx), dt);
         return true;
+    }
+
+    /** (11.3) On the beat, or on duty on base, while the city is quiet. */
+    boolean onDuty(Entity e) {
+        if (alert != 0) return false;
+        if (e.type == Entity.COP) return e.dutyFor > 0;
+        if (e.type != Entity.SOLDIER) return false;
+        City.Facility base = city.nearestFacility(City.FACILITY_BASE, e.x, e.y);
+        return base != null && !base.fallen && Math.hypot(base.x - e.x, base.y - e.y) < base.r * 2.4f;
+    }
+
+    /**
+     * (11.3) Which duty a soldier on base has: 0 sentry (only as many as the posts have places for), 1 the
+     * perimeter, 2 drill, 3 the motor pool (commanders run it).
+     */
+    int soldierDutyOf(Entity e, City.Facility base) {
+        if (e.role == Entity.ROLE_COMMANDER) return 3;
+        int duty = (e.squad * 3 + (e.member >> 1)) % 4;
+        if (duty == 0 && (base.posts.isEmpty() || ((e.squad * 8 + e.member) >> 1) >= base.posts.size())) duty = 1;
+        return duty;
+    }
+
+    /**
+     * (11.3) Walks to a spot and, once there, stands still facing one way: a little give before stepping back onto
+     * it, so nobody shuffles and spins on the spot.
+     */
+    private void holdPost(Entity e, float x, float y, float face, float dt) {
+        float dx = x - e.x, dy = y - e.y, d2 = dx * dx + dy * dy;
+        if (d2 > 9 * 9 || (e.dutyFor > 0 && d2 > 3 * 3)) {
+            e.dutyFor = 1;
+            if (d2 > 30 * 30) walkToSpot(e, x, y, e.speed * 0.8f);
+            else {
+                float d = (float) Math.sqrt(d2);
+                steer(e, dx / d, dy / d, Math.min(e.speed * 0.8f, d * 2));
+            }
+            return;
+        }
+        e.dutyFor = 0;
+        steer(e, 0, 0, 0);
+        e.angle = turn(e.angle, face, dt * 2);
     }
 
     // ------------------------------------------------------------------ (10.37) police and soldiers' brain
@@ -9297,8 +9329,7 @@ final class World {
             if (((i + lodFrame) & 3) == 0) updateVisitors(b, dt * 4);
             if (b.lurkers > 0 && !b.collapsed && b.occupants.isEmpty()) {
                 // Zombies inside burst out when someone comes close, or when they get restless.
-                // ((11.0) Not for the bomb squad setting a charge on the door: they're careful.)
-                boolean near = peopleNear(b.doorX, b.doorY, 32) && !dispatch.breaching(b);
+                boolean near = peopleNear(b.doorX, b.doorY, 32);
                 if ((near && rnd.nextFloat() < dt * 1.2f) || rnd.nextFloat() < dt / 100f) burstOut(b);
             }
             if (b.occupants.isEmpty()) {
@@ -13152,37 +13183,6 @@ final class World {
         if (!soldier && c != null && c.ammo > 0 && city.courthouse != null && !city.courthouse.collapsed
                 && Math.hypot(c.x - e.x, c.y - e.y) < bd) best = c;
         return best;
-    }
-
-    /**
-     * (10.60) The Garrison State: soldiers in pairs on street corners all over town, spread out (never two pairs
-     * close together), each pair on its spot until it's needed.
-     */
-    private void streetPosts(int pairs) {
-        if (pairs <= 0) return;
-        java.util.ArrayList<float[]> used = new java.util.ArrayList<float[]>();
-        java.util.Random r = new java.util.Random(city.cfg.seed * 7 + 3);
-        float gap = Math.max(120, (float) Math.sqrt((float) (city.townX1 - city.townX0) * (city.townY1 - city.townY0) / pairs) * City.T * 0.6f);
-        for (int k = 0, tries = 0; k < pairs && tries < pairs * 30; tries++) {
-            float[] q = city.randomStreetSpot(r);
-            if (q == null) continue;
-            int tx = (int) (q[0] / City.T), ty = (int) (q[1] / City.T);
-            if (city.townX1 > city.townX0 && (tx < city.townX0 || tx > city.townX1 || ty < city.townY0 || ty > city.townY1)) continue;
-            boolean near = false;
-            for (float[] u : used) if (Math.hypot(u[0] - q[0], u[1] - q[1]) < gap) near = true;
-            if (near) continue;
-            used.add(q);
-            k++;
-            for (int m = 0; m < 2; m++) {
-                float[] p = city.findWalkable(q[0] + (m == 0 ? -7 : 7), q[1] + (m == 0 ? -5 : 5));
-                if (p == null) continue;
-                Entity g = spawnSoldier(Entity.ROLE_GUARD, p[0], p[1]);
-                if (g == null) continue;
-                g.task = Dispatch.T_POST;
-                g.postX = g.x;
-                g.postY = g.y;
-            }
-        }
     }
 
     private float rideSaidAt;

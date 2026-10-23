@@ -38,8 +38,8 @@ final class Fleet {
      * carrier, a Humvee, a riot police van, a police motorcycle, the police helicopter.
      */
     static final int K_APC = 1, K_HUMVEE = 2, K_RIOT_VAN = 3, K_BIKE = 4, K_POLICE_HELI = 5, K_RESCUE_HELI = 6;
-    /** (11.0) The police's armoured BearCat and the bomb squad's truck. */
-    static final int K_BEARCAT = 7, K_EOD = 8;
+    /** (11.0) The police's armoured BearCat. (8 was the bomb squad's truck, gone in 11.3.) */
+    static final int K_BEARCAT = 7;
 
     /** Kinds of everyday car (which ones are about depends on the country). */
     static final int M_SEDAN = 0, M_PICKUP = 1, M_SUV = 2, M_KEI = 3, M_HATCH = 4, M_VAN = 5, M_TAXI = 6, M_BUS = 7,
@@ -262,6 +262,8 @@ final class Fleet {
         /** A stopped car rolls over to the kerb. */
         float pullX, pullY;
         boolean pulling;
+        /** (11.3) Already put by the kerb (or tried) since it last stopped. */
+        boolean pullTried;
         /** Getting out of town now everyone knows (runs red lights once it's clear, drives faster). */
         boolean fleeing;
         /** (10.48) Taking people out of the city (they're gone with it at the edge of the map). */
@@ -288,15 +290,13 @@ final class Fleet {
             case CRUISER:
                 if (v.kind == K_BIKE) return "Police motorcycle  -  " + callsign(v);
                 if (v.agency == 3) return "Park rangers' truck  -  " + callsign(v);
-                // ((10.56) The Garrison State's are the military police's.)
-                String car = city.country.garrison ? "MP car" : "Police car";
+                String car = "Police car";
                 return v.number > 0 ? car + "  -  " + callsign(v) : car;
             case TRUCK:
                 if (v.kind == K_APC) return "Armoured personnel carrier" + (v.guardUnit ? "  -  " + Country.guard()[1] : "");
                 if (v.kind == K_HUMVEE) return (v.guardUnit ? Country.guard()[1] + " " : "") + "Humvee" + (v.loop ? "  -  base patrol" : "");
                 if (v.kind == K_RIOT_VAN) return "Riot police van";
                 if (v.kind == K_BEARCAT) return "Police BearCat";
-                if (v.kind == K_EOD) return "Bomb squad truck";
                 return v.swat ? Country.swat()[0] + " van" : v.guardUnit ? Country.guard()[1] + " truck" : v.supply > 0 ? "Army supply truck" : "Army truck";
             case HELI: return v.kind == K_RESCUE_HELI ? "Rescue helicopter" : v.kind == K_POLICE_HELI ? "Police helicopter" : "Air " + Math.max(1, v.number) + "  -  army helicopter";
             case TANK: return "Tank";
@@ -366,8 +366,7 @@ final class Fleet {
             case CRUISER:
             case TRUCK: {
                 String who = v.kind == K_APC ? "APC" : v.kind == K_HUMVEE ? "Humvee" : v.kind == K_RIOT_VAN ? "Riot van"
-                        : v.kind == K_BIKE ? "Police motorcycle" : v.kind == K_BEARCAT ? "BearCat" : v.kind == K_EOD ? "Bomb squad"
-                        : v.type == CRUISER ? "Police car" : v.swat ? "SWAT van" : "Army truck";
+                        : v.kind == K_BIKE ? "Police motorcycle" : v.kind == K_BEARCAT ? "BearCat" : v.type == CRUISER ? "Police car" : v.swat ? "SWAT van" : "Army truck";
                 if (v.restock) return v.state == RETURN ? "Supply truck: Heading out of town"
                         : "Supply truck: Delivering" + (where != null ? " to " + where : "");
                 if (v.standby) return who + ": Parked at " + (v.depot != null ? v.depot.name : "base") + ", ready";
@@ -422,9 +421,9 @@ final class Fleet {
         return v.type == TRUCK && !policeTruck(v);
     }
 
-    /** (11.1) The police's trucks: SWAT vans, riot vans, BearCats and the bomb squad's. */
+    /** (11.1) The police's trucks: SWAT vans, riot vans and BearCats. */
     static boolean policeTruck(Vehicle v) {
-        return v.type == TRUCK && (v.swat || v.kind == K_RIOT_VAN || v.kind == K_BEARCAT || v.kind == K_EOD);
+        return v.type == TRUCK && (v.swat || v.kind == K_RIOT_VAN || v.kind == K_BEARCAT);
     }
 
     /** (11.1) The lane a vehicle keeps to: on a call, the inside one, to get by. */
@@ -542,7 +541,7 @@ final class Fleet {
     void setKind(Vehicle v, int kind) {
         v.kind = kind;
         float hp = kind == K_APC ? 520 : kind == K_HUMVEE ? 220 : kind == K_RIOT_VAN ? 380 : kind == K_BIKE ? 70 : kind == K_BEARCAT ? 600
-                : kind == K_EOD ? 260 : v.maxHp;
+                : v.maxHp;
         v.hp = v.maxHp = hp;
     }
 
@@ -1144,20 +1143,6 @@ final class Fleet {
         if (!sent || vehicles.size() == before) return false;
         Vehicle v = vehicles.get(vehicles.size() - 1);
         setKind(v, K_BEARCAT);
-        v.passengerType = Entity.COP;
-        return true;
-    }
-
-    /** (11.0) The bomb squad's truck: two technicians in blast suits, to a building full of the dead (see World.breach). */
-    boolean sendBombSquad(float fromX, float fromY, Dispatch.Incident inc) {
-        int before = vehicles.size();
-        fromParked = false;
-        float[] road = city.nearestDrivable(inc.x, inc.y);
-        boolean sent = send(Entity.SOLDIER, 2, fromX, fromY, road != null ? road[0] : inc.x, road != null ? road[1] : inc.y, inc, null, inc.place);
-        fromParked = true;
-        if (!sent || vehicles.size() == before) return false;
-        Vehicle v = vehicles.get(vehicles.size() - 1);
-        setKind(v, K_EOD);
         v.passengerType = Entity.COP;
         return true;
     }
@@ -2585,6 +2570,36 @@ final class Fleet {
         System.arraycopy(corTiles, 0, v.corTs, 0, COR);
     }
 
+    /** (11.3) The lane to be in on each tile of the corridor (-1 the car's own): see turnLanes. */
+    private final int[] corLane = new int[COR];
+
+    /**
+     * (11.3) Getting in lane for a turn, as drivers do: the last few tiles before a junction where the route turns
+     * right, over in the outside lane, and before a left turn the inside one (and round the corner into the
+     * matching lane on the far side). Straight on, each car keeps its own lane, so all of a wide road is used.
+     * Cars on a call keep to the inside lane throughout.
+     */
+    private void turnLanes(Vehicle v, int[] ts, int m) {
+        java.util.Arrays.fill(corLane, 0, m, -1);
+        if (v.lightsOn()) return;
+        int W = city.w, prevExit = -1;
+        for (int i = 1; i < m; i++) {
+            if (!city.junctionAt(ts[i] % W, ts[i] / W) || city.junctionAt(ts[i - 1] % W, ts[i - 1] / W)) continue;
+            int ax = Integer.signum(ts[i] % W - ts[i - 1] % W), ay = Integer.signum(ts[i] / W - ts[i - 1] / W);
+            int k = i;
+            while (k < m - 1 && city.junctionAt(ts[k] % W, ts[k] / W)) k++;
+            if (city.junctionAt(ts[k] % W, ts[k] / W)) break;
+            int ex = Integer.signum(ts[k] % W - ts[k - 1] % W), ey = Integer.signum(ts[k] / W - ts[k - 1] / W);
+            int cross = ax * ey - ay * ex;
+            int lane = cross > 0 ? 2 : cross < 0 ? 0 : -1;
+            // (y runs down the screen: turning clockwise is turning right.)
+            if (lane >= 0)
+                for (int j = Math.max(prevExit + 1, i - 6); j <= k - 1; j++) if (corLane[j] < 0) corLane[j] = lane;
+            prevExit = k;
+            i = k;
+        }
+    }
+
     private void buildCorridorNow(Vehicle v) {
         v.corN = 0;
         if (v.field == null || v.pathT < 0) return;
@@ -2605,6 +2620,7 @@ final class Fleet {
             t = nt;
         }
         if (m < 2) return;
+        turnLanes(v, ts, m);
         float lastAlong = Float.NaN;
         int lastAxisX = 0, lastAxisY = 0;
         boolean lastJ = false;
@@ -2640,7 +2656,7 @@ final class Fleet {
                 float le = 0;
                 if (out) {
                     int E = ts[k];
-                    float oe = city.laneOffset(E % W, E / W, ex, ey, laneOf(v));
+                    float oe = city.laneOffset(E % W, E / W, ex, ey, corLane[first] >= 0 ? corLane[first] : laneOf(v));
                     le = ex != 0 ? (E / W + 0.5f) * City.T + ex * oe : (E % W + 0.5f) * City.T - ey * oe;
                 }
                 int ax = jEntryX, ay = jEntryY;
@@ -2732,7 +2748,7 @@ final class Fleet {
                 sx = sdx;
                 sy = sdy;
             } else {
-                float off = city.laneOffset(tx, ty, sx, sy, laneOf(v));
+                float off = city.laneOffset(tx, ty, sx, sy, corLane[i] >= 0 ? corLane[i] : laneOf(v));
                 // (On a diagonal, or a curved street: no lanes to measure across it; near the middle.)
                 // ((11.1) But on a curved street still on your own side of it, a lane's width from the one coming
                 // the other way: down the middle, they met head on.)
@@ -3092,6 +3108,13 @@ final class Fleet {
             float[] home = randomRoad();
             return home == null || !route(v, home[0], home[1]);
         }
+        // ((11.3) A car left parked out in the road - stopped where it was, its driver gone - is put by the kerb
+        // first, out of the lanes.)
+        if (v.type == CAR && !v.broken && !v.pulling && !v.pullTried && v.player == null) {
+            int t = city.tileIndex(v.x, v.y);
+            if (t >= 0 && city.tiles[t] == City.ROAD && !city.junctionAt((int) (v.x / City.T), (int) (v.y / City.T))) pullOver(v);
+            v.pullTried = true;
+        }
         if (v.pulling) {
             // Rolling to a stop against the kerb.
             float dx = v.pullX - v.x, dy = v.pullY - v.y, d = (float) Math.sqrt(dx * dx + dy * dy);
@@ -3105,12 +3128,16 @@ final class Fleet {
         return false;
     }
 
-    /** Where a stopped car ends up: the nearest kerb to its right, if it is close. */
+    /**
+     * Where a stopped car ends up: the kerb to its right (across all the lanes its way, on a wide road - never
+     * left in the middle of one), or failing that a near one to its left.
+     */
     private void pullOver(Vehicle v) {
         if (v.type != CAR) return;
+        v.pullTried = true;
         float nx = (float) -Math.sin(v.angle), ny = (float) Math.cos(v.angle);
         for (int side = 1; side >= -1; side -= 2)
-            for (float s = 4; s <= 26; s += 3) {
+            for (float s = 4; s <= (side > 0 ? City.T * 4.5f : 26); s += 3) {
                 float x = v.x + nx * s * side, y = v.y + ny * s * side;
                 int tx = (int) (x / City.T), ty = (int) (y / City.T);
                 if (tx < 0 || ty < 0 || tx >= city.w || ty >= city.h) break;
@@ -3126,6 +3153,7 @@ final class Fleet {
     // ------------------------------------------------------------------ driving
 
     private boolean updateCar(Vehicle v, float dt) {
+        if (!v.parked) v.pullTried = false;
         if (v.recon) return reconStep(v, dt);
         if (v.type == TRUCK) turret(v, dt);
         if (v.state == PICKUP) return pickupStep(v, dt);
@@ -4398,7 +4426,6 @@ final class Fleet {
             if (v.guardUnit) w.applyRole(e, Entity.ROLE_GUARD);
             if (v.kind == K_RIOT_VAN) w.applyRole(e, Entity.ROLE_RIOT);
             if (v.kind == K_BEARCAT) w.applyRole(e, Entity.ROLE_SWAT);
-            if (v.kind == K_EOD) w.applyRole(e, Entity.ROLE_EOD);
             if (v.type == BOAT) w.applyRole(e, Entity.ROLE_MARINE);
             // (Each SWAT team has a marksman with it.)
             if (v.swat) w.applyRole(e, i == v.passengers - 1 && city.cfg.nature() ? Entity.ROLE_MARKSMAN : Entity.ROLE_SWAT);
@@ -4523,12 +4550,15 @@ final class Fleet {
             v.reclaimCd -= 3;
             if (v.reclaimCd > 0 || crewOnFoot(v) > 0 || w.countZombiesNear(v.x, v.y, 120) > 0) continue;
             int type = v.type == CRUISER ? Entity.COP : Entity.SOLDIER;
+            // ((11.3) A patrol car can be taken by officers on the beat: they carry on patrolling in it. Not
+            // otherwise - that would only take them back to the station.)
+            boolean beat = v.type == CRUISER && v.patrol;
             // Someone free close by...
             Entity first = null;
             float bd = 350;
             for (int k = 0, n = w.entities.size(); k < n; k++) {
                 Entity e = w.entities.get(k);
-                if (!strandedUnit(e, type)) continue;
+                if (!(beat ? freeUnit(e, type) : strandedUnit(e, type))) continue;
                 float d = (float) Math.hypot(e.x - v.x, e.y - v.y);
                 if (d < bd) {
                     bd = d;
@@ -4542,7 +4572,7 @@ final class Fleet {
             group.add(first);
             for (int k = 0, n = w.entities.size(); k < n && group.size() < seats; k++) {
                 Entity e = w.entities.get(k);
-                if (e != first && strandedUnit(e, type) && Math.hypot(e.x - v.x, e.y - v.y) < 600) group.add(e);
+                if (e != first && (beat ? freeUnit(e, type) : strandedUnit(e, type)) && Math.hypot(e.x - v.x, e.y - v.y) < 600) group.add(e);
             }
             v.reclaimCd = 30;
             v.wasPatrol = v.patrol;
@@ -4767,11 +4797,14 @@ final class Fleet {
 
     /** An officer or soldier on foot with no car of their own and nothing to do. */
     private boolean strandedUnit(Entity e, int type) {
+        return freeUnit(e, type) && !w.onDuty(e);
+    }
+
+    /** (11.3) Free to take over a car: no call to answer (an officer on the beat counts). */
+    private boolean freeUnit(Entity e, int type) {
         // (Not the park rangers, who keep to the wilds on foot.)
         return !e.dead && !e.removed && e.type == type && e.rig == null && e.task == Dispatch.T_NONE && !e.aiming && e != w.controlled
-                && e.leader == null && e.role != Entity.ROLE_K9 && e.agency != 3
-                // ((11.2) Not an officer walking the beat or a soldier on duty on base in quiet times: they're working.)
-                && !(e.dutyFor > 0 && w.alert == 0);
+                && e.leader == null && e.role != Entity.ROLE_K9 && e.agency != 3;
     }
 
     /** Calls the crew on foot back aboard. Returns how many are still out. */

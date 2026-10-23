@@ -173,7 +173,7 @@ public final class GameTests {
                 CityConfig old = new CityConfig();
                 check(old.applyCode("12-44") && old.country() == Country.USA, "codes build American cities");
                 check(!new CityConfig().applyCode("22-77@16"), "a code for another country doesn't load");
-                for (int p : new int[]{19, 20, 21, 24, 26, 27}) {
+                for (int p : new int[]{19, 20, 21, 22, 24, 26, 27, 28}) {
                     check(CityConfig.removed(p) && CityConfig.retired(CityConfig.OPT_PRESET, p), CityConfig.PRESETS[p] + " is gone");
                     check(!new CityConfig().applyCode(String.valueOf("123456789ABCDEFGHIJKLMNOPQRST".charAt(p)) + "3-5"), "and its city code doesn't load");
                     CityConfig c = new CityConfig();
@@ -181,7 +181,7 @@ public final class GameTests {
                     c.normalize();
                     check(c.preset() == CityConfig.METROPOLIS, "nor does it build");
                 }
-                check(!CityConfig.removed(CityConfig.BAY) && !CityConfig.removed(CityConfig.CANAL), "Bay City and Canal City stay");
+                check(!CityConfig.removed(CityConfig.BAY), "Bay City stays");
             }
         });
         test("cars never go round in circles (round a median, a roundabout or a highway gap)", new Check() {
@@ -3361,53 +3361,20 @@ public final class GameTests {
                 }
             }
         });
-        test("10.56: the Garrison State (military police, bases, an island prison, checkpoints), counts that add up, people on the streets", new Check() {
+        test("10.56: counts that add up, people on the streets", new Check() {
             public void run() throws Exception {
                 CityConfig c = new CityConfig();
-                c.v[CityConfig.OPT_PRESET] = CityConfig.GARRISON;
                 c.seed = 9;
-                c.v[CityConfig.OPT_SIZE] = CityConfig.MEDIUM;
+                c.v[CityConfig.OPT_SIZE] = CityConfig.LARGE;
                 c.v[CityConfig.OPT_ZOMBIES] = 0;
                 c.normalize();
                 c.seed = 9;
-                check(c.size() == CityConfig.LARGE, "the Garrison State is never smaller than Default");
                 World w = new World(c);
                 City city = w.city;
-                int bases = 0;
-                for (City.Facility f : city.facilities) if (f.kind == City.FACILITY_BASE) bases++;
-                check(bases >= 4, "bases out in the country and compounds in town (" + bases + ")");
-                check(city.prison != null && city.jail == city.prison, "a prison, and it's the jail");
-                // On an island: water all round it, and one way across.
-                int tx = (int) ((city.prison.x0 + city.prison.x1) / 2 / City.T), ty = (int) ((city.prison.y0 + city.prison.y1) / 2 / City.T);
-                int water = 0;
-                for (int k = 0; k < 4; k++) {
-                    int dx = k == 0 ? 1 : k == 1 ? -1 : 0, dy = k == 2 ? 1 : k == 3 ? -1 : 0;
-                    for (int r = 1; r < 30; r++) {
-                        int x = tx + dx * r, y = ty + dy * r;
-                        if (x < 0 || y < 0 || x >= city.w || y >= city.h) break;
-                        if (city.tiles[y * city.w + x] == City.WATER) {
-                            water++;
-                            break;
-                        }
-                    }
-                }
-                check(water >= 3, "the prison stands on an island (water on " + water + " sides)");
-                check(city.checkpoints.size() >= 6, "checkpoints on the roads from the start (" + city.checkpoints.size() + ")");
                 int[] fc = World.forecast(c, city, 0);
                 w.setMaxPopulation(0);
                 w.populate(c);
                 w.recount();
-                check(w.counts[Entity.SOLDIER] > w.counts[Entity.COP], "more soldiers (" + w.counts[Entity.SOLDIER] + ") than military police (" + w.counts[Entity.COP] + ")");
-                Entity mp = null;
-                for (Entity e : w.entities) if (e.type == Entity.COP && e.agency == 0 && e.role == 0) mp = e;
-                check(mp != null && mp.body == Country.MP_SHIRT && mp.magSize == 30 && Dispatch.name(mp).startsWith("MP "), "the police are military police, with rifles");
-                int guards = 0;
-                for (float[] p : city.checkpointPosts)
-                    for (Entity e : w.entities) if (e.type == Entity.SOLDIER && e.task == Dispatch.T_POST && Math.hypot(e.x - p[0], e.y - p[1]) < 30) {
-                        guards++;
-                        break;
-                    }
-                check(guards * 2 >= city.checkpointPosts.size(), "soldiers on the checkpoints (" + guards + " of " + city.checkpointPosts.size() + ")");
                 // The New Game screen's numbers are the game's.
                 check(fc[0] == w.civilians, "people forecast " + fc[0] + ", in the game " + w.civilians);
                 check(Math.abs(fc[1] - w.counts[Entity.COP]) <= Math.max(6, fc[1] / 12), "police forecast " + fc[1] + ", in the game " + w.counts[Entity.COP]);
@@ -3501,7 +3468,7 @@ public final class GameTests {
         });
         test("11.0: the water maps (water out to the sea, bridges, Marines by boat), a thin band of country, the new units", new Check() {
             public void run() throws Exception {
-                for (int p : new int[]{CityConfig.BAY, CityConfig.CANAL}) {
+                for (int p : new int[]{CityConfig.BAY}) {
                     CityConfig c = new CityConfig();
                     c.v[CityConfig.OPT_PRESET] = p;
                     c.v[CityConfig.OPT_SIZE] = CityConfig.LARGE;
@@ -3555,11 +3522,7 @@ public final class GameTests {
                 c.normalize();
                 check(c.coreFraction() >= 0.85f, "nine tenths town (" + c.coreFraction() + ")");
                 // The new roles.
-                check(Entity.ROLE_NAMES.length == 16 && "Bomb technician".equals(Entity.ROLE_NAMES[Entity.ROLE_EOD]), "every role named");
-                World w = new World(c);
-                Entity e = w.create(Entity.COP, 100, 100);
-                w.applyRole(e, Entity.ROLE_EOD);
-                check(e.maxHp >= 200, "the blast suit");
+                check(Entity.ROLE_NAMES.length == 16 && "Marine".equals(Entity.ROLE_NAMES[Entity.ROLE_MARINE]), "every role named");
             }
         });
         test("every screen draws", new Check() {

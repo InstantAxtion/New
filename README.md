@@ -10,8 +10,8 @@ away from the middle of the screen as you pan, and the game plays in both portra
 ## Main menu
 
 - **New Game** opens the city setup, with a live preview of the city and these options: the map (Suburbs,
-  Metropolis, or the water maps Seaside, River City, Bay City and Canal City, or Islands,
-  Archipelago or the Garrison State), map size (Default, Large or
+  Metropolis, or the water maps Seaside, River City and Bay City, or Islands or
+  Archipelago), map size (Default, Large or
   Massive) and how many reinforcements can
   be called in (Off, Low, Medium or High, each spelled out: waves of police backup, army squads, tanks
   and helicopter sorties). Police and soldiers on duty are set by the size of the city (about one officer
@@ -424,8 +424,10 @@ mounting up, and lighter running with big populations.
 **The beat, real drivers, USA only (11.3):** police on the beat walk the streets in pairs, side by side, and are
 never fetched back to the station by car for it. Every police car, army truck and ambulance on the road has a real
 driver. People's cards say much more about what they're doing. The game is set in the USA only (the other countries
-and their code are gone, with Sydney, Tokyo and Paris), and Delta Marsh, Fjord Town and the Mountain Valley are gone;
-saves and codes on them no longer load.
+and their code are gone, with Sydney, Tokyo and Paris), and Delta Marsh, Fjord Town, the Mountain Valley, Canal City,
+the Garrison State and the bomb squad are gone; saves and codes on them no longer load. Soldiers on base stand their
+posts, walk the fence and drill in ranks instead of going round in circles; every officer walks a beat; cars use every
+lane and get in lane to turn, and never park in the middle of a wide road; the brush goes up to 25.
 
 **Bomb squad colours, portrait only (11.2):** the bomb squad's truck is named and marked as police (not an army
 truck) and its technicians wear the police's navy blast suits. BearCats, SWAT and riot vans show in police blue on

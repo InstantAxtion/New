@@ -41,35 +41,6 @@ final class Country {
 
     private static Country usa;
 
-    /**
-     * (10.56) The Garrison State: the country's own streets, names and buildings, but its police are the
-     * military police (khaki and red berets, olive cars marked MP, posts instead of stations). A copy of its own,
-     * never the shared one, so no other map is touched.
-     */
-    boolean garrison;
-
-    static Country garrison(int id) {
-        Country c = new Country();
-        c.garrison = true;
-        c.policeStation = "Military Police Post ";
-        c.cruiserBody = 0xFF4E5A36;
-        c.cruiserDoor = 0xFFE8E4D8;
-        c.cruiserRoof = 0xFF3A4428;
-        c.cruiserChecks = false;
-        c.hpShirt = MP_SHIRT;
-        c.hpBody = c.cruiserBody;
-        c.hpDoor = c.cruiserDoor;
-        if (c.ruralShirt != 0) c.ruralShirt = MP_SHIRT;
-        if (c.ruralBody != 0) {
-            c.ruralBody = c.cruiserBody;
-            c.ruralDoor = c.cruiserDoor;
-        }
-        return c;
-    }
-
-    /** (10.56) The military police: khaki shirts and red berets. */
-    static final int MP_SHIRT = 0xFF8A7E58, MP_BERET = 0xFF9A1E1E;
-
     /** The country (whatever the id: there is only the one now). */
     static Country get(int id) {
         synchronized (NAMES) {

@@ -515,7 +515,7 @@ final class City {
         rnd = new Random(cfg.seed);
         Variants.extra = new Random(cfg.seed * 7919L + 101);
         Random nameRnd = new Random(cfg.seed * 31 + 7);
-        country = cfg.militarized() ? Country.garrison(cfg.country()) : Country.get(cfg.country());
+        country = Country.get(cfg.country());
         real = cfg.real();
         name = real != null ? real.name : country.townName(nameRnd);
         tiles = new byte[w * h];
@@ -548,7 +548,6 @@ final class City {
             if (cfg.civic >= 12) connectStations();
             if (cfg.civic >= 19) tidyRoads();
             if (cfg.civic >= 22) mendLanePinches();
-            if (cfg.militarized()) townCheckpoints();
             for (int[] e : cfg.edits) applyEdit(e[0], e[1], e[2], false);
             computeSolid();
             for (int i = generated; i < buildingLots.size(); i++) createBuilding(buildingLots.get(i));
@@ -623,14 +622,7 @@ final class City {
                 b.name = country.gov()[0][k - CITY_HALL];
                 if (k == CITY_HALL) cityHall = b;
                 else if (k == COURTHOUSE) courthouse = b;
-                else if (k == JAIL) {
-                    // ((10.56) The Garrison State's island prison is the jail that matters, the town's cells or no.)
-                    if (l == prisonLot) {
-                        b.name = "State Prison";
-                        prison = b;
-                    }
-                    if (prison == null || prison == b) jail = b;
-                }
+                else if (k == JAIL) jail = b;
                 else if (k == CALL_CENTRE) callCentre = b;
                 else worksDepot = b;
             }
@@ -2403,7 +2395,7 @@ final class City {
             wildSide = side == 0 ? 1 : side == 1 ? 0 : side == 2 ? 3 : 2;
             // (10.34) Every map its own shape: the town longer one way than the other, and off-centre the
             // other way too.
-            if (cfg.civic >= 18 && waterKind == CityConfig.W_NONE && real == null && (cfg.civic < 26 || cfg.militarized())) {
+            if (cfg.civic >= 18 && waterKind == CityConfig.W_NONE && real == null && cfg.civic < 26) {
                 // (Only ever narrower than the square, so there's still room round it for the highway and the ring road.)
                 float squeeze = 0.78f + sr.nextFloat() * 0.22f;
                 boolean across = sr.nextBoolean();
@@ -2497,11 +2489,6 @@ final class City {
             // (10.30) A big army base of its own out in the country, on the Massive maps (laid out first, so the
             // towns and farms go round it).
             if (cfg.outskirtsBase()) outskirtsBase();
-            // ((10.56) The Garrison State: a second huge base out in the country, and the prison on its island.)
-            if (cfg.militarized()) {
-                outskirtsBase();
-                islandPrison();
-            }
             hamlets(n);
         }
         if (m > 0) countryside(townX0, townY0, townX1, townY1);
@@ -2573,7 +2560,6 @@ final class City {
                 fill(b[0], b[1], b[2] - b[0], b[3] - b[1], SIDEWALK);
                 militaryBase(b[0] + 1, b[1] + 1, b[2] - b[0] - 2, b[3] - b[1] - 2);
             }
-            if (cfg.militarized()) compounds(used);
         }
         for (int n = 0; n < cfg.policeStations(); n++) {
             List<Integer> options = new ArrayList<Integer>();
@@ -3031,7 +3017,6 @@ final class City {
             type = (type + 1) % BASE_TYPES.length;
         }
         baseLayout(type, ax, ay, aw, ah, bt);
-        if (cfg.militarized() && aw >= 30 && ah >= 30) garrisonFill(ax, ay, aw, ah, gx);
         for (int i = ax + aw / 2 + 2; i < ax + aw - 1; i++) {
             int ty = ay + ah - 2;
             if (rnd.nextFloat() < 0.75f && tiles[ty * w + i] == BASE && !hasNeighbor(i, ty, CAR)) {
@@ -3068,24 +3053,6 @@ final class City {
         return base;
     }
 
-    /**
-     * (10.56) The Garrison State's big bases are full: below the first barracks, more rows of barracks on one side
-     * of the gate lane and a motor pool of parked army trucks on the other (trucks the soldiers can take out),
-     * down to the half of the base its kind fills.
-     */
-    private void garrisonFill(int ax, int ay, int aw, int ah, int gx) {
-        int left = ax + 2, right = ax + aw - 2, mid = gx - 2, top = ay + 14, bottom = ay + ah / 2 - 1;
-        for (int by = top; by + 4 <= bottom; by += 6)
-            if (mid - left >= 5) addFacilityLot(left, by, mid - left, 4, BARRACKS, 1);
-        for (int y = top; y + 1 <= bottom; y += 3)
-            for (int x = gx + 6; x < right - 1; x += 2) {
-                int i = y * w + x;
-                if (tiles[i] != BASE || hasNeighbor(x, y, CAR)) continue;
-                tiles[i] = CAR;
-                carKind[i] = 2;
-            }
-    }
-
     /** (10.30) Army checkpoints on the road to the country base: {x, y, angle of the road} in world units. */
     final List<float[]> checkpoints = new ArrayList<float[]>();
     /** Where the soldiers stand at them (two each), in world units. */
@@ -3112,18 +3079,12 @@ final class City {
     private void outskirtsBase() {
         int bw = w >= 650 ? 70 : 58, bh = w >= 650 ? 48 : 40;
         // ((10.52) Bigger on the Massive maps, and a smaller one on the Default ones, closer in.)
-        boolean small = !cfg.massive() && !cfg.militarized();
+        boolean small = !cfg.massive();
         if (cfg.civic >= 23) {
             bw = small ? 46 : w >= 650 ? 86 : 72;
             bh = small ? 32 : w >= 650 ? 58 : 48;
         }
         int clear = small ? 10 : 40;
-        // ((10.56) The Garrison State's are huge, on every size it comes in, and closer in where they must be.)
-        if (cfg.militarized()) {
-            bw = cfg.massive() ? (w >= 650 ? 96 : 82) : 62;
-            bh = cfg.massive() ? (w >= 650 ? 66 : 56) : 42;
-            clear = 8;
-        }
         float tcx = (townX0 + townX1) / 2f, tcy = (townY0 + townY1) / 2f;
         int[] prev = new int[w * h];
         for (int tries = 0; tries < 1500; tries++) {
@@ -3207,181 +3168,6 @@ final class City {
         }
     }
 
-    /**
-     * (10.56) The Garrison State's walled army compounds in town: the biggest blocks left, spread out, each a
-     * fenced compound with its barracks, tents, watchtowers and trucks (and a garrison of its own).
-     */
-    private void compounds(boolean[] used) {
-        int want = 2 + Math.max(0, cfg.size() - CityConfig.LARGE);
-        for (int n = 0; n < want; n++) {
-            int best = -1, bestArea = 0;
-            for (int k = 0; k < blocks.size(); k++) {
-                int[] b = blocks.get(k);
-                int bw = b[2] - b[0] - 2, bh = b[3] - b[1] - 2;
-                if (used[k] || bw < 12 || bh < 12) continue;
-                float cx = (b[0] + b[2]) / 2f * T, cy = (b[1] + b[3]) / 2f * T;
-                boolean near = false;
-                for (Facility f : facilities)
-                    if (f.kind == FACILITY_BASE && Math.hypot(f.x - cx, f.y - cy) < w * T / 5f) near = true;
-                if (near) continue;
-                if (bw * bh > bestArea) {
-                    bestArea = bw * bh;
-                    best = k;
-                }
-            }
-            if (best < 0) return;
-            used[best] = true;
-            int[] b = blocks.get(best);
-            fill(b[0], b[1], b[2] - b[0], b[3] - b[1], SIDEWALK);
-            Facility f = militaryBase(b[0] + 1, b[1] + 1, b[2] - b[0] - 2, b[3] - b[1] - 2, 41 + n);
-            f.satellite = true;
-        }
-    }
-
-    /** (10.56) The island prison's cell block (named when it's built), and the building. */
-    private int[] prisonLot;
-    Building prison;
-
-    /**
-     * (10.56) The Garrison State's prison: out in the country, on an island in a lake of its own, walled, with
-     * watchtowers at the corners and one bridge to the shore, an army checkpoint on it, and a road on from there.
-     */
-    private void islandPrison() {
-        int iw = w >= 650 ? 26 : 22, ih = w >= 650 ? 20 : 16, moat = 7;
-        int lw = iw + moat * 2, lh = ih + moat * 2;
-        int[] prev = new int[w * h];
-        for (int tries = 0; tries < 1500; tries++) {
-            int x = 12 + rnd.nextInt(Math.max(1, w - lw - 24)), y = 12 + rnd.nextInt(Math.max(1, h - lh - 24));
-            if (!allOpen(x - 3, y - 3, lw + 6, lh + 6)) continue;
-            if (x + lw > townX0 - 6 && x < townX1 + 6 && y + lh > townY0 - 6 && y < townY1 + 6) continue;
-            if (railY0 >= 0 && railY0 + railRows >= y - 4 && railY0 <= y + lh + 4) continue;
-            // The bridge goes out from the side facing town, to the shore and on to the nearest road.
-            float tcx = (townX0 + townX1) / 2f, tcy = (townY0 + townY1) / 2f;
-            int ix = x + moat, iy = y + moat;
-            float dx = tcx - (x + lw / 2f), dy = tcy - (y + lh / 2f);
-            int gdx = Math.abs(dx) > Math.abs(dy) ? (int) Math.signum(dx) : 0, gdy = gdx == 0 ? (int) Math.signum(dy) : 0;
-            if (gdx == 0 && gdy == 0) gdy = 1;
-            // (The shore end of the bridge, a tile out from the water.)
-            int gx = gdx > 0 ? x + lw + 1 : gdx < 0 ? x - 2 : ix + iw / 2, gy = gdy > 0 ? y + lh + 1 : gdy < 0 ? y - 2 : iy + ih / 2;
-            int end = roadSearch(gy * w + gx, x, y, lw, lh, prev);
-            if (end < 0) continue;
-            List<Integer> path = new ArrayList<Integer>();
-            for (int c = end; c != -1; c = prev[c]) path.add(0, c);
-            if (path.size() > 220) continue;
-            // The lake: an oval, with the island in the middle.
-            float cx = x + lw / 2f, cy = y + lh / 2f;
-            for (int j = y; j < y + lh; j++)
-                for (int i = x; i < x + lw; i++) {
-                    float ox = (i + 0.5f - cx) / (lw / 2f), oy = (j + 0.5f - cy) / (lh / 2f);
-                    if (ox * ox + oy * oy <= 1.02f || (i >= ix - 2 && i < ix + iw + 2 && j >= iy - 2 && j < iy + ih + 2)) tiles[j * w + i] = WATER;
-                }
-            fill(ix, iy, iw, ih, LOT);
-            for (int i = ix; i < ix + iw; i++) {
-                tiles[iy * w + i] = FENCE;
-                tiles[(iy + ih - 1) * w + i] = FENCE;
-            }
-            for (int j = iy; j < iy + ih; j++) {
-                tiles[j * w + ix] = FENCE;
-                tiles[j * w + ix + iw - 1] = FENCE;
-            }
-            // The gate, and the bridge from it to the shore.
-            Street bridgeRoad;
-            if (gdx != 0) {
-                int my = iy + ih / 2 - 1;
-                int x0 = gdx > 0 ? ix + iw - 1 : x - 2, x1 = gdx > 0 ? x + lw + 2 : ix + 1;
-                bridgeRoad = new Street(x0, my, x1, my + 3, false, true);
-            } else {
-                int mx = ix + iw / 2 - 1;
-                int y0 = gdy > 0 ? iy + ih - 1 : y - 2, y1 = gdy > 0 ? y + lh + 2 : iy + 1;
-                bridgeRoad = new Street(mx, y0, mx + 3, y1, true, true);
-            }
-            for (int j = bridgeRoad.y0; j < bridgeRoad.y1; j++)
-                for (int i = bridgeRoad.x0; i < bridgeRoad.x1; i++) if (tiles[j * w + i] == WATER) setBridge(j * w + i);
-            carve(bridgeRoad);
-            // Inside the wall: the cell block, an exercise yard and a watchtower in each corner.
-            int bx = ix + 3, by = iy + 3, bw = iw - 6, bh = ih - 6;
-            int cw = Math.max(6, bw * 3 / 5);
-            boolean yardFirst = gdx < 0 || gdy < 0;
-            int cellX = yardFirst ? bx + bw - cw : bx;
-            govLot(cellX, by, cw, bh, JAIL);
-            prisonLot = buildingLots.get(buildingLots.size() - 1);
-            int yx = yardFirst ? bx : bx + cw + 1, yw = bw - cw - 1;
-            if (yw >= 3) addDecor(D_YARD, yx * T + 2, by * T + 2, (yx + yw) * T - 2, (by + bh) * T - 2, 0);
-            addFacilityLot(ix + 1, iy + 1, 2, 2, TOWER, 3);
-            addFacilityLot(ix + iw - 3, iy + 1, 2, 2, TOWER, 3);
-            addFacilityLot(ix + 1, iy + ih - 3, 2, 2, TOWER, 3);
-            addFacilityLot(ix + iw - 3, iy + ih - 3, 2, 2, TOWER, 3);
-            // The army's checkpoint at the shore end of the bridge.
-            float ang = (float) Math.atan2(gdy, gdx);
-            float px = (gx + 0.5f - gdx * 3) * T, py = (gy + 0.5f - gdy * 3) * T;
-            checkpoints.add(new float[]{px, py, ang});
-            for (int sd = -1; sd <= 1; sd += 2) {
-                float[] q = findWalkable(px - (float) Math.sin(ang) * sd * 2.4f * T, py + (float) Math.cos(ang) * sd * 2.4f * T);
-                if (q != null) checkpointPosts.add(q);
-            }
-            // And the road on from the shore.
-            List<Float> pts = new ArrayList<Float>();
-            pts.add(gx + 0.5f);
-            pts.add(gy + 0.5f);
-            for (int k = 3; k < path.size() - 1; k += 4) {
-                pts.add(path.get(k) % w + 0.5f);
-                pts.add(path.get(k) / w + 0.5f);
-            }
-            pts.add(end % w + 0.5f);
-            pts.add(end / w + 0.5f);
-            float[] line = new float[pts.size()];
-            for (int k = 0; k < line.length; k++) line[k] = pts.get(k);
-            for (int it = 0; it < 2; it++) line = chaikin(line);
-            curveOnGrass = true;
-            curveRoad(line, false);
-            curveOnGrass = false;
-            return;
-        }
-    }
-
-    /**
-     * (10.56) The Garrison State's checkpoints in town: a barrier, sandbags and a hut across streets all over
-     * the city, soldiers on guard from the start, civilian cars stopped and waved through one at a time.
-     */
-    private void townCheckpoints() {
-        int want = Math.max(6, w / 45), gap = Math.max(26, w / 14);
-        List<Street> options = new ArrayList<Street>(streets);
-        java.util.Collections.shuffle(options, rnd);
-        int made = 0;
-        for (Street st : options) {
-            if (made >= want) break;
-            if (st.width < 3 || st.width > 4) continue;
-            int len = st.vertical ? st.y1 - st.y0 : st.x1 - st.x0;
-            if (len < 22) continue;
-            // Halfway along, clear of any junction.
-            int mid = len / 2, ok = 1;
-            int cx = st.vertical ? st.x0 + st.width / 2 : st.x0 + mid, cy = st.vertical ? st.y0 + mid : st.y0 + st.width / 2;
-            if (cx < townX0 || cx >= townX1 || cy < townY0 || cy >= townY1) continue;
-            for (int k = -9; k <= 9 && ok == 1; k++)
-                for (int a = 0; a < st.width && ok == 1; a++) {
-                    int x = st.vertical ? st.x0 + a : st.x0 + mid + k, y = st.vertical ? st.y0 + mid + k : st.y0 + a;
-                    if (x < 0 || y < 0 || x >= w || y >= h) ok = 0;
-                    else {
-                        int i = y * w + x;
-                        if (tiles[i] != ROAD || roadDir[i] == 3 || (bridge != null && bridge[i]) || nearHighwayTile(x, y)
-                                || (divided != null && divided[i] != 0) || (oneWay != null && oneWay[i] != 0)) ok = 0;
-                    }
-                }
-            if (ok == 0) continue;
-            float px = (st.vertical ? st.x0 + st.width / 2f : cx + 0.5f) * T, py = (st.vertical ? cy + 0.5f : st.y0 + st.width / 2f) * T;
-            boolean close = false;
-            for (float[] o : checkpoints) if (Math.hypot(o[0] - px, o[1] - py) < gap * T) close = true;
-            if (close) continue;
-            float ang = st.vertical ? (float) (Math.PI / 2) : 0;
-            checkpoints.add(new float[]{px, py, ang});
-            for (int sd = -1; sd <= 1; sd += 2) {
-                float off = (st.width / 2f + 1.2f) * T;
-                float[] q = findWalkable(px - (float) Math.sin(ang) * sd * off, py + (float) Math.cos(ang) * sd * off);
-                if (q != null) checkpointPosts.add(q);
-            }
-            made++;
-        }
-    }
 
     /**
      * From tile start, the nearest road tile (not the highway, nor inside the rectangle) across open country,
@@ -5015,30 +4801,6 @@ final class City {
             cells.add(new int[]{bx0 + in, by0 + in, bx1 - in, y0 - 3});
             cells.add(new int[]{bx0 + in, y0 - 3, x0 - 3, by1 - in});
             cells.add(new int[]{x1 + 3, y0 - 3, bx1 - in, by1 - in});
-        } else {
-            // Canals in a grid: two each way (three each way on the biggest maps), out to the harbour at the bottom.
-            int n = w >= 600 ? 3 : 2, cw = w >= 400 ? 9 : 7;
-            int[] xs = new int[n], ys = new int[n];
-            for (int k = 0; k < n; k++) {
-                xs[k] = bx0 + tw * (k + 1) / (n + 1) - cw / 2 + rnd.nextInt(7) - 3;
-                ys[k] = by0 + th * (k + 1) / (n + 1) - cw / 2 + rnd.nextInt(7) - 3;
-            }
-            for (int k = 0; k < n; k++) channel(bx0 + in, ys[k], bx1 - in, ys[k] + cw, false, SIDEWALK, 0);
-            for (int k = 0; k < n; k++) channel(xs[k], by0 + in, xs[k] + cw, by1, true, SIDEWALK, 0);
-            for (int[] c : channels) c[7] = 30;
-            int[] cx = new int[n * 2 + 2], cy = new int[n * 2 + 2];
-            cx[0] = bx0 + in;
-            cy[0] = by0 + in;
-            for (int k = 0; k < n; k++) {
-                cx[k * 2 + 1] = xs[k] - 3;
-                cx[k * 2 + 2] = xs[k] + cw + 3;
-                cy[k * 2 + 1] = ys[k] - 3;
-                cy[k * 2 + 2] = ys[k] + cw + 3;
-            }
-            cx[n * 2 + 1] = bx1 - in;
-            cy[n * 2 + 1] = by1 - in;
-            for (int i = 0; i <= n; i++)
-                for (int j = 0; j <= n; j++) cells.add(new int[]{cx[i * 2], cy[j * 2], cx[i * 2 + 1], cy[j * 2 + 1]});
         }
         for (int[] c : cells) {
             if (c[2] - c[0] < 6 || c[3] - c[1] < 6) continue;
@@ -5154,7 +4916,7 @@ final class City {
      * lifeguards (Seaside), or a concrete quay with docks, cranes, containers and ships (Harbour).
      */
     private void coast() {
-        boolean port = waterKind == CityConfig.W_HARBOUR || waterKind == CityConfig.W_CANAL;
+        boolean port = waterKind == CityConfig.W_HARBOUR;
         bridge = new boolean[w * h];
         fill(0, seaY, w, 2, SIDEWALK);
         int shore = seaY + 2;
@@ -5762,7 +5524,7 @@ final class City {
             if (ww >= 4 && wh >= 4) addFacilityLot(lx + 1, ly + 1, ww, wh, STATION, 2);
         }
         Facility station = new Facility(FACILITY_POLICE, c[0], c[1], number == 0 ? 80 : 64, c[0], c[1],
-                number == 0 ? (country.garrison ? "Military Police HQ" : country.policeStation.startsWith("Police") ? "Police Headquarters" : country.policeStation.trim() + " HQ") : country.policeStation + number);
+                number == 0 ? (country.policeStation.startsWith("Police") ? "Police Headquarters" : country.policeStation.trim() + " HQ") : country.policeStation + number);
         for (int k = -1; k <= 1; k += 2) {
             float[] p = findWalkable(c[0] + k * 18, c[1] + 10);
             if (p != null) station.posts.add(p);

@@ -13,7 +13,11 @@ final class PatchNotes {
                     "Every police car, army truck and ambulance out on the road has someone at the wheel: the driver is a real officer, soldier or paramedic (named on the vehicle's card) who gets out if it's wrecked and goes inside once it's parked back home.",
                     "More to see on a person's card: walking the beat (and with whom), keeping an eye on a street, guarding the station, on sentry, perimeter patrol, PT, the motor pool, formed up, at the scene, getting into a car, reloading, out of ammo, standing by for the helicopter, covering a buddy, badly hurt, bitten; and for the dead, clawing at a door, chasing someone, sniffing about, leading a horde of so many, wandering.",
                     "The game is set in the USA only: the other countries are gone, code and all, with Sydney, Tokyo and Paris.",
-                    "Delta Marsh, Fjord Town and the Mountain Valley are gone. Saves and city codes on a map or country no longer in the game don't load.",
+                    "Delta Marsh, Fjord Town, the Mountain Valley, Canal City and the Garrison State are gone, code and all, and so is the bomb squad. Saves and city codes on a map or country no longer in the game don't load (a bomb technician in an older save is a SWAT officer).",
+                    "Soldiers on base no longer go round in circles: sentries stand still at their posts facing out (one each side of a post), perimeter pairs walk one stretch of the fence end to end and back, a squad drills in ranks on the parade ground (no more laps), and the motor pool crew wait by the trucks.",
+                    "Every officer is out on the beat: no more officers standing on the precinct doors, or a third of them kept back to guard it once the city is under attack, and officers starting from the precinct's yard find their way out to the street.",
+                    "Cars use every lane of a wide road, and get in lane for a turn - the outside lane before turning right, the inside one before turning left. A car left stopped on a wide road is put by the kerb, not in the middle of the lanes.",
+                    "Brush size 25 for spawning a crowd at once.",
             },
             {
                     "11.2  -  Bomb squad colours, portrait only",

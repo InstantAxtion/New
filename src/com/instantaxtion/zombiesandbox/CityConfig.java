@@ -35,12 +35,12 @@ final class CityConfig implements OptionSet {
             "A working port: quays, docks, cranes, container stacks and ships, with warehouses along the water.",
             "Three island towns in the sea, joined by bridges, with a causeway to the mainland. Always one size: between Large and Massive.",
             RealCities.INFO[0], RealCities.INFO[1], RealCities.INFO[2], RealCities.INFO[3], "", "", "",
-            "A militarized state: military police instead of the police, soldiers everywhere, huge army bases and walled compounds, checkpoints already on the main roads, and a prison on an island. Default size and up.",
+            "",
             "One big island city in the middle of the sea, with two to five smaller island towns round it, every one lived in and joined to it by a bridge, and a causeway to the mainland. Always one size.",
             "",
             "A city wrapped round a deep bay off the sea: avenues along both shores, parks at the water's edge, a long bridge across the bay and another over its mouth, and beaches either side.",
             "", "",
-            "Canals in a grid right through the old town, quays along both banks, little bridges every few blocks, and the canals open out into the harbour.",
+            "",
     };
 
     static final int STYLE_MIXED = 0, STYLE_OFFICES = 1, STYLE_HOUSES = 2, STYLE_WAREHOUSES = 3;
@@ -240,17 +240,12 @@ final class CityConfig implements OptionSet {
         return v[OPT_PRESET];
     }
 
-    /** (10.56) The Garrison State map. */
-    static final int GARRISON = 22;
-
-    /** (10.56) A militarized state: military police, soldiers everywhere, big bases, checkpoints, an island prison. */
-    boolean militarized() { return v[OPT_PRESET] == GARRISON; }
 
     /** Water on the map: none, the sea along one side (a beach or a port), a river, or a lake. */
     static final int W_NONE = 0, W_SEA = 1, W_RIVER = 2, W_LAKE = 3, W_HARBOUR = 4, W_ISLANDS = 5, W_REAL = 6;
     /** (11.0) The water maps still in the game (each has the sea along the bottom as well). */
-    static final int W_BAY = 7, W_CANAL = 10;
-    static final int BAY = 25, CANAL = 28;
+    static final int W_BAY = 7;
+    static final int BAY = 25;
     /** The Islands map, and its one size (tiles across: a bit bigger than Massive). */
     static final int ISLANDS = 14, ISLANDS_TILES = 640;
     /** (10.60) The Archipelago (always one size, like Islands). */
@@ -258,11 +253,11 @@ final class CityConfig implements OptionSet {
 
     /**
      * (11.3) Maps taken out of the game altogether, code and all: Sydney, Tokyo and Paris (their countries are
-     * gone), the Mountain Valley, Delta Marsh and Fjord Town. Their numbers stay taken so the other maps keep
+     * gone), the Garrison State, the Mountain Valley, Delta Marsh, Fjord Town and Canal City. Their numbers stay taken so the other maps keep
      * theirs; saves and city codes on them no longer load.
      */
     static boolean removed(int preset) {
-        return preset == 19 || preset == 20 || preset == 21 || preset == 24 || preset == 26 || preset == 27;
+        return preset == 19 || preset == 20 || preset == 21 || preset == 22 || preset == 24 || preset == 26 || preset == 27 || preset == 28;
     }
 
     boolean archipelago() { return v[OPT_PRESET] == ARCHIPELAGO; }
@@ -272,8 +267,6 @@ final class CityConfig implements OptionSet {
         if (v[OPT_PRESET] == ISLANDS || v[OPT_PRESET] == ARCHIPELAGO) v[OPT_SIZE] = MASSIVE;
         if (removed(v[OPT_PRESET])) v[OPT_PRESET] = METROPOLIS;
         v[OPT_COUNTRY] = Country.USA;
-        // ((10.56) The Garrison State needs room for its bases: the Default size at the least.)
-        if (v[OPT_PRESET] == GARRISON && v[OPT_SIZE] < LARGE) v[OPT_SIZE] = LARGE;
         // A real city is always the same city: the biggest size, in its own country.
         RealCities.Spec real = RealCities.get(v[OPT_PRESET]);
         if (real != null) {
@@ -297,7 +290,6 @@ final class CityConfig implements OptionSet {
             case 13: return W_HARBOUR;
             case ISLANDS: case ARCHIPELAGO: return W_ISLANDS;
             case BAY: return W_BAY;
-            case CANAL: return W_CANAL;
             default: return W_NONE;
         }
     }
@@ -405,7 +397,7 @@ final class CityConfig implements OptionSet {
     /** A massive (or huge) map: the city sits in the middle of open countryside. */
     boolean massive() { return v[OPT_SIZE] >= MASSIVE; }
     /** (10.30) A big army base out in the country: every Massive and Huge map with country round the town. */
-    boolean outskirtsBase() { return civic >= 14 && (civic < 26 || militarized()) && (massive() || (civic >= 23 && v[OPT_SIZE] >= LARGE)) && water() == W_NONE && coreFraction() < 0.99f; }
+    boolean outskirtsBase() { return civic >= 14 && civic < 26 && (massive() || (civic >= 23 && v[OPT_SIZE] >= LARGE)) && water() == W_NONE && coreFraction() < 0.99f; }
 
     int size() { return v[OPT_SIZE]; }
 
@@ -427,7 +419,7 @@ final class CityConfig implements OptionSet {
         // ((11.0) Less nature: a thin band of country round a town that fills nine tenths of the map, whatever the map.)
         // (Just wide enough for the highway and its interchanges: 28 tiles each side, or a little more on the big maps.
         // The Garrison State keeps its open country for its bases and the prison.)
-        if (civic >= 26 && p != GARRISON) {
+        if (civic >= 26) {
             int t = tiles();
             float band = Math.max(28, t * 0.04f) * 2f / t;
             return Math.max(p == 9 ? 0.72f : 0.78f, 1 - band);
@@ -440,7 +432,6 @@ final class CityConfig implements OptionSet {
         // (10.33) Less empty country: the town reaches further out (the country beyond fills with towns too).
         if (civic >= 17) town = Math.min(1f, town + (v[OPT_SIZE] >= GIGANTIC ? 0.04f : massive() ? 0.08f : 0.02f));
         // ((10.56) The Garrison State keeps more open country round the town, for its bases and the prison.)
-        if (p == GARRISON) return Math.min(town, v[OPT_SIZE] >= HUGE ? 0.64f : 0.6f);
         return p == 6 ? town * 0.8f : town;
     }
     /** How many of a city's residents (everyone its homes can house) are in the game. */
@@ -452,9 +443,6 @@ final class CityConfig implements OptionSet {
      * has on shift, so the war is a fair fight), a couple per station, at least four.
      */
     int cops(int residents) {
-        // ((10.56) In the Garrison State the military police are fewer: the army is the force there.)
-        // ((10.60) About twice as many as at first: a police state has police on every street.)
-        if (militarized()) return Math.max(24, Math.min(520, Math.round(residents / 18f) + policeStations() * 8));
         // About one officer for every 24 residents the game simulates, plus a few for each station (10.33: more).
         return Math.max(10, Math.min(360, Math.round(residents / 24f) + policeStations() * 6));
     }
@@ -462,20 +450,10 @@ final class CityConfig implements OptionSet {
     /** Soldiers at the base (if the map has one): a garrison that grows with the city. */
     int soldiers(int residents) {
         if (!militaryBase() && !outskirtsBase()) return 0;
-        // ((10.56) The Garrison State: soldiers everywhere, more of them than the military police.)
-        // ((10.60) And about twice the army it had.)
-        if (militarized()) return Math.max(160, Math.min(1200, Math.round(residents / 4.5f) + 80));
         // (10.33: bigger garrisons.)
         return Math.max(16, Math.min(120, Math.round(residents / 50f) + 10));
     }
 
-    /**
-     * (10.60) The Garrison State's soldiers posted in pairs on street corners all over town (on top of those at the
-     * bases and checkpoints): about one pair for every sixty residents.
-     */
-    int streetPairs(int residents) {
-        return militarized() ? Math.max(10, Math.min(70, Math.round(residents / 60f))) : 0;
-    }
 
     /**
      * (10.63) How many should live in the city (cities built since map version 25): enough that with most of them

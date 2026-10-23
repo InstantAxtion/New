@@ -38,11 +38,11 @@ final class Entity {
     static final int ROLE_SAR = 11;
     /** A helicopter pilot (10.20): stands by the pad until their aircraft is needed. */
     static final int ROLE_PILOT = 12;
-    /** (11.0) Police bomb technicians in blast suits; Marines landed by boat; army recon scouts. */
-    static final int ROLE_EOD = 13, ROLE_MARINE = 14, ROLE_RECON = 15;
+    /** (11.0) Marines landed by boat; army recon scouts. (13 was the bomb technician, gone in 11.3.) */
+    static final int ROLE_MARINE = 14, ROLE_RECON = 15;
     static final String[] ROLE_NAMES = {"Soldier", "Commander", "Sniper", "Gunner", "Riot officer", "K9 handler",
             "National Guard", "SWAT officer", "Combat medic", "Grenadier", "Police marksman", "Rescue specialist", "Pilot",
-            "Bomb technician", "Marine", "Recon scout"};
+            "(unused)", "Marine", "Recon scout"};
 
     int type, role;
     float x, y, vx, vy, angle;

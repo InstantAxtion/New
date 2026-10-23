@@ -36,9 +36,9 @@ final class GameView extends View implements Menu.Host {
     private static final int TOOL_COP = 3;
     // (Negative roles are the other agencies: World.spawnCop.)
     private static final int[] COP_ROLES = {0, Entity.ROLE_RIOT, Entity.ROLE_SWAT, Entity.ROLE_MARKSMAN,
-            -1, -2, -3, Entity.ROLE_SAR, Entity.ROLE_EOD};
+            -1, -2, -3, Entity.ROLE_SAR};
     private static final String[] COP_NAMES = {"Cop", "Riot cop", "SWAT", "Marksman", "Highway patrol", "Sheriff's deputy",
-            "Park ranger", "Search & rescue", "Bomb squad"};
+            "Park ranger", "Search & rescue"};
     private static final String[] CLEAR_NAMES = {"Everyone", "Zombies only", "Bodies & blood", "Wrecks",
             "Barricades"};
     private static final int[] ZOMBIE_VARIANTS = {Entity.ZOMBIE, Entity.RUNNER, Entity.BRUTE};
@@ -53,8 +53,7 @@ final class GameView extends View implements Menu.Host {
             "Body armour and a carbine; sent to the worst trouble",
             "Scoped rifle: picks off the dead from a long way off", "State trooper: works the highways, backs up the town",
             "County deputy: patrols the back roads", "Patrols the trails and dirt roads, guards the ranger station",
-            "Rescue specialist: finds the cut-off and gets them out",
-            "Blast suit and a shotgun; blows the doors of buildings full of the dead"};
+            "Rescue specialist: finds the cut-off and gets them out"};
     private static final String[] MIL_INFO = {"Rifle in bursts, grenades for crowds", "Boosts soldiers nearby, calls in support",
             "Long-range scoped rifle", "Belt-fed machine gun", "Guardsmen who protect civilians and safe zones",
             "Grenade launcher for packs of the dead", "Well armed, tough, lands from the sea",
@@ -69,7 +68,7 @@ final class GameView extends View implements Menu.Host {
     private static final int BTN_PAUSE = 0, BTN_SPEED = 1, BTN_BRUSH = 2, BTN_VIEW = 3, BTN_CLEAR = 4, BTN_MENU = 5;
     private static final int TOP_BUTTONS = 6;
     private static final int[] SPEEDS = {1, 2, 4, 8};
-    private static final int[] BRUSHES = {1, 5, 10};
+    private static final int[] BRUSHES = {1, 5, 10, 25};
     private static final int[] SHOP_AWNINGS = {0xFFD83A3A, 0xFF2E7D4F, 0xFF2E5FB0, 0xFFE8A21C, 0xFF8A2E6B};
     private static final int[] ROW_COLORS = {0xFFF0AD4E, 0xFF4F7BE0, 0xFF8FA05A, 0xFF7CC24E};
     private static final String[] ROW_LABELS = {"Civilians", "Cops", "Military", "Zombies"};
@@ -3785,7 +3784,7 @@ final class GameView extends View implements Menu.Host {
         }
         boolean civ = v.type == Fleet.CAR;
         Country land0 = world.city.country;
-        int body = civ ? v.color : v.kind == Fleet.K_BEARCAT ? 0xFF1A1C20 : v.kind == Fleet.K_EOD ? 0xFFE8E6E0 : v.recon ? 0xFF9C8A5E
+        int body = civ ? v.color : v.kind == Fleet.K_BEARCAT ? 0xFF1A1C20 : v.recon ? 0xFF9C8A5E
                 : v.kind == Fleet.K_RIOT_VAN ? land0.cruiserBody
                 : truck ? (v.restock ? 0xFFE6E3DA : v.swat ? 0xFF1C2026 : v.guardUnit ? 0xFF8C8260 : v.kind == Fleet.K_APC ? 0xFF46512E : 0xFF4F5A33) : amb ? 0xFFF2F2F2
                 : v.agency == 1 ? land0.hpBody : v.agency == 2 ? land0.ruralBody : v.agency == 3 ? 0xFF3E5634 : v.agency == 4 ? 0xFF15171A : land0.cruiserBody;
@@ -3891,20 +3890,6 @@ final class GameView extends View implements Menu.Host {
                 c.drawRect(hl * 0.36f, -hw + 1, hl * 0.43f, 0, fill);
                 fill.setColor(blink ? 0xFF3A7BFF : 0xFFFF3A30);
                 c.drawRect(hl * 0.36f, 0, hl * 0.43f, hw - 1, fill);
-            }
-        } else if (v.kind == Fleet.K_EOD) {
-            // ((11.0) The bomb squad's truck: white, an orange band down each side, the robot's box at the back.)
-            fill.setColor(0xFFE0782A);
-            c.drawRect(-hl + 1, -hw, hl * 0.3f, -hw + 1.1f, fill);
-            c.drawRect(-hl + 1, hw - 1.1f, hl * 0.3f, hw, fill);
-            fill.setColor(0xFFB8B6B0);
-            c.drawRect(-hl + 1.2f, -2.4f, -hl * 0.45f, 2.4f, fill);
-            fill.setColor(0xFF1E2A33);
-            c.drawRect(hl * 0.45f, -hw + 1, hl * 0.7f, hw - 1, fill);
-            if (!v.parked && !v.broken) {
-                boolean blink = ((int) (v.anim * 8)) % 2 == 0;
-                fill.setColor(blink ? 0xFFFF3A30 : 0xFF3A7BFF);
-                c.drawRect(hl * 0.33f, -hw + 1, hl * 0.42f, hw - 1, fill);
             }
         } else if (truck && v.swat) {
             // The SWAT van: armoured black box body, a white band and a light bar.
@@ -5740,16 +5725,6 @@ final class GameView extends View implements Menu.Host {
             oval.set(-r * 0.5f, -r * 0.85f, r * 0.25f, r * 0.1f);
             c.drawOval(oval, fill);
         }
-        if (e.role == Entity.ROLE_EOD && e.type == Entity.COP) {
-            // ((11.0) The bomb technician's blast suit: a big padded collar and the helmet's visor.)
-            fill.setColor(City.darken(e.body, 0.8f));
-            oval.set(-r * 0.7f, -r * 1.08f, r * 0.7f, r * 1.08f);
-            c.drawOval(oval, fill);
-            fill.setColor(0xFF1C2433);
-            c.drawCircle(0, 0, r * 0.55f, fill);
-            fill.setColor(0xCC9FD0E8);
-            c.drawRect(r * 0.25f, -r * 0.3f, r * 0.52f, r * 0.3f, fill);
-        }
         if (e.armored) {
             // (10.32) The dead in body armour: the vest over the torso, dark and torn.
             fill.setColor(0xFF2A3038);
@@ -6381,10 +6356,9 @@ final class GameView extends View implements Menu.Host {
         else if (e.isZombie()) title = (e.armored ? "Armored " : "") + Entity.NAMES[e.type] + (e.origin >= 0 ? "  -  was " + Names.person(e.nameSeed) : "");
         else if (e.type == Entity.COP && e.role == Entity.ROLE_SWAT)
             title = Country.swat()[1] + " " + Names.person(e.nameSeed) + "  -  " + Dispatch.name(e);
-        else if (e.type == Entity.COP && e.role == Entity.ROLE_EOD) title = "Bomb technician " + Names.person(e.nameSeed) + "  -  " + Dispatch.name(e);
         else if (e.type == Entity.COP && e.role == Entity.ROLE_SAR) title = "Rescue specialist " + Names.person(e.nameSeed) + "  -  " + Dispatch.name(e);
         else if (e.type == Entity.COP) title = (e.agency == 1 ? world.city.country.hpName + " " : e.agency == 2 ? world.city.country.ruralName + "'s deputy "
-                : e.agency == 3 ? "Park ranger " : e.agency == 4 ? Dispatch.federal(world.city.country) + " agent " : e.role == Entity.ROLE_PILOT ? "Pilot " : world.city.country.garrison ? "MP " : "Officer ")
+                : e.agency == 3 ? "Park ranger " : e.agency == 4 ? Dispatch.federal(world.city.country) + " agent " : e.role == Entity.ROLE_PILOT ? "Pilot " : "Officer ")
                 + Names.person(e.nameSeed) + "  -  " + Dispatch.name(e);
         else if (e.type == Entity.SOLDIER) title = Names.person(e.nameSeed) + "  -  " + Entity.ROLE_NAMES[e.role] + ", " + Dispatch.name(e);
         else if (homeless(e)) title = Names.person(e.nameSeed) + "  -  Homeless";
@@ -7835,7 +7809,7 @@ final class GameView extends View implements Menu.Host {
         for (int i = 0; i < n; i++) {
             float ox = 0, oy = 0;
             if (n > 1) {
-                double a = rnd.nextDouble() * Math.PI * 2, r = Math.sqrt(rnd.nextDouble()) * 20;
+                double a = rnd.nextDouble() * Math.PI * 2, r = Math.sqrt(rnd.nextDouble()) * (n > 10 ? 36 : 20);
                 ox = (float) (Math.cos(a) * r);
                 oy = (float) (Math.sin(a) * r);
             }

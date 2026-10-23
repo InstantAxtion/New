@@ -2,11 +2,16 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "11.1";
-    static final int VERSION_CODE = 103;
+    static final String VERSION = "11.2";
+    static final int VERSION_CODE = 104;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "11.2  -  Bomb squad colours, portrait only",
+                    "The bomb squad is the police's: its truck is called the bomb squad truck (not an army truck), it shows in police blue on the map and the tactical map, and the technicians wear navy blast suits instead of army green. BearCats, SWAT and riot vans show as police too.",
+                    "The game plays in portrait only: it no longer turns sideways with the phone.",
+            },
             {
                     "11.1  -  On duty, multi-lane roads, beaches",
                     "Police on foot walk a beat in pairs round their precinct streets instead of milling about (with the city under attack, a tighter beat, and one in three guarding the precinct). Soldiers on base are on duty: sentries at the posts, patrols round the perimeter, PT laps of the parade ground, and crews standing by at the motor pool; once the alarm goes they fall in by squad on the parade ground.",

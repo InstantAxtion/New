@@ -288,6 +288,8 @@ final class Fleet {
                 if (v.kind == K_APC) return "Armoured personnel carrier" + (v.guardUnit ? "  -  " + Country.guard(city.country.id)[1] : "");
                 if (v.kind == K_HUMVEE) return (v.guardUnit ? Country.guard(city.country.id)[1] + " " : "") + "Humvee" + (v.loop ? "  -  base patrol" : "");
                 if (v.kind == K_RIOT_VAN) return "Riot police van";
+                if (v.kind == K_BEARCAT) return "Police BearCat";
+                if (v.kind == K_EOD) return "Bomb squad truck";
                 return v.swat ? Country.swat(city.country.id)[0] + " van" : v.guardUnit ? Country.guard(city.country.id)[1] + " truck" : v.supply > 0 ? "Army supply truck" : "Army truck";
             case HELI: return v.kind == K_RESCUE_HELI ? "Rescue helicopter" : v.kind == K_POLICE_HELI ? "Police helicopter" : "Air " + Math.max(1, v.number) + "  -  army helicopter";
             case TANK: return "Tank";
@@ -357,7 +359,8 @@ final class Fleet {
             case CRUISER:
             case TRUCK: {
                 String who = v.kind == K_APC ? "APC" : v.kind == K_HUMVEE ? "Humvee" : v.kind == K_RIOT_VAN ? "Riot van"
-                        : v.kind == K_BIKE ? "Police motorcycle" : v.type == CRUISER ? "Police car" : "Army truck";
+                        : v.kind == K_BIKE ? "Police motorcycle" : v.kind == K_BEARCAT ? "BearCat" : v.kind == K_EOD ? "Bomb squad"
+                        : v.type == CRUISER ? "Police car" : v.swat ? "SWAT van" : "Army truck";
                 if (v.restock) return v.state == RETURN ? "Supply truck: Heading out of town"
                         : "Supply truck: Delivering" + (where != null ? " to " + where : "");
                 if (v.standby) return who + ": Parked at " + (v.depot != null ? v.depot.name : "base") + ", ready";
@@ -373,9 +376,9 @@ final class Fleet {
                 if (v.patrol && v.state == PATROL) return who + ": On patrol";
                 if (v.patrol && v.state == SCENE) return who + ": At the scene" + (where != null ? " on " + where : "");
                 if (v.patrol && v.state == RECALL) return who + ": Picking up its officers";
-                if (v.type == TRUCK && v.state == MUSTER) return "Army truck: Squad mounting up";
+                if (v.type == TRUCK && v.state == MUSTER) return who + (policeTruck(v) ? ": Officers mounting up" : ": Squad mounting up");
                 if (v.state == WAIT) return who + ": Loading up";
-                if (v.state == DRIVE) return who + ": " + (v.type == TRUCK ? "Carrying squad" : "Responding") + (where != null ? " to " + where : "");
+                if (v.state == DRIVE) return who + ": " + (army(v) ? "Carrying squad" : "Responding") + (where != null ? " to " + where : "");
                 return who + ": Returning";
             }
             default:
@@ -403,6 +406,18 @@ final class Fleet {
 
     void clear() {
         vehicles.clear();
+    }
+
+    /** (11.1) The army's (tanks, trucks, Humvees, its helicopters and boats) rather than the police's or anyone else's. */
+    static boolean army(Vehicle v) {
+        if (v.type == TANK || v.type == JET || v.type == BOAT) return true;
+        if (v.type == HELI) return v.kind != K_POLICE_HELI && v.kind != K_RESCUE_HELI;
+        return v.type == TRUCK && !policeTruck(v);
+    }
+
+    /** (11.1) The police's trucks: SWAT vans, riot vans, BearCats and the bomb squad's. */
+    static boolean policeTruck(Vehicle v) {
+        return v.type == TRUCK && (v.swat || v.kind == K_RIOT_VAN || v.kind == K_BEARCAT || v.kind == K_EOD);
     }
 
     /** (11.1) The lane a vehicle keeps to: on a call, the inside one, to get by. */

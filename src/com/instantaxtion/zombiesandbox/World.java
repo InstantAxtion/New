@@ -1331,8 +1331,9 @@ final class World {
                 e.mass = 1.7f;
                 e.speed *= 0.75f;
                 e.runSpeed *= 0.7f;
-                e.body = 0xFF4E6A3A;
-                e.head = 0xFF3C5230;
+                // ((11.1) The police's navy suit, not army green.)
+                e.body = 0xFF2E3F5E;
+                e.head = 0xFF1F2B42;
                 break;
             case Entity.ROLE_MARINE:
                 // ((11.0) Marines, landed from the sea: well armed, in blue-grey camouflage.)

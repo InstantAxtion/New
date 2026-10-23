@@ -425,6 +425,10 @@ mounting up, and lighter running with big populations.
 
 **More police than soldiers (10.35):** the army on the map is never more than two in five of the police force.
 
+**Bomb squad colours, portrait only (11.2):** the bomb squad's truck is named and marked as police (not an army
+truck) and its technicians wear the police's navy blast suits. BearCats, SWAT and riot vans show in police blue on
+the maps too. The game only plays upright, in portrait.
+
 **On duty, multi-lane roads, beaches (11.1):** police walk beats in pairs and soldiers on base have duties (sentry,
 perimeter patrol, PT, the motor pool), falling in by squad when the alarm goes. All the new units can be spawned
 (bomb squad, Marines, recon scouts, BearCat and recon Humvee). Rooftop air conditioners sit in tidy rows with their

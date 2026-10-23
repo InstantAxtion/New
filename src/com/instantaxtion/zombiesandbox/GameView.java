@@ -1152,7 +1152,7 @@ final class GameView extends View implements Menu.Host {
                 Fleet.Vehicle v = world.fleet.vehicles.get(i);
                 if (v.type == Fleet.CAR && v.parked) continue;
                 if (v.type == Fleet.HELI || v.type == Fleet.JET) continue;
-                fill.setColor(v.type == Fleet.TANK ? 0xFFFFE27A : v.type == Fleet.CRUISER ? 0xFF6FA8FF : v.type == Fleet.TRUCK ? 0xFFB8E07A : 0xB0E0E0E0);
+                fill.setColor(v.type == Fleet.TANK ? 0xFFFFE27A : v.type == Fleet.CRUISER || Fleet.policeTruck(v) ? 0xFF6FA8FF : v.type == Fleet.TRUCK ? 0xFFB8E07A : 0xB0E0E0E0);
                 c.drawCircle(mx(v.x), my(v.y), dot * (v.type == Fleet.CAR ? 1f : 1.4f), fill);
             }
             // (10.50) Helicopters in the air: a rotor mark in the colour of who flies it, and a line to where it's going.
@@ -1315,7 +1315,7 @@ final class GameView extends View implements Menu.Host {
         for (int i = 0, n = world.fleet.vehicles.size(); i < n; i++) {
             Fleet.Vehicle v = world.fleet.vehicles.get(i);
             if (v.type == Fleet.CAR || v.type == Fleet.TRAIN) continue;
-            fill.setColor(v.type == Fleet.HELI || v.type == Fleet.TANK || v.type == Fleet.TRUCK ? 0xFFFFE27A : 0xFFE0E0E0);
+            fill.setColor(Fleet.army(v) ? 0xFFFFE27A : 0xFFE0E0E0);
             c.drawCircle(tacRect.left + v.x * sx, tacRect.top + v.y * sy, dot, fill);
         }
         text.setTextAlign(Paint.Align.CENTER);
@@ -2277,7 +2277,7 @@ final class GameView extends View implements Menu.Host {
                 Dispatch.Incident inc = v.incident;
                 if (inc == null || inc.resolved || v.broken || (v.state != Fleet.DRIVE && v.state != Fleet.MUSTER)) continue;
                 int aboard = v.crew.size() + v.passengers;
-                if (aboard > 0) tally(inc, v.type == Fleet.TRUCK || v.type == Fleet.TANK || v.passengerType == Entity.SOLDIER, aboard);
+                if (aboard > 0) tally(inc, Fleet.army(v) || v.passengerType == Entity.SOLDIER, aboard);
             }
             float u = 1f / Math.max(0.35f, scale);
             text.setTextSize(10.5f * dp * u);
@@ -2323,7 +2323,7 @@ final class GameView extends View implements Menu.Host {
             }
             if (followV != null && followV.state == Fleet.DRIVE && followV.field != null) {
                 int n = world.fleet.traceRoute(followV, routeBuf);
-                int col = followV.type == Fleet.TRUCK || followV.type == Fleet.TANK ? 0xFFA8E070 : 0xFF70B0FF;
+                int col = Fleet.army(followV) ? 0xFFA8E070 : 0xFF70B0FF;
                 drawRoute(c, followV.x, followV.y, routeBuf, 0, n, col, u);
             }
         }
@@ -5450,9 +5450,9 @@ final class GameView extends View implements Menu.Host {
             float tw = text.measureText(label);
             oval.set(sx - tw / 2 - 6 * dp, sy - 11 * dp, sx + tw / 2 + 6 * dp, sy + 4 * dp);
             if (!claim(oval)) continue;
-            int col = v.type == Fleet.HELI || v.type == Fleet.TANK || v.type == Fleet.TRUCK ? 0xC8304A20
+            int col = Fleet.army(v) ? 0xC8304A20
                     : v.type == Fleet.AMBULANCE ? 0xC8A03030
-                    : v.type == Fleet.CRUISER ? 0xC8203A66 : 0xB0202226;
+                    : v.type == Fleet.CRUISER || Fleet.policeTruck(v) || v.type == Fleet.HELI ? 0xC8203A66 : 0xB0202226;
             fill.setColor(col);
             c.drawRoundRect(oval, 6 * dp, 6 * dp, fill);
             text.setColor(0xFFF2F2F2);
@@ -5974,7 +5974,7 @@ final class GameView extends View implements Menu.Host {
             fill.setColor(City.darken(e.body, 0.8f));
             oval.set(-r * 0.7f, -r * 1.08f, r * 0.7f, r * 1.08f);
             c.drawOval(oval, fill);
-            fill.setColor(0xFF2A3424);
+            fill.setColor(0xFF1C2433);
             c.drawCircle(0, 0, r * 0.55f, fill);
             fill.setColor(0xCC9FD0E8);
             c.drawRect(r * 0.25f, -r * 0.3f, r * 0.52f, r * 0.3f, fill);

@@ -35,6 +35,10 @@ final class Dispatch {
         String backupBy;
         /** Seconds before the SWAT van tries again, when it couldn't find a way there. */
         float swatWait;
+        /** (11.0) A BearCat sent; and a building full of the dead the bomb squad is here to breach (and the fuse). */
+        boolean bearcatRequested;
+        City.Building breach;
+        float breachTimer = -1;
         char[] field;
         /** A post on the cordon round the outbreak (World.updateCordon), or -1 for a real call. */
         int cordonPost = -1;
@@ -188,6 +192,10 @@ final class Dispatch {
     int swatTeams;
     /** Riot vans the police can send, and police helicopter flights left (since 10.10). */
     int riotVans, policeAir;
+    /** (11.0) BearCats and bomb squads still at the precincts; whether the army's recon is out yet. */
+    int bearcats, bombSquads;
+    boolean reconOut;
+    private float breachScan;
     int calls, sheltered, messageCount;
     int copCount, soldierCount;
     private int freeCops, freeSoldiers;
@@ -261,7 +269,7 @@ final class Dispatch {
             boolean clear = true;
             for (int k = 0; k < w.fleet.vehicles.size() && clear; k++) {
                 Fleet.Vehicle v = w.fleet.vehicles.get(k);
-                if (Fleet.airborne(v) || Math.abs(v.x - q.x) >= 24 || Math.abs(v.y - q.y) >= 24) continue;
+                if (Fleet.offRoad(v) || Math.abs(v.x - q.x) >= 24 || Math.abs(v.y - q.y) >= 24) continue;
                 // (An abandoned or broken-down car on the way in is towed off; anything else, wait for it.)
                 if (w.fleet.clearFromEntry(v)) k--;
                 else clear = false;
@@ -444,7 +452,7 @@ final class Dispatch {
             for (int i = 0; i < incidents.size(); i++) {
                 Incident o = incidents.get(i);
                 if (o.cordonPost >= 0) continue;
-                if (o.zombiesNear == 0 && (stale == null || o.clearTimer > stale.clearTimer)) stale = o;
+                if (o.zombiesNear == 0 && o.breach == null && (stale == null || o.clearTimer > stale.clearTimer)) stale = o;
                 float d = (o.x - x) * (o.x - x) + (o.y - y) * (o.y - y);
                 if (d < bd) {
                     bd = d;
@@ -552,6 +560,19 @@ final class Dispatch {
         zoneFieldTimer -= dt;
         if (zonesDirty || zoneFieldTimer <= 0) updateZoneField();
         updateGates(dt);
+        if ((breachScan -= dt) <= 0) {
+            breachScan = 5;
+            bombSquadCheck();
+            if (!reconOut && w.alert >= 1 && city.cfg.nature()) {
+                reconOut = true;
+                int sent = 0;
+                for (City.Facility f : city.facilities)
+                    if (f.kind == City.FACILITY_BASE)
+                        for (int k = 0; k < 2; k++) if (w.fleet.startRecon(f)) sent++;
+                if (sent > 0) say(WHO_MILITARY, null, "Military: " + sent + " recon " + (sent == 1 ? "vehicle" : "vehicles")
+                        + " out across the city. They'll mark what they find.", w.city.worldW() / 2f, w.city.worldH() / 2f);
+            }
+        }
         tick += dt;
         if (tick < 0.5f) return;
         float step = tick;
@@ -792,6 +813,14 @@ final class Dispatch {
             say(WHO_MILITARY, lead, squadName + " squad, mounting up. Driving to " + target.place + " to support the police.", target.x, target.y);
             return;
         }
+        // ((11.0) A truck near them, or one from the base to pick them up, rather than a long walk.)
+        if (bd > 600 * 600 && w.fleet.driveTo(pick, target)) {
+            if (w.time > driveSaidAt) {
+                driveSaidAt = w.time + 20;
+                say(WHO_MILITARY, lead, squadName + " squad, a truck's picking us up for " + target.place + ".", target.x, target.y);
+            }
+            return;
+        }
         for (Entity e : pick) {
             e.task = T_RESPOND;
             e.incident = target;
@@ -1015,7 +1044,7 @@ final class Dispatch {
             inc.zombiesNear = w.countZombiesNear(inc.x, inc.y, 140);
             // (10.45) The dead don't stay put: the call moves with them (a little way, not across town), rather
             // than everyone going on to where they were.
-            if (inc.zombiesNear == 0 && inc.cordonPost < 0) {
+            if (inc.zombiesNear == 0 && inc.cordonPost < 0 && inc.breach == null) {
                 Entity z = w.nearestZombie(inc.x, inc.y, 320);
                 Incident other = z == null || z.hidden ? null : callAt(z.x, z.y, inc);
                 if (other != null) {
@@ -1053,7 +1082,9 @@ final class Dispatch {
                     }
                 }
             }
-            if (inc.zombiesNear == 0) inc.clearTimer += step;
+            // ((11.0) A door the bomb squad is on its way to blow stays a call until it's done, or given up on.)
+            if (inc.breach != null && inc.age > 150 && inc.breachTimer < 0) inc.breach = null;
+            if (inc.zombiesNear == 0 && inc.breach == null) inc.clearTimer += step;
             else inc.clearTimer = 0;
             // ((10.45) And a call with none of them anywhere near is closed in a few seconds, not half a minute:
             // nobody drives on across town to an empty street.)
@@ -1099,6 +1130,17 @@ final class Dispatch {
                             + ". Six officers with shields.", station.gateX, station.gateY);
                 }
             }
+            // ((11.0) The worst of them, or officers going down: a BearCat, six tactical officers in armour.)
+            if (!inc.bearcatRequested && bearcats > 0 && (inc.zombiesNear >= 12 || inc.officersDown >= 2)) {
+                inc.bearcatRequested = true;
+                City.Facility station = city.nearestFacility(City.FACILITY_POLICE, inc.x, inc.y);
+                if (station != null && w.fleet.sendBearCat(station.gateX, station.gateY, inc)) {
+                    bearcats--;
+                    say(WHO_POLICE, null, "Dispatch: BearCat rolling from " + station.name + " for " + inc.place
+                            + ". Six tactical officers.", station.gateX, station.gateY);
+                }
+            }
+            if (inc.breach != null) breachStep(inc, step);
             // The police helicopter goes up over the bigger ones.
             if (!inc.policeAirRequested && inc.zombiesNear >= 8) {
                 // (The police helicopter on its pad, when it's ready: the pilot and a marksman run out to it.)
@@ -1374,10 +1416,42 @@ final class Dispatch {
                 say(WHO_POLICE, null, "Dispatch: Units from the station, take a car to " + inc.place + ".", inc.x, inc.y);
             }
             if (units.isEmpty()) return driven;
-            return driven + assignOnFoot(inc, type, units);
+            return driven + driveFar(inc, type, units);
         }
-        return assignOnFoot(inc, type, units);
+        return driveFar(inc, type, units);
     }
+
+    /**
+     * (11.0) Those a long way from the call go in a car or truck (one near them, or one fetching them from their
+     * station or base) a few at a time; the rest walk. Walking across town to every call was most of what the police
+     * and army did.
+     */
+    private int driveFar(Incident inc, int type, ArrayList<Entity> units) {
+        int driven = 0, seats = type == Entity.COP ? 4 : 8;
+        for (int i = 0; i < units.size(); i++) {
+            Entity e = units.get(i);
+            if (Math.hypot(e.x - inc.x, e.y - inc.y) < 600) continue;
+            ArrayList<Entity> group = new ArrayList<Entity>();
+            group.add(e);
+            for (int j = i + 1; j < units.size() && group.size() < seats; j++) {
+                Entity o = units.get(j);
+                if (Math.hypot(o.x - e.x, o.y - e.y) < 160 && Math.hypot(o.x - inc.x, o.y - inc.y) >= 600) group.add(o);
+            }
+            if (!w.fleet.driveTo(group, inc)) continue;
+            units.removeAll(group);
+            driven += group.size();
+            i--;
+        }
+        if (driven > 0 && w.time > driveSaidAt) {
+            driveSaidAt = w.time + 20;
+            say(type == Entity.COP ? WHO_POLICE : WHO_MILITARY, null, (type == Entity.COP ? "Dispatch: Units across town, grab a car" : "Military: Squads out of range, mount up")
+                    + " for " + inc.place + ".", inc.x, inc.y);
+        }
+        if (units.isEmpty()) return driven;
+        return driven + assignOnFoot(inc, type, units);
+    }
+
+    private float driveSaidAt;
 
     private int assignOnFoot(Incident inc, int type, ArrayList<Entity> units) {
         StringBuilder names = new StringBuilder();
@@ -1450,7 +1524,8 @@ final class Dispatch {
         say(WHO_POLICE, null, "Police Command: Requesting military support at " + place + ". " + hostiles
                 + " hostiles.", x, y);
         ArrayList<Entity> squad = nearestFree(Entity.SOLDIER, x, y, 4, Float.MAX_VALUE);
-        if (!squad.isEmpty() && zone == null && w.fleet.mountUp(squad, inc)) {
+        if (!squad.isEmpty() && zone == null && (w.fleet.mountUp(squad, inc)
+                || (Math.hypot(squad.get(0).x - x, squad.get(0).y - y) > 600 && w.fleet.driveTo(squad, inc)))) {
             Entity lead = squad.get(0);
             say(WHO_MILITARY, lead, "Copy that, Police. " + SQUADS[Math.max(0, lead.squad) % SQUADS.length]
                     + " squad mounting up, on our way to " + place + ".", lead.x, lead.y);
@@ -2022,6 +2097,73 @@ final class Dispatch {
 
     private int arrivedWaves;
 
+    /**
+     * (11.0) The bomb squad: a building known to be full of the dead (the drones see them, or they've come out of
+     * it before) gets the door blown in on them by two technicians in blast suits, rather than waiting for them to
+     * come out on their own.
+     */
+    private void bombSquadCheck() {
+        if (bombSquads <= 0) return;
+        City.Building best = null;
+        for (int i = 0, n = city.buildings.size(); i < n; i++) {
+            City.Building b = city.buildings.get(i);
+            if (!b.infestKnown || b.lurkers < 3 || b.collapsed || !b.occupants.isEmpty() || b.holdout != null) continue;
+            boolean taken = false;
+            for (int j = 0; j < incidents.size() && !taken; j++) taken = incidents.get(j).breach == b;
+            if (!taken && (best == null || b.lurkers > best.lurkers)) best = b;
+        }
+        if (best == null) return;
+        City.Facility station = city.nearestFacility(City.FACILITY_POLICE, best.doorX, best.doorY);
+        if (station == null) return;
+        Incident inc = newIncident(best.doorX, best.doorY, best.lurkers);
+        if (inc == null) return;
+        inc.breach = best;
+        if (!w.fleet.sendBombSquad(station.gateX, station.gateY, inc)) {
+            inc.breach = null;
+            return;
+        }
+        bombSquads--;
+        say(WHO_POLICE, null, "Dispatch: Bomb squad to " + (best.name != null ? best.name : "a building on " + inc.place)
+                + ". About " + best.lurkers + " of them shut inside. They'll blow the door.", station.gateX, station.gateY);
+    }
+
+    /** (11.0) The bomb squad has this building's door. */
+    boolean breaching(City.Building b) {
+        for (int i = 0; i < incidents.size(); i++) if (incidents.get(i).breach == b) return true;
+        return false;
+    }
+
+    /** (11.0) The technicians at the door: set the charge, stand back, and blow it. */
+    private void breachStep(Incident inc, float step) {
+        City.Building b = inc.breach;
+        if (b.lurkers <= 0 || b.collapsed) {
+            inc.breach = null;
+            return;
+        }
+        if (inc.breachTimer < 0) {
+            for (int i = 0, n = w.entities.size(); i < n; i++) {
+                Entity e = w.entities.get(i);
+                if (e.dead || e.role != Entity.ROLE_EOD || Math.hypot(e.x - b.doorX, e.y - b.doorY) > 40) continue;
+                inc.breachTimer = 6;
+                say(WHO_POLICE, e, "Charge set on the door. Everyone back!", b.doorX, b.doorY);
+                break;
+            }
+            return;
+        }
+        if ((inc.breachTimer -= step) > 0) return;
+        inc.breach = null;
+        inc.breachTimer = -1;
+        int killed = Math.min(b.lurkers, 8);
+        b.lurkers -= killed;
+        w.zombiesKilled += killed;
+        b.doorBroken = true;
+        b.shotUp = Math.max(b.shotUp, 0.6f);
+        b.hp = Math.max(1, b.hp - b.maxHp * 0.15f);
+        w.explode(b.doorX, b.doorY, 26, 120);
+        say(WHO_POLICE, null, "Bomb squad: Door's gone. " + (b.lurkers == 0 ? "Building's clear." : b.lurkers + " still moving inside, coming out!"), b.doorX, b.doorY);
+        if (b.lurkers > 0) w.burstOut(b);
+    }
+
     private void arrive(Arrival a) {
         // ((10.60) The call they were sent to is over by the time they get here: on to whichever needs them most.)
         if (a.zone == null && (a.incident == null || a.incident.resolved || a.incident.zombiesNear == 0)) {
@@ -2058,6 +2200,12 @@ final class Dispatch {
                         + (helis == 1 ? " helicopter" : " helicopters") + " with " + landed + " soldiers for " + a.place + ".", p[0], p[1]);
                 return;
             }
+        }
+        // ((11.0) On a map with water, the quick reaction force are Marines, and they come in by boat.)
+        if (army && a.qrf && w.fleet.marineLanding(a.count, a.x, a.y, a.place, a.incident)) {
+            say(WHO_MILITARY, null, "Military: Marines coming in by boat, " + ((a.count + 7) / 8) + " landing craft with " + a.count
+                    + " Marines for " + a.place + ".", a.x, a.y);
+            return;
         }
         // (They drive to the nearest bit of road to the call, then get out: a call in a park or a yard is still
         // somewhere a car can get near.)

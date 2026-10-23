@@ -11,11 +11,15 @@ final class Fleet {
     /** (10.42) Points in a vehicle's planned line ahead. */
     static final int COR = 12;
     /** (Type 4 was the fire engine, gone since 10.49.) */
-    static final int CRUISER = 0, TRUCK = 1, HELI = 2, CAR = 3, TANK = 5, AMBULANCE = 6, TRAIN = 7, JET = 8;
+    static final int CRUISER = 0, TRUCK = 1, HELI = 2, CAR = 3, TANK = 5, AMBULANCE = 6, TRAIN = 7, JET = 8, BOAT = 9;
 
     /** Aircraft fly over everything: no crashes, no zombies clawing at them. */
     static boolean airborne(Vehicle v) {
         return v.type == HELI || v.type == JET;
+    }
+    /** (11.0) Not in road traffic: aircraft, trains and boats. */
+    static boolean offRoad(Vehicle v) {
+        return v.type == HELI || v.type == JET || v.type == TRAIN || v.type == BOAT;
     }
     /** (10.49) How many an evacuation train takes. */
     static final int TRAIN_SEATS = 240;
@@ -26,7 +30,7 @@ final class Fleet {
             PATROL = 14, SCENE = 15, RECALL = 16, IDLE = 17, MUSTER = 18, HOVER = 19, STANDBY = 20, DROP = 21, PICKUP = 22;
     private static final int[] CAR_COLORS = {0xFFB03A2E, 0xFF2E5FB0, 0xFFE0E0E0, 0xFF222428, 0xFFD4A21C, 0xFF3C8A4E,
             0xFF8A8F96, 0xFF6B2E8A, 0xFFE07A2E};
-    private static final float[] MAX_HP = {160, 260, 1, 100, 240, 700, 160, 1, 1};
+    private static final float[] MAX_HP = {160, 260, 1, 100, 240, 700, 160, 1, 1, 1};
     /** Most people a car will squeeze in. */
     static final int SEATS = 4;
     /**
@@ -34,6 +38,8 @@ final class Fleet {
      * carrier, a Humvee, a riot police van, a police motorcycle, the police helicopter.
      */
     static final int K_APC = 1, K_HUMVEE = 2, K_RIOT_VAN = 3, K_BIKE = 4, K_POLICE_HELI = 5, K_RESCUE_HELI = 6;
+    /** (11.0) The police's armoured BearCat and the bomb squad's truck. */
+    static final int K_BEARCAT = 7, K_EOD = 8;
 
     /** Kinds of everyday car (which ones are about depends on the country). */
     static final int M_SEDAN = 0, M_PICKUP = 1, M_SUV = 2, M_KEI = 3, M_HATCH = 4, M_VAN = 5, M_TAXI = 6, M_BUS = 7,
@@ -113,6 +119,8 @@ final class Fleet {
         /** (10.60) A helicopter putting troops down: seconds to the next look at its landing zone, and wave-offs so far. */
         float lzCheck, holdSaidCd;
         int lzTries;
+        /** (11.0) Picking up officers or soldiers to drive them to this call (see driveTo). */
+        Dispatch.Incident pickupFor;
         Dispatch.SafeZone zone;
         String place;
         /** Lights flash on cruisers; the helicopter's rotor spins. */
@@ -188,6 +196,14 @@ final class Fleet {
         /** The station it belongs to (fire engines and patrol cars), and how many it waits to take aboard. */
         City.Facility station;
         int crewWanted, crewSpawns;
+        /** (11.0) A reserve pilot on their way to fly it. */
+        Entity pilotComing;
+        /** (11.0) An army recon vehicle (roams, reports, doesn't stop), and how long since it last radioed a horde in. */
+        boolean recon;
+        float reconSaid = -99, reconCd;
+        /** (11.0) A landing boat's way in over the water (tiles, edge to shore) and how far along it is. */
+        int[] boatPath;
+        int boatAt;
         float checkCd, quiet;
 
         /**
@@ -494,7 +510,8 @@ final class Fleet {
     /** Makes a truck, police car or helicopter into one of its other kinds (K_APC...). */
     void setKind(Vehicle v, int kind) {
         v.kind = kind;
-        float hp = kind == K_APC ? 520 : kind == K_HUMVEE ? 220 : kind == K_RIOT_VAN ? 380 : kind == K_BIKE ? 70 : v.maxHp;
+        float hp = kind == K_APC ? 520 : kind == K_HUMVEE ? 220 : kind == K_RIOT_VAN ? 380 : kind == K_BIKE ? 70 : kind == K_BEARCAT ? 600
+                : kind == K_EOD ? 260 : v.maxHp;
         v.hp = v.maxHp = hp;
     }
 
@@ -1085,6 +1102,240 @@ final class Fleet {
         return true;
     }
 
+    /** (11.0) A BearCat: an armoured police truck with six tactical officers, for the worst of it; it drives on through. */
+    boolean sendBearCat(float fromX, float fromY, Dispatch.Incident inc) {
+        int before = vehicles.size();
+        fromParked = false;
+        boolean sent = send(Entity.SOLDIER, 6, fromX, fromY, inc.x, inc.y, inc, null, inc.place);
+        fromParked = true;
+        if (!sent || vehicles.size() == before) return false;
+        Vehicle v = vehicles.get(vehicles.size() - 1);
+        setKind(v, K_BEARCAT);
+        v.passengerType = Entity.COP;
+        return true;
+    }
+
+    /** (11.0) The bomb squad's truck: two technicians in blast suits, to a building full of the dead (see World.breach). */
+    boolean sendBombSquad(float fromX, float fromY, Dispatch.Incident inc) {
+        int before = vehicles.size();
+        fromParked = false;
+        float[] road = city.nearestDrivable(inc.x, inc.y);
+        boolean sent = send(Entity.SOLDIER, 2, fromX, fromY, road != null ? road[0] : inc.x, road != null ? road[1] : inc.y, inc, null, inc.place);
+        fromParked = true;
+        if (!sent || vehicles.size() == before) return false;
+        Vehicle v = vehicles.get(vehicles.size() - 1);
+        setKind(v, K_EOD);
+        v.passengerType = Entity.COP;
+        return true;
+    }
+
+    /**
+     * (11.0) Army recon: a Humvee with two scouts that roams the whole town once it knows, radioing in every horde
+     * it comes across as a call for the others, and drives on rather than stopping to fight (its roof gun keeps the
+     * dead off it).
+     */
+    boolean startRecon(City.Facility base) {
+        float[] g = city.nearestDrivable(base.gateX > 0 ? base.gateX : base.x, base.gateY > 0 ? base.gateY : base.y);
+        if (g == null) return false;
+        Vehicle v = make(TRUCK);
+        setKind(v, K_HUMVEE);
+        v.recon = true;
+        v.x = v.homeX = g[0];
+        v.y = v.homeY = g[1];
+        v.number = ++reconNumber;
+        v.state = DRIVE;
+        if (!reconDestination(v)) return false;
+        for (int k = 0; k < 2; k++) {
+            Entity e = w.create(Entity.SOLDIER, v.x, v.y);
+            w.applyRole(e, Entity.ROLE_RECON);
+            e.rig = v;
+            v.crew.add(e);
+        }
+        vehicles.add(v);
+        return true;
+    }
+
+    private int reconNumber;
+
+    private boolean reconDestination(Vehicle v) {
+        for (int k = 0; k < 6; k++) {
+            float[] q = city.randomStreetSpot(w.rnd);
+            float[] p = q != null ? city.nearestDrivable(q[0], q[1]) : null;
+            if (p != null && Math.hypot(p[0] - v.x, p[1] - v.y) > 400 && route(v, p[0], p[1])) return true;
+        }
+        return false;
+    }
+
+    private boolean reconStep(Vehicle v, float dt) {
+        if (v.crew.isEmpty()) {
+            v.parked = true;
+            v.state = ABANDONED;
+            return false;
+        }
+        turret(v, dt);
+        v.stuckTimer += dt;
+        boolean moving = driveStep(v, dt, 100, carAhead(v) ? 0.5f : 1f);
+        if (moving) hit(v, w.runOver(v.x, v.y, 8, v.speed, v.angle));
+        if (!moving || Math.hypot(v.tx - v.x, v.ty - v.y) < 40 || v.stuckTimer > 6) {
+            v.speed = 0;
+            v.stuckTimer = 0;
+            if (!reconDestination(v)) v.stuckTimer = 3;
+        }
+        v.reconCd -= dt;
+        if (v.reconCd <= 0) {
+            v.reconCd = 1;
+            int n = w.countZombiesNear(v.x, v.y, 190);
+            if (n >= 4) {
+                boolean covered = false;
+                for (int i = 0; i < w.dispatch.incidents.size() && !covered; i++) {
+                    Dispatch.Incident inc = w.dispatch.incidents.get(i);
+                    if (!inc.resolved && Math.hypot(inc.x - v.x, inc.y - v.y) < 260) covered = true;
+                }
+                if (!covered) {
+                    Entity z = w.nearestZombie(v.x, v.y, 190);
+                    if (z != null) w.dispatch.sighting(z.x, z.y, null);
+                    if (w.time - v.reconSaid > 20) {
+                        v.reconSaid = w.time;
+                        w.dispatch.say(Dispatch.WHO_MILITARY, v.crew.get(0), "Recon " + v.number + ": " + (n >= 10 ? "Horde of about " + n / 5 * 5 : n + " hostiles")
+                                + " on " + city.placeName(v.x, v.y) + ". Marked. Moving on.", v.x, v.y);
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * (11.0) Marines by boat (on the maps with water): landing craft come in off the sea or the river to the shore
+     * nearest the fighting, eight Marines to a boat, put them ashore, and pull back out. False if there's no way in by
+     * water.
+     */
+    boolean marineLanding(int count, float tx, float ty, String place, Dispatch.Incident inc) {
+        int w0 = city.w, h0 = city.h, n = w0 * h0;
+        int[] dist = new int[n];
+        java.util.Arrays.fill(dist, Integer.MAX_VALUE);
+        int[] q = new int[n];
+        int head = 0, tail = 0;
+        for (int x = 0; x < w0; x++)
+            for (int y : new int[]{0, h0 - 1}) {
+                int t = y * w0 + x;
+                if (city.tiles[t] == City.WATER && dist[t] == Integer.MAX_VALUE) {
+                    dist[t] = 0;
+                    q[tail++] = t;
+                }
+            }
+        for (int y = 0; y < h0; y++)
+            for (int x : new int[]{0, w0 - 1}) {
+                int t = y * w0 + x;
+                if (city.tiles[t] == City.WATER && dist[t] == Integer.MAX_VALUE) {
+                    dist[t] = 0;
+                    q[tail++] = t;
+                }
+            }
+        if (tail == 0) return false;
+        while (head < tail) {
+            int c = q[head++], x = c % w0, y = c / w0;
+            int[] nb = {x > 0 ? c - 1 : -1, x < w0 - 1 ? c + 1 : -1, y > 0 ? c - w0 : -1, y < h0 - 1 ? c + w0 : -1};
+            for (int j : nb)
+                // (Under the bridges too.)
+                if (j >= 0 && dist[j] == Integer.MAX_VALUE && (city.tiles[j] == City.WATER || (city.bridge != null && city.bridge[j]))) {
+                    dist[j] = dist[c] + 1;
+                    q[tail++] = j;
+                }
+        }
+        // The landing: the water beside a bit of open shore nearest the fighting (the nearest within reach).
+        int best = -1, land = -1;
+        float bd = 1600 * 1600;
+        int tx0 = (int) (tx / City.T), ty0 = (int) (ty / City.T), reach = 1600 / City.T;
+        for (int y = Math.max(1, ty0 - reach); y < Math.min(h0 - 1, ty0 + reach); y++)
+            for (int x = Math.max(1, tx0 - reach); x < Math.min(w0 - 1, tx0 + reach); x++) {
+                int t = y * w0 + x;
+                if (dist[t] == Integer.MAX_VALUE || city.tiles[t] != City.WATER) continue;
+                for (int j : new int[]{t - 1, t + 1, t - w0, t + w0}) {
+                    if (city.tiles[j] == City.WATER || city.solidTile(j % w0, j / w0) || (city.bridge != null && city.bridge[j])) continue;
+                    float dx = (j % w0 - tx0) * City.T, dy = (j / w0 - ty0) * City.T, d = dx * dx + dy * dy;
+                    if (d < bd) {
+                        bd = d;
+                        best = t;
+                        land = j;
+                    }
+                }
+            }
+        if (best < 0) return false;
+        // The way in: from the shore back out along the falling distances, then turned round.
+        java.util.ArrayList<Integer> path = new java.util.ArrayList<Integer>();
+        for (int c = best; ; ) {
+            path.add(c);
+            if (dist[c] == 0) break;
+            int x = c % w0, y = c / w0, next = -1;
+            for (int j : new int[]{x > 0 ? c - 1 : -1, x < w0 - 1 ? c + 1 : -1, y > 0 ? c - w0 : -1, y < h0 - 1 ? c + w0 : -1})
+                if (j >= 0 && dist[j] == dist[c] - 1) next = j;
+            if (next < 0) break;
+            c = next;
+        }
+        java.util.Collections.reverse(path);
+        int[] route = new int[path.size()];
+        for (int k = 0; k < route.length; k++) route[k] = path.get(k);
+        int boats = (count + 7) / 8;
+        for (int b = 0; b < boats; b++) {
+            Vehicle v = make(BOAT);
+            v.boatPath = route;
+            v.boatAt = 0;
+            v.x = (route[0] % w0 + 0.5f) * City.T;
+            v.y = (route[0] / w0 + 0.5f) * City.T;
+            // (One behind the other, a few seconds apart.)
+            v.timer = -b * 4f;
+            v.tx = (land % w0 + 0.5f) * City.T;
+            v.ty = (land / w0 + 0.5f) * City.T;
+            v.passengers = Math.min(8, count - b * 8);
+            v.passengerType = Entity.SOLDIER;
+            v.incident = inc;
+            v.place = place;
+            v.reinforcement = true;
+            v.state = DRIVE;
+            vehicles.add(v);
+        }
+        return true;
+    }
+
+    /** (11.0) A landing boat: in along its way over the water, Marines ashore, a while covering them, then gone. */
+    private boolean updateBoat(Vehicle v, float dt) {
+        v.timer += dt;
+        if (v.timer < 0) return false;
+        if (v.state == DRIVE) {
+            int w0 = city.w;
+            if (v.boatAt >= v.boatPath.length) {
+                v.speed = 0;
+                // Ashore: everyone out on the bank.
+                float sx = v.x, sy = v.y;
+                v.x = v.tx;
+                v.y = v.ty;
+                unload(v, true);
+                v.x = sx;
+                v.y = sy;
+                v.passengers = 0;
+                v.state = SCENE;
+                v.timer = 0;
+                return false;
+            }
+            int t = v.boatPath[v.boatAt];
+            float gx = (t % w0 + 0.5f) * City.T, gy = (t / w0 + 0.5f) * City.T;
+            float dx = gx - v.x, dy = gy - v.y, d = (float) Math.sqrt(dx * dx + dy * dy);
+            v.speed = Math.min(v.speed + dt * 50, 120);
+            if (d < 4) v.boatAt++;
+            else {
+                float step = Math.min(d, v.speed * dt);
+                v.x += dx / d * step;
+                v.y += dy / d * step;
+                v.angle = turnTo(v.angle, (float) Math.atan2(dy, dx), dt * 3);
+            }
+            return false;
+        }
+        // Covering the landing a while, then away.
+        v.speed = 0;
+        return v.timer > 25;
+    }
+
     /** The riot van: six riot officers with shields, from the precinct to a big crowd of the dead. */
     boolean sendRiotVan(float fromX, float fromY, Dispatch.Incident inc) {
         int before = vehicles.size();
@@ -1383,9 +1634,16 @@ final class Fleet {
                 if (found == null) break;
                 v.flight.add(found);
             }
+            // ((11.0) Once the first crew's gone, a new pilot comes from those who signed up as reserve pilots, not
+            // from nowhere. With none left, it stays on the ground.)
+            if (livePilot(v) == null && v.crewSpawns > 0) {
+                if (v.pilotComing == null || v.pilotComing.dead || v.pilotComing.pilotFor != v) v.pilotComing = w.callReservePilot(v);
+                if (v.flight.isEmpty()) continue;
+            }
             while (v.flight.size() < want && v.crewSpawns < 8) {
-                v.crewSpawns++;
                 boolean pilot = livePilot(v) == null;
+                if (pilot && v.crewSpawns > 0) break;
+                v.crewSpawns++;
                 Entity e = pilot ? w.spawn(army ? Entity.SOLDIER : Entity.COP, p[0] + 30, p[1] + 10)
                         : w.spawnCop(Entity.ROLE_SAR, p[0] + 30, p[1] + 10);
                 if (e == null) break;
@@ -1736,7 +1994,7 @@ final class Fleet {
             if (!city.underRailBridge((int) ((v.x - dir * k) / City.T))) w.runOver(v.x - dir * k, v.y, 9, v.speed, v.angle);
         for (int i = 0; i < vehicles.size(); i++) {
             Vehicle o = vehicles.get(i);
-            if (o == v || airborne(o) || o.type == TRAIN || o.broken || city.underRailBridge((int) (o.x / City.T))) continue;
+            if (o == v || offRoad(o) || o.broken || city.underRailBridge((int) (o.x / City.T))) continue;
             float along = (o.x - v.x) * dir;
             if (along < 8 && along > -TRAIN_LENGTH && Math.abs(o.y - v.y) < 14) damage(o, 500, true);
         }
@@ -1844,6 +2102,7 @@ final class Fleet {
             else if (v.type == HELI) done = updateHeli(v, dt);
             else if (v.type == JET) done = updateJet(v, dt);
             else if (v.type == TRAIN) done = updateTrain(v, dt);
+            else if (v.type == BOAT) done = updateBoat(v, dt);
             else if (v.broken || v.parked) done = updateWreck(v, dt);
             else if (v.type == TANK) done = updateTank(v, dt);
             else if (v.type == CAR) done = v.evacStop >= 0 ? updateEvacBus(v, dt) : updateTraffic(v, dt);
@@ -1971,7 +2230,7 @@ final class Fleet {
         if (gridV.length < n) gridV = new Vehicle[n * 2];
         for (int i = 0; i < n; i++) {
             Vehicle v = vehicles.get(i);
-            if (airborne(v) || v.type == TRAIN) continue;
+            if (offRoad(v)) continue;
             gridStart[cellOf(v.x, v.y) + 1]++;
         }
         for (int c = 0; c < cells; c++) gridStart[c + 1] += gridStart[c];
@@ -1979,7 +2238,7 @@ final class Fleet {
         gridN = 0;
         for (int i = 0; i < n; i++) {
             Vehicle v = vehicles.get(i);
-            if (airborne(v) || v.type == TRAIN) continue;
+            if (offRoad(v)) continue;
             int c = cellOf(v.x, v.y);
             v.gi = gridFill[c];
             gridV[gridFill[c]++] = v;
@@ -1996,7 +2255,7 @@ final class Fleet {
 
     /** Hurts a vehicle; at zero it breaks down and everyone inside gets out. */
     void damage(Vehicle v, float amount, boolean blast) {
-        if (airborne(v) || v.type == TRAIN || amount <= 0) return;
+        if (offRoad(v) || amount <= 0) return;
         // (Armour: the dead can claw at an APC or the riot van all day.)
         if (!blast && (v.kind == K_APC || v.kind == K_RIOT_VAN)) amount *= 0.3f;
         v.hp -= amount;
@@ -2392,7 +2651,11 @@ final class Fleet {
                     py = useIn ? inY : outY;
                 } else if (out && !Float.isNaN(li) && ax == ex && ay == ey) {
                     // Straight over: from the one lane line to the other, a little at a time.
-                    float fr = (i - first + 1) / (float) (k - first + 1), l = li + (le - li) * fr;
+                    // ((11.0) Where the street beyond doesn't line up, an easy S through the middle of the junction,
+                    // in its own lane in and its own lane out, rather than angling across from the moment it's in.)
+                    float fr = (i - first + 1) / (float) (k - first + 1);
+                    if (Math.abs(le - li) > City.T * 0.6f) fr = fr * fr * (3 - 2 * fr);
+                    float l = li + (le - li) * fr;
                     if (ax == 0) px = l;
                     else py = l;
                 } else if (out && sdx == ex && sdy == ey) {
@@ -2583,7 +2846,7 @@ final class Fleet {
                 float ex = (t % W + 0.5f) * City.T, ey = (t / W + 0.5f) * City.T;
                 for (int i = 0, n = vehicles.size(); i < n; i++) {
                     Vehicle o = vehicles.get(i);
-                    if (o == v || o.parked || airborne(o) || o.type == TRAIN || Math.abs(o.speed) > 4) continue;
+                    if (o == v || o.parked || offRoad(o) || Math.abs(o.speed) > 4) continue;
                     if (Math.abs(o.x - ex) < City.T * 0.9f && Math.abs(o.y - ey) < City.T * 0.9f
                             && city.junctionIdAt(o.x, o.y) < 0) return true;
                 }
@@ -2601,7 +2864,7 @@ final class Fleet {
     private boolean crossClear(int id, Vehicle self, int dx, int dy) {
         for (int i = 0, n = vehicles.size(); i < n; i++) {
             Vehicle o = vehicles.get(i);
-            if (o == self || airborne(o) || o.type == TRAIN || o.parked || Math.abs(o.speed) < 5) continue;
+            if (o == self || offRoad(o) || o.parked || Math.abs(o.speed) < 5) continue;
             if (city.junctionIdAt(o.x, o.y) != id) continue;
             if (Math.abs((float) Math.cos(o.angle) * dx + (float) Math.sin(o.angle) * dy) < 0.6f) return false;
         }
@@ -2611,7 +2874,7 @@ final class Fleet {
     private boolean junctionClear(int id, Vehicle self) {
         for (int i = 0, n = vehicles.size(); i < n; i++) {
             Vehicle o = vehicles.get(i);
-            if (o == self || airborne(o) || o.type == TRAIN || o.parked) continue;
+            if (o == self || offRoad(o) || o.parked) continue;
             if (city.junctionIdAt(o.x, o.y) == id) return false;
         }
         return true;
@@ -2792,6 +3055,7 @@ final class Fleet {
     // ------------------------------------------------------------------ driving
 
     private boolean updateCar(Vehicle v, float dt) {
+        if (v.recon) return reconStep(v, dt);
         if (v.type == TRUCK) turret(v, dt);
         if (v.state == PICKUP) return pickupStep(v, dt);
         if (v.state == SCENE && v.type == CRUISER) {
@@ -2947,7 +3211,7 @@ final class Fleet {
             }
         }
         // Don't drive into a horde: stop short and let the troops out (an APC drives on in: it's armoured).
-        if (v.state == DRIVE && !v.loop && v.kind != K_APC && (v.passengers > 0 || !v.crew.isEmpty()) && hordeAhead(v)) {
+        if (v.state == DRIVE && !v.loop && v.kind != K_APC && v.kind != K_BEARCAT && (v.passengers > 0 || !v.crew.isEmpty()) && hordeAhead(v)) {
             arrived = true;
             v.speed *= 0.3f;
         }
@@ -3231,6 +3495,28 @@ final class Fleet {
                 e.task = Dispatch.T_NONE;
                 e.rig = null;
             }
+        // ((11.0) Picked up for a call: off to it.)
+        Dispatch.Incident to = v.pickupFor;
+        v.pickupFor = null;
+        if (to != null && !to.resolved && !v.crew.isEmpty()) {
+            v.squad.clear();
+            if (v.type == CRUISER) {
+                v.patrol = true;
+                if (respond(v, to)) return false;
+                v.state = PATROL;
+                if (!newDestination(v)) v.stuckTimer = 99;
+                return false;
+            }
+            float[] road = city.nearestDrivable(to.x, to.y);
+            if (road != null && route(v, road[0], road[1])) {
+                v.incident = to;
+                v.place = to.place;
+                v.state = DRIVE;
+                v.stuckTimer = 0;
+                w.dispatch.say(Dispatch.WHO_MILITARY, v.crew.get(0), "Mounted up, " + v.crew.size() + " aboard. On our way to " + to.place + ".", v.x, v.y);
+                return false;
+            }
+        }
         if (v.wasPatrol && !v.crew.isEmpty()) {
             // (10.48) A patrol car taken over: back out on patrol with its new crew.
             v.wasPatrol = false;
@@ -3922,7 +4208,7 @@ final class Fleet {
      * or null. Only with people aboard to get out, and not on a car that's just set off from the scene.
      */
     private Dispatch.Incident spotOnTheWay(Vehicle v, float dt) {
-        v.spotCd -= dt;
+        v.reconCd -= dt;
         if (v.spotCd > 0) return null;
         v.spotCd = 0.6f;
         if (v.crew.isEmpty() || v.player != null || (v.type != CRUISER && v.type != TRUCK)) return null;
@@ -4014,9 +4300,12 @@ final class Fleet {
             v.squad.add(e);
             if (v.guardUnit) w.applyRole(e, Entity.ROLE_GUARD);
             if (v.kind == K_RIOT_VAN) w.applyRole(e, Entity.ROLE_RIOT);
+            if (v.kind == K_BEARCAT) w.applyRole(e, Entity.ROLE_SWAT);
+            if (v.kind == K_EOD) w.applyRole(e, Entity.ROLE_EOD);
+            if (v.type == BOAT) w.applyRole(e, Entity.ROLE_MARINE);
             // (Each SWAT team has a marksman with it.)
             if (v.swat) w.applyRole(e, i == v.passengers - 1 && city.cfg.nature() ? Entity.ROLE_MARKSMAN : Entity.ROLE_SWAT);
-            else if (v.passengerType == Entity.SOLDIER && !v.guardUnit && city.cfg.nature()) w.kitOut(e);
+            else if (v.passengerType == Entity.SOLDIER && !v.guardUnit && v.type != BOAT && city.cfg.nature()) w.kitOut(e);
             else if (v.passengerType == Entity.COP && v.agency > 0) w.makeAgency(e, v.agency);
             if (v.reinforcement) {
                 if (!v.guardUnit && !v.restock) e.outsider = true;
@@ -4142,9 +4431,10 @@ final class Fleet {
             int type = t == 0 ? Entity.COP : Entity.SOLDIER;
             for (int k = 0, n = w.entities.size(); k < n; k++) {
                 Entity e = w.entities.get(k);
-                if (!strandedUnit(e, type) || e.strandedFor < 20 || w.countZombiesNear(e.x, e.y, 250) > 0) continue;
+                // ((11.0) Sooner, and from nearer the station, than before: units were left standing about for long.)
+                if (!strandedUnit(e, type) || e.strandedFor < 9 || w.countZombiesNear(e.x, e.y, 250) > 0) continue;
                 City.Facility f = city.nearestFacility(type == Entity.COP ? City.FACILITY_POLICE : City.FACILITY_BASE, e.x, e.y);
-                if (f == null || Math.hypot(f.x - e.x, f.y - e.y) < 900) continue;
+                if (f == null || Math.hypot(f.x - e.x, f.y - e.y) < 600) continue;
                 // One parked at the station or base.
                 Vehicle v = null;
                 for (int i = 0; i < vehicles.size() && v == null; i++) {
@@ -4731,7 +5021,7 @@ final class Fleet {
     private boolean occupied(float x, float y) {
         for (int i = 0, n = vehicles.size(); i < n; i++) {
             Vehicle o = vehicles.get(i);
-            if (airborne(o) || o.type == TRAIN) continue;
+            if (offRoad(o)) continue;
             if (Math.abs(o.x - x) < 13 && Math.abs(o.y - y) < 13) return true;
         }
         return false;
@@ -4808,8 +5098,88 @@ final class Fleet {
         for (int i = 0, m = vehicles.size(); i < m; i++) {
             Vehicle v = vehicles.get(i);
             if (v.type == TRUCK && v.incident == inc && (v.state == MUSTER || v.state == DRIVE)) n += Math.max(v.crew.size(), v.crewWanted);
+            else if (v.pickupFor == inc && v.passengerType == Entity.SOLDIER) n += v.squad.size();
         }
         return n;
+    }
+
+    /**
+     * (11.0) Officers or soldiers sent to a call a long way off don't walk it: an empty police car or army truck
+     * close by takes them, or with none, one comes out from the station or base to pick them up, and drives them
+     * there. False if there's nothing to take them (they go on foot).
+     */
+    boolean driveTo(java.util.List<Entity> group, Dispatch.Incident inc) {
+        if (group.isEmpty()) return false;
+        int type = group.get(0).type, vtype = type == Entity.COP ? CRUISER : TRUCK;
+        float sx = 0, sy = 0;
+        for (Entity e : group) {
+            sx += e.x;
+            sy += e.y;
+        }
+        sx /= group.size();
+        sy /= group.size();
+        Vehicle v = null;
+        float bd = 320;
+        for (int i = 0, m = vehicles.size(); i < m; i++) {
+            Vehicle o = vehicles.get(i);
+            if (o.type != vtype || o.broken || o.burnt || o.player != null || o.removedFromFleet || !o.crew.isEmpty() || o.block != null
+                    || o.zone != null || o.loop || o.leaving || o.kind == K_BIKE || o.pickupFor != null || o.state == PICKUP || o.state == MUSTER) continue;
+            if (!o.standby && !o.parked && o.state != ABANDONED) continue;
+            float d = (float) Math.hypot(o.x - sx, o.y - sy);
+            if (d < bd && w.countZombiesNear(o.x, o.y, 80) == 0) {
+                bd = d;
+                v = o;
+            }
+        }
+        boolean fetch = v == null;
+        if (fetch) {
+            City.Facility f = city.nearestFacility(type == Entity.COP ? City.FACILITY_POLICE : City.FACILITY_BASE, sx, sy);
+            if (f == null || Math.hypot(f.x - sx, f.y - sy) > Math.hypot(inc.x - sx, inc.y - sy) * 0.8f) return false;
+            for (int i = 0; i < vehicles.size() && v == null; i++) {
+                Vehicle o = vehicles.get(i);
+                if (o.standby && o.type == vtype && !o.broken && o.kind != K_BIKE && o.pickupFor == null && Math.hypot(o.x - f.x, o.y - f.y) < f.r + 300) v = o;
+            }
+            boolean made = false;
+            if (v == null) {
+                float[] g = city.nearestDrivable(f.gateX > 0 ? f.gateX : f.x, f.gateY > 0 ? f.gateY : f.y);
+                if (g == null) return false;
+                v = make(vtype);
+                v.x = g[0];
+                v.y = g[1];
+                v.homeX = g[0];
+                v.homeY = g[1];
+                made = true;
+            }
+            float[] spot = city.nearestDrivable(sx, sy);
+            if (spot == null || !route(v, spot[0], spot[1])) return false;
+            // (A new one only once there's a way: none left standing at the gate for nothing.)
+            if (made) vehicles.add(v);
+            v.state = DRIVE;
+            v.stuckTimer = 0;
+            v.place = city.placeName(spot[0], spot[1]);
+        } else {
+            v.state = PICKUP;
+            v.timer = 0;
+            v.speed = 0;
+        }
+        v.parked = false;
+        v.standby = false;
+        v.pulling = false;
+        v.pickup = true;
+        v.wasPatrol = false;
+        v.patrol = false;
+        v.incident = null;
+        v.pickupFor = inc;
+        v.reclaimCd = 30;
+        v.squad.clear();
+        v.squad.addAll(group);
+        v.passengerType = type;
+        for (Entity e : group) {
+            w.dispatch.releaseForResupply(e);
+            e.rig = v;
+            e.task = Dispatch.T_BOARD;
+        }
+        return true;
     }
 
     /** Officers in patrol cars on their way to this call. */
@@ -4819,6 +5189,7 @@ final class Fleet {
             Vehicle v = vehicles.get(i);
             if (v.patrol && v.incident == inc && v.state == DRIVE) n += v.crew.size();
             else if (v.patrol && v.incident == inc && v.state == MUSTER) n += Math.max(v.crew.size(), v.crewWanted);
+            else if (v.pickupFor == inc && v.passengerType == Entity.COP) n += v.squad.size();
         }
         return n;
     }
@@ -5153,6 +5524,12 @@ final class Fleet {
                 gy = v.y;
             }
             if (v.kind == K_RESCUE_HELI && d < 150) {
+                // ((11.0) Not over the dead: the nearest spot to them that's clear, for the winch.)
+                float[] spot = clearSpot(v.tx, v.ty, 260);
+                if (spot != null) {
+                    v.tx = spot[0];
+                    v.ty = spot[1];
+                }
                 v.state = HOVER;
                 v.timer = 0;
                 w.dispatch.say(Dispatch.WHO_POLICE, null, "Rescue " + v.number + ": Over " + (v.place != null ? v.place : "the scene")
@@ -5218,7 +5595,21 @@ final class Fleet {
             speed = 40;
             face = v.angle;
             v.alt += (0.5f - v.alt) * Math.min(1, dt * 0.8f);
-            int step = Math.hypot(gx - v.x, gy - v.y) < 8 && v.speed < 10 ? w.rescueStep(v, dt) : 0;
+            // ((11.0) The dead come to the spot before the team is down: shift to another, and nobody goes down the
+            // line until it's clear.)
+            boolean hot = !v.pickup && v.team == null && w.countZombiesNear(gx, gy, 55) > 0;
+            if (hot) {
+                v.lzCheck -= dt;
+                if (v.lzCheck <= 0) {
+                    v.lzCheck = 2;
+                    float[] spot = clearSpot(gx, gy, 260);
+                    if (spot != null) {
+                        v.tx = spot[0];
+                        v.ty = spot[1];
+                    }
+                }
+            }
+            int step = !hot && Math.hypot(gx - v.x, gy - v.y) < 8 && v.speed < 10 ? w.rescueStep(v, dt) : 0;
             if (step == 1) {
                 // The team's down: back to base to wait for their call.
                 v.state = FLY_OUT;
@@ -5417,6 +5808,21 @@ final class Fleet {
         if (quiet != null) return quiet;
         float[] p = city.findWalkable(fx, fy);
         return p != null ? p : new float[]{fx, fy};
+    }
+
+    /**
+     * (11.0) The nearest open spot to (x, y), within reach, with none of the dead within 60 of it (the spot itself if
+     * it's clear). Null if there's nowhere.
+     */
+    private float[] clearSpot(float x, float y, float reach) {
+        for (float r = 0; r <= reach; r += 30)
+            for (int k = 0; k < (r == 0 ? 1 : 12); k++) {
+                float a = k * (float) Math.PI / 6 + r * 0.02f;
+                float[] p = city.findWalkable(x + (float) Math.cos(a) * r, y + (float) Math.sin(a) * r);
+                if (p == null || city.circleBlocked(p[0], p[1], 6)) continue;
+                if (w.countZombiesNear(p[0], p[1], 60) == 0) return p;
+            }
+        return null;
     }
 
     /** The troops jump down: everyone aboard but the pilot and two door gunners, off to the fighting. */

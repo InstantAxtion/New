@@ -112,7 +112,9 @@ final class Terrain {
             float dw = waterDist[i];
             e[i] *= smooth(dw / 9f);
             if (c.waterKind == CityConfig.W_ISLANDS) e[i] += 16 * smooth(dw / 45f);
-            else if (c.waterKind == CityConfig.W_SEA || c.waterKind == CityConfig.W_HARBOUR) e[i] += 10 * smooth(dw / 90f);
+            else if (c.waterKind == CityConfig.W_SEA || c.waterKind == CityConfig.W_HARBOUR || c.waterKind == CityConfig.W_BAY) e[i] += 10 * smooth(dw / 90f);
+            // ((11.0) The fjord's sides rise steeply from the water.)
+            else if (c.waterKind == CityConfig.W_FJORD) e[i] += 9 * smooth(dw / 40f);
         }
         if (country) {
             rocksAndPines();

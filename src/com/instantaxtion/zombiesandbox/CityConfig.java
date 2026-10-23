@@ -14,7 +14,9 @@ final class CityConfig implements OptionSet {
             // (10.56)
             "Garrison State",
             // (10.60)
-            "Archipelago", "Mountain Valley"};
+            "Archipelago", "Mountain Valley",
+            // (11.0)
+            "Bay City", "Delta Marsh", "Fjord Town", "Canal City"};
     /** One line about each map, shown on the New Game screen. */
     static final String[] PRESET_INFO = {
             "A bit of everything: downtown towers, suburbs, parks, a precinct and an army base.",
@@ -37,6 +39,10 @@ final class CityConfig implements OptionSet {
             "A militarized state: military police instead of the police, soldiers everywhere, huge army bases and walled compounds, checkpoints already on the main roads, and a prison on an island. Default size and up.",
             "One big island city in the middle of the sea, with two to five smaller island towns round it, every one lived in and joined to it by a bridge, and a causeway to the mainland. Always one size.",
             "A town strung along a long valley floor between two mountain ranges: pine slopes and rocky peaks either side, lanes winding up into the passes, the highway down the valley, and a reservoir behind a dam at one end. Default size and up.",
+            "A city wrapped round a deep bay off the sea: avenues along both shores, parks at the water's edge, a long bridge across the bay and another over its mouth, and beaches either side.",
+            "A river splits into three channels on its way to the sea: the town on the islands between them, bridges everywhere, and salt marsh and pools along the shore.",
+            "A town either side of a long, narrow fjord cut deep inland from the sea: rocky cliffs down to the water, two bridges high over it, and the harbour quays at its mouth.",
+            "Canals in a grid right through the old town, quays along both banks, little bridges every few blocks, and the canals open out into the harbour.",
     };
 
     static final int STYLE_MIXED = 0, STYLE_OFFICES = 1, STYLE_HOUSES = 2, STYLE_WAREHOUSES = 3;
@@ -99,6 +105,10 @@ final class CityConfig implements OptionSet {
             {STYLE_MIXED, 1, 2, 1, 2, 1, 2, 1},       // Garrison State
             {STYLE_MIXED, 1, 2, 2, 1, 1, 2, 1},       // Archipelago
             {STYLE_HOUSES, 1, 1, 2, 1, 1, 2, 1},      // Mountain Valley
+            {STYLE_MIXED, 1, 2, 2, 2, 0, 2, 1},       // Bay City
+            {STYLE_HOUSES, 1, 1, 2, 1, 1, 2, 1},      // Delta Marsh
+            {STYLE_HOUSES, 1, 1, 2, 1, 1, 2, 1},      // Fjord Town
+            {STYLE_MIXED, 2, 1, 1, 2, 0, 2, 1},       // Canal City
     };
 
     // Landmarks per medium map:  churches, schools, fire stations, supermarkets, gas stations, cemeteries,
@@ -124,6 +134,10 @@ final class CityConfig implements OptionSet {
             {1, 1, 1, 1, 2, 1, 25},   // Garrison State
             {2, 2, 2, 2, 2, 1, 35},   // Archipelago
             {2, 1, 1, 1, 2, 1, 30},   // Mountain Valley
+            {2, 2, 2, 2, 2, 1, 40},   // Bay City
+            {2, 2, 2, 2, 2, 1, 25},   // Delta Marsh
+            {2, 2, 1, 1, 2, 1, 30},   // Fjord Town
+            {3, 2, 2, 2, 1, 1, 50},   // Canal City
     };
     // Share of office lots that become apartment blocks, parking garages and pharmacies (percent).
     private static final int[][] BUILDING_MIX = {
@@ -132,6 +146,7 @@ final class CityConfig implements OptionSet {
             {20, 12, 5}, {20, 6, 5}, {25, 10, 5}, {35, 12, 4}, {25, 8, 5}, {35, 12, 5}, {35, 4, 6},
             {30, 8, 4},
             {20, 8, 5}, {12, 3, 6},
+            {25, 10, 5}, {12, 3, 6}, {12, 3, 6}, {30, 6, 6},
     };
     // Which kinds of park each map likes: park, playground, sports field, courts, garden, skatepark.
     private static final int[][] PARK_MIX = {
@@ -154,6 +169,7 @@ final class CityConfig implements OptionSet {
             {2, 1, 1, 1, 3, 0}, {3, 2, 0, 1, 4, 0},
             {2, 1, 3, 2, 0, 0},
             {3, 2, 1, 2, 2, 1}, {4, 2, 1, 1, 3, 0},
+            {3, 2, 1, 2, 2, 1}, {4, 2, 1, 1, 3, 0}, {4, 2, 1, 1, 3, 0}, {3, 1, 0, 1, 3, 0},
     };
 
     /** Current index into VALUES for each option. */
@@ -205,7 +221,7 @@ final class CityConfig implements OptionSet {
      * lanes, a ranger station and fire lookout towers), 5 the lanes of 10.18 (no stretch of tarmac in the
      * middle of a dirt lane) and the real cities, 6 the driveways of 10.19, 7 the helipads and busier outskirts of 10.20, 8 dirt lanes that stay dirt into town (10.23), 9 streets that line up, more kinds of road and hills in town (10.24), 10 curved streets in the suburbs (10.25), 11 farm fields and park paths kept clear (10.26), 12 the ring road, wider avenues and stations on the road network (10.28), 13 highway interchanges with slip roads instead of crossroads (10.29), 14 fuller country on the Massive maps with a big army base and its checkpoints (10.30), 15 one-way slip roads that run in alongside the highway, and the Gigantic size (10.31), 16 bridges over the highway at the interchanges, the army base checkpoints (10.32), 17 nothing joining the highway but its slip roads, and fuller maps (10.33), 18 every road joined up, and livelier maps (10.34), 21 another police station on every map from the Default size up, 22 the beltway right round the map, 23 an army base out in the country from the Default size up (bigger on the Massive maps) and a police headquarters, 24 buildings of more shapes than a box (10.52), 25 about the same number of people on every map (10.63). Saved games rebuild with what they had.
      */
-    int civic = 25;
+    int civic = 26;
 
     /** Hills, mountains, streams, lakes, parks and campsites (cities built since 10.10). */
     boolean nature() { return civic >= 3; }
@@ -234,6 +250,9 @@ final class CityConfig implements OptionSet {
 
     /** Water on the map: none, the sea along one side (a beach or a port), a river, or a lake. */
     static final int W_NONE = 0, W_SEA = 1, W_RIVER = 2, W_LAKE = 3, W_HARBOUR = 4, W_ISLANDS = 5, W_REAL = 6;
+    /** (11.0) The four new water maps (each has the sea along the bottom as well). */
+    static final int W_BAY = 7, W_DELTA = 8, W_FJORD = 9, W_CANAL = 10;
+    static final int BAY = 25, DELTA = 26, FJORD = 27, CANAL = 28;
     /** The Islands map, and its one size (tiles across: a bit bigger than Massive). */
     static final int ISLANDS = 14, ISLANDS_TILES = 640;
     /** (10.60) The Archipelago (always one size, like Islands) and the Mountain Valley. */
@@ -273,6 +292,10 @@ final class CityConfig implements OptionSet {
             case 12: return W_LAKE;
             case 13: return W_HARBOUR;
             case ISLANDS: case ARCHIPELAGO: return W_ISLANDS;
+            case BAY: return W_BAY;
+            case DELTA: return W_DELTA;
+            case FJORD: return W_FJORD;
+            case CANAL: return W_CANAL;
             default: return W_NONE;
         }
     }
@@ -315,7 +338,7 @@ final class CityConfig implements OptionSet {
     }
 
     /** The character for each map in a city code. */
-    private static final String CODE_MAPS = "123456789ABCDEFGHIJKLMNOP";
+    private static final String CODE_MAPS = "123456789ABCDEFGHIJKLMNOPQRST";
 
     /** Reads a city code. Returns false (changing nothing) if it isn't one. */
     boolean applyCode(String text) {
@@ -389,7 +412,7 @@ final class CityConfig implements OptionSet {
     /** A massive (or huge) map: the city sits in the middle of open countryside. */
     boolean massive() { return v[OPT_SIZE] >= MASSIVE; }
     /** (10.30) A big army base out in the country: every Massive and Huge map with country round the town. */
-    boolean outskirtsBase() { return civic >= 14 && (massive() || (civic >= 23 && v[OPT_SIZE] >= LARGE)) && water() == W_NONE && coreFraction() < 0.99f; }
+    boolean outskirtsBase() { return civic >= 14 && (civic < 26 || militarized()) && (massive() || (civic >= 23 && v[OPT_SIZE] >= LARGE)) && water() == W_NONE && coreFraction() < 0.99f; }
 
     int size() { return v[OPT_SIZE]; }
 
@@ -408,6 +431,15 @@ final class CityConfig implements OptionSet {
         if (!nature()) return f;
         // Since 10.10 the maps are a quarter bigger, and the extra room is countryside: hills and woods,
         // mountains, lakes and streams, a nature park and campsites round a town a little bigger than before.
+        // ((11.0) Less nature: a thin band of country round a town that fills nine tenths of the map, whatever the map.)
+        // (Just wide enough for the highway and its interchanges: 28 tiles each side, or a little more on the big maps.
+        // The Garrison State keeps its open country for its bases and the prison.)
+        if (civic >= 26 && p != GARRISON && p != VALLEY) {
+            int t = tiles();
+            float band = Math.max(28, t * 0.04f) * 2f / t;
+            return Math.max(p == 9 ? 0.72f : 0.78f, 1 - band);
+        }
+        if (p == 9) return v[OPT_SIZE] <= SMALL ? 0.6f : 0.5f;
         if (p == 9) return v[OPT_SIZE] <= SMALL ? 0.6f : 0.5f;
         float town = new float[]{1f, 0.86f, 0.8f, 0.76f, 0.74f, 0.66f, 0.66f}[v[OPT_SIZE]];
         // (Since 10.30 the Massive and Huge maps have more country round the town, for its towns and the base.)
@@ -523,7 +555,7 @@ final class CityConfig implements OptionSet {
 
     // Which maps have a railway line (with a station and passing trains).
     // Which maps have a railway line: 0 never, 1 about half the time (it depends on the city), 2 always.
-    private static final int[] RAIL = {1, 0, 0, 2, 0, 0, 1, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0};
+    private static final int[] RAIL = {1, 0, 0, 2, 0, 0, 1, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0};
 
     boolean hasRail() {
         int r = RAIL[v[OPT_PRESET]];
@@ -553,6 +585,10 @@ final class CityConfig implements OptionSet {
             {3, 4, 1, 3, 3, 0, 1, 1},   // Garrison State
             {3, 4, 2, 4, 1, 1, 2, 0},   // Archipelago
             {1, 2, 3, 5, 1, 0, 3, 2},   // Mountain Valley
+            {3, 4, 2, 3, 1, 1, 2, 0},   // Bay City
+            {1, 2, 2, 6, 1, 0, 3, 3},   // Delta Marsh
+            {1, 2, 3, 5, 1, 0, 3, 2},   // Fjord Town
+            {2, 3, 6, 2, 1, 0, 1, 2},   // Canal City
     };
 
     /** How likely each kind of district is on this map. */

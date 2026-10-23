@@ -38,8 +38,11 @@ final class Entity {
     static final int ROLE_SAR = 11;
     /** A helicopter pilot (10.20): stands by the pad until their aircraft is needed. */
     static final int ROLE_PILOT = 12;
+    /** (11.0) Police bomb technicians in blast suits; Marines landed by boat; army recon scouts. */
+    static final int ROLE_EOD = 13, ROLE_MARINE = 14, ROLE_RECON = 15;
     static final String[] ROLE_NAMES = {"Soldier", "Commander", "Sniper", "Gunner", "Riot officer", "K9 handler",
-            "National Guard", "SWAT officer", "Combat medic", "Grenadier", "Police marksman", "Rescue specialist"};
+            "National Guard", "SWAT officer", "Combat medic", "Grenadier", "Police marksman", "Rescue specialist", "Pilot",
+            "Bomb technician", "Marine", "Recon scout"};
 
     int type, role;
     float x, y, vx, vy, angle;
@@ -110,6 +113,11 @@ final class Entity {
     float doorTime, ignoreUntil;
     /** (10.59) A horde that heard something charges for it as one: how long this one's still running, and (on the leader) how soon it can be set off again. */
     float surge, surgeCd;
+    /** (11.0) Seconds until an officer or soldier walking to a far call next looks for a ride (see World.thinkArmed). */
+    transient float driveCd;
+    /** (11.0) Signed up as a reserve pilot; and the helicopter they've been called up to fly. */
+    transient boolean pilotReserve;
+    transient Fleet.Vehicle pilotFor;
     City.Building doorAt, ignoreB;
     int hordeSize;
     boolean hordeAnnounced;

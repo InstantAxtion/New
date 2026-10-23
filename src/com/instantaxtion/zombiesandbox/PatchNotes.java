@@ -2,11 +2,26 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "10.63";
-    static final int VERSION_CODE = 101;
+    static final String VERSION = "11.0";
+    static final int VERSION_CODE = 102;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "11.0  -  Water cities, new units, drones and quarantine walls",
+                    "Four new maps on the water. Bay City: a city wrapped round a deep bay, with a long bridge across it and another over its mouth. Delta Marsh: a river splitting into three channels on its way to the sea, the town on the land between and salt marsh along the shore. Fjord Town: a long narrow fjord cut deep inland, rocky shores and two bridges across. Canal City: canals in a grid through the town, quays along both banks and little bridges every few blocks.",
+                    "Less nature: every map is about nine tenths town now, with just a thin band of country round the edge for the highway. The highway has more interchanges, so more of the town's streets join it.",
+                    "New police: BearCat armoured trucks with six tactical officers, sent to the worst calls and to officers going down (they drive on through a horde); and the bomb squad, two technicians in blast suits who blow the door of a building known to be full of the dead.",
+                    "New military: Marines, who come in by landing craft over the water on the water maps (instead of the quick reaction force's Humvees); and recon scouts, Humvees that roam the town once it's known and radio in every horde they pass as a call for the others.",
+                    "Police drones go up from the precincts over the infected areas and the calls, spotting the dead for the officers below and finding buildings full of them.",
+                    "Quarantine walls: when an infected area holds for long enough, army engineers wall it off with fences and concrete, gates on the roads in.",
+                    "Reserve pilots: civilians sign up when the trouble starts, and if a helicopter has no pilot one of them goes to the pad to fly it (helicopters no longer get a pilot out of nowhere).",
+                    "Police and soldiers drive far more: a squad with a long way to go grabs a car or a truck, or one comes to fetch them, instead of walking across town; units left stranded are picked up sooner.",
+                    "The dead head into the towns when they've found no one for a while, rather than wandering the fields. Runners are a little faster.",
+                    "Rescue helicopters no longer lower their teams onto the dead: they look for a clear spot, and wait while it's hot.",
+                    "A fresher look: roofs with lit and shaded edges, the water glinting and surf breaking along the shores, everyone outlined so they stand out at any zoom, and a sheen on the vehicles. Traffic keeps to its lane through junctions where the streets don't line up. The routes people take to their doors are kept for longer, so big cities run lighter.",
+                    "A new app icon: a police line holding the street against the horde.",
+            },
             {
                     "10.63  -  Every map a city of 15,000 to 20,000",
                     "Every map is about as populous as the next: some 15,000 people on the Default size, 16,500 on the Large, 18,000 on the Massive and 20,000 on the Gigantic (with most of them out and about, as usual). Before, it ran from barely a thousand in the Mountain Valley to over 30,000 on a Gigantic River City. Houses stay family homes; the rest live in the flats.",

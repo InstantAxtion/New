@@ -10,7 +10,8 @@ away from the middle of the screen as you pan, and the game plays in both portra
 ## Main menu
 
 - **New Game** opens the city setup, with a live preview of the city and these options: the map (Suburbs,
-  Metropolis, or the water maps Seaside and River City, or Islands, or the Garrison State), map size (Default, Large or
+  Metropolis, or the water maps Seaside, River City, Bay City, Delta Marsh, Fjord Town and Canal City, or Islands,
+  Archipelago, the Mountain Valley or the Garrison State), map size (Default, Large or
   Massive), the **country** (USA, Australia, Japan, France,
   Mexico, Russia, Sweden, Norway or Canada) and how many reinforcements can
   be called in (Off, Low, Medium or High, each spelled out: waves of police backup, army squads, tanks
@@ -423,6 +424,17 @@ of the highway, towns of different shapes, mountains spread about with lone hill
 mounting up, and lighter running with big populations.
 
 **More police than soldiers (10.35):** the army on the map is never more than two in five of the police force.
+
+**Water cities, new units, drones and quarantine walls (11.0):** four new water maps: Bay City (round a deep bay),
+Delta Marsh (three channels to the sea and salt marsh), Fjord Town (a long rocky fjord) and Canal City (a grid of canals
+with quays and little bridges). Every map is about nine tenths town now, with a thin band of country for the highway
+and more interchanges onto it. New units: police BearCats and bomb squads (who blow the doors of buildings full of the
+dead), Marines landing by boat on the water maps, and army recon scouts who mark every horde they pass. Police drones
+spot the dead from the air, the army walls off infected areas that hold out, civilians sign up as reserve helicopter
+pilots, and police and soldiers drive (or get picked up) instead of walking across town. The dead head into town when
+idle, runners are a little faster, rescue teams are never lowered onto the dead, and traffic keeps its lane through
+offset junctions. A fresher look (lit roof edges, glinting water and surf, outlined people, vehicle sheen), lighter
+running in big cities, and a new icon: a police line holding the street against the horde.
 
 **Every map a city of 15,000 to 20,000 (10.63):** new cities are balanced to about 15,000 people on the Default size
 up to 20,000 on the Gigantic, whatever the map (houses stay family-sized; the rest live in flats). Saved games keep the

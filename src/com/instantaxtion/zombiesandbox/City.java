@@ -1466,6 +1466,10 @@ final class City {
             pruneDeadLanes();
             closeGaps();
         }
+        // ((11.0) With the town right up to the highway now, a drive the gaps were closed with can end up beside
+        // a ramp: it stays a yard, not a way onto the ramp.)
+        if (cfg.civic >= 26 && drive != null && slipWay != null)
+            for (int i = 0; i < w * h; i++) if (drive[i] && tiles[i] == LOT && nearRamp(i)) drive[i] = false;
     }
 
 
@@ -2371,6 +2375,8 @@ final class City {
             shiftY = Math.round(real.downY * h - h / 2f);
         }
         if (waterKind == CityConfig.W_SEA || waterKind == CityConfig.W_HARBOUR) seaY = h - Math.max(24, (int) (h * 0.18f));
+        // ((11.0) The four new water maps have the sea along the bottom too, a little narrower.)
+        if (waterKind >= CityConfig.W_BAY) seaY = h - Math.max(20, (int) (h * 0.12f));
         if (waterKind == CityConfig.W_ISLANDS) islandLayout();
         // Where the town is: the whole map, or a core surrounded by countryside.
         float core = cfg.coreFraction();
@@ -2379,7 +2385,7 @@ final class City {
         if (cfg.nature() && m > 0) {
             // The town sits off to one side, leaving wide open country on the other for the hills and the park.
             Random sr = new Random(cfg.seed * 31L + 11);
-            int side = sr.nextInt(4), shift = (int) (m * 0.55f);
+            int side = sr.nextInt(4), shift = (int) (m * (cfg.civic >= 26 ? 0 : 0.55f));
             int dx = side == 0 ? -shift : side == 1 ? shift : 0, dy = side == 2 ? -shift : side == 3 ? shift : 0;
             bx0 += dx;
             bx1 += dx;
@@ -2390,7 +2396,7 @@ final class City {
             wildSide = side == 0 ? 1 : side == 1 ? 0 : side == 2 ? 3 : 2;
             // (10.34) Every map its own shape: the town longer one way than the other, and off-centre the
             // other way too.
-            if (cfg.civic >= 18 && waterKind == CityConfig.W_NONE && real == null) {
+            if (cfg.civic >= 18 && waterKind == CityConfig.W_NONE && real == null && (cfg.civic < 26 || cfg.militarized())) {
                 // (Only ever narrower than the square, so there's still room round it for the highway and the ring road.)
                 float squeeze = 0.78f + sr.nextFloat() * 0.22f;
                 boolean across = sr.nextBoolean();
@@ -2468,6 +2474,8 @@ final class City {
             river(bx0, by0, bx1, by1, in);
         } else if (waterKind == CityConfig.W_LAKE) {
             lakeTown(bx0, by0, bx1, by1, in);
+        } else if (waterKind >= CityConfig.W_BAY) {
+            channelTown(bx0, by0, bx1, by1, in);
         } else if (village && m > 0) {
             villageCore(bx0, by0, bx1, by1);
         } else {
@@ -2475,6 +2483,7 @@ final class City {
         }
         if (organic) erodeTown(bx0, by0, bx1, by1);
         if (seaY > 0) coast();
+        if (!channels.isEmpty()) finishChannels();
 
         // Out in the country, a highway runs past the town.
         if (m >= 16) highway(bx0, by0, bx1, by1);
@@ -4890,11 +4899,211 @@ final class City {
     }
 
     /**
+     * (11.0) Water through the town, for the Bay City, Delta Marsh, Fjord Town and Canal City: each piece is
+     * {x0, y0, x1, y1, vertical, shore tile, shore width}, the whole width of it from bank to bank. A street runs
+     * along each bank (the quays), bridges cross it every so often, and the town is laid out in the land between.
+     */
+    final List<int[]> channels = new ArrayList<int[]>();
+
+    /** A piece of water (see {@link #channels}) with its quays along both banks. */
+    private void channel(int x0, int y0, int x1, int y1, boolean vertical, int shore, int shoreW) {
+        channels.add(new int[]{x0, y0, x1, y1, vertical ? 1 : 0, shore, shoreW});
+        if (vertical) {
+            carve(new Street(x0 - 3, y0, x0, y1, true, true));
+            carve(new Street(x1, y0, x1 + 3, y1, true, true));
+        } else {
+            carve(new Street(x0, y0 - 3, x1, y0, false, true));
+            carve(new Street(x0, y1, x1, y1 + 3, false, true));
+        }
+    }
+
+    /** Bridges across a piece of water, from quay to quay, about every so many tiles (at least one). */
+    private void bridges(int[] c, int every) {
+        boolean vertical = c[4] == 1;
+        int lo = vertical ? c[1] : c[0], hi = vertical ? c[3] : c[2];
+        int n = Math.max(1, (hi - lo) / every);
+        for (int k = 0; k < n; k++) {
+            int at = lo + (hi - lo) * (2 * k + 1) / (2 * n) - 1 + rnd.nextInt(5) - 2;
+            at = Math.max(lo + 4, Math.min(hi - 7, at));
+            if (vertical) carve(new Street(c[0], at, c[2], at + 3, false, k == n / 2));
+            else carve(new Street(at, c[1], at + 3, c[3], true, k == n / 2));
+        }
+    }
+
+    /** The town round its water: the water and its quays first, then the land between laid out in streets. */
+    private void channelTown(int bx0, int by0, int bx1, int by1, int in) {
+        int tw = bx1 - bx0, th = by1 - by0;
+        List<int[]> cells = new ArrayList<int[]>();
+        if (waterKind == CityConfig.W_BAY || waterKind == CityConfig.W_FJORD) {
+            // An inlet off the sea: a deep wide bay, or a long narrow fjord, with a street round its head.
+            boolean bay = waterKind == CityConfig.W_BAY;
+            int ww = bay ? Math.round(tw * (0.3f + rnd.nextFloat() * 0.06f)) : Math.max(20, Math.round(tw * 0.075f));
+            int cx = bx0 + tw / 2 + Math.round((rnd.nextFloat() - 0.5f) * tw * (bay ? 0.12f : 0.3f));
+            int x0 = cx - ww / 2, x1 = x0 + ww;
+            int y0 = by0 + Math.round(th * (bay ? 0.36f + rnd.nextFloat() * 0.08f : 0.14f + rnd.nextFloat() * 0.06f));
+            channel(x0, y0, x1, by1, true, bay ? GRASS : ROCK, bay ? 4 : 5);
+            carve(new Street(x0 - 3, y0 - 3, x1 + 3, y0, false, true));
+            bridges(channels.get(0), bay ? 1000 : Math.max(40, (by1 - y0) / 2));
+            cells.add(new int[]{bx0 + in, by0 + in, bx1 - in, y0 - 3});
+            cells.add(new int[]{bx0 + in, y0 - 3, x0 - 3, by1 - in});
+            cells.add(new int[]{x1 + 3, y0 - 3, bx1 - in, by1 - in});
+        } else if (waterKind == CityConfig.W_CANAL) {
+            // Canals in a grid: two each way (three each way on the biggest maps), out to the harbour at the bottom.
+            int n = w >= 600 ? 3 : 2, cw = w >= 400 ? 9 : 7;
+            int[] xs = new int[n], ys = new int[n];
+            for (int k = 0; k < n; k++) {
+                xs[k] = bx0 + tw * (k + 1) / (n + 1) - cw / 2 + rnd.nextInt(7) - 3;
+                ys[k] = by0 + th * (k + 1) / (n + 1) - cw / 2 + rnd.nextInt(7) - 3;
+            }
+            for (int k = 0; k < n; k++) channel(bx0 + in, ys[k], bx1 - in, ys[k] + cw, false, SIDEWALK, 0);
+            for (int k = 0; k < n; k++) channel(xs[k], by0 + in, xs[k] + cw, by1, true, SIDEWALK, 0);
+            for (int[] c : new ArrayList<int[]>(channels)) bridges(c, 30);
+            int[] cx = new int[n * 2 + 2], cy = new int[n * 2 + 2];
+            cx[0] = bx0 + in;
+            cy[0] = by0 + in;
+            for (int k = 0; k < n; k++) {
+                cx[k * 2 + 1] = xs[k] - 3;
+                cx[k * 2 + 2] = xs[k] + cw + 3;
+                cy[k * 2 + 1] = ys[k] - 3;
+                cy[k * 2 + 2] = ys[k] + cw + 3;
+            }
+            cx[n * 2 + 1] = bx1 - in;
+            cy[n * 2 + 1] = by1 - in;
+            for (int i = 0; i <= n; i++)
+                for (int j = 0; j <= n; j++) cells.add(new int[]{cx[i * 2], cy[j * 2], cx[i * 2 + 1], cy[j * 2 + 1]});
+        } else {
+            // The delta: the river comes down from the north, and splits in three on its way to the sea, with
+            // salt marsh along the shore between the channels.
+            int mw = Math.max(16, Math.round(tw * 0.045f)), dw = Math.max(10, Math.round(tw * 0.03f));
+            int mc = bx0 + tw / 2 + rnd.nextInt(11) - 5, mx0 = mc - mw / 2, mx1 = mx0 + mw;
+            int hy0 = by0 + Math.round(th * (0.36f + rnd.nextFloat() * 0.08f)), hy1 = hy0 + dw;
+            int[] vc = {bx0 + Math.round(tw * 0.2f), mc, bx0 + Math.round(tw * 0.8f)};
+            channel(mx0, 0, mx1, hy0, true, GRASS, 2);
+            channel(vc[0] - dw / 2, hy0, vc[2] - dw / 2 + dw, hy1, false, GRASS, 1);
+            for (int k = 0; k < 3; k++) channel(vc[k] - dw / 2, hy1 + 3, vc[k] - dw / 2 + dw, by1, true, GRASS, 2);
+            for (int[] c : new ArrayList<int[]>(channels)) bridges(c, 46);
+            int l0 = vc[0] - dw / 2, l1 = l0 + dw, c0 = vc[1] - dw / 2, c1 = c0 + dw, r0 = vc[2] - dw / 2, r1 = r0 + dw;
+            cells.add(new int[]{bx0 + in, by0 + in, mx0 - 3, hy0 - 3});
+            cells.add(new int[]{mx1 + 3, by0 + in, bx1 - in, hy0 - 3});
+            cells.add(new int[]{bx0 + in, hy0 - 3, l0 - 3, by1 - in});
+            cells.add(new int[]{l1 + 3, hy1 + 3, c0 - 3, by1 - in});
+            cells.add(new int[]{c1 + 3, hy1 + 3, r0 - 3, by1 - in});
+            cells.add(new int[]{r1 + 3, hy0 - 3, bx1 - in, by1 - in});
+            // The marsh: the last stretch above the shore in each piece of land below the split.
+            marshY = by1 - in - Math.max(14, Math.round(th * 0.16f));
+        }
+        for (int[] c : cells) {
+            if (c[2] - c[0] < 6 || c[3] - c[1] < 6) continue;
+            int y1 = c[3];
+            if (marshY > 0 && c[1] < marshY && y1 > marshY) {
+                y1 = marshY;
+                marsh(c[0], marshY, c[2], c[3]);
+            }
+            if (y1 - c[1] >= 6) split(c[0], c[1], c[2], y1, 0, -1, -1);
+        }
+        // The water itself: a walk along the bank, then the shore (rocks, or grass with trees), then the water.
+        double ph = rnd.nextDouble() * 10;
+        for (int[] c : channels) {
+            boolean vertical = c[4] == 1;
+            for (int y = Math.max(0, c[1]); y < Math.min(h, c[3]); y++)
+                for (int x = Math.max(0, c[0]); x < Math.min(w, c[2]); x++) {
+                    int i = y * w + x;
+                    if (tiles[i] == ROAD) continue;
+                    int along = vertical ? y : x;
+                    int dl = vertical ? x - c[0] : y - c[1], dr = vertical ? c[2] - 1 - x : c[3] - 1 - y;
+                    // (The water winds a little between its banks: the shore is wider on one side than the other.)
+                    float wob = (float) (Math.sin(along * 0.07 + ph + c[0] * 0.01) * 0.6 + Math.sin(along * 0.023 + ph * 2) * 0.4);
+                    int sl = c[6] == 0 ? 0 : Math.max(0, Math.round(c[6] * (0.5f + 0.5f * wob))), sr = c[6] == 0 ? 0 : Math.max(0, c[6] - sl + (c[6] > 2 ? 1 : 0));
+                    // (Round the head of an inlet too.)
+                    int dt = waterKind == CityConfig.W_BAY || waterKind == CityConfig.W_FJORD ? y - c[1] : 99;
+                    // (An inlet's head is rounded, not square.)
+                    int rr = waterKind == CityConfig.W_BAY ? (c[2] - c[0]) / 3 : waterKind == CityConfig.W_FJORD ? (c[2] - c[0]) / 2 : 0;
+                    if (dt < rr && Math.min(dl, dr) < rr) {
+                        int inr = rr - (int) Math.round(Math.hypot(rr - dt, rr - Math.min(dl, dr)));
+                        dt = inr < 1 ? 1 : Math.min(dt, inr);
+                    }
+                    if (dl < 1 || dr < 1 || dt < 1) tiles[i] = SIDEWALK;
+                    else if (dl < 1 + sl || dr < 1 + sr || dt < 1 + c[6]) tiles[i] = (byte) (c[5] == GRASS && rnd.nextFloat() < 0.16f ? TREE : c[5]);
+                    else if (tiles[i] != WATER) tiles[i] = WATER;
+                    roadDir[i] = 0;
+                }
+        }
+    }
+
+    /** Where the Delta Marsh's marsh begins (rows below it, above the shore, are marsh), or -1. */
+    private int marshY = -1;
+
+    /** (11.0) Salt marsh: rough grass and reed beds, pools of open water, the odd stunted tree. */
+    private void marsh(int x0, int y0, int x1, int y1) {
+        double ph = rnd.nextDouble() * 10;
+        for (int y = y0; y < y1; y++)
+            for (int x = x0; x < x1; x++) {
+                int i = y * w + x;
+                if (tiles[i] == ROAD) continue;
+                double n = Math.sin(x * 0.31 + ph) * Math.sin(y * 0.27 + ph * 1.7) + Math.sin(x * 0.11 - y * 0.13 + ph * 0.5) * 0.6;
+                boolean edge = x == x0 || x == x1 - 1 || y == y0;
+                tiles[i] = edge ? SIDEWALK : n > 0.75 ? WATER : rnd.nextFloat() < 0.05f ? TREE : GRASS;
+                roadDir[i] = 0;
+            }
+        openAreas.add(new float[]{(x0 + x1) / 2f * T, (y0 + y1) / 2f * T, 0});
+    }
+
+    /**
+     * After the coast is in: where the water reaches the sea it runs on out under the seafront (a bridge) and
+     * through the beach or the quay; every road over water is a bridge, with a footpath each side.
+     */
+    private void finishChannels() {
+        if (bridge == null) bridge = new boolean[w * h];
+        for (int[] c : channels) {
+            if (c[4] != 1 || seaY <= 0 || c[3] < seaY) continue;
+            for (int x = c[0]; x < c[2]; x++) {
+                if (tiles[(seaY - 4) * w + x] != WATER) continue;
+                for (int y = seaY - 3; y < h; y++) {
+                    int i = y * w + x;
+                    if (y > seaY + 1 && tiles[i] == WATER) break;
+                    if (tiles[i] != ROAD) tiles[i] = WATER;
+                }
+            }
+            // (Nothing left standing in the way out: no cranes or ships or umbrellas.)
+            float wx0 = c[0] * T, wx1 = c[2] * T;
+            for (int k = decor.size() - 1; k >= 0; k--) {
+                float[] d = decor.get(k);
+                int kind = (int) d[0];
+                if ((kind == D_CRANE || kind == D_CONTAINERS || kind == D_SHIP || kind == D_UMBRELLA || kind == D_LIFEGUARD || kind == D_BOAT)
+                        && d[3] > wx0 && d[1] < wx1 && d[4] > (seaY - 4) * T) decor.remove(k);
+            }
+        }
+        for (int[] c : channels)
+            for (int y = Math.max(1, c[1]); y < Math.min(h - 1, Math.max(c[3], c[4] == 1 && seaY > 0 && c[3] >= seaY ? h - 1 : c[3])); y++)
+                for (int x = Math.max(1, c[0]); x < Math.min(w - 1, c[2]); x++) {
+                    int i = y * w + x;
+                    if (tiles[i] != ROAD) continue;
+                    // (A road over water: a tile of water under it on one side or the other.)
+                    boolean over = tiles[i - 1] == WATER || tiles[i + 1] == WATER || tiles[i - w] == WATER || tiles[i + w] == WATER || bridge[i - 1] || bridge[i - w];
+                    if (!over) continue;
+                    bridge[i] = true;
+                    int[] side = roadDir[i] == 2 ? new int[]{-w, w} : new int[]{-1, 1};
+                    for (int d : side)
+                        if (tiles[i + d] == WATER) {
+                            tiles[i + d] = SIDEWALK;
+                            bridge[i + d] = true;
+                        }
+                }
+        // Boats along the water.
+        for (int[] c : channels)
+            for (int k = 0; k < 3; k++) {
+                float bx = (c[0] + rnd.nextFloat() * (c[2] - c[0])) * T, by = (c[1] + rnd.nextFloat() * (c[3] - c[1])) * T;
+                int t = tileIndex(bx, by);
+                if (t >= 0 && tiles[t] == WATER && tiles[t + 1] == WATER && tiles[t + 2] == WATER) addDecor(D_BOAT, bx, by, bx + 22, by + 9, rnd.nextInt(3));
+            }
+    }
+
+    /**
      * The sea along the bottom of the map: a promenade, then a sandy beach with piers, umbrellas and
      * lifeguards (Seaside), or a concrete quay with docks, cranes, containers and ships (Harbour).
      */
     private void coast() {
-        boolean port = waterKind == CityConfig.W_HARBOUR;
+        boolean port = waterKind == CityConfig.W_HARBOUR || waterKind == CityConfig.W_FJORD || waterKind == CityConfig.W_CANAL;
         bridge = new boolean[w * h];
         fill(0, seaY, w, 2, SIDEWALK);
         int shore = seaY + 2;
@@ -6364,7 +6573,8 @@ final class City {
         List<Integer> used = new ArrayList<Integer>();
         List<int[]> picked = new ArrayList<int[]>();
         for (int[] cnd : cands) {
-            if (made >= (len2 > 300 ? 3 : 2)) break;
+            // ((11.0) More ways on and off: the town comes right up to it now.)
+            if (made >= (cfg.civic >= 26 ? (len2 > 600 ? 5 : len2 > 300 ? 4 : 3) : len2 > 300 ? 3 : 2)) break;
             boolean near = false;
             for (int u : used) if (Math.abs(u - cnd[0]) < 40) near = true;
             if (near || cnd[1] > 6) continue;
@@ -9100,6 +9310,22 @@ final class City {
         for (int[] b : buildingLots) if (!offRegion(b[0] * T, b[1] * T, (b[0] + b[2]) * T, (b[1] + b[3]) * T)) drawBuilding(c, p, b);
         if (drawnRealistic)
             for (int[] b : buildingLots) if (!offRegion(b[0] * T, b[1] * T, (b[0] + b[2]) * T, (b[1] + b[3]) * T)) weatherRoof(c, p, b);
+        // ((11.0) Every roof edge catches the light from the north-west and falls into shade on the far side, so
+        // the roofs stand up off the ground.)
+        p.setStyle(Paint.Style.STROKE);
+        for (int[] b : buildingLots) {
+            float x0 = b[0] * T, y0 = b[1] * T, x1 = (b[0] + b[2]) * T, y1 = (b[1] + b[3]) * T;
+            if (offRegion(x0, y0, x1, y1)) continue;
+            p.setStrokeWidth(1.2f);
+            p.setColor(0x34FFFFFF);
+            c.drawLine(x0 + 0.6f, y0 + 0.6f, x1 - 0.6f, y0 + 0.6f, p);
+            c.drawLine(x0 + 0.6f, y0 + 0.6f, x0 + 0.6f, y1 - 0.6f, p);
+            p.setStrokeWidth(1.4f);
+            p.setColor(0x40000000);
+            c.drawLine(x0 + 0.7f, y1 - 0.7f, x1 - 0.7f, y1 - 0.7f, p);
+            c.drawLine(x1 - 0.7f, y0 + 0.7f, x1 - 0.7f, y1 - 0.7f, p);
+        }
+        p.setStyle(Paint.Style.FILL);
 
         for (int[] f : statues) {
             // A statue on a stepped stone plinth.
@@ -12874,6 +13100,14 @@ final class City {
 
     void solidChanged(int i) {
         if (nav != null) nav.touch(i);
+    }
+
+    /** (11.0) Changes one tile during a game (the quarantine walls going up and coming down). */
+    void setLiveTile(int i, byte t) {
+        tiles[i] = t;
+        solid[i] = t == TREE || t == FENCE || t == BUILDING || t == ROCK;
+        solidChanged(i);
+        if (walkCost != null) walkCost[i] = (byte) (t != ROAD ? 1 : 8);
     }
 
     void markGate(int i) {

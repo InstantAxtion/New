@@ -626,6 +626,7 @@ public final class GameTests {
                 check(old.applyCode("12-44") && old.v[CityConfig.OPT_SIZE] == CityConfig.MEDIUM, "old codes keep their size name");
                 // A USA city: hills, a mountain, water, a park with trails, a campsite.
                 CityConfig u = new CityConfig();
+                u.civic = 25; // ((11.0) Map version 25: the country round the town as it was before the thin band.)
                 u.seed = 7;
                 u.v[CityConfig.OPT_SIZE] = CityConfig.LARGE;
                 City city = new City(u, 0.1f);
@@ -886,6 +887,7 @@ public final class GameTests {
         test("10.15: walled safe zones with gates, the dead climb fire towers, people keep running", new Check() {
             public void run() {
                 CityConfig c = new CityConfig();
+                c.civic = 25; // ((11.0) Map version 25: the same streets as when this was written.)
                 c.seed = 77;
                 c.v[CityConfig.OPT_PRESET] = 0;
                 c.v[CityConfig.OPT_SIZE] = CityConfig.MEDIUM;
@@ -969,6 +971,7 @@ public final class GameTests {
                 check(weakest < 99, "the dead claw at the wall (weakest section " + (int) weakest + ")");
                 // Up a fire tower: they have to climb to get the lookout (it takes them a while).
                 CityConfig t = new CityConfig();
+                t.civic = 25; // ((11.0) Map version 25: the country round the town as it was before the thin band.)
                 t.seed = 9;
                 t.v[CityConfig.OPT_COUNTRY] = Country.SWEDEN;
                 t.v[CityConfig.OPT_PRESET] = 6;
@@ -1076,6 +1079,7 @@ public final class GameTests {
                 check(most >= 4, "police and soldiers hold a perimeter round the outbreak (" + most + ")");
                 // In the wilds: one ranger minds the station; the rescue team is dropped off and the helicopter goes back.
                 CityConfig t = new CityConfig();
+                t.civic = 25; // ((11.0) Map version 25: the country round the town as it was before the thin band.)
                 t.seed = 9;
                 t.v[CityConfig.OPT_COUNTRY] = Country.SWEDEN;
                 t.v[CityConfig.OPT_PRESET] = 6;
@@ -1198,6 +1202,7 @@ public final class GameTests {
                 check(CityConfig.retired(CityConfig.OPT_ZOMBIES, 3) && d.zombies() == 0, "no choosing how many zombies: the game starts quiet");
                 // No animals.
                 CityConfig c = new CityConfig();
+                c.civic = 25; // ((11.0) Map version 25: the country round the town as it was before the thin band.)
                 c.seed = 9;
                 c.v[CityConfig.OPT_COUNTRY] = Country.SWEDEN;
                 c.v[CityConfig.OPT_PRESET] = 6;
@@ -1329,6 +1334,7 @@ public final class GameTests {
                 z.dead = true;
                 // The ranger minding the station stands out front, not against the wall.
                 CityConfig wc = new CityConfig();
+                wc.civic = 25; // ((11.0) Map version 25: the country round the town as it was before the thin band.)
                 wc.seed = 4;
                 wc.v[CityConfig.OPT_PRESET] = 8;
                 wc.v[CityConfig.OPT_SIZE] = CityConfig.MASSIVE;
@@ -1562,12 +1568,14 @@ public final class GameTests {
                 check(asked && hw.dispatch.callouts.size() > calls, "a call for backup: an incident wanting more units, and a callout on the map");
                 // The outskirts: little nature, and small towns of their own.
                 CityConfig a0 = new CityConfig();
+                a0.civic = 25; // ((11.0) Map version 25: the country round the town as it was before the thin band.)
                 a0.v[CityConfig.OPT_PRESET] = 8;
                 a0.v[CityConfig.OPT_SIZE] = CityConfig.HUGE;
                 a0.seed = 5;
                 a0.normalize();
                 a0.seed = 5;
                 CityConfig a1 = new CityConfig();
+                a1.civic = 25; // ((11.0) Map version 25: the country round the town as it was before the thin band.)
                 check(a1.applyCode(a0.code() + "!") && a1.outskirts == 1 && a1.code().endsWith("!"), "little nature is in the city code");
                 City c0 = new City(a0, 0.05f), c1 = new City(a1, 0.05f);
                 int t0 = 0, t1 = 0;
@@ -2067,6 +2075,7 @@ public final class GameTests {
         test("10.30: Massive maps have more towns and a big army base out in the country with checkpoints", new Check() {
             public void run() throws Exception {
                 CityConfig c = new CityConfig();
+                c.civic = 25; // ((11.0) Map version 25: the country round the town as it was before the thin band.)
                 c.v[CityConfig.OPT_PRESET] = 1;
                 c.v[CityConfig.OPT_SIZE] = CityConfig.MASSIVE;
                 c.v[CityConfig.OPT_ZOMBIES] = 0;
@@ -2104,6 +2113,7 @@ public final class GameTests {
                 }
                 // ((10.52) A Large map has a smaller one now; a Medium one none.)
                 CityConfig l = new CityConfig();
+                l.civic = 25; // ((11.0) Map version 25: the country round the town as it was before the thin band.)
                 l.v[CityConfig.OPT_PRESET] = 2;
                 l.v[CityConfig.OPT_SIZE] = CityConfig.LARGE;
                 l.normalize();
@@ -2194,6 +2204,7 @@ public final class GameTests {
                 }
                 // A Massive city, its bases, checkpoints and thousands of people, saves and loads back.
                 CityConfig m = new CityConfig();
+                m.civic = 25; // ((11.0) Map version 25: the country round the town as it was before the thin band.)
                 m.v[CityConfig.OPT_PRESET] = 8;
                 m.v[CityConfig.OPT_SIZE] = CityConfig.HUGE;
                 m.v[CityConfig.OPT_ZOMBIES] = 0;
@@ -2431,6 +2442,7 @@ public final class GameTests {
                 int outposts = 0;
                 for (int seed : new int[]{5, 6, 7}) {
                     CityConfig c = new CityConfig();
+                    c.civic = 25; // ((11.0) Map version 25: the country round the town as it was before the thin band.)
                     c.v[CityConfig.OPT_PRESET] = 1;
                     c.v[CityConfig.OPT_SIZE] = CityConfig.HUGE;
                     c.seed = seed;
@@ -2949,6 +2961,7 @@ public final class GameTests {
                 }
                 // A small town's police station out in the country: two cars of its own, on its own patch.
                 CityConfig c = new CityConfig();
+                c.civic = 25; // ((11.0) Map version 25: the country round the town as it was before the thin band.)
                 c.v[CityConfig.OPT_PRESET] = 0;
                 c.v[CityConfig.OPT_SIZE] = CityConfig.MASSIVE;
                 c.v[CityConfig.OPT_ZOMBIES] = 0;
@@ -3062,6 +3075,7 @@ public final class GameTests {
             public void run() throws Exception {
                 for (int[] ps : new int[][]{{0, 3, CityConfig.MASSIVE}, {0, 5, CityConfig.MASSIVE}, {2, 5, CityConfig.LARGE}}) {
                     CityConfig c = new CityConfig();
+                    c.civic = 25; // ((11.0) Map version 25: the country round the town as it was before the thin band.)
                     c.v[CityConfig.OPT_PRESET] = ps[0];
                     c.v[CityConfig.OPT_SIZE] = ps[2];
                     c.seed = ps[1];
@@ -3104,6 +3118,7 @@ public final class GameTests {
         test("10.45: calls always reach the map and follow the dead, units help each other, louder guns, shoves can fail, yards kept clear", new Check() {
             public void run() throws Exception {
                 CityConfig c = new CityConfig();
+                c.civic = 25; // ((11.0) Map version 25: the same streets as when this was written.)
                 c.v[CityConfig.OPT_PRESET] = 0;
                 c.v[CityConfig.OPT_ZOMBIES] = 0;
                 c.seed = 3;
@@ -3518,6 +3533,60 @@ public final class GameTests {
                 check(train > 0, "and on an evacuation train at the station (" + bus + " on a bus, " + w.fledByTransit + " gone, " + w.alert + "/" + w.outbreak + ")");
                 check(w.fledByTransit > 0 && w.fled == w.fledByTransit, "and leave the city aboard (" + w.fledByTransit + " of " + w.fled + ")");
                 check(onFoot == 0, "nobody walks out with only buses and trains chosen (" + onFoot + ")");
+            }
+        });
+        test("11.0: the four water maps (water out to the sea, bridges, Marines by boat), a thin band of country, the new units", new Check() {
+            public void run() throws Exception {
+                for (int p : new int[]{CityConfig.BAY, CityConfig.DELTA, CityConfig.FJORD, CityConfig.CANAL}) {
+                    CityConfig c = new CityConfig();
+                    c.v[CityConfig.OPT_PRESET] = p;
+                    c.v[CityConfig.OPT_SIZE] = CityConfig.LARGE;
+                    c.v[CityConfig.OPT_ZOMBIES] = 0;
+                    c.normalize();
+                    c.seed = 5;
+                    World w = new World(c);
+                    City city = w.city;
+                    String name = CityConfig.PRESETS[p];
+                    check(!city.channels.isEmpty(), name + ": water through the town");
+                    int water = 0, bridges = 0;
+                    for (int i = 0; i < city.w * city.h; i++) {
+                        if (city.tiles[i] == City.WATER) water++;
+                        if (city.bridge != null && city.bridge[i] && city.tiles[i] == City.ROAD) bridges++;
+                    }
+                    check(water > city.w * city.h / 12, name + ": plenty of water (" + water + ")");
+                    check(bridges > 20, name + ": bridges over it (" + bridges + ")");
+                    check(city.buildings.size() > 300, name + ": a town round it (" + city.buildings.size() + ")");
+                    // Marines come in over the water to the shore by the fighting, and get out on dry land.
+                    float[] q = city.randomStreetSpot(new java.util.Random(3));
+                    check(w.fleet.marineLanding(16, q[0], q[1], "here", null), name + ": a way in by water");
+                    int boats = 0;
+                    for (Fleet.Vehicle v : w.fleet.vehicles) if (v.type == Fleet.BOAT) boats++;
+                    check(boats == 2, name + ": two landing craft (" + boats + ")");
+                    for (int f = 0; f < 30 * 90; f++) w.update(1 / 30f);
+                    int marines = 0, wet = 0;
+                    for (Entity e : w.entities)
+                        if (!e.dead && e.role == Entity.ROLE_MARINE) {
+                            marines++;
+                            int t = city.tileIndex(e.x, e.y);
+                            if (t >= 0 && city.tiles[t] == City.WATER) wet++;
+                        }
+                    check(marines >= 12, name + ": the Marines ashore (" + marines + ")");
+                    check(wet == 0, name + ": none of them left in the water (" + wet + ")");
+                    CityConfig back = new CityConfig();
+                    check(back.applyCode(c.code()) && back.v[CityConfig.OPT_PRESET] == p, name + ": its city code");
+                }
+                // A thin band of country round every other map.
+                CityConfig c = new CityConfig();
+                c.v[CityConfig.OPT_PRESET] = 2;
+                c.v[CityConfig.OPT_SIZE] = CityConfig.LARGE;
+                c.normalize();
+                check(c.coreFraction() >= 0.85f, "nine tenths town (" + c.coreFraction() + ")");
+                // The new roles.
+                check(Entity.ROLE_NAMES.length == 16 && "Bomb technician".equals(Entity.ROLE_NAMES[Entity.ROLE_EOD]), "every role named");
+                World w = new World(c);
+                Entity e = w.create(Entity.COP, 100, 100);
+                w.applyRole(e, Entity.ROLE_EOD);
+                check(e.maxHp >= 200, "the blast suit");
             }
         });
         test("every screen draws", new Check() {

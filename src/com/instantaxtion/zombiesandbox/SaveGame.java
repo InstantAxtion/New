@@ -17,7 +17,7 @@ import java.util.ArrayList;
  * damaged or collapsed buildings.
  */
 final class SaveGame {
-    private static final int VERSION = 46;
+    private static final int VERSION = 47;
 
     private SaveGame() {
     }
@@ -36,6 +36,8 @@ final class SaveGame {
             out.writeUTF(cfg.editString());
             out.writeInt(cfg.outskirts);
             out.writeInt(cfg.exodus);
+            // Version 47: the map version the city was built to, itself.
+            out.writeInt(cfg.civic);
 
             out.writeFloat(w.time);
             out.writeInt(w.turned);
@@ -103,10 +105,15 @@ final class SaveGame {
                 }
                 if (Fleet.airborne(v) || v.type == Fleet.TRAIN || v.passengers <= 0 || v.state > 1 || v.broken) continue;
                 for (int i = 0; i < v.passengers; i++) {
-                    Entity p = w.create(v.passengerType, v.x, v.y);
+                    // ((11.0) Marines still in their boat are saved ashore where it was taking them.)
+                    boolean boat = v.type == Fleet.BOAT;
+                    Entity p = w.create(v.passengerType, boat ? v.tx : v.x, boat ? v.ty : v.y);
                     if (v.guardUnit) w.applyRole(p, Entity.ROLE_GUARD);
                     if (v.swat) w.applyRole(p, Entity.ROLE_SWAT);
                     if (v.kind == Fleet.K_RIOT_VAN) w.applyRole(p, Entity.ROLE_RIOT);
+                    if (v.kind == Fleet.K_BEARCAT) w.applyRole(p, Entity.ROLE_SWAT);
+                    if (v.kind == Fleet.K_EOD) w.applyRole(p, Entity.ROLE_EOD);
+                    if (boat) w.applyRole(p, Entity.ROLE_MARINE);
                     all.add(p);
                 }
             }
@@ -399,8 +406,10 @@ final class SaveGame {
             if (version >= 15) cfg.setEdits(in.readUTF());
             if (version >= 26) cfg.outskirts = in.readInt();
             if (version >= 41) cfg.exodus = in.readInt();
+            int civic = version >= 47 ? in.readInt() : -1;
             // (Cities saved before 10.4 were built without their government quarter.)
-            cfg.civic = version >= 46 ? 25 : version >= 45 ? 24 : version >= 44 ? 23 : version >= 43 ? 22 : version >= 42 ? 21 : version >= 40 ? 20 : version >= 39 ? 19 : version >= 38 ? 18 : version >= 37 ? 17 : version >= 36 ? 16 : version >= 35 ? 15 : version >= 34 ? 14 : version >= 33 ? 13 : version >= 32 ? 12 : version >= 31 ? 11 : version >= 30 ? 11 : version >= 29 ? 10 : version >= 28 ? 9 : version >= 27 ? 8 : version >= 26 ? 7 : version >= 25 ? 6 : version >= 24 ? 5 : version >= 23 ? 4 : version >= 22 ? 3 : version >= 20 ? 2 : version >= 19 ? 1 : 0;
+            cfg.civic = version >= 47 ? 26 : version >= 46 ? 25 : version >= 45 ? 24 : version >= 44 ? 23 : version >= 43 ? 22 : version >= 42 ? 21 : version >= 40 ? 20 : version >= 39 ? 19 : version >= 38 ? 18 : version >= 37 ? 17 : version >= 36 ? 16 : version >= 35 ? 15 : version >= 34 ? 14 : version >= 33 ? 13 : version >= 32 ? 12 : version >= 31 ? 11 : version >= 30 ? 11 : version >= 29 ? 10 : version >= 28 ? 9 : version >= 27 ? 8 : version >= 26 ? 7 : version >= 25 ? 6 : version >= 24 ? 5 : version >= 23 ? 4 : version >= 22 ? 3 : version >= 20 ? 2 : version >= 19 ? 1 : 0;
+            if (civic >= 0) cfg.civic = civic;
             // (Version 20 and later all build the same city.)
             World w = new World(cfg);
 
@@ -642,6 +651,11 @@ final class SaveGame {
             else d.swatTeams = w.city.nearestFacility(City.FACILITY_POLICE, 0, 0) == null ? 0 : 1;
             if (version >= 22) {
                 d.riotVans = in.readInt();
+                // ((11.0) Not saved: a loaded game gets its BearCats and bomb squads back, and sends recon again.)
+                int st = 0;
+                for (City.Facility f : w.city.facilities) if (f.kind == City.FACILITY_POLICE) st++;
+                d.bearcats = w.city.cfg.nature() ? Math.min(3, st) : 0;
+                d.bombSquads = w.city.cfg.nature() ? Math.min(2, st) : 0;
                 d.policeAir = in.readInt();
                 w.guardWave = in.readInt();
             }

@@ -1821,6 +1821,7 @@ final class GameView extends View implements Menu.Host {
         float vx0 = camX - 20, vy0 = camY - 20;
         float vx1 = camX + getWidth() / scale + 20, vy1 = camY + getHeight() / scale + 20;
         boolean detailed = scale > 1.1f;
+        if (scale > 0.8f && (world.city.waterKind != CityConfig.W_NONE || world.city.elev != null)) drawWaterLife(c, vx0, vy0, vx1, vy1);
 
         for (int i = 0; i < world.dcount; i++) {
             float x = world.dx[i], y = world.dy[i], r = world.dr[i];
@@ -2219,6 +2220,22 @@ final class GameView extends View implements Menu.Host {
         // (10.46) Infection zones: a dashed hazard ring round each, red while it's held, amber while it waits its turn.
         for (int i = 0, n = world.infection.size(); i < n; i++) {
             World.InfectionZone z = world.infection.get(i);
+            // ((11.0) Its quarantine wall: concrete barriers with a chain-link fence along the top.)
+            float wx0 = camX - 20, wy0 = camY - 20, wx1 = camX + getWidth() / scale + 20, wy1 = camY + getHeight() / scale + 20;
+            int cw = world.city.w;
+            for (int k = 0, m = z.wall.size(); k < m; k++) {
+                int t = z.wall.get(k)[0];
+                float x = (t % cw) * City.T, y = (t / cw) * City.T;
+                if (x > wx1 || y > wy1 || x + City.T < wx0 || y + City.T < wy0) continue;
+                fill.setColor(0xFF9A9A92);
+                c.drawRect(x + 1, y + 1, x + City.T - 1, y + City.T - 1, fill);
+                fill.setColor(0xFF6E6E68);
+                c.drawRect(x + 1, y + City.T * 0.62f, x + City.T - 1, y + City.T - 1, fill);
+                stroke.setStrokeWidth(0.8f);
+                stroke.setColor(0xFFD8D8D0);
+                c.drawLine(x + 1, y + 2, x + City.T - 1, y + 2, stroke);
+                c.drawLine(x + City.T * 0.5f, y + 1, x + City.T * 0.5f, y + City.T - 1, stroke);
+            }
             int col = z.critical ? 0xFFFF4A3A : 0xFFFFB040;
             fill.setColor(alpha(col, 0.06f));
             c.drawCircle(z.x, z.y, z.r, fill);
@@ -2327,6 +2344,31 @@ final class GameView extends View implements Menu.Host {
             stroke.setColor(0xCCFFFFFF);
             stroke.setStrokeWidth(1.2f);
             c.drawCircle(followV.x, followV.y, followV.length() + 5 + (float) Math.sin(world.time * 6), stroke);
+        }
+
+        // ((11.0) Police drones: a little quadcopter, its shadow below, rotors blurring, lights blinking, and the patch
+        // of ground its camera's watching.)
+        for (int i = 0, n = world.drones.size(); i < n; i++) {
+            World.Drone d = world.drones.get(i);
+            boolean up = d.state != World.DRONE_DOCKED;
+            if (up) {
+                fill.setColor(0x10A0C8FF);
+                c.drawCircle(d.x, d.y, World.DRONE_SEE, fill);
+                fill.setColor(0x40000000);
+                c.drawCircle(d.x + 6, d.y + 9, 3.2f, fill);
+            }
+            float h = 0, r = 2.6f;
+            fill.setColor(0xFF2A2F36);
+            c.drawRect(d.x - 1.6f, d.y - 1.6f - h, d.x + 1.6f, d.y + 1.6f - h, fill);
+            stroke.setStrokeWidth(0.7f);
+            stroke.setColor(0xFF2A2F36);
+            c.drawLine(d.x - r, d.y - r, d.x + r, d.y + r, stroke);
+            c.drawLine(d.x - r, d.y + r, d.x + r, d.y - r, stroke);
+            fill.setColor(up ? 0x70C8D0D8 : 0xFF6A7078);
+            for (int k = 0; k < 4; k++) c.drawCircle(d.x + (k % 2 == 0 ? -r : r), d.y + (k < 2 ? -r : r), up ? 1.7f : 1f, fill);
+            boolean blink = ((int) (world.time * 3 + i)) % 2 == 0;
+            fill.setColor(blink ? 0xFFFF3030 : 0xFF3060FF);
+            c.drawCircle(d.x, d.y, 0.8f, fill);
         }
 
         for (int i = 0, n = world.explosions.size(); i < n; i++) {
@@ -3917,6 +3959,10 @@ final class GameView extends View implements Menu.Host {
             drawTrain(c, v);
             return;
         }
+        if (v.type == Fleet.BOAT) {
+            drawLandingCraft(c, v);
+            return;
+        }
         if (v.kind == Fleet.K_BIKE) {
             drawBike(c, v);
             return;
@@ -3929,6 +3975,9 @@ final class GameView extends View implements Menu.Host {
         } else if (v.kind == Fleet.K_HUMVEE) {
             hl = 8.5f;
             hw = 4.9f;
+        } else if (v.kind == Fleet.K_BEARCAT) {
+            hl = 10.2f;
+            hw = 5.4f;
         }
         int model = v.type == Fleet.CAR ? v.model : -1;
         if (model >= 0) {
@@ -3959,7 +4008,8 @@ final class GameView extends View implements Menu.Host {
         }
         boolean civ = v.type == Fleet.CAR;
         Country land0 = world.city.country;
-        int body = civ ? v.color : v.kind == Fleet.K_RIOT_VAN ? land0.cruiserBody
+        int body = civ ? v.color : v.kind == Fleet.K_BEARCAT ? 0xFF1A1C20 : v.kind == Fleet.K_EOD ? 0xFFE8E6E0 : v.recon ? 0xFF9C8A5E
+                : v.kind == Fleet.K_RIOT_VAN ? land0.cruiserBody
                 : truck ? (v.restock ? 0xFFE6E3DA : v.swat ? 0xFF1C2026 : v.guardUnit ? 0xFF8C8260 : v.kind == Fleet.K_APC ? 0xFF46512E : 0xFF4F5A33) : amb ? 0xFFF2F2F2
                 : v.agency == 1 ? land0.hpBody : v.agency == 2 ? land0.ruralBody : v.agency == 3 ? 0xFF3E5634 : v.agency == 4 ? 0xFF15171A : land0.cruiserBody;
         if (v.burnt) body = 0xFF2B2623;
@@ -3984,8 +4034,15 @@ final class GameView extends View implements Menu.Host {
             c.restore();
             return;
         }
+        // ((11.0) The sheen of the light along the body.)
+        if (!civ) {
+            fill.setColor(0x24FFFFFF);
+            c.drawRect(-hl * 0.6f, -hw * 0.82f, hl * 0.75f, -hw * 0.38f, fill);
+        }
         if (civ) {
             drawCarBody(c, v, body, hl, hw);
+            fill.setColor(0x1EFFFFFF);
+            c.drawRect(-hl * 0.5f, -hw * 0.8f, hl * 0.6f, -hw * 0.42f, fill);
             if (!v.parked && !shell) {
                 fill.setColor(0xFFFFF4C0);
                 c.drawCircle(hl - 0.8f, -hw + 1.3f, 0.8f, fill);
@@ -4037,6 +4094,40 @@ final class GameView extends View implements Menu.Host {
                 c.drawRect(hl * 0.33f, -hw + 1, hl * 0.42f, 0, fill);
                 fill.setColor(on && !blink ? 0xFF3A7BFF : 0xFF1A2A5A);
                 c.drawRect(hl * 0.33f, 0, hl * 0.42f, hw - 1, fill);
+            }
+        } else if (v.kind == Fleet.K_BEARCAT) {
+            // ((11.0) The BearCat: an armoured black truck, a push bar on the front, a roof hatch and a light bar.)
+            fill.setColor(0xFF0E0F12);
+            c.drawRect(hl - 0.4f, -hw + 0.6f, hl + 1.4f, hw - 0.6f, fill);
+            fill.setColor(v.broken ? 0xFF2A2A2A : 0xFF262A30);
+            c.drawRect(-hl + 0.8f, -hw + 0.8f, hl * 0.35f, hw - 0.8f, fill);
+            fill.setColor(0xFF3A3F47);
+            c.drawCircle(-hl * 0.3f, 0, 2, fill);
+            fill.setColor(0xFF0F1418);
+            c.drawRect(hl * 0.45f, -hw + 1.2f, hl * 0.62f, hw - 1.2f, fill);
+            fill.setColor(0xFFE8E8E8);
+            c.drawRect(-hl + 1, -hw, hl * 0.35f, -hw + 0.7f, fill);
+            c.drawRect(-hl + 1, hw - 0.7f, hl * 0.35f, hw, fill);
+            if (!v.parked && !v.broken) {
+                boolean blink = ((int) (v.anim * 8)) % 2 == 0;
+                fill.setColor(blink ? 0xFFFF3A30 : 0xFF3A7BFF);
+                c.drawRect(hl * 0.36f, -hw + 1, hl * 0.43f, 0, fill);
+                fill.setColor(blink ? 0xFF3A7BFF : 0xFFFF3A30);
+                c.drawRect(hl * 0.36f, 0, hl * 0.43f, hw - 1, fill);
+            }
+        } else if (v.kind == Fleet.K_EOD) {
+            // ((11.0) The bomb squad's truck: white, an orange band down each side, the robot's box at the back.)
+            fill.setColor(0xFFE0782A);
+            c.drawRect(-hl + 1, -hw, hl * 0.3f, -hw + 1.1f, fill);
+            c.drawRect(-hl + 1, hw - 1.1f, hl * 0.3f, hw, fill);
+            fill.setColor(0xFFB8B6B0);
+            c.drawRect(-hl + 1.2f, -2.4f, -hl * 0.45f, 2.4f, fill);
+            fill.setColor(0xFF1E2A33);
+            c.drawRect(hl * 0.45f, -hw + 1, hl * 0.7f, hw - 1, fill);
+            if (!v.parked && !v.broken) {
+                boolean blink = ((int) (v.anim * 8)) % 2 == 0;
+                fill.setColor(blink ? 0xFFFF3A30 : 0xFF3A7BFF);
+                c.drawRect(hl * 0.33f, -hw + 1, hl * 0.42f, hw - 1, fill);
             }
         } else if (truck && v.swat) {
             // The SWAT van: armoured black box body, a white band and a light bar.
@@ -4499,7 +4590,7 @@ final class GameView extends View implements Menu.Host {
             }
             for (int i = 0, n = world.fleet.vehicles.size(); i < n; i++) {
                 Fleet.Vehicle v = world.fleet.vehicles.get(i);
-                if (Fleet.airborne(v) || v.type == Fleet.TRAIN || !world.fleet.onBridge(v)) continue;
+                if (Fleet.offRoad(v) || !world.fleet.onBridge(v)) continue;
                 if (v.x < o[0] - 10 || v.x > o[2] + 10 || v.y < o[1] - 10 || v.y > o[3] + 10) continue;
                 drawVehicle(c, v);
             }
@@ -4536,6 +4627,91 @@ final class GameView extends View implements Menu.Host {
             drawTrain(c, v);
             c.restore();
         }
+    }
+
+    /**
+     * (11.0) The water moving: glints of light drifting over it, and a line of surf along every shore that swells
+     * and fades. Only on screen, and only close enough in to see it.
+     */
+    private void drawWaterLife(Canvas c, float vx0, float vy0, float vx1, float vy1) {
+        City city = world.city;
+        int tx0 = Math.max(1, (int) (vx0 / City.T)), ty0 = Math.max(1, (int) (vy0 / City.T));
+        int tx1 = Math.min(city.w - 2, (int) (vx1 / City.T)), ty1 = Math.min(city.h - 2, (int) (vy1 / City.T));
+        if ((long) (tx1 - tx0) * (ty1 - ty0) > 40000) return;
+        float t = world.time, T = City.T;
+        stroke.setStyle(Paint.Style.STROKE);
+        for (int y = ty0; y <= ty1; y++)
+            for (int x = tx0; x <= tx1; x++) {
+                int i = y * city.w + x;
+                if (city.tiles[i] != City.WATER || city.isBridge(x, y)) continue;
+                int hsh = (x * 73856093) ^ (y * 19349663);
+                float px = x * T, py = y * T;
+                if ((hsh & 7) == 0) {
+                    // A glint, drifting slowly with the current and catching the light now and then.
+                    float ph = t * 0.9f + (hsh >>> 8 & 255) * 0.0245f;
+                    float a = (float) Math.sin(ph);
+                    if (a > 0.35f) {
+                        float gx = px + ((hsh >>> 4 & 15) + t * 3) % T, gy = py + (hsh >>> 12 & 15);
+                        stroke.setColor(alpha(0xFFE8F4FA, (a - 0.35f) * 0.55f));
+                        stroke.setStrokeWidth(0.9f);
+                        c.drawLine(gx - 2.5f, gy, gx + 2.5f, gy, stroke);
+                    }
+                }
+                // Surf where the water meets the land.
+                byte up = city.tiles[i - city.w], dn = city.tiles[i + city.w], lf = city.tiles[i - 1], rt = city.tiles[i + 1];
+                boolean su = shore(up), sd = shore(dn), sl = shore(lf), sr = shore(rt);
+                if (!su && !sd && !sl && !sr) continue;
+                float swell = 0.5f + 0.5f * (float) Math.sin(t * 1.4f + x * 0.35f + y * 0.21f);
+                stroke.setColor(alpha(0xFFF4FAFC, 0.18f + 0.3f * swell));
+                stroke.setStrokeWidth(1.1f + swell * 0.9f);
+                float in = 1.2f + swell * 1.6f;
+                if (su) c.drawLine(px, py + in, px + T, py + in, stroke);
+                if (sd) c.drawLine(px, py + T - in, px + T, py + T - in, stroke);
+                if (sl) c.drawLine(px + in, py, px + in, py + T, stroke);
+                if (sr) c.drawLine(px + T - in, py, px + T - in, py + T, stroke);
+            }
+        stroke.setStyle(Paint.Style.STROKE);
+    }
+
+    /** Land a wave breaks on (not a bridge's water, a pier or more water). */
+    private static boolean shore(byte t) {
+        return t == City.SAND || t == City.GRASS || t == City.ROCK || t == City.TREE || t == City.SIDEWALK || t == City.DIRT;
+    }
+
+    /** (11.0) A Marine landing craft: a grey hull with a ramp at the bow, the Marines in rows, and its wake. */
+    private void drawLandingCraft(Canvas c, Fleet.Vehicle v) {
+        float hl = 13, hw = 5.5f;
+        c.save();
+        c.translate(v.x, v.y);
+        c.rotate((float) Math.toDegrees(v.angle));
+        if (v.speed > 5) {
+            fill.setColor(0x60FFFFFF);
+            for (int k = 1; k <= 3; k++) {
+                float back = -hl - k * 5, spread = hw + k * 2.2f;
+                c.drawRect(back - 2, -spread, back, -spread + 1.4f, fill);
+                c.drawRect(back - 2, spread - 1.4f, back, spread, fill);
+            }
+            fill.setColor(0x40FFFFFF);
+            c.drawRect(-hl - 14, -2, -hl, 2, fill);
+        }
+        fill.setColor(0x38000000);
+        oval.set(-hl + 1.5f, -hw + 2, hl + 1.5f, hw + 2);
+        c.drawRoundRect(oval, 2, 2, fill);
+        fill.setColor(0xFF5E666C);
+        oval.set(-hl, -hw, hl, hw);
+        c.drawRoundRect(oval, 2, 2, fill);
+        fill.setColor(0xFF41484D);
+        c.drawRect(-hl + 1.5f, -hw + 1.2f, hl - 2.5f, hw - 1.2f, fill);
+        fill.setColor(0xFF6E777D);
+        c.drawRect(hl - 2.5f, -hw, hl, hw, fill);
+        fill.setColor(0xFF2E3337);
+        c.drawRect(-hl + 1, -2, -hl + 4.5f, 2, fill);
+        if (v.passengers > 0) {
+            fill.setColor(0xFF3E4E62);
+            for (int k = 0; k < Math.min(8, v.passengers); k++)
+                c.drawCircle(-hl + 7 + (k / 2) * 3.8f, (k % 2 == 0 ? -1.8f : 1.8f), 1.3f, fill);
+        }
+        c.restore();
     }
 
     private void drawTrain(Canvas c, Fleet.Vehicle v) {
@@ -5754,10 +5930,34 @@ final class GameView extends View implements Menu.Host {
             c.drawArc(oval, -70, 120 * t, false, stroke);
         }
 
-        fill.setColor(e.body);
         if (e.type == Entity.CRAWLER) oval.set(-r * 1.2f, -r * 0.7f, r * 0.62f, r * 0.7f);
         else oval.set(-r * 0.62f, -r, r * 0.62f, r);
+        if (scale > 1.2f) {
+            // ((11.0) A dark outline, so everyone stands out from the ground at any zoom.)
+            fill.setColor(0x8C000000);
+            float o = Math.min(r * 0.18f, 0.9f / scale + 0.25f);
+            oval.inset(-o, -o);
+            c.drawOval(oval, fill);
+            oval.inset(o, o);
+        }
+        fill.setColor(e.body);
         c.drawOval(oval, fill);
+        if (scale > 2.2f) {
+            // ((11.0) And the light catching the shoulders, from the north-west like everything else.)
+            fill.setColor(0x2EFFFFFF);
+            oval.set(-r * 0.5f, -r * 0.85f, r * 0.25f, r * 0.1f);
+            c.drawOval(oval, fill);
+        }
+        if (e.role == Entity.ROLE_EOD && e.type == Entity.COP) {
+            // ((11.0) The bomb technician's blast suit: a big padded collar and the helmet's visor.)
+            fill.setColor(City.darken(e.body, 0.8f));
+            oval.set(-r * 0.7f, -r * 1.08f, r * 0.7f, r * 1.08f);
+            c.drawOval(oval, fill);
+            fill.setColor(0xFF2A3424);
+            c.drawCircle(0, 0, r * 0.55f, fill);
+            fill.setColor(0xCC9FD0E8);
+            c.drawRect(r * 0.25f, -r * 0.3f, r * 0.52f, r * 0.3f, fill);
+        }
         if (e.armored) {
             // (10.32) The dead in body armour: the vest over the torso, dark and torn.
             fill.setColor(0xFF2A3038);
@@ -6389,6 +6589,7 @@ final class GameView extends View implements Menu.Host {
         else if (e.isZombie()) title = (e.armored ? "Armored " : "") + Entity.NAMES[e.type] + (e.origin >= 0 ? "  -  was " + Names.person(e.nameSeed) : "");
         else if (e.type == Entity.COP && e.role == Entity.ROLE_SWAT)
             title = Country.swat(world.city.country.id)[1] + " " + Names.person(e.nameSeed) + "  -  " + Dispatch.name(e);
+        else if (e.type == Entity.COP && e.role == Entity.ROLE_EOD) title = "Bomb technician " + Names.person(e.nameSeed) + "  -  " + Dispatch.name(e);
         else if (e.type == Entity.COP && e.role == Entity.ROLE_SAR) title = "Rescue specialist " + Names.person(e.nameSeed) + "  -  " + Dispatch.name(e);
         else if (e.type == Entity.COP) title = (e.agency == 1 ? world.city.country.hpName + " " : e.agency == 2 ? world.city.country.ruralName + "'s deputy "
                 : e.agency == 3 ? "Park ranger " : e.agency == 4 ? Dispatch.federal(world.city.country) + " agent " : e.role == Entity.ROLE_PILOT ? "Pilot " : world.city.country.garrison ? "MP " : "Officer ")

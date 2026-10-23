@@ -10,10 +10,9 @@ away from the middle of the screen as you pan, and the game plays in both portra
 ## Main menu
 
 - **New Game** opens the city setup, with a live preview of the city and these options: the map (Suburbs,
-  Metropolis, or the water maps Seaside, River City, Bay City, Delta Marsh, Fjord Town and Canal City, or Islands,
-  Archipelago, the Mountain Valley or the Garrison State), map size (Default, Large or
-  Massive), the **country** (USA, Australia, Japan, France,
-  Mexico, Russia, Sweden, Norway or Canada) and how many reinforcements can
+  Metropolis, or the water maps Seaside, River City, Bay City and Canal City, or Islands,
+  Archipelago or the Garrison State), map size (Default, Large or
+  Massive) and how many reinforcements can
   be called in (Off, Low, Medium or High, each spelled out: waves of police backup, army squads, tanks
   and helicopter sorties). Police and soldiers on duty are set by the size of the city (about one officer
   per 80 residents plus two per station; a garrison at the base if the map has one). Each map decides its
@@ -244,13 +243,10 @@ counts), and wherever the dead gather the ground glows red. Labels go most impor
   Each comes back once it's cleared and people return.
 - **Zombies inside**: some buildings hide zombies that burst out when someone comes near or tries to
   shelter there. Idle zombies lurk in empty buildings, smash shop windows and set off car alarms.
-- **570 kinds of building**: each with its own roof, colours and sign, picked by country and by
-  district. Diners, drive-thrus and motels in the USA; corner pubs, milk bars, RSL clubs and
-  Queenslanders in Australia; konbini, izakayas, pachinko parlours, ryokan and danchi blocks in
-  Japan; boulangeries, brasseries, mairies and Haussmann blocks in France; taquerías, tortillerías,
-  cantinas and vecindades in Mexico; plus towers, campus halls, factories, data centres, big-box
-  stores and homes everywhere. Maps are twice the size they were (192 to 448 tiles across) so
-  buildings are at real-world scale.
+- **180 kinds of building**: each with its own roof, colours and sign, picked by district: diners,
+  drive-thrus, motels, brownstones, megachurches and the rest, plus towers, campus halls, factories,
+  data centres, big-box stores and homes everywhere. Maps are twice the size they were (192 to 448 tiles
+  across) so buildings are at real-world scale.
 - **Interiors**: zoom right in to see a real floor plan: rooms with walls and doorways (homes, flats,
   offices and hotels), or one big hall with a back room (shops, warehouses, halls), furnished for
   what the building is. People inside stand or sit at their own spots, apart, and walk between rooms
@@ -424,6 +420,12 @@ of the highway, towns of different shapes, mountains spread about with lone hill
 mounting up, and lighter running with big populations.
 
 **More police than soldiers (10.35):** the army on the map is never more than two in five of the police force.
+
+**The beat, real drivers, USA only (11.3):** police on the beat walk the streets in pairs, side by side, and are
+never fetched back to the station by car for it. Every police car, army truck and ambulance on the road has a real
+driver. People's cards say much more about what they're doing. The game is set in the USA only (the other countries
+and their code are gone, with Sydney, Tokyo and Paris), and Delta Marsh, Fjord Town and the Mountain Valley are gone;
+saves and codes on them no longer load.
 
 **Bomb squad colours, portrait only (11.2):** the bomb squad's truck is named and marked as police (not an army
 truck) and its technicians wear the police's navy blast suits. BearCats, SWAT and riot vans show in police blue on

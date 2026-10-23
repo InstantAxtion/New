@@ -399,6 +399,9 @@ final class SaveGame {
                 int v = in.readInt();
                 // (Before 10.10 there was no Tiny size, so Small was 0.)
                 if (version < 22 && i == CityConfig.OPT_SIZE) v++;
+                // ((11.3) A map or a country no longer in the game: it can't be rebuilt.)
+                if ((i == CityConfig.OPT_PRESET && CityConfig.removed(v)) || (i == CityConfig.OPT_COUNTRY && v != Country.USA))
+                    throw new IOException("This save's map is no longer in the game");
                 if (i < cfg.v.length) cfg.v[i] = Math.max(0, Math.min(cfg.values(i).length - 1, v));
             }
             cfg.seed = in.readLong();

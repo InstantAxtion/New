@@ -105,22 +105,17 @@ final class Terrain {
             }
         // (Little nature: no mountains, far fewer trees.)
         if (country && !c.cfg.littleNature()) mountains();
-        // ((10.60) The Mountain Valley: whole ranges either side of the valley floor, whatever the country.)
-        if (country && c.cfg.valley()) valleyWalls();
         // Shores slope down to the sea, the river or the lake; islands rise to hills in the middle.
         for (int i = 0; i < w * h; i++) {
             float dw = waterDist[i];
             e[i] *= smooth(dw / 9f);
             if (c.waterKind == CityConfig.W_ISLANDS) e[i] += 16 * smooth(dw / 45f);
             else if (c.waterKind == CityConfig.W_SEA || c.waterKind == CityConfig.W_HARBOUR || c.waterKind == CityConfig.W_BAY) e[i] += 10 * smooth(dw / 90f);
-            // ((11.0) The fjord's sides rise steeply from the water.)
-            else if (c.waterKind == CityConfig.W_FJORD) e[i] += 9 * smooth(dw / 40f);
         }
         if (country) {
             rocksAndPines();
-            if (c.cfg.valley()) reservoir();
             lakes();
-            if (!land.desert || land.lakes >= 0.3f) streams();
+            streams();
             park();
             campsites();
             if (c.cfg.wilds()) {
@@ -333,83 +328,6 @@ final class Terrain {
         if (lively) loneHills();
     }
 
-    /**
-     * (10.60) The Mountain Valley's two ranges: the land climbs steeply away from the valley floor to the north and
-     * the south, high and uneven along the top (crags on the crests, pine woods on the slopes), lower where a lane
-     * or a farm winds up into it, so the roads find their way through the passes.
-     */
-    private void valleyWalls() {
-        int vy0 = c.townY0 - 22, vy1 = c.townY1 + 26;
-        float top = 150 * Math.max(0.8f, Math.min(1.3f, land.mountains));
-        int[] best = {-1, -1};
-        float[] bestE = {0, 0};
-        for (int y = 0; y < h; y++)
-            for (int x = 0; x < w; x++) {
-                int dv = Math.max(vy0 - y, y - vy1);
-                if (dv <= 0) continue;
-                int i = y * w + x;
-                float f = smooth(Math.min(1, dv / 40f));
-                float ridge = 1 - Math.abs(2 * noise(x / 11f, y / 11f, 40) - 1);
-                float crest = 0.6f + 0.6f * fbm(x / 40f + 500, y / 40f + 500, 50);
-                float add = top * f * crest * (0.75f + 0.35f * ridge) * (0.35f + 0.65f * smooth(wild[i] / 6f));
-                e[i] += add;
-                mount[i] = Math.max(mount[i], Math.min(1, f * crest * (0.45f + 0.5f * ridge)));
-                int side = y < vy0 ? 0 : 1;
-                if (wild[i] >= 6 && e[i] > bestE[side]) {
-                    bestE[side] = e[i];
-                    best[side] = i;
-                }
-            }
-        for (int side = 0; side < 2; side++)
-            if (best[side] >= 0) {
-                int i = best[side];
-                peaks.add(new float[]{i % w, i / w, 30, bestE[side]});
-            }
-    }
-
-    /**
-     * (10.60) The reservoir at the west end of the Mountain Valley: a long lake on the valley floor past the edge of
-     * town, held back by a concrete dam across its town end, with a walkway along the top.
-     */
-    private void reservoir() {
-        int best = -1, bw = 0;
-        for (int y = c.townY0; y < c.townY1; y++)
-            for (int x = 6; x < c.townX0 - 10; x++) {
-                int i = y * w + x;
-                if (wild[i] > bw && mount[i] < 0.2f) {
-                    bw = wild[i];
-                    best = i;
-                }
-            }
-        if (best < 0) return;
-        float r = Math.min(16, bw - 2);
-        if (r < 5) return;
-        float cx = best % w, cy = best / w;
-        if (blob(cx, cy, r, 2) <= 12) return;
-        lakes.add(new float[]{cx, cy, r});
-        c.natureLabel(word() + " Reservoir", (cx + 0.5f) * City.T, (cy + 0.5f) * City.T, City.NL_LAKE);
-        // The dam: along the lake's eastern shore, from one end of it to the other.
-        int east = -1, y0 = h, y1 = -1;
-        for (int y = Math.max(0, (int) (cy - r * 1.5f)); y < Math.min(h, (int) (cy + r * 1.5f)); y++)
-            for (int x = Math.max(0, (int) (cx - r * 1.5f)); x < Math.min(w, (int) (cx + r * 1.5f)); x++)
-                if (t[y * w + x] == City.WATER) {
-                    east = Math.max(east, x);
-                    y0 = Math.min(y0, y);
-                    y1 = Math.max(y1, y);
-                }
-        if (east < 0) return;
-        for (int y = y0 - 2; y <= y1 + 2; y++)
-            for (int x = east + 1; x <= east + 2; x++) {
-                if (x < 0 || y < 0 || x >= w || y >= h) continue;
-                int i = y * w + x;
-                if (t[i] == City.GRASS || t[i] == City.TREE || t[i] == City.ROCK) {
-                    t[i] = City.PLAZA;
-                    c.unpine(i);
-                }
-            }
-        c.natureLabel(word() + " Dam", (east + 1.5f) * City.T, (y0 - 3) * City.T, City.NL_LANDMARK);
-    }
-
     /** (10.34) Lone hills dotted about the country: rounded, grassy, some big and some hardly there. */
     private void loneHills() {
         int want = (size() >= CityConfig.HUGE ? 6 : size() >= CityConfig.LARGE ? 4 : 2) + rnd.nextInt(3);
@@ -445,45 +363,18 @@ final class Terrain {
                 t[i] = City.ROCK;
                 continue;
             }
-            // (Desert mountains are bare; elsewhere woods climb the slopes, mostly pines where the country has them.)
-            if (!land.desert && m > 0.1f && m < 0.6f && wild[i] >= 2
+            // (Woods climb the slopes, mostly pines.)
+            if (m > 0.1f && m < 0.6f && wild[i] >= 2
                     && rnd.nextFloat() < 0.5f * Math.min(1.3f, land.forest) * smooth((0.62f - m) / 0.2f) * nature) t[i] = City.TREE;
             if (t[i] == City.TREE) c.setTreeKind(i, rnd.nextFloat() < Math.max(land.pineShare, 0.2f) + m ? Country.TK_PINE : land.lowTree);
         }
     }
 
-    /**
-     * Every tree gets its country's kind: palms, gums, birches, acacias or broadleaves in the lowlands, pines
-     * in the woods where the country has them. In a desert the open country is sand: the trees go, apart from
-     * the palms round the water.
-     */
+    /** Every tree gets its kind: broadleaves in the lowlands, pines in the woods. */
     private void countryTrees() {
-        int[] wet = null;
-        if (land.desert) {
-            wet = new int[w * h];
-            int[] q = new int[w * h];
-            int tail = 0;
-            Arrays.fill(wet, 9);
-            for (int i = 0; i < w * h; i++)
-                if (t[i] == City.WATER) {
-                    wet[i] = 0;
-                    q[tail++] = i;
-                }
-            spread(wet, q, tail, 9);
-        }
         for (int i = 0; i < w * h; i++) {
             int x = i % w, y = i / w;
             boolean inTown = x >= c.townX0 && x < c.townX1 && y >= c.townY0 && y < c.townY1;
-            if (land.desert && !inTown && c.townX0 > 0) {
-                if (t[i] == City.GRASS && wet[i] > 3) t[i] = City.SAND;
-                // Palms round the oasis.
-                else if (t[i] == City.GRASS && wet[i] >= 1 && wild[i] >= 2 && rnd.nextFloat() < 0.35f * nature) t[i] = City.TREE;
-                else if (t[i] == City.TREE && wet[i] > 4 && rnd.nextFloat() < 0.85f) {
-                    t[i] = City.SAND;
-                    c.setTreeKind(i, Country.TK_BROAD);
-                    continue;
-                }
-            }
             if (t[i] != City.TREE || c.treeKindAt(i) == Country.TK_PINE) continue;
             c.setTreeKind(i, !inTown && rnd.nextFloat() < land.pineShare * 0.6f ? Country.TK_PINE : land.lowTree);
         }
@@ -520,8 +411,6 @@ final class Terrain {
 
     private void lakes() {
         int want = Math.round((size() >= CityConfig.HUGE ? 3 : size() >= CityConfig.LARGE ? 2 : 1) * land.lakes);
-        // (A desert has its oasis.)
-        if (land.desert) want = 1;
         for (int k = 0; k < want; k++) {
             int best = -1;
             float low = Float.MAX_VALUE;
@@ -1158,7 +1047,6 @@ final class Terrain {
     /** Fire lookout towers up on the wooded high ground, each with a path out to it. */
     private void fireTowers() {
         int want = size() >= CityConfig.HUGE ? 3 : size() >= CityConfig.LARGE ? 2 : size() >= CityConfig.MEDIUM ? 1 : 0;
-        if (land.desert && land.forest < 0.3f) want = Math.min(want, 1);
         for (int k = 0; k < want; k++) {
             int best = -1;
             float bs = 0;

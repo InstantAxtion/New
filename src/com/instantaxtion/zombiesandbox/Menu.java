@@ -1086,7 +1086,7 @@ final class Menu {
             plain.setTextAlign(Paint.Align.LEFT);
             plain.setTextSize(13 * dp);
             plain.setColor(0xFFB8BDC4);
-            String note = real ? "Map size: Massive, and always the same city, in " + Country.NAMES[config.v[CityConfig.OPT_COUNTRY]] + "."
+            String note = real ? "Map size: Massive, and always the same city."
                     : preset == CityConfig.ARCHIPELAGO ? "Map size: Archipelago is always one size, " + CityConfig.ARCHIPELAGO_TILES + " tiles across (just over Massive)."
                     : "Map size: Islands is always one size, " + CityConfig.ISLANDS_TILES + " tiles across (between Large and Massive).";
             for (String line : wrap(note, lw - 4 * dp, plain)) {
@@ -1115,17 +1115,6 @@ final class Menu {
                 }
                 y += 12 * dp;
             }
-        }
-        if (!real) {
-        y = segRow(c, CityConfig.OPT_COUNTRY, "Country: how the city looks and what it's called", lx, y, lw);
-        plain.setTextSize(12.5f * dp);
-        plain.setColor(0xFF9AA0A8);
-        y -= 6 * dp;
-        for (String line : wrap(Country.INFO[config.v[CityConfig.OPT_COUNTRY]], lw - 4 * dp, plain)) {
-            c.drawText(line, lx + 2 * dp, y + 10 * dp, plain);
-            y += 16 * dp;
-        }
-        y += 12 * dp;
         }
         int[] fc = previewForce;
         boolean known = fc != null && previewResidents > 0 && config.code().equals(previewKey);

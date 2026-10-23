@@ -167,25 +167,21 @@ public final class GameTests {
                 f.delete();
             }
         });
-        test("every country: its own names, look and side of the road, kept in the city code", new Check() {
+        test("11.3: only the USA, and the deleted maps are gone for good", new Check() {
             public void run() {
-                java.util.HashSet<String> streets = new java.util.HashSet<String>();
-                for (int k = 0; k < Country.NAMES.length; k++) {
-                    CityConfig c = new CityConfig();
-                    c.v[CityConfig.OPT_SIZE] = CityConfig.SMALL;
-                    c.v[CityConfig.OPT_COUNTRY] = k;
-                    c.seed = 9;
-                    City city = new City(c);
-                    check(city.country.id == k, "the city is in its country");
-                    streets.add(city.streets.get(city.streets.size() / 2).name);
-                    CityConfig d = new CityConfig();
-                    check(d.applyCode(c.code()) && d.country() == k && d.seed == 9, "the country is in the city code");
-                }
-                check(streets.size() >= 9, "street names differ by country (" + streets.size() + ")");
-                check(Country.get(Country.AUSTRALIA).leftHand && Country.get(Country.JAPAN).leftHand && Country.get(Country.MALAYSIA).leftHand
-                        && !Country.get(Country.USA).leftHand && !Country.get(Country.RUSSIA).leftHand, "Australia, Japan and Malaysia drive on the left");
+                check(Country.NAMES.length == 1 && Country.get(5) == Country.get(Country.USA), "the USA is the only country");
                 CityConfig old = new CityConfig();
-                check(old.applyCode("12-44") && old.country() == Country.USA, "old codes are American cities");
+                check(old.applyCode("12-44") && old.country() == Country.USA, "codes build American cities");
+                check(!new CityConfig().applyCode("22-77@16"), "a code for another country doesn't load");
+                for (int p : new int[]{19, 20, 21, 24, 26, 27}) {
+                    check(CityConfig.removed(p) && CityConfig.retired(CityConfig.OPT_PRESET, p), CityConfig.PRESETS[p] + " is gone");
+                    check(!new CityConfig().applyCode(String.valueOf("123456789ABCDEFGHIJKLMNOPQRST".charAt(p)) + "3-5"), "and its city code doesn't load");
+                    CityConfig c = new CityConfig();
+                    c.v[CityConfig.OPT_PRESET] = p;
+                    c.normalize();
+                    check(c.preset() == CityConfig.METROPOLIS, "nor does it build");
+                }
+                check(!CityConfig.removed(CityConfig.BAY) && !CityConfig.removed(CityConfig.CANAL), "Bay City and Canal City stay");
             }
         });
         test("cars never go round in circles (round a median, a roundabout or a highway gap)", new Check() {
@@ -228,22 +224,18 @@ public final class GameTests {
                 check(circling == 0, circling + " vehicles went round in circles");
             }
         });
-        test("new kinds of building for every country, and saved cities still rebuild the same", new Check() {
+        test("new kinds of building, and saved cities still rebuild the same", new Check() {
             public void run() {
-                String[][] own = {{"Barber shop", "Brownstone", "Trailer home", "BBQ smokehouse"}, {"Pie shop", "Chemist", "Fibro shack", "Terrace house"},
-                        {"Okonomiyaki shop", "Cram school", "Gasshō farmhouse", "Yakitori stand"}, {"Pharmacie", "Bistrot", "Maison bourgeoise", "Longère"},
-                        {"Farmacia", "Birriería", "Casa de adobe", "Carnicería"}};
-                for (int country = 0; country < 5; country++) {
+                {
                     CityConfig c = new CityConfig();
-                    c.seed = 42 + country;
+                    c.seed = 42;
                     c.v[CityConfig.OPT_SIZE] = CityConfig.MASSIVE;
-                    c.v[CityConfig.OPT_COUNTRY] = country;
                     City city = new City(c);
                     java.util.HashSet<String> names = new java.util.HashSet<String>();
                     for (City.Building b : city.buildings) if (b.typeName() != null) names.add(b.typeName());
                     int found = 0;
-                    for (String n : own[country]) if (names.contains(n)) found++;
-                    check(found >= 2, "country " + country + ": " + found + " of its new kinds of building");
+                    for (String n : new String[]{"Barber shop", "Brownstone", "Trailer home", "BBQ smokehouse"}) if (names.contains(n)) found++;
+                    check(found >= 2, found + " of the newer kinds of building");
                 }
                 // (The same city as version 10.0 built from this seed, building for building, for games saved
                 // before the government quarter.)
@@ -644,50 +636,15 @@ public final class GameTests {
                 boolean camp = false;
                 for (City.Building b : city.buildings) if (b.name != null && b.name.startsWith("Camp Store")) camp = b.residents > 0;
                 check(camp, "a campsite with campers");
-                // Denmark is flat; Egypt is desert; Canada is wooded with birches and pines.
-                CityConfig dk = new CityConfig();
-                dk.seed = 7;
-                dk.v[CityConfig.OPT_SIZE] = CityConfig.LARGE;
-                dk.v[CityConfig.OPT_COUNTRY] = Country.DENMARK;
-                int rock = 0;
-                for (byte b : new City(dk, 0.1f).tiles) if (b == City.ROCK) rock++;
-                check(rock == 0, "no mountains in Denmark");
-                CityConfig eg = new CityConfig();
-                eg.seed = 7;
-                eg.v[CityConfig.OPT_SIZE] = CityConfig.LARGE;
-                eg.v[CityConfig.OPT_COUNTRY] = Country.EGYPT;
-                City egypt = new City(eg, 0.1f);
-                int sand = 0, grass = 0;
-                for (int t = 0; t < egypt.w * egypt.h; t++) {
-                    float x = (t % egypt.w + 0.5f) * City.T, y = (t / egypt.w + 0.5f) * City.T;
-                    if (egypt.inTown(x, y)) continue;
-                    if (egypt.tiles[t] == City.SAND) sand++;
-                    if (egypt.tiles[t] == City.GRASS) grass++;
-                }
-                check(sand > grass * 4, "Egypt's countryside is desert (" + sand + " sand, " + grass + " grass)");
-                CityConfig ca = new CityConfig();
-                ca.seed = 7;
-                ca.v[CityConfig.OPT_SIZE] = CityConfig.LARGE;
-                ca.v[CityConfig.OPT_COUNTRY] = Country.CANADA;
-                City canada = new City(ca, 0.1f);
-                int birch = 0, pine = 0;
-                for (float[] t : canada.trees) {
-                    if (t.length < 4) continue;
-                    if (t[3] == Country.TK_BIRCH) birch++;
-                    if (t[3] == Country.TK_PINE) pine++;
-                }
-                check(birch > 100 && pine > 100, "Canada's woods are birch and pine (" + birch + ", " + pine + ")");
                 // Gun stores only where people can buy guns.
-                for (int k : new int[]{Country.USA, Country.JAPAN, Country.CANADA, Country.CHINA}) {
+                {
                     CityConfig g = new CityConfig();
                     g.seed = 3;
                     g.v[CityConfig.OPT_SIZE] = CityConfig.LARGE;
-                    g.v[CityConfig.OPT_COUNTRY] = k;
                     int guns = 0;
                     for (City.Building b : new City(g, 0.1f).buildings) if (b.kind == City.SHOP && b.shopType == 1) guns++;
-                    check(Country.get(k).gunShops() ? guns > 0 : guns == 0, Country.NAMES[k] + ": " + guns + " gun stores");
+                    check(guns > 0, guns + " gun stores");
                 }
-                check(Country.NAMES.length == 18 && Country.NAMES[Country.CANADA].equals("Canada"), "Canada, China, Egypt, Saudi Arabia and the Nordics");
             }
         });
         test("10.10: new soldiers, police, vehicles; the Guard; buses; the homeless", new Check() {
@@ -786,7 +743,6 @@ public final class GameTests {
             public void run() {
                 CityConfig c = new CityConfig();
                 c.seed = 9;
-                c.v[CityConfig.OPT_COUNTRY] = Country.SWEDEN;
                 c.v[CityConfig.OPT_PRESET] = 6;
                 c.v[CityConfig.OPT_SIZE] = CityConfig.LARGE;
                 c.v[CityConfig.OPT_ZOMBIES] = 0;
@@ -845,7 +801,6 @@ public final class GameTests {
                 // One of the dead out in the woods with nobody to see it: no news, no alert.
                 CityConfig q = new CityConfig();
                 q.seed = 9;
-                q.v[CityConfig.OPT_COUNTRY] = Country.SWEDEN;
                 q.v[CityConfig.OPT_PRESET] = 6;
                 q.v[CityConfig.OPT_SIZE] = CityConfig.LARGE;
                 q.v[CityConfig.OPT_ZOMBIES] = 0;
@@ -973,7 +928,6 @@ public final class GameTests {
                 CityConfig t = new CityConfig();
                 t.civic = 25; // ((11.0) Map version 25: the country round the town as it was before the thin band.)
                 t.seed = 9;
-                t.v[CityConfig.OPT_COUNTRY] = Country.SWEDEN;
                 t.v[CityConfig.OPT_PRESET] = 6;
                 t.v[CityConfig.OPT_SIZE] = CityConfig.LARGE;
                 t.v[CityConfig.OPT_ZOMBIES] = 0;
@@ -1014,7 +968,6 @@ public final class GameTests {
             public void run() throws Exception {
                 CityConfig c = new CityConfig();
                 c.seed = 4;
-                c.v[CityConfig.OPT_COUNTRY] = Country.SWEDEN;
                 c.v[CityConfig.OPT_SIZE] = CityConfig.LARGE;
                 c.v[CityConfig.OPT_ZOMBIES] = 0;
                 World w = new World(c);
@@ -1083,7 +1036,6 @@ public final class GameTests {
                 CityConfig t = new CityConfig();
                 t.civic = 25; // ((11.0) Map version 25: the country round the town as it was before the thin band.)
                 t.seed = 9;
-                t.v[CityConfig.OPT_COUNTRY] = Country.SWEDEN;
                 t.v[CityConfig.OPT_PRESET] = 6;
                 t.v[CityConfig.OPT_SIZE] = CityConfig.LARGE;
                 t.v[CityConfig.OPT_ZOMBIES] = 0;
@@ -1120,12 +1072,11 @@ public final class GameTests {
                     for (int o = 0; o < 8; o++)
                         check(!CityConfig.retired(o, pick.v[o]), "a random city never uses a retired option (" + o + " = " + pick.v[o] + ")");
                 }
-                check(CityConfig.retired(CityConfig.OPT_PRESET, 13) && CityConfig.retired(CityConfig.OPT_COUNTRY, Country.KOREA)
-                        && !CityConfig.retired(CityConfig.OPT_COUNTRY, Country.USA), "Harbour and South Korea are gone, the USA isn't");
-                // Old city codes that use them still build.
+                check(CityConfig.retired(CityConfig.OPT_PRESET, 13) && CityConfig.retired(CityConfig.OPT_COUNTRY, 6)
+                        && !CityConfig.retired(CityConfig.OPT_COUNTRY, Country.USA), "Harbour and the other countries are gone, the USA isn't");
+                // Old city codes on a retired map still build.
                 CityConfig old = new CityConfig();
-                check(old.applyCode("22-77@" + Country.DENMARK) && old.country() == Country.DENMARK && old.size() == CityConfig.MEDIUM,
-                        "an old Medium city in Denmark still loads from its code");
+                check(old.applyCode("22-77") && old.size() == CityConfig.MEDIUM, "an old Medium city still loads from its code");
                 // Reinforcements drive in from the edge of the map, and are tracked on it.
                 CityConfig c = new CityConfig();
                 c.seed = 5;
@@ -1206,7 +1157,6 @@ public final class GameTests {
                 CityConfig c = new CityConfig();
                 c.civic = 25; // ((11.0) Map version 25: the country round the town as it was before the thin band.)
                 c.seed = 9;
-                c.v[CityConfig.OPT_COUNTRY] = Country.SWEDEN;
                 c.v[CityConfig.OPT_PRESET] = 6;
                 World w = new World(c);
                 // (The same run every time: what happens next is chance, and a test shouldn't be.)
@@ -1266,7 +1216,7 @@ public final class GameTests {
                     rc.v[CityConfig.OPT_PRESET] = RealCities.FIRST + i;
                     rc.normalize();
                     RealCities.Spec spec = RealCities.get(RealCities.FIRST + i);
-                    check(rc.size() == CityConfig.HUGE && rc.country() == spec.country, spec.name + " is always Massive, in its country");
+                    check(rc.size() == CityConfig.HUGE && rc.country() == Country.USA, spec.name + " is always Massive");
                     CityConfig back = new CityConfig();
                     check(back.applyCode(rc.code()) && back.preset() == rc.preset() && back.seed == rc.seed, spec.name + ": its city code");
                     City city = new City(rc, 0.05f);
@@ -1306,7 +1256,6 @@ public final class GameTests {
             public void run() throws Exception {
                 CityConfig c = new CityConfig();
                 c.seed = 9;
-                c.v[CityConfig.OPT_COUNTRY] = Country.SWEDEN;
                 c.v[CityConfig.OPT_PRESET] = 6;
                 World w = new World(c);
                 w.populate(c);
@@ -3550,9 +3499,9 @@ public final class GameTests {
                 check(onFoot == 0, "nobody walks out with only buses and trains chosen (" + onFoot + ")");
             }
         });
-        test("11.0: the four water maps (water out to the sea, bridges, Marines by boat), a thin band of country, the new units", new Check() {
+        test("11.0: the water maps (water out to the sea, bridges, Marines by boat), a thin band of country, the new units", new Check() {
             public void run() throws Exception {
-                for (int p : new int[]{CityConfig.BAY, CityConfig.DELTA, CityConfig.FJORD, CityConfig.CANAL}) {
+                for (int p : new int[]{CityConfig.BAY, CityConfig.CANAL}) {
                     CityConfig c = new CityConfig();
                     c.v[CityConfig.OPT_PRESET] = p;
                     c.v[CityConfig.OPT_SIZE] = CityConfig.LARGE;

@@ -616,7 +616,7 @@ final class City {
             }
             else if (k == MALL) b.name = name + " Mall";
             else if (k == ARMORY) {
-                b.name = Country.guard(country.id)[0];
+                b.name = Country.guard()[0];
                 armory = b;
             }
             else if (k >= CITY_HALL) {
@@ -647,9 +647,7 @@ final class City {
             } else if (k == SHOP) {
                 // Some shops are gun stores or diners (and the rest are whatever kind of shop they are).
                 int roll = nr.nextInt(12);
-                // (Only where people can buy guns: not in Japan, Korea, China, Mexico and the like.)
-                boolean guns = !cfg.nature() || country.gunShops();
-                b.shopType = roll == 0 && guns ? 1 : roll < 3 && b.variant < 0 ? 2 : 0;
+                b.shopType = roll == 0 ? 1 : roll < 3 && b.variant < 0 ? 2 : 0;
                 if (b.shopType == 1) {
                     b.variant = -1;
                     // (It looks like a gun store, not whatever kind of shop the lot was going to be.)
@@ -2422,19 +2420,6 @@ final class City {
                 shiftY = (by0 + by1) / 2 - h / 2;
             }
         }
-        if (cfg.valley() && m > 0) {
-            // ((10.60) The Mountain Valley: the town strung out along the valley floor from west to east, the
-            // mountains rising either side of it (see Terrain), and the far north kept wild.)
-            int half = Math.round(h * 0.17f);
-            // (Room at the west end for the reservoir.)
-            bx0 = Math.round(w * 0.2f);
-            bx1 = w - Math.max(8, m / 2);
-            by0 = h / 2 - half;
-            by1 = h / 2 + half;
-            shiftX = 0;
-            shiftY = 0;
-            wildSide = 2;
-        }
         townX0 = bx0;
         townY0 = by0;
         townX1 = bx1;
@@ -2559,7 +2544,7 @@ final class City {
                 for (int a = 0; a < 5; a++) {
                     if (a == 2) continue;
                     int lx = st.vertical ? st.x0 + a : st.x0 + k, ly = st.vertical ? st.y0 + k : st.y0 + a;
-                    boolean firstSide = a < 2, neg = firstSide != country.leftHand;
+                    boolean firstSide = a < 2, neg = firstSide;
                     divided[ly * w + lx] = (byte) (st.vertical ? (neg ? 3 : 4) : (neg ? 2 : 1));
                 }
             }
@@ -4830,8 +4815,7 @@ final class City {
                     if ((i == ix || j == iy || i == ix + iw - 1 || j == iy + ih - 1) && (i + j) % 4 == 0
                             && (i < x - 1 || i > x + lw || j < y - 1 || j > y + lh)) tiles[j * w + i] = TREE;
         }
-        int kind = lm.style == RealCities.L_CATHEDRAL || lm.style == RealCities.L_TEMPLE || lm.style == RealCities.L_SHRINE
-                || lm.style == RealCities.L_WHITE_DOMES ? CHURCH : OFFICE;
+        int kind = lm.style == RealCities.L_CATHEDRAL ? CHURCH : OFFICE;
         int[] col = Roofs.landmarkColours(lm.style);
         fill(x, y, lw, lh, BUILDING);
         int[] l = {x, y, lw, lh, col[0], rnd.nextInt(100000), kind, Math.max(1, lm.floors), col[1], -1};
@@ -4869,8 +4853,7 @@ final class City {
             natureLabel(lm.name, (end + 10) * T, (ty - 2) * T, NL_LANDMARK);
             return;
         }
-        int foot = k == RealCities.ST_EIFFEL ? 4 : k == RealCities.ST_TOKYO_TOWER ? 3 : k == RealCities.ST_ARC ? 2
-                : k == RealCities.ST_LIBERTY ? 2 : k == RealCities.ST_HOLLYWOOD || k == RealCities.ST_SCREENS || k == RealCities.ST_FERRIS ? 0 : 1;
+        int foot = k == RealCities.ST_LIBERTY ? 2 : k == RealCities.ST_HOLLYWOOD || k == RealCities.ST_SCREENS || k == RealCities.ST_FERRIS ? 0 : 1;
         if (foot > 0) {
             // The plaza round it, and its footing (solid).
             for (int j = ty - foot - 2; j <= ty + foot + 1; j++)
@@ -4879,16 +4862,11 @@ final class City {
                     byte t = tiles[j * w + i];
                     if (t == WATER || t == BUILDING) continue;
                     boolean inner = Math.abs(i - tx) < foot && Math.abs(j - ty) < foot;
-                    boolean leg = k == RealCities.ST_EIFFEL || k == RealCities.ST_TOKYO_TOWER || k == RealCities.ST_ARC
-                            ? (i == tx - foot || i == tx + foot - 1) && (j == ty - foot || j == ty + foot - 1) : inner;
+                    boolean leg = inner;
                     if (t == ROAD && !leg) continue;
                     tiles[j * w + i] = leg ? STATUE : PLAZA;
                     roadDir[j * w + i] = 0;
                 }
-            if (k == RealCities.ST_ARC) {
-                // (The Arc stands in the middle of its roundabout.)
-                addDecor(D_ROUNDABOUT, (tx - foot - 2) * T, (ty - foot - 2) * T, (tx + foot + 2) * T, (ty + foot + 2) * T, 0);
-            }
         }
         structures.add(new float[]{k, wx, wy, lm.floors, 0, 0});
         maxHeight = Math.max(maxHeight, Math.min(lm.floors, 520));
@@ -5025,20 +5003,19 @@ final class City {
     private void channelTown(int bx0, int by0, int bx1, int by1, int in) {
         int tw = bx1 - bx0, th = by1 - by0;
         List<int[]> cells = new ArrayList<int[]>();
-        if (waterKind == CityConfig.W_BAY || waterKind == CityConfig.W_FJORD) {
-            // An inlet off the sea: a deep wide bay, or a long narrow fjord, with a street round its head.
-            boolean bay = waterKind == CityConfig.W_BAY;
-            int ww = bay ? Math.round(tw * (0.3f + rnd.nextFloat() * 0.06f)) : Math.max(20, Math.round(tw * 0.075f));
-            int cx = bx0 + tw / 2 + Math.round((rnd.nextFloat() - 0.5f) * tw * (bay ? 0.12f : 0.3f));
+        if (waterKind == CityConfig.W_BAY) {
+            // A deep wide bay off the sea, with a street round its head.
+            int ww = Math.round(tw * (0.3f + rnd.nextFloat() * 0.06f));
+            int cx = bx0 + tw / 2 + Math.round((rnd.nextFloat() - 0.5f) * tw * 0.12f);
             int x0 = cx - ww / 2, x1 = x0 + ww;
-            int y0 = by0 + Math.round(th * (bay ? 0.36f + rnd.nextFloat() * 0.08f : 0.14f + rnd.nextFloat() * 0.06f));
-            channel(x0, y0, x1, by1, true, bay ? GRASS : ROCK, bay ? 4 : 5);
+            int y0 = by0 + Math.round(th * (0.36f + rnd.nextFloat() * 0.08f));
+            channel(x0, y0, x1, by1, true, GRASS, 4);
             carve(new Street(x0 - 3, y0 - 3, x1 + 3, y0, false, true));
-            channels.get(0)[7] = bay ? 1000 : Math.max(40, (by1 - y0) / 2);
+            channels.get(0)[7] = 1000;
             cells.add(new int[]{bx0 + in, by0 + in, bx1 - in, y0 - 3});
             cells.add(new int[]{bx0 + in, y0 - 3, x0 - 3, by1 - in});
             cells.add(new int[]{x1 + 3, y0 - 3, bx1 - in, by1 - in});
-        } else if (waterKind == CityConfig.W_CANAL) {
+        } else {
             // Canals in a grid: two each way (three each way on the biggest maps), out to the harbour at the bottom.
             int n = w >= 600 ? 3 : 2, cw = w >= 400 ? 9 : 7;
             int[] xs = new int[n], ys = new int[n];
@@ -5062,35 +5039,10 @@ final class City {
             cy[n * 2 + 1] = by1 - in;
             for (int i = 0; i <= n; i++)
                 for (int j = 0; j <= n; j++) cells.add(new int[]{cx[i * 2], cy[j * 2], cx[i * 2 + 1], cy[j * 2 + 1]});
-        } else {
-            // The delta: the river comes down from the north, and splits in three on its way to the sea, with
-            // salt marsh along the shore between the channels.
-            int mw = Math.max(16, Math.round(tw * 0.045f)), dw = Math.max(10, Math.round(tw * 0.03f));
-            int mc = bx0 + tw / 2 + rnd.nextInt(11) - 5, mx0 = mc - mw / 2, mx1 = mx0 + mw;
-            int hy0 = by0 + Math.round(th * (0.36f + rnd.nextFloat() * 0.08f)), hy1 = hy0 + dw;
-            int[] vc = {bx0 + Math.round(tw * 0.2f), mc, bx0 + Math.round(tw * 0.8f)};
-            channel(mx0, 0, mx1, hy0, true, GRASS, 2);
-            channel(vc[0] - dw / 2, hy0, vc[2] - dw / 2 + dw, hy1, false, GRASS, 1);
-            for (int k = 0; k < 3; k++) channel(vc[k] - dw / 2, hy1 + 3, vc[k] - dw / 2 + dw, by1, true, GRASS, 2);
-            for (int[] c : channels) c[7] = 46;
-            int l0 = vc[0] - dw / 2, l1 = l0 + dw, c0 = vc[1] - dw / 2, c1 = c0 + dw, r0 = vc[2] - dw / 2, r1 = r0 + dw;
-            cells.add(new int[]{bx0 + in, by0 + in, mx0 - 3, hy0 - 3});
-            cells.add(new int[]{mx1 + 3, by0 + in, bx1 - in, hy0 - 3});
-            cells.add(new int[]{bx0 + in, hy0 - 3, l0 - 3, by1 - in});
-            cells.add(new int[]{l1 + 3, hy1 + 3, c0 - 3, by1 - in});
-            cells.add(new int[]{c1 + 3, hy1 + 3, r0 - 3, by1 - in});
-            cells.add(new int[]{r1 + 3, hy0 - 3, bx1 - in, by1 - in});
-            // The marsh: the last stretch above the shore in each piece of land below the split.
-            marshY = by1 - in - Math.max(14, Math.round(th * 0.16f));
         }
         for (int[] c : cells) {
             if (c[2] - c[0] < 6 || c[3] - c[1] < 6) continue;
-            int y1 = c[3];
-            if (marshY > 0 && c[1] < marshY && y1 > marshY) {
-                y1 = marshY;
-                marsh(c[0], marshY, c[2], c[3]);
-            }
-            if (y1 - c[1] >= 6) split(c[0], c[1], c[2], y1, 0, -1, -1);
+            split(c[0], c[1], c[2], c[3], 0, -1, -1);
         }
         // ((11.1) The bridges once the streets are laid: each where a street comes down to the water on one bank,
         // in line with one on the other where there is, so the street carries on across.)
@@ -5109,9 +5061,9 @@ final class City {
                     float wob = (float) (Math.sin(along * 0.07 + ph + c[0] * 0.01) * 0.6 + Math.sin(along * 0.023 + ph * 2) * 0.4);
                     int sl = c[6] == 0 ? 0 : Math.max(0, Math.round(c[6] * (0.5f + 0.5f * wob))), sr = c[6] == 0 ? 0 : Math.max(0, c[6] - sl + (c[6] > 2 ? 1 : 0));
                     // (Round the head of an inlet too.)
-                    int dt = waterKind == CityConfig.W_BAY || waterKind == CityConfig.W_FJORD ? y - c[1] : 99;
+                    int dt = waterKind == CityConfig.W_BAY ? y - c[1] : 99;
                     // (An inlet's head is rounded, not square.)
-                    int rr = waterKind == CityConfig.W_BAY ? (c[2] - c[0]) / 3 : waterKind == CityConfig.W_FJORD ? (c[2] - c[0]) / 2 : 0;
+                    int rr = waterKind == CityConfig.W_BAY ? (c[2] - c[0]) / 3 : 0;
                     if (dt < rr && Math.min(dl, dr) < rr) {
                         int inr = rr - (int) Math.round(Math.hypot(rr - dt, rr - Math.min(dl, dr)));
                         dt = inr < 1 ? 1 : Math.min(dt, inr);
@@ -5145,24 +5097,6 @@ final class City {
                 if (water && !solid[y * w + x]) beachSpots.add(new float[]{(x + 0.5f) * T, (y + 0.5f) * T});
             }
         return beachSpots;
-    }
-
-    /** Where the Delta Marsh's marsh begins (rows below it, above the shore, are marsh), or -1. */
-    private int marshY = -1;
-
-    /** (11.0) Salt marsh: rough grass and reed beds, pools of open water, the odd stunted tree. */
-    private void marsh(int x0, int y0, int x1, int y1) {
-        double ph = rnd.nextDouble() * 10;
-        for (int y = y0; y < y1; y++)
-            for (int x = x0; x < x1; x++) {
-                int i = y * w + x;
-                if (tiles[i] == ROAD) continue;
-                double n = Math.sin(x * 0.31 + ph) * Math.sin(y * 0.27 + ph * 1.7) + Math.sin(x * 0.11 - y * 0.13 + ph * 0.5) * 0.6;
-                boolean edge = x == x0 || x == x1 - 1 || y == y0;
-                tiles[i] = edge ? SIDEWALK : n > 0.75 ? WATER : rnd.nextFloat() < 0.05f ? TREE : GRASS;
-                roadDir[i] = 0;
-            }
-        openAreas.add(new float[]{(x0 + x1) / 2f * T, (y0 + y1) / 2f * T, 0});
     }
 
     /**
@@ -5220,7 +5154,7 @@ final class City {
      * lifeguards (Seaside), or a concrete quay with docks, cranes, containers and ships (Harbour).
      */
     private void coast() {
-        boolean port = waterKind == CityConfig.W_HARBOUR || waterKind == CityConfig.W_FJORD || waterKind == CityConfig.W_CANAL;
+        boolean port = waterKind == CityConfig.W_HARBOUR || waterKind == CityConfig.W_CANAL;
         bridge = new boolean[w * h];
         fill(0, seaY, w, 2, SIDEWALK);
         int shore = seaY + 2;
@@ -5574,7 +5508,7 @@ final class City {
     /** A government building of the country's own look. */
     private void govLot(int x, int y, int lw, int lh, int kind) {
         fill(x, y, lw, lh, BUILDING);
-        int var = Variants.gov(kind, country.id);
+        int var = Variants.gov(kind);
         Variants.V v = Variants.get(var);
         int floors = v == null ? 2 : v.floorsMin + rnd.nextInt(v.floorsMax - v.floorsMin + 1);
         int roof = v != null ? v.roofCol : 0xFF6A6E74;
@@ -6267,12 +6201,12 @@ final class City {
      */
     private void addVariantLot(int x, int y, int lw, int lh, int roof, int kind, int floors, int wall) {
         int dist = districtType(x + lw / 2, y + lh / 2);
-        int var = Variants.pick(kind, country.id, dist, lw, lh, rnd);
+        int var = Variants.pick(kind, dist, lw, lh, rnd);
         Variants.V v = Variants.get(var);
         if (v != null && v.floorsMin > 0) floors = v.floorsMin + rnd.nextInt(Math.max(1, v.floorsMax - v.floorsMin + 1));
         // (One of the newer kinds instead, now and then: chosen with numbers of its own, so the rest of the
         // city is laid out exactly as before.)
-        int swapped = Variants.swap(var, kind, country.id, dist, lw, lh);
+        int swapped = Variants.swap(var, kind, dist, lw, lh);
         if (swapped != var) {
             var = swapped;
             v = Variants.get(var);
@@ -6641,7 +6575,7 @@ final class City {
                 mainRoad[i] = true;
                 if (a == 3) continue;
                 // Keeping right, the first carriageway (north, or west) carries traffic west (or south).
-                boolean firstSide = a < 3, neg = firstSide != country.leftHand;
+                boolean firstSide = a < 3, neg = firstSide;
                 oneWay[i] = (byte) (ew ? (neg ? 2 : 1) : (neg ? 3 : 4));
             }
         // At each end, a way across the barrier (where it leaves the map), so nobody is stuck going one way.
@@ -9508,9 +9442,7 @@ final class City {
                     }
                     float r = 7.5f + prnd.nextFloat() * 2f;
                     byte kind = treeKindAt(y * w + x);
-                    if (kind == Country.TK_PINE || kind == Country.TK_BIRCH) r *= 0.82f;
-                    else if (kind == Country.TK_PALM) r *= 0.9f;
-                    else if (kind == Country.TK_ACACIA) r *= 1.1f;
+                    if (kind == Country.TK_PINE) r *= 0.82f;
                     p.setColor(0x50000000);
                     c.drawCircle(cx + TREE_HEIGHT * 0.28f, cy + TREE_HEIGHT * 0.38f, r, p);
                     p.setColor(0xFF4A3524);
@@ -9564,10 +9496,6 @@ final class City {
         int dark, light;
         switch (kind) {
             case Country.TK_PINE: dark = 0xFF1C3E26; light = 0xFF2C5C36; break;
-            case Country.TK_PALM: dark = 0xFF3E7A32; light = 0xFF4E8E3A; break;
-            case Country.TK_BIRCH: dark = 0xFF4E7E34; light = 0xFF94BA5A; break;
-            case Country.TK_GUM: dark = 0xFF566E58; light = 0xFF8AA286; break;
-            case Country.TK_ACACIA: dark = 0xFF5E6E2E; light = 0xFF7A8A3E; break;
             default: dark = 0xFF2C5A22; light = 0xFF3B742D; break;
         }
         p.setColor(dark);
@@ -11114,9 +11042,9 @@ final class City {
         return 0;
     }
 
-    /** Sand: a beach's, or (since 10.10) the desert's, a warmer gold. */
+    /** Sand: a beach's. */
     int sandColor() {
-        return country.desert && cfg.nature() ? 0xFFD6B57E : 0xFFDCCB9E;
+        return 0xFFDCCB9E;
     }
 
     private boolean wet(int x, int y) {
@@ -11446,7 +11374,7 @@ final class City {
      * turning off. The arrows are painted on whichever side of the road the country drives on.
      */
     private void turnLanes(Canvas c, Paint p, Street st, int n) {
-        float drive = country.leftHand ? -1 : 1;
+        float drive = 1;
         float mid = st.vertical ? st.x0 + st.width / 2f : st.y0 + st.width / 2f;
         p.setColor(0xE0ECECEC);
         p.setStrokeWidth(1.4f);
@@ -11482,11 +11410,11 @@ final class City {
     }
 
     /**
-     * Where each street meets a junction: a stop line across the lanes coming in, with STOP (ALTO in Mexico)
+     * Where each street meets a junction: a stop line across the lanes coming in, with STOP
      * painted before stop junctions and a dashed give-way line at roundabouts.
      */
     private void stopLines(Canvas c, Paint p, Street st, int n) {
-        float drive = country.leftHand ? -1 : 1;
+        float drive = 1;
         for (int k = 1; k < n - 1; k++) {
             int cx = st.vertical ? st.x0 + st.width / 2 : st.x0 + k, cy = st.vertical ? st.y0 + k : st.y0 + st.width / 2;
             if (!paved(cx, cy) || junctionAt(cx, cy) || crosswalk(cx, cy)) continue;
@@ -11513,7 +11441,7 @@ final class City {
                 p.setStrokeWidth(1.8f);
                 c.drawLine(sx + ox * 0.8f, sy + oy * 0.8f, sx + ox * (mid - 1), sy + oy * (mid - 1), p);
                 if (type == J_STOP && st.width == 3) {
-                    String word = country.id == Country.MEXICO ? "ALTO" : country.id == Country.RUSSIA ? "СТОП" : "STOP";
+                    String word = "STOP";
                     float lx = sx + ox * mid * 0.5f - hx * 9, ly = sy + oy * mid * 0.5f - hy * 9;
                     c.save();
                     c.translate(lx, ly);
@@ -11582,8 +11510,8 @@ final class City {
                 else if (k % 2 == 0) hwyRect(c, p, k + 0.1f, k + 0.9f, 0.1f, 0.3f);
                 if (!slipHi) hwyRect(c, p, k, k + 1, 6.76f, 6.88f);
                 else if (k % 2 == 0) hwyRect(c, p, k + 0.1f, k + 0.9f, 6.7f, 6.9f);
-                // The inside edge: yellow next to the barrier in the Americas, white elsewhere.
-                p.setColor(country.id == Country.USA || country.id == Country.MEXICO || country.id == Country.KOREA ? 0xF0E8C440 : 0xF0ECECEC);
+                // The inside edge: yellow next to the barrier.
+                p.setColor(0xF0E8C440);
                 hwyRect(c, p, k, k + 1, 2.76f, 2.88f);
                 hwyRect(c, p, k, k + 1, 4.12f, 4.24f);
                 if (k % 3 == 0) {
@@ -11630,7 +11558,7 @@ final class City {
             p.setColor(0xF0F2F2F2);
             for (int car = 0; car < 2; car++) {
                 // Traffic on carriageway 0 comes from the high end (it heads to lower k); keeping left flips it.
-                boolean fromHigh = (car == 0) != country.leftHand;
+                boolean fromHigh = (car == 0);
                 if (hwyAxis == 1) fromHigh = !fromHigh;
                 float a0 = car == 0 ? 0.2f : 4.2f, a1 = car == 0 ? 2.8f : 6.8f;
                 float lineK = fromHigh ? jk1 + 0.15f : jk0 - 0.35f;
@@ -11890,7 +11818,6 @@ final class City {
         }
         if (own != null && own.landmark >= 0 && Roofs.drawLandmark(this, c, p, b, own)) return;
         if (b.length > 9 && b[9] >= 0 && Roofs.drawVariant(this, c, p, b, Variants.get(b[9]))) return;
-        if (Roofs.draw(this, c, p, b, bi >= 0 && bi < buildings.size() ? buildings.get(bi).name : null)) return;
         if (kind == HOUSE) {
             // Pitched roof: two slopes meeting at a ridge along the long side.
             p.setColor(darken(roof, 0.75f));
@@ -13155,10 +13082,10 @@ final class City {
             // (Across the highway, at the crossovers at the ends: straight over. And never more than a lane
             // and a bit off the tile, whatever tile it's on.)
             if ((hwyAxis == 0 ? dx : dy) == 0) return 0;
-            float off = (c - here) * side + T * 0.7f * (country.leftHand ? -1 : 1);
+            float off = (c - here) * side + T * 0.7f;
             return Math.max(-T * 1.3f, Math.min(T * 1.3f, off));
         }
-        if (junctionAt(tx, ty)) return 4.5f * (country.leftHand ? -1 : 1);
+        if (junctionAt(tx, ty)) return 4.5f;
         // (10.31) A one-way slip road: down the middle of it.
         if (slipWay != null && slipWay[ty * w + tx] > 0) return 0;
         int rx = -dy, ry = dx;
@@ -13182,9 +13109,9 @@ final class City {
         int per = half >= 3.4f ? 3 : half >= 2.4f ? 2 : 1;
         if (laneNo >= 0 && per > 1) {
             float lw = half / per;
-            return (centre + (Math.min(laneNo, per - 1) + 0.5f) * lw * (country.leftHand ? -1 : 1)) * T;
+            return (centre + (Math.min(laneNo, per - 1) + 0.5f) * lw) * T;
         }
-        float lane = half * 0.42f * (country.leftHand ? -1 : 1);
+        float lane = half * 0.42f;
         return (centre + lane) * T;
     }
 

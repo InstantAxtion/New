@@ -34,14 +34,12 @@ final class CityConfig implements OptionSet {
             "Homes and parks round a lake in the middle of town, with a jetty, rowing boats and an island.",
             "A working port: quays, docks, cranes, container stacks and ships, with warehouses along the water.",
             "Three island towns in the sea, joined by bridges, with a causeway to the mainland. Always one size: between Large and Massive.",
-            RealCities.INFO[0], RealCities.INFO[1], RealCities.INFO[2], RealCities.INFO[3], RealCities.INFO[4],
-            RealCities.INFO[5], RealCities.INFO[6],
+            RealCities.INFO[0], RealCities.INFO[1], RealCities.INFO[2], RealCities.INFO[3], "", "", "",
             "A militarized state: military police instead of the police, soldiers everywhere, huge army bases and walled compounds, checkpoints already on the main roads, and a prison on an island. Default size and up.",
             "One big island city in the middle of the sea, with two to five smaller island towns round it, every one lived in and joined to it by a bridge, and a causeway to the mainland. Always one size.",
-            "A town strung along a long valley floor between two mountain ranges: pine slopes and rocky peaks either side, lanes winding up into the passes, the highway down the valley, and a reservoir behind a dam at one end. Default size and up.",
+            "",
             "A city wrapped round a deep bay off the sea: avenues along both shores, parks at the water's edge, a long bridge across the bay and another over its mouth, and beaches either side.",
-            "A river splits into three channels on its way to the sea: the town on the islands between them, bridges everywhere, and salt marsh and pools along the shore.",
-            "A town either side of a long, narrow fjord cut deep inland from the sea: rocky cliffs down to the water, two bridges high over it, and the harbour quays at its mouth.",
+            "", "",
             "Canals in a grid right through the old town, quays along both banks, little bridges every few blocks, and the canals open out into the harbour.",
     };
 
@@ -186,11 +184,11 @@ final class CityConfig implements OptionSet {
         // (The real cities went in 10.28.)
         // (Downtown, Village and Lakeside went in 10.50.)
         if (option == OPT_PRESET) return value == 0 || value == 1 || value == 3 || value == 4 || value == 5 || value == 6 || value == 7
-                || value == 9 || value == 12 || value == 13 || RealCities.isReal(value);
+                || value == 9 || value == 12 || value == 13 || RealCities.isReal(value) || removed(value);
         // (The number of zombies at the start isn't a choice any more: the game starts quiet.)
         if (option == OPT_ZOMBIES) return value != 0;
         if (option == OPT_SIZE) return value < LARGE;
-        if (option == OPT_COUNTRY) return Country.retired(value);
+        if (option == OPT_COUNTRY) return value != Country.USA;
         if (option == OPT_RESERVES) return value == 1 || value == 2;
         return false;
     }
@@ -250,30 +248,36 @@ final class CityConfig implements OptionSet {
 
     /** Water on the map: none, the sea along one side (a beach or a port), a river, or a lake. */
     static final int W_NONE = 0, W_SEA = 1, W_RIVER = 2, W_LAKE = 3, W_HARBOUR = 4, W_ISLANDS = 5, W_REAL = 6;
-    /** (11.0) The four new water maps (each has the sea along the bottom as well). */
-    static final int W_BAY = 7, W_DELTA = 8, W_FJORD = 9, W_CANAL = 10;
-    static final int BAY = 25, DELTA = 26, FJORD = 27, CANAL = 28;
+    /** (11.0) The water maps still in the game (each has the sea along the bottom as well). */
+    static final int W_BAY = 7, W_CANAL = 10;
+    static final int BAY = 25, CANAL = 28;
     /** The Islands map, and its one size (tiles across: a bit bigger than Massive). */
     static final int ISLANDS = 14, ISLANDS_TILES = 640;
-    /** (10.60) The Archipelago (always one size, like Islands) and the Mountain Valley. */
-    static final int ARCHIPELAGO = 23, ARCHIPELAGO_TILES = 720, VALLEY = 24;
+    /** (10.60) The Archipelago (always one size, like Islands). */
+    static final int ARCHIPELAGO = 23, ARCHIPELAGO_TILES = 720;
+
+    /**
+     * (11.3) Maps taken out of the game altogether, code and all: Sydney, Tokyo and Paris (their countries are
+     * gone), the Mountain Valley, Delta Marsh and Fjord Town. Their numbers stay taken so the other maps keep
+     * theirs; saves and city codes on them no longer load.
+     */
+    static boolean removed(int preset) {
+        return preset == 19 || preset == 20 || preset == 21 || preset == 24 || preset == 26 || preset == 27;
+    }
 
     boolean archipelago() { return v[OPT_PRESET] == ARCHIPELAGO; }
-
-    boolean valley() { return v[OPT_PRESET] == VALLEY; }
 
     /** Islands only comes in one size: it counts as Massive for everything that depends on size. */
     void normalize() {
         if (v[OPT_PRESET] == ISLANDS || v[OPT_PRESET] == ARCHIPELAGO) v[OPT_SIZE] = MASSIVE;
-        // ((10.60) The valley needs room for its mountains: the Default size at the least.)
-        if (v[OPT_PRESET] == VALLEY && v[OPT_SIZE] < LARGE) v[OPT_SIZE] = LARGE;
+        if (removed(v[OPT_PRESET])) v[OPT_PRESET] = METROPOLIS;
+        v[OPT_COUNTRY] = Country.USA;
         // ((10.56) The Garrison State needs room for its bases: the Default size at the least.)
         if (v[OPT_PRESET] == GARRISON && v[OPT_SIZE] < LARGE) v[OPT_SIZE] = LARGE;
         // A real city is always the same city: the biggest size, in its own country.
         RealCities.Spec real = RealCities.get(v[OPT_PRESET]);
         if (real != null) {
             v[OPT_SIZE] = HUGE;
-            v[OPT_COUNTRY] = real.country;
             seed = real.seed;
             edits.clear();
         }
@@ -293,8 +297,6 @@ final class CityConfig implements OptionSet {
             case 13: return W_HARBOUR;
             case ISLANDS: case ARCHIPELAGO: return W_ISLANDS;
             case BAY: return W_BAY;
-            case DELTA: return W_DELTA;
-            case FJORD: return W_FJORD;
             case CANAL: return W_CANAL;
             default: return W_NONE;
         }
@@ -306,7 +308,7 @@ final class CityConfig implements OptionSet {
      */
     String code() {
         return CODE_MAPS.charAt(v[OPT_PRESET]) + "" + v[OPT_SIZE] + "-" + seed
-                + (v[OPT_COUNTRY] == 0 ? "" : "@" + v[OPT_COUNTRY]) + (outskirts == 1 ? "!" : "") + (edits.isEmpty() ? "" : "~" + editString());
+                + (outskirts == 1 ? "!" : "") + (edits.isEmpty() ? "" : "~" + editString());
     }
 
     /** Changes made with the Build tool: {tile x, tile y, what}. They're part of the city code. */
@@ -356,19 +358,10 @@ final class CityConfig implements OptionSet {
             out = 1;
             t = t.substring(0, t.length() - 1);
         }
-        // The country, after an "@" (codes without one are American cities).
-        int country = 0;
+        // (Codes for a city in another country, after an "@", no longer load: since 11.3 there's only the USA.)
         int at = t.indexOf('@');
         if (at > 0) {
-            String num = t.substring(at + 1);
-            if (num.isEmpty() || num.length() > 2) return false;
-            country = 0;
-            for (int k = 0; k < num.length(); k++) {
-                char ch = num.charAt(k);
-                if (ch < '0' || ch > '9') return false;
-                country = country * 10 + (ch - '0');
-            }
-            if (country < 0 || country >= Country.NAMES.length) return false;
+            if (!t.substring(at + 1).equals("0")) return false;
             t = t.substring(0, at);
         }
         int dash = t.indexOf('-');
@@ -376,7 +369,7 @@ final class CityConfig implements OptionSet {
         // (The size digit: 0 Tiny, 1 Small, 2 Medium, 3 Large, 4 Massive, 5 Huge. Codes from before Tiny was
         // added used 1 to 4 for Small to Massive, so they still mean the same size.)
         int preset = CODE_MAPS.indexOf(Character.toUpperCase(t.charAt(0))), size = t.charAt(1) - '0';
-        if (preset < 0 || preset >= PRESETS.length || size < 0 || size >= SIZES.length) return false;
+        if (preset < 0 || preset >= PRESETS.length || removed(preset) || size < 0 || size >= SIZES.length) return false;
         long s;
         try {
             s = Long.parseLong(t.substring(3));
@@ -387,7 +380,7 @@ final class CityConfig implements OptionSet {
         v[OPT_PRESET] = preset;
         v[OPT_SIZE] = size;
         seed = s;
-        v[OPT_COUNTRY] = country;
+        v[OPT_COUNTRY] = Country.USA;
         outskirts = out;
         normalize();
         setEdits(ed);
@@ -434,7 +427,7 @@ final class CityConfig implements OptionSet {
         // ((11.0) Less nature: a thin band of country round a town that fills nine tenths of the map, whatever the map.)
         // (Just wide enough for the highway and its interchanges: 28 tiles each side, or a little more on the big maps.
         // The Garrison State keeps its open country for its bases and the prison.)
-        if (civic >= 26 && p != GARRISON && p != VALLEY) {
+        if (civic >= 26 && p != GARRISON) {
             int t = tiles();
             float band = Math.max(28, t * 0.04f) * 2f / t;
             return Math.max(p == 9 ? 0.72f : 0.78f, 1 - band);
@@ -448,8 +441,6 @@ final class CityConfig implements OptionSet {
         if (civic >= 17) town = Math.min(1f, town + (v[OPT_SIZE] >= GIGANTIC ? 0.04f : massive() ? 0.08f : 0.02f));
         // ((10.56) The Garrison State keeps more open country round the town, for its bases and the prison.)
         if (p == GARRISON) return Math.min(town, v[OPT_SIZE] >= HUGE ? 0.64f : 0.6f);
-        // ((10.60) The valley: the town's length runs most of the way across (see City.generate).)
-        if (p == VALLEY) return 0.8f;
         return p == 6 ? town * 0.8f : town;
     }
     /** How many of a city's residents (everyone its homes can house) are in the game. */

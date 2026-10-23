@@ -1880,8 +1880,8 @@ final class Dispatch {
             case 2:
                 a.swat = true;
                 a.count = 6;
-                a.label = neighbour(policeWaves + 7) + " " + Country.swat(c.id)[0];
-                sentence = neighbour(policeWaves + 7) + " is sending its " + Country.swat(c.id)[0] + " team, %d officers";
+                a.label = neighbour(policeWaves + 7) + " " + Country.swat()[0];
+                sentence = neighbour(policeWaves + 7) + " is sending its " + Country.swat()[0] + " team, %d officers";
                 break;
             case 3:
                 a.agency = 2;
@@ -1979,7 +1979,7 @@ final class Dispatch {
         City.Facility station = city.nearestFacility(City.FACILITY_POLICE, inc.x, inc.y);
         if (station == null) return;
         swatTeams--;
-        String unit = Country.swat(city.country.id)[0];
+        String unit = Country.swat()[0];
         if (w.fleet.sendSwat(station.gateX, station.gateY, inc)) {
             say(WHO_POLICE, null, "Dispatch: " + unit + " is rolling out of " + station.name + " to " + inc.place
                     + ". Six officers, heavy weapons." + (swatTeams == 0 ? " That's our last team." : ""), station.gateX, station.gateY);

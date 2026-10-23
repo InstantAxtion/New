@@ -5578,7 +5578,7 @@ final class World {
             boolean was = armoryLost;
             armoryThreat = threat(ar, armoryThreat);
             armoryLost = lost(ar, armoryThreat, armoryLost);
-            String force = Country.guard(city.country.id)[1];
+            String force = Country.guard()[1];
             if (armoryLost && !was)
                 dispatch.say(Dispatch.WHO_MILITARY, null, ar.name + " has been overrun. If the " + force
                         + " is called out now, they'll have to come from out of town.", ar.doorX, ar.doorY);
@@ -7112,9 +7112,9 @@ final class World {
                 v.passengers = 4;
             }
         }
-        String[] g = Country.guard(city.country.id);
+        String[] g = Country.guard();
         if (fleet.vehicles.size() > before)
-            dispatch.trackConvoy(Entity.SOLDIER, Country.guard(city.country.id)[1].toUpperCase(), before, from[0], from[1], tx, ty, city.placeName(tx, ty));
+            dispatch.trackConvoy(Entity.SOLDIER, Country.guard()[1].toUpperCase(), before, from[0], from[1], tx, ty, city.placeName(tx, ty));
         if (fleet.vehicles.size() > before)
             dispatch.say(Dispatch.WHO_MILITARY, null, g[2] + ": " + (hall && !hallLost ? "At the Mayor's request, I" : "I")
                     + "'m calling out the " + g[1] + ". " + (muster ? "Guardsmen are mustering at " + arm.name + "; " + trucks
@@ -7669,36 +7669,197 @@ final class World {
         City.Facility st = city.nearestFacility(City.FACILITY_POLICE, e.x, e.y);
         if (st == null || (alert >= 1 && e.callsign % 3 == 0)) return false;
         float reach = alert >= 1 ? 320 : 760;
+        // ((11.2) Partners: the one with the higher callsign keeps to the other's side, a step behind.)
+        Entity mate = beatMate(e, st);
+        if (mate != null && mate.callsign < e.callsign) {
+            float mx = mate.x - e.x, my = mate.y - e.y;
+            if (mx * mx + my * my > 300 * 300) {
+                walkToSpot(e, mate.x, mate.y, e.runSpeed * 0.8f);
+                e.dutyFor = 1;
+                return true;
+            }
+            // (Beside the lead as it walks - or just behind, where beside is a wall or the road.)
+            e.dutyStep = mate.dutyStep;
+            e.dutyHx = mate.dutyHx;
+            e.dutyHy = mate.dutyHy;
+            float fx = mate.x - 10 * mate.dutyHy - 4 * mate.dutyHx, fy = mate.y + 10 * mate.dutyHx - 4 * mate.dutyHy;
+            int ft = city.tileIndex(fx, fy);
+            if (ft < 0 || (city.tiles[ft] != City.SIDEWALK && city.tiles[ft] != City.PLAZA)) {
+                fx = mate.x - 12 * mate.dutyHx;
+                fy = mate.y - 12 * mate.dutyHy;
+            }
+            e.dutyX = fx;
+            e.dutyY = fy;
+            e.dutyFor = mate.dutyFor;
+            float tx = fx - e.x, ty = fy - e.y, d2 = tx * tx + ty * ty;
+            if (d2 < 5 * 5) {
+                steer(e, 0, 0, 0);
+                if (e.dutyHx != 0 || e.dutyHy != 0) e.angle = turn(e.angle, (float) Math.atan2(e.dutyHy, e.dutyHx), dt * 2);
+                return true;
+            }
+            if (d2 < 30 * 30 && !e.blocked) {
+                float d = (float) Math.sqrt(d2);
+                steer(e, tx / d, ty / d, Math.min(e.speed, d * 2));
+            } else walkToSpot(e, fx, fy, e.speed);
+            return true;
+        }
+        if (mate != null) {
+            // (The lead waits up for a partner who's fallen behind.)
+            float mx = mate.x - e.x, my = mate.y - e.y;
+            if (mx * mx + my * my > 90 * 90 && mx * mx + my * my < 300 * 300) {
+                steer(e, 0, 0, 0);
+                return true;
+            }
+        }
+        float side = mate != null ? 0 : (e.callsign & 1) == 0 ? 6 : -6;
         float tx = e.dutyX - e.x, ty = e.dutyY - e.y;
         boolean there = e.dutyFor > 0 && tx * tx + ty * ty < 22 * 22;
         e.dutyFor -= dt;
-        if (there) {
-            if (e.dutyWait <= 0) e.dutyWait = 3 + rnd.nextFloat() * 6;
+        if (there && e.dutyWait > 0) {
+            // (Now and then a stop: a look up and down the street, a word at a shop door.)
             e.dutyWait -= dt;
             steer(e, 0, 0, 0);
-            if (e.dutyWait > 0) return true;
+            if (e.dutyHx != 0 || e.dutyHy != 0) e.angle = turn(e.angle, (float) Math.atan2(e.dutyHy, e.dutyHx), dt * 2);
+            return true;
         }
         if (e.dutyFor <= 0 || there || Math.hypot(e.dutyX - st.x, e.dutyY - st.y) > reach + 60) {
-            // (Partners pick the same next spot: it's chosen from their pair and how far along the beat they are.)
+            // ((11.2) Walked along the streets: on down the block, turning at a corner now and then and back round
+            // towards the precinct at the end of the beat - not from one random spot to another. Partners keep
+            // together: the next spot comes from their pair, the step and the spot they're both at.)
             e.dutyStep++;
             Random r = new Random((long) e.callsign / 2 * 7919 + e.dutyStep * 104729L + (long) st.x);
-            float[] p = null;
-            for (int k = 0; k < 8 && p == null; k++) {
-                double a = r.nextDouble() * TAU;
-                float d = 120 + r.nextFloat() * (reach - 120);
-                float[] q = city.findWalkable(st.x + (float) Math.cos(a) * d, st.y + (float) Math.sin(a) * d);
-                int t = q == null ? -1 : city.tileIndex(q[0], q[1]);
-                if (t >= 0 && (city.tiles[t] == City.SIDEWALK || city.tiles[t] == City.PLAZA) && !city.outOfTown(q[0], q[1])) p = q;
+            boolean fresh = e.dutyFor < -30 || (e.dutyHx == 0 && e.dutyHy == 0);
+            // (A fresh beat sets off from the precinct's door - or from wherever they are, if that's nowhere near it.)
+            float gx = st.gateX > 0 ? st.gateX : st.x, gy = st.gateY > 0 ? st.gateY : st.y;
+            if (fresh && Math.hypot(e.x - gx, e.y - gy) > 200) {
+                gx = e.x;
+                gy = e.y;
             }
-            if (p == null) return false;
-            float side = (e.callsign & 1) == 0 ? 6 : -6;
+            float bx = fresh ? gx : e.dutyX - side, by = fresh ? gy : e.dutyY;
+            float hx = e.dutyHx, hy = e.dutyHy;
+            if (fresh) {
+                int d0 = r.nextInt(4);
+                hx = d0 == 0 ? 1 : d0 == 1 ? -1 : 0;
+                hy = d0 == 2 ? 1 : d0 == 3 ? -1 : 0;
+            }
+            // The ways to go, best first: straight on (or a turn now and then), or round towards the precinct
+            // when it's at the edge of the beat; back the way they came last of all.
+            float[][] dirs = {{hx, hy}, {-hy, hx}, {hy, -hx}, {-hx, -hy}};
+            if (r.nextFloat() < 0.3f) {
+                float[] t0 = dirs[0];
+                int k = r.nextBoolean() ? 1 : 2;
+                dirs[0] = dirs[k];
+                dirs[k] = t0;
+            }
+            if (Math.hypot(bx - st.x, by - st.y) > reach * 0.75f) {
+                final float sx = st.x - bx, sy = st.y - by;
+                java.util.Arrays.sort(dirs, 0, 3, new java.util.Comparator<float[]>() {
+                    public int compare(float[] a, float[] b) {
+                        return Float.compare(b[0] * sx + b[1] * sy, a[0] * sx + a[1] * sy);
+                    }
+                });
+            }
+            float[] p = null;
+            for (int k = 0; k < dirs.length && p == null; k++) {
+                float step = 90 + r.nextFloat() * 90;
+                float[] q = city.findWalkable(bx + dirs[k][0] * step, by + dirs[k][1] * step);
+                int t = q == null ? -1 : city.tileIndex(q[0], q[1]);
+                if (t < 0 || (city.tiles[t] != City.SIDEWALK && city.tiles[t] != City.PLAZA) || city.outOfTown(q[0], q[1])
+                        || Math.hypot(q[0] - st.x, q[1] - st.y) > reach + 40 || !openBetween(bx, by, q[0], q[1])) continue;
+                p = q;
+                hx = dirs[k][0];
+                hy = dirs[k][1];
+            }
+            if (p == null) {
+                // (Nowhere on along the street: start again from the precinct.)
+                e.dutyHx = e.dutyHy = 0;
+                e.dutyFor = -31;
+                return false;
+            }
+            e.dutyHx = hx;
+            e.dutyHy = hy;
             e.dutyX = p[0] + side;
             e.dutyY = p[1];
-            e.dutyFor = 90;
-            e.dutyWait = 0;
+            e.dutyFor = 60;
+            e.dutyWait = r.nextFloat() < 0.25f ? 2 + r.nextFloat() * 4 : 0;
         }
         walkToSpot(e, e.dutyX, e.dutyY, e.speed * 0.7f);
         return true;
+    }
+
+    /**
+     * (11.2) An officer's beat partner: kept while both are free and near enough; otherwise, now and then, the
+     * nearest free officer from the same precinct who hasn't one.
+     */
+    private Entity beatMate(Entity e, City.Facility st) {
+        Entity m = e.beatMate;
+        if (m != null && (m.dead || m.removed || m.beatMate != e || m.type != Entity.COP || m.task != Dispatch.T_NONE || m.rig != null
+                || m.fear > 0 || Math.abs(m.x - e.x) > 900 || Math.abs(m.y - e.y) > 900)) {
+            if (m.beatMate == e) m.beatMate = null;
+            e.beatMate = m = null;
+        }
+        if (m != null) return m;
+        e.mateCd -= 1 / 30f;
+        if (e.mateCd > 0) return null;
+        e.mateCd = 4 + rnd.nextFloat() * 2;
+        float bd = 400 * 400;
+        for (int i = 0, n = entities.size(); i < n; i++) {
+            Entity o = entities.get(i);
+            if (o == e || o.dead || o.type != Entity.COP || o.beatMate != null || o.task != Dispatch.T_NONE || o.rig != null || o.agency != e.agency
+                    || o.role != e.role) continue;
+            float d = (o.x - e.x) * (o.x - e.x) + (o.y - e.y) * (o.y - e.y);
+            if (d < bd && city.nearestFacility(City.FACILITY_POLICE, o.x, o.y) == st) {
+                bd = d;
+                m = o;
+            }
+        }
+        if (m != null) {
+            e.beatMate = m;
+            m.beatMate = e;
+        }
+        return m;
+    }
+
+    /** (11.2) Nothing solid on the straight line between two points (checked every half tile). */
+    private boolean openBetween(float x0, float y0, float x1, float y1) {
+        float d = (float) Math.hypot(x1 - x0, y1 - y0);
+        int n = Math.max(1, (int) (d / (City.T * 0.5f)));
+        for (int i = 1; i < n; i++) {
+            float x = x0 + (x1 - x0) * i / n, y = y0 + (y1 - y0) * i / n;
+            if (city.solidTile((int) Math.floor(x / City.T), (int) Math.floor(y / City.T))) return false;
+        }
+        return true;
+    }
+
+    /**
+     * (11.3) What an officer or soldier with no call to answer is doing, for the card: walking the beat, on sentry,
+     * on the perimeter, PT, the motor pool, formed up; or null for nothing in particular.
+     */
+    String dutyText(Entity e) {
+        if (e.type == Entity.COP) {
+            City.Facility st = city.nearestFacility(City.FACILITY_POLICE, e.x, e.y);
+            if (st != null && alert >= 1 && e.callsign % 3 == 0 && Math.hypot(st.x - e.x, st.y - e.y) < 160)
+                return "Guarding " + (st.name != null ? st.name.trim() : "the station");
+            if (e.dutyFor > 0) {
+                String street = city.placeName(e.x, e.y);
+                boolean stopped = Math.abs(e.vx) + Math.abs(e.vy) < 3;
+                return (stopped ? "Keeping an eye on " : "Walking the beat on ") + (street != null ? street : "the streets")
+                        + (e.beatMate != null && !e.beatMate.dead ? " with " + Names.person(e.beatMate.nameSeed) : "");
+            }
+            return null;
+        }
+        if (e.type != Entity.SOLDIER) return null;
+        City.Facility base = city.nearestFacility(City.FACILITY_BASE, e.x, e.y);
+        if (base == null || base.fallen || Math.hypot(base.x - e.x, base.y - e.y) > base.r * 2.4f) return null;
+        if (alert >= 1) return "Formed up on the parade ground";
+        int duty = (e.squad * 3 + (e.member >> 1)) % 4;
+        if (e.role == Entity.ROLE_COMMANDER) duty = 3;
+        switch (duty) {
+            case 0: return base.posts.isEmpty() ? "Patrolling the perimeter" : "On sentry at " + (base.name != null ? base.name.trim() : "the base");
+            case 1: return "Patrolling the perimeter";
+            case 2: return "PT laps round the parade ground";
+            default: return e.role == Entity.ROLE_COMMANDER ? "Running the motor pool" : "Standing by at the motor pool";
+        }
     }
 
     /**

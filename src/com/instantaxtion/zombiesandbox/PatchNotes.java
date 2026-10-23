@@ -2,11 +2,19 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "11.2";
-    static final int VERSION_CODE = 104;
+    static final String VERSION = "11.3";
+    static final int VERSION_CODE = 105;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "11.3  -  The beat, real drivers, USA only",
+                    "Police on the beat walk the streets with their partner side by side: down the block, round the corner now and then, and back towards the precinct at the end of the beat, with the odd stop to look up and down the street. They aren't 'stranded' any more, so no more cars coming out to fetch officers who were only on patrol.",
+                    "Every police car, army truck and ambulance out on the road has someone at the wheel: the driver is a real officer, soldier or paramedic (named on the vehicle's card) who gets out if it's wrecked and goes inside once it's parked back home.",
+                    "More to see on a person's card: walking the beat (and with whom), keeping an eye on a street, guarding the station, on sentry, perimeter patrol, PT, the motor pool, formed up, at the scene, getting into a car, reloading, out of ammo, standing by for the helicopter, covering a buddy, badly hurt, bitten; and for the dead, clawing at a door, chasing someone, sniffing about, leading a horde of so many, wandering.",
+                    "The game is set in the USA only: the other countries are gone, code and all, with Sydney, Tokyo and Paris.",
+                    "Delta Marsh, Fjord Town and the Mountain Valley are gone. Saves and city codes on a map or country no longer in the game don't load.",
+            },
             {
                     "11.2  -  Bomb squad colours, portrait only",
                     "The bomb squad is the police's: its truck is called the bomb squad truck (not an army truck), it shows in police blue on the map and the tactical map, and the technicians wear navy blast suits instead of army green. BearCats, SWAT and riot vans show as police too.",

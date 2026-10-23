@@ -171,6 +171,12 @@ final class Fleet {
          * get out at the scene (and stay its crew), and walk back to it before it leaves.
          */
         final ArrayList<Entity> crew = new ArrayList<Entity>();
+        /**
+         * (11.3) Who's at the wheel of a police car, army truck or ambulance out on the road with nobody else
+         * aboard (on its way to pick people up, or back from dropping them off): a real person, not an empty
+         * seat. They go inside once it's parked back home, and get out if it's wrecked.
+         */
+        Entity driver;
         /** A patrol car (not a backup cruiser): drives a beat and answers calls. */
         boolean patrol;
         /** Whose car it is: 0 the city police, 1 highway patrol, 2 the sheriff, 3 the park rangers. */
@@ -214,8 +220,9 @@ final class Fleet {
          * isn't worth their trouble.
          */
         boolean occupied() {
-            if (player != null || !riders.isEmpty() || !crew.isEmpty() || passengers > 0) return true;
-            if (parked || broken) return false;
+            if (player != null || !riders.isEmpty() || !crew.isEmpty() || passengers > 0 || driver != null) return true;
+            // ((11.3) Parked up ready at the station or base: nobody in it.)
+            if (parked || broken || standby) return false;
             if (type == CRUISER) return !patrol;
             return type == CAR || type == TANK || type == AMBULANCE || type == TRUCK;
         }
@@ -285,12 +292,12 @@ final class Fleet {
                 String car = city.country.garrison ? "MP car" : "Police car";
                 return v.number > 0 ? car + "  -  " + callsign(v) : car;
             case TRUCK:
-                if (v.kind == K_APC) return "Armoured personnel carrier" + (v.guardUnit ? "  -  " + Country.guard(city.country.id)[1] : "");
-                if (v.kind == K_HUMVEE) return (v.guardUnit ? Country.guard(city.country.id)[1] + " " : "") + "Humvee" + (v.loop ? "  -  base patrol" : "");
+                if (v.kind == K_APC) return "Armoured personnel carrier" + (v.guardUnit ? "  -  " + Country.guard()[1] : "");
+                if (v.kind == K_HUMVEE) return (v.guardUnit ? Country.guard()[1] + " " : "") + "Humvee" + (v.loop ? "  -  base patrol" : "");
                 if (v.kind == K_RIOT_VAN) return "Riot police van";
                 if (v.kind == K_BEARCAT) return "Police BearCat";
                 if (v.kind == K_EOD) return "Bomb squad truck";
-                return v.swat ? Country.swat(city.country.id)[0] + " van" : v.guardUnit ? Country.guard(city.country.id)[1] + " truck" : v.supply > 0 ? "Army supply truck" : "Army truck";
+                return v.swat ? Country.swat()[0] + " van" : v.guardUnit ? Country.guard()[1] + " truck" : v.supply > 0 ? "Army supply truck" : "Army truck";
             case HELI: return v.kind == K_RESCUE_HELI ? "Rescue helicopter" : v.kind == K_POLICE_HELI ? "Police helicopter" : "Air " + Math.max(1, v.number) + "  -  army helicopter";
             case TANK: return "Tank";
             case AMBULANCE: return "Ambulance";
@@ -2062,6 +2069,11 @@ final class Fleet {
 
     void update(float dt) {
         staffPatrols(dt);
+        driverTimer -= dt;
+        if (driverTimer <= 0) {
+            driverTimer = 0.5f;
+            drivers();
+        }
         // Keep the streets busy while the city is still calm; clear old wrecks.
         reclaimTimer -= dt;
         if (reclaimTimer <= 0) {
@@ -2238,7 +2250,7 @@ final class Fleet {
         if (!v.kerbed) {
             v.kerbed = true;
             float nx = (float) -Math.sin(v.angle), ny = (float) Math.cos(v.angle);
-            int hand = city.country.leftHand ? -1 : 1;
+            int hand = 1;
             for (float s = 4; s <= 22; s += 3) {
                 float x = v.x + nx * s * hand, y = v.y + ny * s * hand;
                 int tx = (int) (x / City.T), ty = (int) (y / City.T);
@@ -2259,7 +2271,7 @@ final class Fleet {
                 v.x += dx / d * step;
                 v.y += dy / d * step;
                 // Nose in towards the kerb a little.
-                v.angle += (city.country.leftHand ? -1 : 1) * dt * 0.5f * Math.min(1, d / 4);
+                v.angle += dt * 0.5f * Math.min(1, d / 4);
             }
         }
     }
@@ -2322,8 +2334,9 @@ final class Fleet {
         v.broken = true;
         v.parked = true;
         w.carsWrecked++;
-        // The crew bails out.
+        // The crew bails out (and the driver).
         if (!v.crew.isEmpty()) crewOut(v, true);
+        if (v.driver != null) driverOut(v);
         v.speed = 0;
         v.field = null;
         w.emit(Sfx.THUD, v.x, v.y);
@@ -2657,13 +2670,8 @@ final class Fleet {
                         float x2 = ex != 0 ? (E % W + 0.5f) * City.T : le, y2 = ex != 0 ? le : (E / W + 0.5f) * City.T;
                         rbA0 = (float) Math.atan2(v.cor[v.corN * 2 - 1] - rbCy, v.cor[v.corN * 2 - 2] - rbCx);
                         float a1 = (float) Math.atan2(y2 - rbCy, x2 - rbCx), d = a1 - rbA0;
-                        if (city.country.leftHand) {
-                            while (d <= 0.3f) d += (float) (Math.PI * 2);
-                            while (d > Math.PI * 2 + 0.3f) d -= (float) (Math.PI * 2);
-                        } else {
-                            while (d >= -0.3f) d -= (float) (Math.PI * 2);
-                            while (d < -Math.PI * 2 - 0.3f) d += (float) (Math.PI * 2);
-                        }
+                        while (d >= -0.3f) d -= (float) (Math.PI * 2);
+                        while (d < -Math.PI * 2 - 0.3f) d += (float) (Math.PI * 2);
                         rbD = d;
                         rbOn = true;
                     }
@@ -2728,7 +2736,7 @@ final class Fleet {
                 // (On a diagonal, or a curved street: no lanes to measure across it; near the middle.)
                 // ((11.1) But on a curved street still on your own side of it, a lane's width from the one coming
                 // the other way: down the middle, they met head on.)
-                if (city.curveAt(tx, ty)) off = City.T * 0.27f * (city.country.leftHand ? -1 : 1);
+                if (city.curveAt(tx, ty)) off = City.T * 0.27f;
                 else if (Math.min(Math.abs(dx), Math.abs(dy)) > 0.3f) off = Math.max(-City.T * 0.4f, Math.min(City.T * 0.4f, off));
                 px = (tx + 0.5f) * City.T - dy * off;
                 py = (ty + 0.5f) * City.T + dx * off;
@@ -3807,7 +3815,7 @@ final class Fleet {
         int tx = v.pathT % W, ty = v.pathT / W, nt = downhill(v.field, v.pathT), bx = nt % W, by = nt / W;
         if (bx == tx && by == ty) return false;
         int ddx = Integer.signum(bx - tx), ddy = Integer.signum(by - ty);
-        // Keep to your own side of the road (left in Australia and Japan), in the middle of the lane.
+        // Keep to your own side of the road, in the middle of the lane.
         float off = city.laneOffset(bx, by, ddx, ddy, laneOf(v));
         if (v.careful > 0) v.careful -= dt;
         // (Going round something stopped in the lane: out towards the middle of the road for a moment.)
@@ -3838,7 +3846,7 @@ final class Fleet {
         }
         if (v.pulled) {
             // Pulled over by highway patrol: onto the shoulder, and stop.
-            off += City.T * 0.5f * (city.country.leftHand ? -1 : 1);
+            off += City.T * 0.5f;
             max = Math.min(max, Math.max(0, Math.abs(v.speed) - 3));
         } else if (v.yieldT > 0 && v.type == CAR && v.player == null) {
             // Giving way: over to the kerb and slow (or held back from the junction).
@@ -3846,7 +3854,7 @@ final class Fleet {
             else {
                 // ((10.54) Right over against the kerb, however wide the road: a car only edging over left too
                 // little room, and the police car or army truck behind it still couldn't get by.)
-                int hand = city.country.leftHand ? -1 : 1;
+                int hand = 1;
                 float ln = (float) Math.sqrt(ddx * ddx + ddy * ddy);
                 float nx = -ddy / ln * hand, ny = ddx / ln * hand;
                 float lx = bx * City.T + City.T / 2f - ddy * off, ly = by * City.T + City.T / 2f + ddx * off;
@@ -4444,7 +4452,53 @@ final class Fleet {
         v.crew.clear();
     }
 
-    private float reclaimTimer, fetchSaidAt, busTimer;
+    private float reclaimTimer, fetchSaidAt, busTimer, driverTimer;
+
+    /**
+     * (11.3) Every police car, army truck and ambulance on the road has someone driving it: one with nobody
+     * aboard gets its driver (an officer, a soldier or a paramedic), who stays with it until it's parked at
+     * home again.
+     */
+    private void drivers() {
+        for (int i = 0, n = vehicles.size(); i < n; i++) {
+            Vehicle v = vehicles.get(i);
+            if (v.type != CRUISER && v.type != TRUCK && v.type != AMBULANCE) continue;
+            if (v.removedFromFleet) {
+                v.driver = null;
+                continue;
+            }
+            if (v.broken) {
+                if (v.driver != null) driverOut(v);
+                continue;
+            }
+            boolean home = v.parked || v.standby || v.state == ABANDONED || v.player != null;
+            if (home) {
+                v.driver = null;
+                continue;
+            }
+            if (v.driver == null && v.crew.isEmpty() && v.riders.isEmpty() && v.passengers == 0) {
+                int type = v.type == AMBULANCE ? Entity.CIVILIAN : v.type == CRUISER || policeTruck(v) ? Entity.COP : Entity.SOLDIER;
+                Entity d = w.create(type, v.x, v.y);
+                if (type == Entity.COP && v.agency > 0) w.makeAgency(d, v.agency);
+                if (v.guardUnit) w.applyRole(d, Entity.ROLE_GUARD);
+                d.rig = v;
+                v.driver = d;
+            }
+        }
+    }
+
+    /** (11.3) The driver of a wrecked vehicle gets out and carries on on foot. */
+    private void driverOut(Vehicle v) {
+        Entity d = v.driver;
+        v.driver = null;
+        float a = v.angle - 1.57f;
+        Entity e = w.spawn(d.type, v.x + (float) Math.cos(a) * 10, v.y + (float) Math.sin(a) * 10);
+        if (e == null) return;
+        e.nameSeed = d.nameSeed;
+        if (d.agency > 0) w.makeAgency(e, d.agency);
+        if (d.role == Entity.ROLE_GUARD) w.applyRole(e, Entity.ROLE_GUARD);
+        e.hp *= 0.7f;
+    }
 
     /**
      * (10.48) A police car or army truck left with nobody to drive it - its crew dead, or gone off elsewhere -
@@ -4715,7 +4769,9 @@ final class Fleet {
     private boolean strandedUnit(Entity e, int type) {
         // (Not the park rangers, who keep to the wilds on foot.)
         return !e.dead && !e.removed && e.type == type && e.rig == null && e.task == Dispatch.T_NONE && !e.aiming && e != w.controlled
-                && e.leader == null && e.role != Entity.ROLE_K9 && e.agency != 3;
+                && e.leader == null && e.role != Entity.ROLE_K9 && e.agency != 3
+                // ((11.2) Not an officer walking the beat or a soldier on duty on base in quiet times: they're working.)
+                && !(e.dutyFor > 0 && w.alert == 0);
     }
 
     /** Calls the crew on foot back aboard. Returns how many are still out. */

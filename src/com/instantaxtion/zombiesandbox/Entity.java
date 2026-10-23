@@ -55,6 +55,11 @@ final class Entity {
     float wanderAngle, wanderTimer, fleeTimer, infectTimer;
     /** (11.1) Police and soldiers with nothing on: where their beat or duty takes them next, and how long they wait there. */
     float dutyX, dutyY, dutyWait, dutyFor;
+    /** (11.2) The way along the street an officer on the beat is walking. */
+    float dutyHx, dutyHy;
+    /** (11.2) The partner an officer walks the beat with (the one with the lower callsign leads), and when to look for one. */
+    Entity beatMate;
+    float mateCd;
     int dutyStep;
     float hurt, phase;
     float threatX, threatY;

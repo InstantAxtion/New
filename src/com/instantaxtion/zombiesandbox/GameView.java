@@ -2395,49 +2395,6 @@ final class GameView extends View implements Menu.Host {
      */
     private final Path pinePath = new Path();
 
-    /** A palm (fronds fanning out from the crown), birch (light, dappled), gum (grey-green, ragged) or acacia (a flat umbrella). */
-    private void drawTreeKind(Canvas c, int kind, float x, float y, float r, float a, float spin) {
-        if (kind == Country.TK_PALM) {
-            stroke.setStrokeCap(Paint.Cap.ROUND);
-            for (int k = 0; k < 7; k++) {
-                double ang = k * Math.PI * 2 / 7 + spin;
-                float ex = x + (float) Math.cos(ang) * r * 1.05f, ey = y + (float) Math.sin(ang) * r * 1.05f;
-                stroke.setColor(alpha(k % 2 == 0 ? 0xFF3E7A32 : 0xFF4E8E3A, a));
-                stroke.setStrokeWidth(r * 0.42f);
-                c.drawLine(x, y, ex, ey, stroke);
-            }
-            stroke.setStrokeCap(Paint.Cap.BUTT);
-            fill.setColor(alpha(0xFF6A5A30, a));
-            c.drawCircle(x, y, r * 0.22f, fill);
-            return;
-        }
-        if (kind == Country.TK_ACACIA) {
-            fill.setColor(alpha(0xFF5E6E2E, a));
-            oval.set(x - r * 1.15f, y - r * 0.8f, x + r * 1.15f, y + r * 0.8f);
-            c.drawOval(oval, fill);
-            fill.setColor(alpha(0xFF7A8A3E, a));
-            oval.set(x - r * 0.85f, y - r * 0.6f, x + r * 0.75f, y + r * 0.45f);
-            c.drawOval(oval, fill);
-            return;
-        }
-        int dark = kind == Country.TK_BIRCH ? 0xFF4E7E34 : 0xFF566E58, mid = kind == Country.TK_BIRCH ? 0xFF6E9A42 : 0xFF6E8A6A,
-                light = kind == Country.TK_BIRCH ? 0xFF94BA5A : 0xFF8AA286;
-        fill.setColor(alpha(dark, a));
-        c.drawCircle(x, y, r, fill);
-        fill.setColor(alpha(mid, a));
-        for (int k = 0; k < 5; k++) {
-            double ang = k * Math.PI * 2 / 5 + spin;
-            c.drawCircle(x + (float) Math.cos(ang) * r * 0.45f, y + (float) Math.sin(ang) * r * 0.45f, r * 0.42f, fill);
-        }
-        fill.setColor(alpha(light, a));
-        c.drawCircle(x - r * 0.25f, y - r * 0.25f, r * 0.28f, fill);
-        if (kind == Country.TK_BIRCH) {
-            // A glimpse of the white trunk.
-            fill.setColor(alpha(0xFFE8E4D8, a));
-            c.drawCircle(x + r * 0.2f, y + r * 0.25f, r * 0.12f, fill);
-        }
-    }
-
     private void drawBuildings(Canvas c, float vx0, float vy0, float vx1, float vy1, boolean detailed) {
         float cx = camX + getWidth() / scale / 2, cy = camY + getHeight() / scale / 2;
         // Camera height grows with the visible area so the lean looks the same at every zoom level.
@@ -2458,10 +2415,6 @@ final class GameView extends View implements Menu.Host {
             float x = cx + (t[0] - cx) * ts, y = cy + (t[1] - cy) * ts, r = t[2] * ts;
             if (x + r < vx0 || x - r > vx1 || y + r < vy0 || y - r > vy1) continue;
             int kind = t.length > 3 ? (int) t[3] : 0;
-            if (kind >= Country.TK_PALM) {
-                drawTreeKind(c, kind, x, y, r, 1 - see * 0.5f, t[0] * 0.13f + t[1] * 0.07f);
-                continue;
-            }
             if (kind == Country.TK_PINE) {
                 // A pine: dark, pointed boughs round a lighter tip.
                 float a = 1 - see * 0.5f, spin = t[0] * 0.13f + t[1] * 0.07f;
@@ -2657,7 +2610,7 @@ final class GameView extends View implements Menu.Host {
         // A shadow on the ground first.
         if (kind != RealCities.ST_BRIDGE_ARCH && kind != RealCities.ST_BRIDGE_TOWERS && kind != RealCities.ST_HOLLYWOOD) {
             fill.setColor(0x30000000);
-            c.drawCircle(x + 6, y + 8, kind == RealCities.ST_EIFFEL ? 70 : kind == RealCities.ST_TOKYO_TOWER ? 50 : 22, fill);
+            c.drawCircle(x + 6, y + 8, 22, fill);
         }
         switch (kind) {
             case RealCities.ST_NEEDLE: {
@@ -2677,105 +2630,6 @@ final class GameView extends View implements Menu.Host {
                 c.drawCircle(px(x, top), py(y, top), 15 * k, fill);
                 fill.setColor(0xFFE8783A);
                 c.drawCircle(px(x, top), py(y, top), 7 * k, fill);
-                break;
-            }
-            case RealCities.ST_EIFFEL: case RealCities.ST_TOKYO_TOWER: {
-                boolean tokyo = kind == RealCities.ST_TOKYO_TOWER;
-                float base = tokyo ? 44 : 62;
-                float[] zs = {0, h * 0.2f, h * 0.45f, h * 0.75f, h};
-                float[] rs = {base, base * 0.5f, base * 0.28f, base * 0.12f, 0.5f};
-                for (int t = 0; t < 4; t++) {
-                    int col = tokyo ? (t % 2 == 0 ? 0xFFE8603A : 0xFFF2F2F0) : (t % 2 == 0 ? 0xFF6E5A44 : 0xFF7E6A52);
-                    // Each face a see-through lattice panel, tapering up.
-                    for (int f = 0; f < 4; f++) {
-                        float ax0 = f == 0 || f == 3 ? -1 : 1, ay0 = f < 2 ? -1 : 1, ax1 = f < 2 ? 1 : -1, ay1 = f == 0 || f == 3 ? (f == 0 ? -1 : 1) : (f == 1 ? 1 : 1);
-                        float[][] cs = {{-1, -1, 1, -1}, {1, -1, 1, 1}, {1, 1, -1, 1}, {-1, 1, -1, -1}};
-                        ax0 = cs[f][0];
-                        ay0 = cs[f][1];
-                        ax1 = cs[f][2];
-                        ay1 = cs[f][3];
-                        stPath.reset();
-                        stPath.moveTo(px(x + ax0 * rs[t], zs[t]), py(y + ay0 * rs[t], zs[t]));
-                        stPath.lineTo(px(x + ax1 * rs[t], zs[t]), py(y + ay1 * rs[t], zs[t]));
-                        stPath.lineTo(px(x + ax1 * rs[t + 1], zs[t + 1]), py(y + ay1 * rs[t + 1], zs[t + 1]));
-                        stPath.lineTo(px(x + ax0 * rs[t + 1], zs[t + 1]), py(y + ay0 * rs[t + 1], zs[t + 1]));
-                        stPath.close();
-                        fill.setColor((col & 0x00FFFFFF) | 0xA0000000);
-                        c.drawPath(stPath, fill);
-                    }
-                    for (int sx = -1; sx <= 1; sx += 2)
-                        for (int sy = -1; sy <= 1; sy += 2)
-                            stLine(c, x + sx * rs[t], y + sy * rs[t], zs[t], x + sx * rs[t + 1], y + sy * rs[t + 1], zs[t + 1], col, t == 0 ? 6f : 4f - t * 0.7f);
-                    // The lattice: crossed bracing on each face.
-                    for (int f = 0; f < 4; f++) {
-                        float ax = f < 2 ? -1 : 1, ay = f % 2 == 0 ? -1 : 1;
-                        float bxx = f < 2 ? 1 : -1, byy = ay;
-                        if (f >= 2) {
-                            ax = f == 2 ? -1 : 1;
-                            ay = -1;
-                            bxx = ax;
-                            byy = 1;
-                        }
-                        stLine(c, x + ax * rs[t], y + ay * rs[t], zs[t], x + bxx * rs[t + 1], y + byy * rs[t + 1], zs[t + 1], City.darken(col, 0.85f), 1.3f);
-                        stLine(c, x + bxx * rs[t], y + byy * rs[t], zs[t], x + ax * rs[t + 1], y + ay * rs[t + 1], zs[t + 1], City.darken(col, 0.85f), 1.3f);
-                    }
-                    if (t == 1 || t == 2) {
-                        // The platforms.
-                        float r = rs[t] * 1.15f;
-                        stWall(c, x - r, y - r, x + r, y - r, zs[t], zs[t] + 4, tokyo ? 0xFFF2F2F0 : 0xFF5A4A38);
-                        stWall(c, x - r, y + r, x + r, y + r, zs[t], zs[t] + 4, tokyo ? 0xFFE0E0DE : 0xFF4E4030);
-                    }
-                }
-                if (!tokyo) {
-                    // The great arch between the legs.
-                    for (int sd = 0; sd < 2; sd++) {
-                        float prevX = 0, prevY = 0;
-                        for (int q = 0; q <= 8; q++) {
-                            float t = q / 8f, ax = x - base * 0.8f + base * 1.6f * t, az = h * 0.13f * (float) Math.sin(Math.PI * t);
-                            float ayy = y + (sd == 0 ? -base * 0.8f : base * 0.8f);
-                            float sx = px(ax, az), sy = py(ayy, az);
-                            if (q > 0) {
-                                stroke.setColor(0xFF6E5A44);
-                                stroke.setStrokeWidth(1.6f);
-                                c.drawLine(prevX, prevY, sx, sy, stroke);
-                            }
-                            prevX = sx;
-                            prevY = sy;
-                        }
-                    }
-                }
-                fill.setColor(tokyo ? 0xFFE8603A : 0xFFD8B040);
-                c.drawCircle(px(x, h), py(y, h), 1.6f * lift(h), fill);
-                break;
-            }
-            case RealCities.ST_SKYTREE: {
-                for (int k = 0; k < 3; k++) {
-                    double a = k * Math.PI * 2 / 3 + 0.2;
-                    stLine(c, x + (float) Math.cos(a) * 24, y + (float) Math.sin(a) * 24, 0, x, y, h * 0.3f, 0xFFD8E0E6, 7f);
-                }
-                stLine(c, x, y, h * 0.3f, x, y, h * 0.85f, 0xFFDCE4EA, 6.5f);
-                stLine(c, x, y, h * 0.85f, x, y, h, 0xFFB0B8C0, 1.2f);
-                for (float[] ring : new float[][]{{0.6f, 20}, {0.75f, 14}}) {
-                    float z = h * ring[0], k = lift(z);
-                    fill.setColor(0xFF7A8E9E);
-                    c.drawCircle(px(x, z), py(y, z), ring[1] * k, fill);
-                    fill.setColor(0xFFE8F0F4);
-                    c.drawCircle(px(x, z), py(y, z), ring[1] * 0.7f * k, fill);
-                }
-                break;
-            }
-            case RealCities.ST_SYDNEY_TOWER: {
-                for (int k = 0; k < 6; k++) {
-                    double a = k * Math.PI / 3;
-                    stLine(c, x + (float) Math.cos(a) * 5, y + (float) Math.sin(a) * 5, 0, x, y, h * 0.8f, 0xFFA8B0B6, 0.8f);
-                }
-                stLine(c, x, y, 0, x, y, h * 0.8f, 0xFFB8C0C6, 5f);
-                float z = h * 0.84f, k = lift(z);
-                fill.setColor(0xFFC89A30);
-                c.drawCircle(px(x, z), py(y, z), 22 * k, fill);
-                fill.setColor(0xFFE8C050);
-                c.drawCircle(px(x, z), py(y, z), 15 * k, fill);
-                stLine(c, x, y, z, x, y, h, 0xFFB0B8C0, 1f);
                 break;
             }
             case RealCities.ST_LIBERTY: {
@@ -2817,18 +2671,6 @@ final class GameView extends View implements Menu.Host {
                 c.drawText(sign, px(x, h), py(y, h), text);
                 break;
             }
-            case RealCities.ST_ARC: {
-                float hx = 34, hy = 22, top = h;
-                int stone = 0xFFE0D6BE;
-                stWall(c, x - hx, y + hy, x + hx, y + hy, 0, top, City.darken(stone, 0.85f));
-                stWall(c, x - hx, y - hy, x - hx, y + hy, 0, top, City.darken(stone, 0.92f));
-                stWall(c, x + hx, y - hy, x + hx, y + hy, 0, top, City.darken(stone, 0.78f));
-                // The great arch through it.
-                stWall(c, x - hx * 0.4f, y + hy + 0.2f, x + hx * 0.4f, y + hy + 0.2f, 0, top * 0.62f, 0xFF3A3630);
-                fill.setColor(stone);
-                c.drawRect(px(x - hx, top), py(y - hy, top), px(x + hx, top), py(y + hy, top), fill);
-                break;
-            }
             case RealCities.ST_FERRIS: {
                 float r = h / 2, az = h / 2 + 4;
                 stLine(c, x - 6, y, 0, x, y, az, 0xFF8A9096, 2f);
@@ -2866,13 +2708,6 @@ final class GameView extends View implements Menu.Host {
                     stWall(c, sx - tx, sy - ty, sx + tx, sy + ty, h * 0.35f, h, 0xFF202428);
                     stWall(c, sx - tx * 0.9f, sy - ty * 0.9f, sx + tx * 0.9f, sy + ty * 0.9f, h * 0.38f, h * 0.96f, col);
                 }
-                break;
-            }
-            case RealCities.ST_OBELISK: {
-                stWall(c, x - 4, y + 4, x + 4, y + 4, 0, 3, 0xFFC8BCA0);
-                stLine(c, x, y, 0, x, y, h, 0xFFC8B08A, 3.4f);
-                fill.setColor(0xFFE8C050);
-                c.drawCircle(px(x, h), py(y, h), 1.6f * lift(h), fill);
                 break;
             }
             case RealCities.ST_BRIDGE_ARCH: case RealCities.ST_BRIDGE_TOWERS: {
@@ -3769,7 +3604,6 @@ final class GameView extends View implements Menu.Host {
             float cw = len / cols;
             float glass = 0.55f + shade * 0.45f;
             int litMask = 7;
-            int land = world.city.country.look;
             boolean block = b.kind == City.OFFICE || b.kind == City.APARTMENT;
             for (int k = 0; k < floors; k++) {
                 float v0 = k * City.FLOOR;
@@ -3845,18 +3679,6 @@ final class GameView extends View implements Menu.Host {
                     } else if (k == 0) {
                         fill.setColor(fade(City.darken(0xFF5A7890, glass)));
                         c.drawRect(u0 + 2, v0 + 1.5f, u0 + cw - 2, v0 + 8.5f, fill);
-                    } else if (land == Country.FRANCE && block && floors <= 10) {
-                        // Tall French windows.
-                        fill.setColor(fade(lit ? litColor : City.darken(0xFF27313B, glass)));
-                        c.drawRect(u0 + cw * 0.32f, v0 + 2, u0 + cw * 0.68f, v0 + 10.5f, fill);
-                        fill.setColor(fade(City.darken(0xFFE8E2D4, glass)));
-                        c.drawRect(u0 + cw * 0.49f, v0 + 2, u0 + cw * 0.51f, v0 + 10.5f, fill);
-                    } else if (land == Country.MEXICO && block && floors <= 10) {
-                        // Small windows behind iron bars.
-                        fill.setColor(fade(lit ? litColor : City.darken(0xFF27313B, glass)));
-                        c.drawRect(u0 + cw * 0.3f, v0 + 4, u0 + cw * 0.7f, v0 + 8.5f, fill);
-                        fill.setColor(fade(0xFF1A1A1A));
-                        for (int q = 1; q < 4; q++) c.drawRect(u0 + cw * (0.3f + 0.1f * q) - 0.2f, v0 + 4, u0 + cw * (0.3f + 0.1f * q) + 0.2f, v0 + 8.5f, fill);
                     } else {
                         fill.setColor(fade(lit ? litColor : City.darken(0xFF27313B, glass)));
                         c.drawRect(u0 + 3, v0 + 3.5f, u0 + cw - 3, v0 + 9.5f, fill);
@@ -3872,7 +3694,6 @@ final class GameView extends View implements Menu.Host {
             }
             fill.setColor(fade(City.darken(b.wall, shade * 0.8f)));
             c.drawRect(0, hgt - 2.5f, len, hgt, fill);
-            countryWall(c, b, len, hgt, floors, cw, shade, side, land, block);
         }
         if (realistic && scale > 2f) {
             // Soft light: darker towards the ground, a lit cornice along the top.
@@ -3903,53 +3724,6 @@ final class GameView extends View implements Menu.Host {
             }
         }
         c.restore();
-    }
-
-    /**
-     * What sets a country's streets apart on the walls: Haussmann balconies and a zinc top floor in France,
-     * a balcony on every floor of a Japanese block, a painted base on Mexican buildings, a verandah on
-     * Australian houses.
-     */
-    private void countryWall(Canvas c, City.Building b, float len, float hgt, int floors, float cw, float shade, int side,
-                             int land, boolean block) {
-        if (land == Country.FRANCE && block && floors >= 3 && floors <= 10) {
-            for (int k = 1; k < floors; k++) {
-                if (k != 1 && k != floors - 2) continue;
-                float v0 = k * City.FLOOR;
-                fill.setColor(fade(City.darken(0xFF22262A, shade)));
-                c.drawRect(0, v0 + 1.4f, len, v0 + 2.2f, fill);
-                c.drawRect(0, v0 + 4.2f, len, v0 + 4.7f, fill);
-                for (float u = 1; u < len; u += 1.6f) c.drawRect(u, v0 + 2.2f, u + 0.3f, v0 + 4.2f, fill);
-            }
-            // The zinc mansard storey with its dormers.
-            float top = (floors - 1) * City.FLOOR;
-            fill.setColor(fade(City.darken(0xFF7A8490, shade)));
-            c.drawRect(0, top, len, hgt, fill);
-            for (float u = cw * 0.5f - 1.5f; u < len - 2; u += cw) {
-                fill.setColor(fade(City.darken(0xFFE8E2D4, shade)));
-                c.drawRect(u, top + 2.5f, u + 3, top + 9, fill);
-                fill.setColor(fade(City.darken(0xFF34414E, shade)));
-                c.drawRect(u + 0.6f, top + 3.5f, u + 2.4f, top + 8, fill);
-            }
-        } else if (land == Country.JAPAN && b.kind == City.APARTMENT) {
-            int slab = City.lighten(b.wall, 0.18f);
-            for (int k = 1; k < floors; k++) {
-                float v0 = k * City.FLOOR;
-                fill.setColor(fade(City.darken(slab, shade)));
-                c.drawRect(0, v0 + 0.5f, len, v0 + 4.2f, fill);
-                fill.setColor(fade(City.darken(slab, shade * 0.8f)));
-                for (float u = cw; u < len; u += cw) c.drawRect(u - 0.3f, v0 + 0.5f, u + 0.3f, v0 + 4.2f, fill);
-            }
-        } else if (land == Country.MEXICO && b.kind != City.CHURCH) {
-            fill.setColor(fade(City.darken(b.wall, shade * 0.62f)));
-            c.drawRect(0, 0, len, 2.6f, fill);
-        } else if (land == Country.AUSTRALIA && b.kind == City.HOUSE && side == 1) {
-            fill.setColor(fade(City.darken(0xFFDCD8CC, shade)));
-            c.drawRect(0, 8.2f, len, 9.8f, fill);
-            fill.setColor(fade(City.darken(0xFFF2F2F2, shade)));
-            for (float u = 1; u < len; u += 6) c.drawRect(u, 0, u + 0.7f, 8.2f, fill);
-            c.drawRect(0, 2.6f, len, 3f, fill);
-        }
     }
 
     /** A car, police cruiser, army truck or ambulance, with its damage showing. */
@@ -4425,8 +4199,7 @@ final class GameView extends View implements Menu.Host {
                     c.drawRect(-hl + 0.5f, -hw + 0.3f, hl - 0.5f, -hw + 0.8f, fill);
                     c.drawRect(-hl + 0.5f, hw - 0.8f, hl - 0.5f, hw - 0.3f, fill);
                 } else {
-                    int stripe = land.id == Country.JAPAN ? 0xFF2E8A4A : land.id == Country.FRANCE ? 0xFF2E5FB0
-                            : land.id == Country.MEXICO ? 0xFFF2F2F2 : 0xFF1F3F8A;
+                    int stripe = 0xFF1F3F8A;
                     fill.setColor(stripe);
                     c.drawRect(-hl + 0.5f, -hw + 0.3f, hl - 0.5f, -hw + 1f, fill);
                     c.drawRect(-hl + 0.5f, hw - 1f, hl - 0.5f, hw - 0.3f, fill);
@@ -4448,16 +4221,14 @@ final class GameView extends View implements Menu.Host {
             default:
                 cabin(c, hl, hw, body, 0.42f, 0.12f, -0.44f, -0.66f);
                 if (v.model == Fleet.M_TAXI) {
-                    // The roof sign (and the chequered stripe on American and Australian cabs).
-                    fill.setColor(world.city.country.id == Country.MEXICO ? 0xFFF2F2F2 : 0xFFF2E8A0);
+                    // The roof sign (and the chequered stripe down the sides).
+                    fill.setColor(0xFFF2E8A0);
                     c.drawRect(-1.6f, -1.6f, 0.2f, 1.6f, fill);
-                    if (world.city.country.id == Country.USA || world.city.country.id == Country.AUSTRALIA) {
-                        for (int q = 0; q < 6; q++) {
-                            fill.setColor(q % 2 == 0 ? 0xFF1A1A1A : 0xFFF2F2F2);
-                            float x0 = -hl + 2 + q * 1.6f;
-                            c.drawRect(x0, -hw + 0.2f, x0 + 1.6f, -hw + 0.9f, fill);
-                            c.drawRect(x0, hw - 0.9f, x0 + 1.6f, hw - 0.2f, fill);
-                        }
+                    for (int q = 0; q < 6; q++) {
+                        fill.setColor(q % 2 == 0 ? 0xFF1A1A1A : 0xFFF2F2F2);
+                        float x0 = -hl + 2 + q * 1.6f;
+                        c.drawRect(x0, -hw + 0.2f, x0 + 1.6f, -hw + 0.9f, fill);
+                        c.drawRect(x0, hw - 0.9f, x0 + 1.6f, hw - 0.2f, fill);
                     }
                 }
                 break;
@@ -4467,7 +4238,7 @@ final class GameView extends View implements Menu.Host {
     /** A passenger train: a locomotive pulling three carriages along the line. */
     /**
      * Traffic lights on the corners of the big junctions (two show the north-south lights, two the east-west
-     * ones) and stop signs (ALTO in Mexico) at the small ones.
+     * ones) and stop signs at the small ones.
      */
     private void drawSignals(Canvas c, float vx0, float vx1, float vy0, float vy1) {
         City city = world.city;
@@ -6609,7 +6380,7 @@ final class GameView extends View implements Menu.Host {
         else if (e.type == Entity.ZOMBIE_DOG) title = Names.dog(e.nameSeed) + "  -  Zombie dog";
         else if (e.isZombie()) title = (e.armored ? "Armored " : "") + Entity.NAMES[e.type] + (e.origin >= 0 ? "  -  was " + Names.person(e.nameSeed) : "");
         else if (e.type == Entity.COP && e.role == Entity.ROLE_SWAT)
-            title = Country.swat(world.city.country.id)[1] + " " + Names.person(e.nameSeed) + "  -  " + Dispatch.name(e);
+            title = Country.swat()[1] + " " + Names.person(e.nameSeed) + "  -  " + Dispatch.name(e);
         else if (e.type == Entity.COP && e.role == Entity.ROLE_EOD) title = "Bomb technician " + Names.person(e.nameSeed) + "  -  " + Dispatch.name(e);
         else if (e.type == Entity.COP && e.role == Entity.ROLE_SAR) title = "Rescue specialist " + Names.person(e.nameSeed) + "  -  " + Dispatch.name(e);
         else if (e.type == Entity.COP) title = (e.agency == 1 ? world.city.country.hpName + " " : e.agency == 2 ? world.city.country.ruralName + "'s deputy "
@@ -6692,8 +6463,12 @@ final class GameView extends View implements Menu.Host {
         // (Against the size of a car: about 0.15 m a unit at the pace things move here.)
         int kmh = Math.round(Math.abs(v.speed) * 0.55f);
         int aboard = v.crew.size() + v.riders.size() + v.passengers;
-        String people = aboard == 0 ? (v.player != null ? "you're driving" : v.occupied() ? "driver only" : "nobody aboard")
-                : aboard + " aboard";
+        // ((11.3) A police car or army truck out with nobody else aboard has its own driver, by name.)
+        String driver = v.driver != null ? (v.driver.type == Entity.COP ? "Officer " : v.driver.type == Entity.SOLDIER ? "Pvt. " : "")
+                + Names.person(v.driver.nameSeed) : null;
+        String people = aboard == 0 ? (v.player != null ? "you're driving" : driver != null ? "driver only (" + driver + ")"
+                : v.occupied() ? "driver only" : "nobody aboard")
+                : (aboard + (v.driver != null ? 1 : 0)) + " aboard";
         lines.add((Fleet.airborne(v) ? "flying" : kmh < 2 ? "stopped" : kmh + " km/h") + (v.lightsOn() ? ", lights and siren" : "")
                 + "  -  " + people + "  -  " + (v.maxHp > 0 ? Math.max(0, Math.round(100 * v.hp / v.maxHp)) + "% condition" : ""));
         text.setTextAlign(Paint.Align.LEFT);
@@ -7044,15 +6819,30 @@ final class GameView extends View implements Menu.Host {
     private String doing(Entity e) {
         if (e.isZombie()) {
             if (e.feedTimer > 0) return "Feeding";
+            if (e.doorAt != null && e.doorTime > 0) return "Clawing at the door of " + (e.doorAt.name != null ? e.doorAt.name : "a building");
+            if (e.memory > 0) return "Chasing someone it saw";
+            if (e.searchTimer > 0) return "Sniffing about where it lost them";
+            if (e.leadsHorde && e.hordeSize > 1) return "Leading a horde of " + e.hordeSize;
             if (e.hordeLeader != null) return "Shambling along with a horde";
             if (e.noiseTimer > 0) return "Heading for a noise";
-            return "Hunting";
+            return "Wandering, hungry";
         }
+        String s = doingNow(e);
+        // ((11.3) And how they're holding up.)
+        if (e.hp < e.maxHp * 0.35f) s += " (badly hurt)";
+        else if (e.infected) s += " (bitten)";
+        return s;
+    }
+
+    /** (11.3) The living: what they're doing right now, most pressing first. */
+    private String doingNow(Entity e) {
         if (e.stun > 0) return "Dazed";
-        if (e.aiming) return "Shooting";
+        if (e.aiming) return e.ammo <= 0 && e.reload > 0 ? "Reloading under fire" : "Shooting";
+        if (e.isArmed() && e.reload > 0) return "Reloading";
         if (e.fleeTimer > 0 && !e.isArmed()) return "Running for their life";
+        if (e.ride != null) return "Riding along";
         switch (e.task) {
-            case Dispatch.T_RESPOND: return "Responding to a 911 call" + (e.incident != null ? " on " + e.incident.place : "");
+            case Dispatch.T_RESPOND: return (e.onScene ? "At the scene" : "Responding to a 911 call") + (e.incident != null ? " on " + e.incident.place : "");
             case Dispatch.T_GUARD: return "Guarding the " + (e.zone != null ? e.zone.place + " " : "") + "safe zone";
             case Dispatch.T_SEEK: return "Heading for a safe zone";
             case Dispatch.T_SHELTER: return "Sheltering in a safe zone";
@@ -7073,9 +6863,17 @@ final class GameView extends View implements Menu.Host {
             case Dispatch.T_CLEANUP: return "Clearing away bodies";
             case Dispatch.T_LOOT: return "On a supply run";
             case Dispatch.T_PATROL: return "Leading an armed patrol";
+            case Dispatch.T_BOARD: return e.rig != null ? "Getting into the " + world.fleet.describe(e.rig).split("  -  ")[0].toLowerCase() : "Mounting up";
         }
-        if (e.isArmed()) return "On patrol";
-        if (e.leader != null) return "Staying close";
+        if (e.isArmed()) {
+            if (e.ammo <= 0 && e.reserve <= 0) return "Out of ammo";
+            if (e.role == Entity.ROLE_PILOT) return "Standing by for the helicopter";
+            String duty = world.dutyText(e);
+            if (duty != null) return duty;
+            if (e.leader != null) return "Covering " + Names.person(e.leader.nameSeed);
+            return e.type == Entity.SOLDIER ? "Keeping watch" : "On patrol";
+        }
+        if (e.leader != null) return "Staying close to " + Names.person(e.leader.nameSeed);
         return e.type == Entity.CIVILIAN ? world.lifeActivity(e) : "Going about their day";
     }
 
@@ -7955,7 +7753,7 @@ final class GameView extends View implements Menu.Host {
             case City.CALL_CENTRE: role = world.callsLost ? "FALLEN: 911 calls go unanswered and nobody is watching the cameras"
                     : "Answers 911 calls and watches the cameras: police are sent to trouble quicker"; break;
             case City.ARMORY: {
-                String[] g = Country.guard(world.city.country.id);
+                String[] g = Country.guard();
                 role = world.armoryLost ? "FALLEN: the " + g[1] + " can't muster here; they'll have to come from out of town"
                         : world.guardCalled ? "The " + g[1] + " has mustered here and gone into the city"
                         : "The " + g[1] + ": reservists muster here and drive out when the " + g[2] + " calls them up";

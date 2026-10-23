@@ -3,55 +3,20 @@ package com.instantaxtion.zombiesandbox;
 import java.util.Random;
 
 /**
- * Where the city is: the country sets the look of its buildings, its street, town and people's names, the
- * road markings, the police cars and which side of the road traffic keeps to.
+ * Where the city is: the look of its buildings, its street, town and people's names, the road markings and the
+ * police cars. (Since 11.3 the game is set in the USA only: the other countries and their code are gone.)
  */
 final class Country {
-    static final int USA = 0, AUSTRALIA = 1, JAPAN = 2, FRANCE = 3, MEXICO = 4, SWITZERLAND = 5, KOREA = 6,
-            MALAYSIA = 7, PORTUGAL = 8, MOROCCO = 9, RUSSIA = 10, CHINA = 11, EGYPT = 12, SAUDI = 13, SWEDEN = 14,
-            NORWAY = 15, DENMARK = 16, CANADA = 17;
-    static final String[] NAMES = {"USA", "Australia", "Japan", "France", "Mexico", "Switzerland", "South Korea",
-            "Malaysia", "Portugal", "Morocco", "Russia", "China", "Egypt", "Saudi Arabia", "Sweden", "Norway", "Denmark", "Canada"};
-    /** Countries taken off the New Game screen (kept so old saves and city codes still build). */
-    static boolean retired(int id) {
-        // (Switzerland and China went in 10.50.)
-        return id == KOREA || id == MALAYSIA || id == PORTUGAL || id == MOROCCO || id == EGYPT || id == SAUDI || id == DENMARK
-                || id == SWITZERLAND || id == CHINA;
-    }
-
-    static final String[] INFO = {
-            "Wide avenues with yellow centre lines, clapboard houses and black-and-white cruisers.",
-            "Brick and weatherboard homes under tile and Colorbond roofs, dry grass, chequered police cars. Traffic drives on the left.",
-            "Pale walls and blue-grey tiled roofs, temples and shrines, black-and-white patrol cars. Traffic drives on the left.",
-            "Cream stone and zinc roofs, rues and boulevards, white and blue police cars.",
-            "Bright painted walls and flat roofs, calles and avenidas, blue and white patrol cars.",
-            "Chalets and steep roofs, tidy old towns, Strassen and Gassen, white and orange police cars.",
-            "Blue and green tiled roofs, white apartment towers, -ro and -gil streets, blue and white patrol cars.",
-            "Tin-roofed houses on stilts, shophouses and mosques, Jalan everything, blue and white police cars. Traffic drives on the left.",
-            "White walls and terracotta roofs, tiled facades, ruas and avenidas, dark blue police cars.",
-            "Flat-roofed whitewashed and ochre houses, medinas and mosques, derbs and avenues, grey-green police cars.",
-            "Pastel blocks and dachas, onion-domed churches, ulitsas and prospekts, white and blue police cars.",
-            "Grey-tiled courtyard homes and white tower blocks, temples, Lu and Jie, white and blue police cars. No gun shops.",
-            "Sandstone and mud-brick flat roofs, mosques and minarets, sharias and midans, white police cars. No gun shops.",
-            "Pale stone villas behind walls, mosques, King Fahd Road, white and green police cars. No gun shops.",
-            "Falu-red cottages and yellow town houses, -gatan and -vägen, blue and yellow chequered police cars.",
-            "White and red timber houses under dark roofs, -gata and -veien, blue and yellow chequered police cars.",
-            "Yellow and red brick under red tiles, -gade and -vej, blue and yellow chequered police cars.",
-            "Clapboard and red-brick towns among maple, birch and pine woods and lakes, Crescents and Drives, white police cars and the RCMP out in the country."};
+    static final int USA = 0;
+    static final String[] NAMES = {"USA"};
+    static final String[] INFO = {"Wide avenues with yellow centre lines, clapboard houses and black-and-white cruisers."};
 
     /** The country of the game being played (for people's names). */
     static volatile Country current;
 
-    final int id;
-    /**
-     * Which of the five original looks its buildings, cars and facades are drawn in (the newer countries
-     * borrow the nearest), and how its places of worship look (a country of its own, or -1 for a plain church).
-     */
-    int look, churchLook = -1;
+    final int id = USA;
     /** The highway route shield's colour. */
-    int shieldColor = 0xFF1E6A3A;
-    /** Traffic keeps to the left. */
-    final boolean leftHand;
+    final int shieldColor = 0xFF1E3A8A;
     /** Colour of the centre line on ordinary streets. */
     final int centreLine;
     final int[] houseRoofs, houseWalls, shopRoofs, shopWalls, apartmentWalls;
@@ -61,8 +26,6 @@ final class Country {
     /** The two colours of the chequered band. */
     int checkA, checkB;
     final String[] streets, mainWords, localWords;
-    /** The street type comes before the name ("Rue de la Paix") rather than after ("Oak St"). */
-    final boolean typeFirst;
     final String ringRoad;
     final String[] townStart, townEnd, districtWords, hamletEnds;
     final String[] churches, schools, markets, pharmacies, gunStores, bases;
@@ -76,7 +39,7 @@ final class Country {
     int taxiColor, busColor;
     int[] officeRoofs, officeWalls, oldWalls, oldRoofs;
 
-    private static final Country[] ALL = new Country[NAMES.length];
+    private static Country usa;
 
     /**
      * (10.56) The Garrison State: the country's own streets, names and buildings, but its police are the
@@ -86,8 +49,7 @@ final class Country {
     boolean garrison;
 
     static Country garrison(int id) {
-        id = Math.max(0, Math.min(NAMES.length - 1, id));
-        Country c = new Country(id);
+        Country c = new Country();
         c.garrison = true;
         c.policeStation = "Military Police Post ";
         c.cruiserBody = 0xFF4E5A36;
@@ -108,327 +70,83 @@ final class Country {
     /** (10.56) The military police: khaki shirts and red berets. */
     static final int MP_SHIRT = 0xFF8A7E58, MP_BERET = 0xFF9A1E1E;
 
+    /** The country (whatever the id: there is only the one now). */
     static Country get(int id) {
-        // (The newer countries are added after the original five.)
-        id = Math.max(0, Math.min(NAMES.length - 1, id));
-        synchronized (ALL) {
-            if (ALL[id] == null) ALL[id] = new Country(id);
-            return ALL[id];
+        synchronized (NAMES) {
+            if (usa == null) usa = new Country();
+            return usa;
         }
     }
 
-    /** A street name: the type of street before or after the name, as the country does it. */
+    /** A street name: "Oak St". */
     String streetName(String base, boolean main, Random rnd) {
         String[] types = main ? mainWords : localWords;
         String type = types[rnd.nextInt(types.length)];
         if (type.isEmpty()) return base;
-        if (typeFirst) return type + " " + base;
-        // ("Sakura-dori", "Bahnhofstrasse", "Lenina Ulitsa": joined on; "Oak St" with a space.)
-        boolean join = id == JAPAN || type.charAt(0) == '-' || type.charAt(0) == ' ' || Character.isLowerCase(type.charAt(0));
-        return join ? base + type : base + " " + type;
-    }
-
-    /** Whether ordinary people can walk into a shop and buy a gun here (there are gun stores). */
-    boolean gunShops() {
-        switch (id) {
-            case USA: case AUSTRALIA: case FRANCE: case SWITZERLAND: case PORTUGAL: case RUSSIA: case SWEDEN: case NORWAY:
-            case DENMARK: case CANADA:
-                return true;
-            default:
-                return false;
-        }
+        return base + " " + type;
     }
 
     /** The sign over a gun store's door. */
     String gunSign() {
-        switch (id) {
-            case FRANCE: return "ARMURERIE";
-            case SWITZERLAND: return "WAFFEN";
-            case PORTUGAL: return "ARMARIA";
-            case RUSSIA: return "ОРУЖИЕ";
-            case SWEDEN: return "VAPEN";
-            case NORWAY: return "VÅPEN";
-            case DENMARK: return "VÅBEN";
-            default: return "GUNS";
-        }
+        return "GUNS";
     }
 
     // ------------------------------------------------------------------ out in the country
 
     /** Names for the country's wild places: its mountains, lakes, falls and parks. */
     String[] natureWords() {
-        switch (id) {
-            case AUSTRALIA: return new String[]{"Kookaburra", "Wattle", "Banksia", "Blue Gum", "Wombat", "Emu", "Ironbark", "Lyrebird", "Bunya", "Mallee", "Brolga", "Coolabah"};
-            case JAPAN: return new String[]{"Fuji", "Asahi", "Kiri", "Matsu", "Sakura", "Momiji", "Taki", "Kumo", "Shiro", "Akagi", "Hotaka", "Yuki"};
-            case FRANCE: return new String[]{"Vercors", "Belledonne", "Chartreuse", "Morvan", "Queyras", "Écrins", "Aubrac", "Vanoise", "Cévennes", "Bauges", "Pilat", "Livradois"};
-            case MEXICO: return new String[]{"Sierra Azul", "Los Pinos", "El Águila", "Tepozteco", "Cumbres", "El Oso", "La Malinche", "Huasteca", "El Cielo", "Tapalpa", "Mazamitla", "Nevado"};
-            case SWITZERLAND: return new String[]{"Pilatus", "Rigi", "Säntis", "Titlis", "Gemmi", "Grimsel", "Brienz", "Klausen", "Furka", "Albula", "Bernina", "Susten"};
-            case KOREA: return new String[]{"Seorak", "Jiri", "Halla", "Odae", "Sobaek", "Gaya", "Naejang", "Juwang", "Wolchul", "Bukhan", "Taebaek", "Chiak"};
-            case MALAYSIA: return new String[]{"Kinabalu", "Tahan", "Ledang", "Jerai", "Bintang", "Berembun", "Benom", "Mulu", "Santubong", "Nuang", "Brinchang", "Irau"};
-            case PORTUGAL: return new String[]{"Estrela", "Gerês", "Arrábida", "Sintra", "Lousã", "Marão", "Caramulo", "Montesinho", "Açor", "Alvão", "Malcata", "Sicó"};
-            case MOROCCO: return new String[]{"Toubkal", "Ifrane", "Tazekka", "Ourika", "Imlil", "Ouzoud", "Talassemtane", "Bouhachem", "Akchour", "Tamga", "Azilal", "Mgoun"};
-            case RUSSIA: return new String[]{"Belukha", "Elbrus", "Ilmen", "Taiga", "Sayan", "Altai", "Khibiny", "Valdai", "Kedr", "Sosnovy", "Berezka", "Orlinoe"};
-            case CHINA: return new String[]{"Huang", "Tai", "Hua", "Emei", "Lu", "Wuyi", "Song", "Heng", "Yandang", "Qingcheng", "Wudang", "Jiuhua"};
-            case EGYPT: return new String[]{"Sinai", "Saint Catherine", "Wadi Rayan", "Faiyum", "Qarun", "Gilf Kebir", "Uweinat", "Siwa", "Dakhla", "Farafra", "Bahariya", "Elba"};
-            case SAUDI: return new String[]{"Asir", "Sarawat", "Soudah", "Tuwaiq", "Shada", "Hejaz", "Harrat", "Farasan", "Rumah", "Uruq", "Hima", "Al Lith"};
-            case SWEDEN: return new String[]{"Kebnekaise", "Sarek", "Abisko", "Tiveden", "Skuleskogen", "Fulufjäll", "Hamra", "Sonfjäll", "Tyresta", "Mosse", "Padjelanta", "Muddus"};
-            case NORWAY: return new String[]{"Jotun", "Rondane", "Dovre", "Hardanger", "Sylan", "Femund", "Børgefjell", "Reinheim", "Skarvan", "Breheimen", "Hallingskarv", "Trollheim"};
-            case CANADA: return new String[]{"Algonquin", "Banff", "Jasper", "Kootenay", "Muskoka", "Laurentian", "Temagami", "Kawartha", "Gatineau", "Yoho", "Waterton", "Kluane"};
-            case DENMARK: return new String[]{"Mols", "Rold", "Thy", "Himmerland", "Gribskov", "Silkeborg", "Hald", "Skagen", "Møns", "Rebild", "Lindet", "Vadehav"};
-            default: return new String[]{"Bear", "Eagle", "Pine", "Cedar", "Willow", "Elk", "Hawk", "Silver", "Crystal", "Thunder", "Wolf", "Aspen", "Granite", "Misty", "Echo", "Raven"};
-        }
+        return new String[]{"Bear", "Eagle", "Pine", "Cedar", "Willow", "Elk", "Hawk", "Silver", "Crystal", "Thunder", "Wolf", "Aspen", "Granite", "Misty", "Echo", "Raven"};
     }
 
-    /** The nature park ("Yellow Pine National Park"), or with no word, what its visitor centre is called. */
+    /** The nature park ("Yellow Pine State Park"), or with no word, what its visitor centre is called. */
     String parkName(String word) {
-        if (word == null) {
-            switch (id) {
-                case FRANCE: case MOROCCO: return "Maison du Parc";
-                case MEXICO: case PORTUGAL: return "Centro de Visitantes";
-                case SWITZERLAND: return "Besucherzentrum";
-                case SWEDEN: return "Naturum";
-                case NORWAY: return "Besøkssenter";
-                case DENMARK: return "Besøgscenter";
-                case RUSSIA: return "Vizit-tsentr";
-                case AUSTRALIA: case JAPAN: case KOREA: case MALAYSIA: case CHINA: case CANADA: return "Visitor Centre";
-                default: return "Visitor Center";
-            }
-        }
-        switch (id) {
-            case FRANCE: return "Parc Naturel de " + word;
-            case MEXICO: return "Parque Nacional " + word;
-            case SWITZERLAND: return "Naturpark " + word;
-            case MALAYSIA: return "Taman Negara " + word;
-            case PORTUGAL: return "Parque Natural de " + word;
-            case MOROCCO: return "Parc National de " + word;
-            case RUSSIA: return word + " Zapovednik";
-            case JAPAN: return word + " Quasi-National Park";
-            case CHINA: return word + " National Forest Park";
-            case EGYPT: return word + " Protected Area";
-            case SAUDI: return word + " Nature Reserve";
-            case SWEDEN: return word + " nationalpark";
-            case NORWAY: return word + " nasjonalpark";
-            case DENMARK: return "Nationalpark " + word;
-            case AUSTRALIA: case CANADA: return word + " National Park";
-            default: return word + " State Park";
-        }
+        return word == null ? "Visitor Center" : word + " State Park";
     }
 
     String mountainName(String word) {
-        switch (id) {
-            case FRANCE: case MOROCCO: return "Mont " + word;
-            case MEXICO: return "Cerro " + word;
-            case PORTUGAL: return "Serra de " + word;
-            case SWITZERLAND: return word + "horn";
-            case JAPAN: return word + "-yama";
-            case KOREA: return word + "-san";
-            case CHINA: return word + " Shan";
-            case MALAYSIA: return "Gunung " + word;
-            case RUSSIA: return "Gora " + word;
-            case EGYPT: case SAUDI: return "Jebel " + word;
-            case SWEDEN: return word + "fjället";
-            case NORWAY: return word + "tind";
-            case DENMARK: return word + " Bakke";
-            default: return "Mount " + word;
-        }
+        return "Mount " + word;
     }
 
     String lakeName(String word) {
-        switch (id) {
-            case FRANCE: case MOROCCO: return "Lac " + word;
-            case MEXICO: return "Laguna " + word;
-            case PORTUGAL: return "Lagoa de " + word;
-            case SWITZERLAND: return word + "see";
-            case JAPAN: return word + "-ko";
-            case KOREA: return word + " Reservoir";
-            case CHINA: return word + " Hu";
-            case MALAYSIA: return "Tasik " + word;
-            case RUSSIA: return "Ozero " + word;
-            case EGYPT: case SAUDI: return "Birket " + word;
-            case SWEDEN: return word + "sjön";
-            case NORWAY: return word + "vatnet";
-            case DENMARK: return word + " Sø";
-            default: return "Lake " + word;
-        }
+        return "Lake " + word;
     }
 
     String fallsName(String word) {
-        switch (id) {
-            case FRANCE: case MOROCCO: return "Cascade de " + word;
-            case MEXICO: return "Cascada " + word;
-            case PORTUGAL: return "Cascata de " + word;
-            case SWITZERLAND: return word + "fall";
-            case JAPAN: return word + " Falls";
-            case MALAYSIA: return "Air Terjun " + word;
-            case RUSSIA: return "Vodopad " + word;
-            case SWEDEN: return word + "forsen";
-            case NORWAY: return word + "fossen";
-            case DENMARK: return word + " Vandfald";
-            default: return word + " Falls";
-        }
+        return word + " Falls";
     }
 
     /** The park rangers' station. */
     String rangerStationName(String park) {
-        String at = park != null ? ", " + park : "";
-        switch (id) {
-            case FRANCE: case MOROCCO: return "Maison des Gardes" + at;
-            case MEXICO: return "Estación de Guardaparques" + at;
-            case PORTUGAL: return "Posto de Guardas" + at;
-            case SWITZERLAND: return "Rangerstation" + at;
-            case SWEDEN: return "Tillsynsstuga" + at;
-            case NORWAY: return "Oppsynsstasjon" + at;
-            case DENMARK: return "Naturvejlederstation" + at;
-            case RUSSIA: return "Kordon" + at;
-            default: return "Ranger Station" + at;
-        }
+        return "Ranger Station" + (park != null ? ", " + park : "");
     }
 
     /** A fire lookout tower. */
     String lookoutName(String word) {
-        switch (id) {
-            case FRANCE: case MOROCCO: return "Vigie de " + word;
-            case MEXICO: return "Torre de Vigilancia " + word;
-            case PORTUGAL: return "Posto de Vigia de " + word;
-            case SWITZERLAND: return word + " Feuerwachturm";
-            case SWEDEN: return word + " brandtorn";
-            case NORWAY: return word + " branntårn";
-            case DENMARK: return word + " Brandtårn";
-            case RUSSIA: return "Pozharnaya vyshka " + word;
-            default: return word + " Fire Lookout";
-        }
+        return word + " Fire Lookout";
     }
 
     String campName(String word) {
-        switch (id) {
-            case FRANCE: case MOROCCO: case SWITZERLAND: return "Camping " + word;
-            case MEXICO: return "Campamento " + word;
-            case PORTUGAL: return "Parque de Campismo " + word;
-            case RUSSIA: return "Turbaza " + word;
-            case SWEDEN: case NORWAY: case DENMARK: return word + " Camping";
-            case USA: case CANADA: return word + " Campground";
-            default: return word + " Campsite";
-        }
+        return word + " Campground";
     }
 
-    /** The country's own SWAT team: {its name, what its officers are called}. */
-    static String[] swat(int id) {
-        switch (id) {
-            case AUSTRALIA: return new String[]{"Tactical Response Group", "TRG officer"};
-            case JAPAN: return new String[]{"SAT", "SAT officer"};
-            case FRANCE: return new String[]{"RAID", "RAID officer"};
-            case MEXICO: return new String[]{"GOPES", "GOPES officer"};
-            case SWITZERLAND: return new String[]{"Interventionseinheit", "Intervention officer"};
-            case KOREA: return new String[]{"Police SOU", "SOU officer"};
-            case MALAYSIA: return new String[]{"UTK", "UTK officer"};
-            case PORTUGAL: return new String[]{"GOE", "GOE officer"};
-            case MOROCCO: return new String[]{"GIPN", "GIPN officer"};
-            case RUSSIA: return new String[]{"SOBR", "SOBR officer"};
-            case CHINA: return new String[]{"Special Police Unit", "Special police officer"};
-            case EGYPT: return new String[]{"Special Operations", "Special operations officer"};
-            case SAUDI: return new String[]{"Special Emergency Force", "Special forces officer"};
-            case SWEDEN: return new String[]{"Nationella insatsstyrkan", "NI officer"};
-            case NORWAY: return new String[]{"Beredskapstroppen", "Delta officer"};
-            case DENMARK: return new String[]{"Aktionsstyrken", "AKS officer"};
-            case CANADA: return new String[]{"Emergency Task Force", "ETF officer"};
-            default: return new String[]{"SWAT", "SWAT officer"};
-        }
+    /** The SWAT team: {its name, what its officers are called}. */
+    static String[] swat() {
+        return new String[]{"SWAT", "SWAT officer"};
     }
 
-    /**
-     * The country's own National Guard: {its armory, the force, who calls it out, the armory's roof sign}.
-     */
-    static String[] guard(int id) {
-        switch (id) {
-            case AUSTRALIA: return new String[]{"Army Reserve Depot", "Army Reserve", "Premier", "ARMY RESERVE"};
-            case JAPAN: return new String[]{"SDF Reserve Camp", "Self-Defense Forces reserve", "Governor", "自衛隊"};
-            case FRANCE: return new String[]{"Caserne de la Garde Nationale", "Garde nationale", "Préfet", "GARDE NATIONALE"};
-            case MEXICO: return new String[]{"Cuartel de la Guardia Nacional", "Guardia Nacional", "Gobernador", "GUARDIA NACIONAL"};
-            case SWITZERLAND: return new String[]{"Zeughaus", "militia", "Regierungsrat", "ZEUGHAUS"};
-            case KOREA: return new String[]{"Reserve Forces Training Unit", "Reserve Forces", "Governor", "예비군"};
-            case MALAYSIA: return new String[]{"Kem Askar Wataniah", "Wataniah", "Menteri Besar", "WATANIAH"};
-            case PORTUGAL: return new String[]{"Quartel da GNR", "GNR", "Ministro", "GNR"};
-            case MOROCCO: return new String[]{"Caserne des Forces Auxiliaires", "Forces Auxiliaires", "Wali", "FORCES AUXILIAIRES"};
-            case RUSSIA: return new String[]{"Rosgvardiya Base", "Rosgvardiya", "Governor", "РОСГВАРДИЯ"};
-            case CHINA: return new String[]{"Armed Police Barracks", "People's Armed Police", "Mayor", "武警"};
-            case EGYPT: return new String[]{"Central Security Forces Camp", "Central Security Forces", "Governor", "CENTRAL SECURITY"};
-            case SAUDI: return new String[]{"National Guard Garrison", "Saudi National Guard", "Emir", "NATIONAL GUARD"};
-            case SWEDEN: return new String[]{"Hemvärnsgård", "Home Guard", "County Governor", "HEMVÄRNET"};
-            case NORWAY: return new String[]{"Heimevernsleir", "Home Guard", "County Governor", "HEIMEVERNET"};
-            case DENMARK: return new String[]{"Hjemmeværnsgård", "Home Guard", "Mayor", "HJEMMEVÆRNET"};
-            case CANADA: return new String[]{"Armoury", "Canadian Army Reserve", "Premier", "ARMOURY"};
-            default: return new String[]{"National Guard Armory", "National Guard", "Governor", "NATIONAL GUARD"};
-        }
+    /** The National Guard: {its armory, the force, who calls it out, the armory's roof sign}. */
+    static String[] guard() {
+        return new String[]{"National Guard Armory", "National Guard", "Governor", "NATIONAL GUARD"};
     }
 
-    /** What the country calls its government buildings: {names}, then {roof signs}. */
-    String[][] gov() {
-        return gov(id);
+    /** The government buildings: {names}, then {roof signs}. */
+    static String[][] gov() {
+        return new String[][]{{"City Hall", "County Courthouse", "County Jail", "911 Dispatch Center", "Public Works Yard"},
+                {"CITY HALL", "COURTHOUSE", "COUNTY JAIL", "911", "PUBLIC WORKS"}};
     }
 
-    static String[][] gov(int id) {
-        switch (id) {
-            case AUSTRALIA: return new String[][]{{"Town Hall", "Magistrates Court", "Remand Centre", "Triple Zero Centre", "Council Works Depot"},
-                    {"TOWN HALL", "COURT", "REMAND CENTRE", "000", "COUNCIL DEPOT"}};
-            case JAPAN: return new String[][]{{"City Hall", "District Court", "Detention House", "110 Command Centre", "Public Works Office"},
-                    {"市役所", "裁判所", "拘置所", "指令センター", "土木事務所"}};
-            case FRANCE: return new String[][]{{"Hôtel de Ville", "Palais de Justice", "Maison d'Arrêt", "Centre 17-112", "Services Techniques"},
-                    {"HÔTEL DE VILLE", "JUSTICE", "MAISON D'ARRÊT", "112", "SERVICES TECHNIQUES"}};
-            case MEXICO: return new String[][]{{"Palacio Municipal", "Palacio de Justicia", "Centro Penitenciario", "Centro C5", "Obras Públicas"},
-                    {"PALACIO MUNICIPAL", "JUSTICIA", "CERESO", "C5 911", "OBRAS PÚBLICAS"}};
-            case SWITZERLAND: return new String[][]{{"Stadthaus", "Bezirksgericht", "Gefängnis", "Notrufzentrale", "Werkhof"},
-                    {"STADTHAUS", "GERICHT", "GEFÄNGNIS", "112", "WERKHOF"}};
-            case KOREA: return new String[][]{{"City Hall", "District Court", "Detention Center", "112 Situation Room", "Road Works Office"},
-                    {"시청", "법원", "구치소", "112", "도로사업소"}};
-            case MALAYSIA: return new String[][]{{"Dewan Bandaraya", "Mahkamah", "Penjara", "Pusat 999", "Depoh Kerja Raya"},
-                    {"DEWAN BANDARAYA", "MAHKAMAH", "PENJARA", "999", "JKR"}};
-            case PORTUGAL: return new String[][]{{"Paços do Concelho", "Palácio da Justiça", "Estabelecimento Prisional", "Centro 112", "Armazém Municipal"},
-                    {"PAÇOS DO CONCELHO", "TRIBUNAL", "PRISÃO", "112", "ARMAZÉM MUNICIPAL"}};
-            case MOROCCO: return new String[][]{{"Hôtel de Ville", "Tribunal", "Prison Locale", "Centre 19", "Services Municipaux"},
-                    {"HÔTEL DE VILLE", "TRIBUNAL", "PRISON", "19", "SERVICES MUNICIPAUX"}};
-            case RUSSIA: return new String[][]{{"Meriya", "Gorodskoy Sud", "SIZO", "Dezhurnaya Chast 112", "ZhKKh Depot"},
-                    {"МЭРИЯ", "СУД", "СИЗО", "112", "ЖКХ"}};
-            case CHINA: return new String[][]{{"City Government", "People's Court", "Detention Centre", "110 Command Centre", "Municipal Works Bureau"},
-                    {"市政府", "人民法院", "看守所", "110", "市政"}};
-            case EGYPT: return new String[][]{{"Governorate Building", "Court of First Instance", "Police Detention Centre", "122 Emergency Centre", "Public Utilities Authority"},
-                    {"GOVERNORATE", "COURT", "PRISON", "122", "UTILITIES"}};
-            case SAUDI: return new String[][]{{"Amanah (Municipality)", "General Court", "General Prison", "911 Operations Centre", "Municipal Services Yard"},
-                    {"AMANAH", "COURT", "PRISON", "911", "BALADIYAH"}};
-            case SWEDEN: return new String[][]{{"Stadshuset", "Tingsrätten", "Häktet", "SOS Alarm", "Gatukontoret"},
-                    {"STADSHUS", "TINGSRÄTT", "HÄKTE", "112", "GATUKONTOR"}};
-            case NORWAY: return new String[][]{{"Rådhuset", "Tingretten", "Fengselet", "Nødsentralen", "Bymiljøetaten"},
-                    {"RÅDHUS", "TINGRETT", "FENGSEL", "112", "BYMILJØ"}};
-            case DENMARK: return new String[][]{{"Rådhuset", "Byretten", "Arresthuset", "Alarmcentralen", "Teknik og Miljø"},
-                    {"RÅDHUS", "BYRET", "ARRESTHUS", "112", "TEKNIK & MILJØ"}};
-            case CANADA: return new String[][]{{"City Hall", "Provincial Courthouse", "Remand Centre", "911 Communications Centre", "Public Works Yard"},
-                    {"CITY HALL", "COURTHOUSE", "REMAND CENTRE", "911", "PUBLIC WORKS"}};
-            default: return new String[][]{{"City Hall", "County Courthouse", "County Jail", "911 Dispatch Center", "Public Works Yard"},
-                    {"CITY HALL", "COURTHOUSE", "COUNTY JAIL", "911", "PUBLIC WORKS"}};
-        }
-    }
-
-    /** A sign on a roof in the local language. */
+    /** A sign on a roof. */
     String sign(String english) {
-        String[][] words;
-        switch (id) {
-            case FRANCE: words = new String[][]{{"FIRE", "POMPIERS"}, {"MARKET", "MARCHÉ"}, {"SCHOOL", "ÉCOLE"}, {"GAS", "ESSENCE"}}; break;
-            case MEXICO: words = new String[][]{{"POLICE", "POLICÍA"}, {"FIRE", "BOMBEROS"}, {"MARKET", "MERCADO"}, {"SCHOOL", "ESCUELA"}, {"GAS", "GASOLINA"}}; break;
-            case AUSTRALIA: words = new String[][]{{"GAS", "PETROL"}}; break;
-            case JAPAN: words = new String[][]{{"POLICE", "KOBAN"}}; break;
-            case SWITZERLAND: words = new String[][]{{"POLICE", "POLIZEI"}, {"FIRE", "FEUERWEHR"}, {"MARKET", "MIGROS"}, {"SCHOOL", "SCHULE"}, {"GAS", "TANKSTELLE"}}; break;
-            case KOREA: words = new String[][]{{"POLICE", "경찰"}, {"FIRE", "소방서"}, {"MARKET", "마트"}, {"SCHOOL", "학교"}, {"GAS", "주유소"}}; break;
-            case MALAYSIA: words = new String[][]{{"POLICE", "POLIS"}, {"FIRE", "BOMBA"}, {"MARKET", "PASAR"}, {"SCHOOL", "SEKOLAH"}, {"GAS", "PETROL"}}; break;
-            case PORTUGAL: words = new String[][]{{"POLICE", "POLÍCIA"}, {"FIRE", "BOMBEIROS"}, {"MARKET", "MERCADO"}, {"SCHOOL", "ESCOLA"}, {"GAS", "COMBUSTÍVEL"}}; break;
-            case MOROCCO: words = new String[][]{{"POLICE", "POLICE"}, {"FIRE", "POMPIERS"}, {"MARKET", "SOUK"}, {"SCHOOL", "ÉCOLE"}, {"GAS", "STATION"}}; break;
-            case RUSSIA: words = new String[][]{{"POLICE", "ПОЛИЦИЯ"}, {"FIRE", "ПОЖАРНАЯ"}, {"MARKET", "РЫНОК"}, {"SCHOOL", "ШКОЛА"}, {"GAS", "АЗС"}}; break;
-            case CHINA: words = new String[][]{{"POLICE", "警察"}, {"FIRE", "消防"}, {"MARKET", "超市"}, {"SCHOOL", "学校"}, {"GAS", "加油站"}}; break;
-            case EGYPT: case SAUDI: words = new String[][]{{"FIRE", "CIVIL DEFENCE"}, {"MARKET", "SOUQ"}, {"GAS", "PETROL"}}; break;
-            case SWEDEN: words = new String[][]{{"POLICE", "POLIS"}, {"FIRE", "BRANDSTATION"}, {"MARKET", "LIVS"}, {"SCHOOL", "SKOLA"}, {"GAS", "BENSIN"}}; break;
-            case NORWAY: words = new String[][]{{"POLICE", "POLITI"}, {"FIRE", "BRANNSTASJON"}, {"MARKET", "DAGLIGVARE"}, {"SCHOOL", "SKOLE"}, {"GAS", "BENSIN"}}; break;
-            case DENMARK: words = new String[][]{{"POLICE", "POLITI"}, {"FIRE", "BRANDSTATION"}, {"MARKET", "SUPERMARKED"}, {"SCHOOL", "SKOLE"}, {"GAS", "TANKSTATION"}}; break;
-            default: return english;
-        }
-        for (String[] w : words) if (w[0].equals(english)) return w[1];
         return english;
     }
 
@@ -440,1356 +158,96 @@ final class Country {
         return a + b;
     }
 
-    /**
-     * A neighbourhood's name in the local style: French quartiers and Mexican colonias don't have English
-     * endings. The type is a City district type, -1 for a plain one or -2 for the countryside.
-     */
+    /** A neighbourhood's name. The type is a City district type, -1 for a plain one or -2 for the countryside. */
     String districtName(String english, String word, int type) {
-        if (id == FRANCE) {
-            switch (type) {
-                case 0: return "Centre-Ville";
-                case 2: return "Vieille Ville";
-                case 4: return "Zone Industrielle " + word;
-                case 5: return "Quartier Universitaire";
-                case -2: return "Campagne de " + word;
-                default: return word;
-            }
-        }
-        if (id == MEXICO) {
-            switch (type) {
-                case 0: return "Centro";
-                case 2: return "Centro Histórico";
-                case 4: return "Parque Industrial " + word;
-                case 5: return "Ciudad Universitaria";
-                case -2: return "Valle de " + word;
-                default: return "Colonia " + word;
-            }
-        }
-        if (id == JAPAN && type == 0) return "Chuo-ku";
-        if (id == KOREA && type == 0) return "Jung-gu";
-        if (id == SWITZERLAND && type == 2) return "Altstadt";
-        if (id == PORTUGAL) {
-            switch (type) {
-                case 0: return "Baixa";
-                case 2: return "Centro Histórico";
-                case 4: return "Zona Industrial " + word;
-                case -2: return "Campo de " + word;
-                default: return "Bairro " + word;
-            }
-        }
-        if (id == MOROCCO) {
-            switch (type) {
-                case 0: return "Ville Nouvelle";
-                case 2: return "Médina";
-                case 4: return "Zone Industrielle " + word;
-                case -2: return "Douar " + word;
-                default: return "Hay " + word;
-            }
-        }
-        if (id == RUSSIA) {
-            switch (type) {
-                case 0: return "Tsentr";
-                case 2: return "Stary Gorod";
-                case 4: return "Promzona " + word;
-                case -2: return word + " Selo";
-                default: return "Mikrorayon " + word;
-            }
-        }
-        if (id == MALAYSIA && type != -2 && type != 0 && type != 2) return "Taman " + word;
-        if (id == SWEDEN || id == NORWAY || id == DENMARK) {
-            switch (type) {
-                case 0: return id == SWEDEN ? "Centrum" : id == NORWAY ? "Sentrum" : "Indre By";
-                case 2: return id == SWEDEN ? "Gamla stan" : id == NORWAY ? "Gamlebyen" : "Gamle By";
-                case 4: return word + (id == DENMARK ? " Industrikvarter" : " industriområde");
-                default: return english;
-            }
-        }
-        if (id == CHINA && type == 0) return "Central District";
-        if ((id == EGYPT || id == SAUDI) && type == 2) return "Old City";
         return english;
     }
 
-    private Country(int id) {
-        this.id = id;
-        switch (id) {
-            case AUSTRALIA:
-                leftHand = true;
-                centreLine = 0xFFE4E4E0;
-                houseRoofs = new int[]{0xFFB0583A, 0xFF4C5048, 0xFF3A4A5A, 0xFFC8BCA2, 0xFF7A2E28, 0xFF7C8C6A};
-                houseWalls = new int[]{0xFFD8C8A0, 0xFFA85A40, 0xFFEDEBE4, 0xFFB8C8D0, 0xFFD6B880, 0xFFB0ACA4};
-                shopRoofs = new int[]{0xFF4C5048, 0xFFC8BCA2, 0xFF3A4A5A, 0xFF8A8E8A, 0xFF7C8C6A, 0xFFB8B4AA};
-                shopWalls = new int[]{0xFFEDEBE4, 0xFF2E5A7A, 0xFFD6B880, 0xFF9A3A2E, 0xFF5A7A4A, 0xFFE8D8B0};
-                apartmentWalls = new int[]{0xFFD6B880, 0xFFE8E2D4, 0xFFC8BCA8, 0xFFA85A40, 0xFFD8C8A0};
-                cruiserBody = 0xFFF2F2F2;
-                cruiserDoor = 0xFFF2F2F2;
-                cruiserRoof = 0;
-                cruiserChecks = true;
-                checkA = 0xFF1F3F8A;
-                checkB = 0xFFF2F2F2;
-                streets = new String[]{"George", "Elizabeth", "Macquarie", "Collins", "Bourke", "Flinders", "Swanston",
-                        "Hunter", "Pitt", "Kent", "Sussex", "Victoria", "Albert", "Queen", "King", "William", "Murray",
-                        "Darling", "Wattle", "Banksia", "Jacaranda", "Waratah", "Bottlebrush", "Acacia", "Bay", "Beach",
-                        "Ocean", "Harbour", "Station", "Church", "High", "Railway", "Anzac", "Lawson", "Paterson",
-                        "Kingsford Smith", "Cook", "Phillip", "Hume", "Sturt", "Burke", "Wills", "Bligh", "Lonsdale",
-                        "Spencer", "Gouger", "Grenfell", "Ironbark", "Boronia", "Kurrajong"};
-                mainWords = new String[]{"Road", "Highway", "Parade", "Avenue", "Esplanade"};
-                localWords = new String[]{"Street", "Street", "Road", "Crescent", "Close", "Court", "Place", "Lane",
-                        "Terrace", "Grove"};
-                typeFirst = false;
-                ringRoad = "Ring Road";
-                townStart = new String[]{"Wood", "Bay", "Black", "Glen", "Wattle", "Gum", "Red", "Sandy", "Broad",
-                        "Port ", "Mount ", "Warra", "Coola", "Bonda", "Yarra", "Kurra", "Mulla", "Wilga", "Narra", "Tumba"};
-                townEnd = new String[]{"ville", " Creek", " Springs", "dale", "gong", "bah", " Heads", " Downs",
-                        " Point", "wood", "bri", "jong", " Valley", " Bay"};
-                districtWords = new String[]{"Wattle", "Banksia", "Gum", "Bay", "North", "South", "East", "West",
-                        "Harbour", "Ridge", "Creek", "Surf", "Red Hill", "Kings", "Glen", "Range", "Waratah", "Ironbark",
-                        "Jacaranda", "Point"};
-                hamletEnds = new String[]{" Creek", " Station", " Crossing", " Flat", " Gully", " Siding", " Well", " Bore"};
-                churches = new String[]{"St Mary's Cathedral", "St Patrick's Church", "Uniting Church", "St John's Anglican",
-                        "St Francis Xavier", "Holy Spirit Church", "Scots Church", "St Paul's Church"};
-                schools = new String[]{"Bayside High", "Wattle Park Primary", "St Joseph's College", "Southern Cross High",
-                        "Gum Tree Primary", "Riverside Secondary College"};
-                markets = new String[]{"Wollies", "Coalz", "IGA Local", "FoodWorks", "Aldy", "Corner Deli"};
-                pharmacies = new String[]{"Discount Chemist", "Corner Chemist", "Coastal Pharmacy", "Main Street Chemist"};
-                gunStores = new String[]{"Outback Firearms", "Bushman's Guns", "Southern Cross Sporting", "Stockman's Arms"};
-                bases = new String[]{"Lavarack Barracks", "Holsworthy Barracks", "Robertson Barracks", "Gallipoli Barracks",
-                        "Puckapunyal", "Enoggera Barracks"};
-                hospital = "Base Hospital";
-                policeStation = "Police Station ";
-                fireStation = "Fire Station ";
-                first = new String[]{"Oliver", "Charlotte", "Jack", "Mia", "William", "Olivia", "Noah", "Amelia", "Lachlan",
-                        "Chloe", "Cooper", "Matilda", "Harrison", "Isla", "Riley", "Ruby", "Mitchell", "Zoe", "Jake",
-                        "Sienna", "Bailey", "Ella", "Liam", "Grace", "Kai", "Lily", "Ethan", "Jessica", "Tom", "Kylie"};
-                last = new String[]{"Smith", "Jones", "Williams", "Brown", "Wilson", "Taylor", "Nguyen", "Johnson",
-                        "Martin", "White", "Anderson", "Walker", "Thompson", "Ryan", "Kelly", "Murphy", "O'Brien",
-                        "Campbell", "Harris", "Lee", "King", "Wright", "Chen", "Singh", "Robinson", "Clarke"};
-                dogs = new String[]{"Bluey", "Rusty", "Max", "Bella", "Charlie", "Ruby", "Digger", "Molly", "Banjo",
-                        "Kelpie", "Coco", "Rex", "Sheila", "Ziggy", "Bingo", "Tex"};
-                carModels = new int[]{0, 0, 1, 1, 1, 2, 2, 2, 4, 4, 6, 7};
-                carColors = new int[]{0xFFF2F2F2, 0xFFF2F2F2, 0xFF9AA0A6, 0xFF2A2C30, 0xFF1F4F8A, 0xFFB03A2E,
-                        0xFF6E7A5A, 0xFFD8C8A0};
-                taxiColor = 0xFFF2C21A;
-                busColor = 0xFFE8E8E8;
-                pavement = 0xFF9E9A90;
-                grass = 0xFF6E7A42;
-                officeRoofs = new int[]{0xFFB8B4AA, 0xFF8A8E8A, 0xFFC8C4BA, 0xFF4C5048, 0xFFA8ACA6, 0xFF9AA0A0};
-                officeWalls = new int[]{0xFFE8E2D4, 0xFFD6B880, 0xFFC8C8C4, 0xFF8AA4B4, 0xFFD8C8A0};
-                oldWalls = new int[]{0xFFD6B880, 0xFFC8A670, 0xFFA85A40, 0xFFE0CFA4, 0xFFB8925C};
-                oldRoofs = new int[]{0xFF4C5048, 0xFF7A2E28, 0xFF8A8E8A, 0xFFB0583A};
-                break;
-            case JAPAN:
-                leftHand = true;
-                centreLine = 0xFFE8E8E8;
-                houseRoofs = new int[]{0xFF3A4656, 0xFF2E3640, 0xFF56606A, 0xFF4A5A70, 0xFF6B4A3A, 0xFF3F5A68};
-                houseWalls = new int[]{0xFFEDE8DC, 0xFFDCD6C8, 0xFFE8E2D2, 0xFFC9C2B4, 0xFFF2EEE6, 0xFFB8B0A0};
-                shopRoofs = new int[]{0xFF8A9096, 0xFF6C747C, 0xFF9AA2AA, 0xFF5A6670, 0xFF7C848C, 0xFF4E5A66};
-                shopWalls = new int[]{0xFFF2F0EA, 0xFFE0DCD4, 0xFFD02A2A, 0xFF2A5AA8, 0xFFF0D040, 0xFFE8E4DC};
-                apartmentWalls = new int[]{0xFFE8E4DC, 0xFFD4D0C8, 0xFFC8C4BC, 0xFFDCD2C0, 0xFFB8B4B0};
-                cruiserBody = 0xFF141414;
-                cruiserDoor = 0xFF141414;
-                cruiserRoof = 0xFFF2F2F2;
-                cruiserChecks = false;
-                streets = new String[]{"Sakura", "Chuo", "Kita", "Minami", "Higashi", "Nishi", "Hana", "Matsu",
-                        "Ume", "Yama", "Kawa", "Hon", "Shin", "Asahi", "Aoba", "Kasuga", "Hikari", "Sakae", "Fuji",
-                        "Momiji", "Tsubaki", "Heiwa", "Midori", "Ekimae", "Kotobuki", "Wakaba", "Hibari", "Tachibana",
-                        "Suzuran", "Yayoi", "Showa", "Meiji", "Taisho", "Kinuta", "Sumire", "Kiku", "Hinode", "Kaede",
-                        "Nishiki", "Oyama", "Ginza", "Daimon", "Tenjin", "Miyuki", "Kyomachi", "Hamamatsu", "Kanda",
-                        "Shirakawa", "Nakano", "Kurenai"};
-                mainWords = new String[]{"-dori", "-dori", "-kaido", " Avenue"};
-                localWords = new String[]{"-cho", "-michi", "-cho", "-dori", "-yokocho", "-zaka"};
-                typeFirst = false;
-                ringRoad = "Kanjo-sen";
-                townStart = new String[]{"Kita", "Minami", "Higashi", "Nishi", "Naka", "Shin", "Asa", "Taka", "Yama",
-                        "Kawa", "Sakura", "Matsu", "Fuji", "Oka", "Hana", "Tsuru", "Ichi", "Mizu", "Ishi", "Kami"};
-                townEnd = new String[]{"mura", "machi", "gawa", "yama", "hara", "saki", "shima", "bashi", "zawa",
-                        "oka", "no", "ta", "kawa", "da"};
-                districtWords = new String[]{"Sakura", "Chuo", "Kita", "Minami", "Higashi", "Nishi", "Shin", "Hon",
-                        "Aoba", "Midori", "Asahi", "Kasuga", "Sakae", "Fuji", "Tenjin", "Ekimae", "Oka", "Matsu", "Ume", "Hikari"};
-                hamletEnds = new String[]{" Village", " Farm", "-mura", " Fields", "-sato", " Hollow", " Bridge", " Shrine"};
-                churches = new String[]{"Hachiman Shrine", "Kannon Temple", "Inari Shrine", "Jizo Temple",
-                        "Tenmangu Shrine", "Kotoku Temple", "Hie Shrine", "Zenko Temple"};
-                schools = new String[]{"Chuo High School", "Sakura Elementary", "Kita Junior High", "Minami High School",
-                        "Aoba Elementary", "Higashi Junior High"};
-                markets = new String[]{"Lawsun", "FamilyMarket", "AEONE", "Seiyo", "Maruetsu", "Gyomu Super"};
-                pharmacies = new String[]{"Matsumoto Drug", "Sugi Pharmacy", "Welcia", "Tsuruha Drug"};
-                gunStores = new String[]{"Yamato Hunting Supply", "Hokuto Outdoor", "Kumagai Sporting Guns",
-                        "Shinano Hunters"};
-                bases = new String[]{"Camp Asaka", "Camp Nerima", "Camp Itami", "Camp Kita-Kumamoto", "Camp Sendai",
-                        "Camp Fuji"};
-                hospital = "Municipal Hospital";
-                policeStation = "Police Station ";
-                fireStation = "Fire Station ";
-                first = new String[]{"Haruto", "Yui", "Sota", "Hina", "Yuto", "Mio", "Riku", "Sakura", "Ren", "Aoi",
-                        "Kaito", "Yuna", "Hiroshi", "Keiko", "Takashi", "Yuki", "Kenji", "Emi", "Daichi", "Rin", "Sho",
-                        "Hana", "Takumi", "Nanami", "Akira", "Mei", "Kazuki", "Ayaka", "Ryo", "Saki"};
-                last = new String[]{"Sato", "Suzuki", "Takahashi", "Tanaka", "Watanabe", "Ito", "Yamamoto", "Nakamura",
-                        "Kobayashi", "Kato", "Yoshida", "Yamada", "Sasaki", "Yamaguchi", "Matsumoto", "Inoue", "Kimura",
-                        "Hayashi", "Shimizu", "Mori", "Ikeda", "Hashimoto", "Abe", "Ishikawa", "Ogawa", "Fujita"};
-                dogs = new String[]{"Hachi", "Kuro", "Shiro", "Momo", "Coco", "Sora", "Maru", "Hana", "Kotetsu",
-                        "Pochi", "Chibi", "Kuu", "Mugi", "Azuki", "Taro", "Sakura"};
-                carModels = new int[]{3, 3, 3, 3, 4, 4, 0, 5, 5, 6, 7};
-                carColors = new int[]{0xFFF2F2F2, 0xFFF2F2F2, 0xFFF2F2F2, 0xFFB8BCC0, 0xFFB8BCC0, 0xFF1A1A1C,
-                        0xFFE8D8B0, 0xFF8EC0D8, 0xFFD87A8A};
-                taxiColor = 0xFF2E7A4A;
-                busColor = 0xFFE8EAE4;
-                pavement = 0xFFA6A49E;
-                grass = 0xFF527A3E;
-                officeRoofs = new int[]{0xFFB8BCC0, 0xFFA8ACB0, 0xFFC4C6C8, 0xFF9AA0A6, 0xFFB0B2AE, 0xFF8E949A};
-                officeWalls = new int[]{0xFFE8E4DC, 0xFFD4D0C8, 0xFFC8C8C4, 0xFFDCD6C8, 0xFFB8BCC0};
-                oldWalls = new int[]{0xFF6A4A32, 0xFF5A3E2A, 0xFFE8E2D2, 0xFF7A5A3E, 0xFFDCD2BC};
-                oldRoofs = new int[]{0xFF2E3640, 0xFF3A4656, 0xFF26303A, 0xFF46505C};
-                break;
-            case FRANCE:
-                leftHand = false;
-                centreLine = 0xFFE6E6E2;
-                houseRoofs = new int[]{0xFF7A8490, 0xFF6C7682, 0xFF4E5560, 0xFFB0623E, 0xFF9E5A3C, 0xFF5E6874};
-                houseWalls = new int[]{0xFFE8DEC8, 0xFFDDD2B8, 0xFFEFE6D2, 0xFFD6C8A8, 0xFFE2D6BE, 0xFFC9BCA0};
-                shopRoofs = new int[]{0xFF7A8490, 0xFF6C7682, 0xFF5E6874, 0xFF848E98, 0xFF707A86, 0xFF4E5560};
-                shopWalls = new int[]{0xFFE8DEC8, 0xFF2A3A5A, 0xFF7A2A2A, 0xFF2E4A36, 0xFFEFE6D2, 0xFFD6C8A8};
-                apartmentWalls = new int[]{0xFFE8DEC8, 0xFFDDD2B8, 0xFFEFE6D2, 0xFFD6C8A8, 0xFFE2D6BE};
-                cruiserBody = 0xFFF2F2F2;
-                cruiserDoor = 0xFF1F3A8A;
-                cruiserRoof = 0;
-                cruiserChecks = false;
-                streets = new String[]{"Victor Hugo", "de la République", "Jean Jaurès", "des Lilas", "Pasteur",
-                        "de la Paix", "Voltaire", "Gambetta", "du Marché", "de l'Église", "des Écoles", "Saint-Michel",
-                        "de la Gare", "Molière", "des Roses", "Carnot", "Foch", "du Moulin", "de Verdun", "Émile Zola",
-                        "des Tilleuls", "du Château", "de la Liberté", "Général de Gaulle", "Jules Ferry", "des Acacias",
-                        "Saint-Jacques", "de la Mairie", "du Pont", "des Peupliers", "Clemenceau", "de Strasbourg",
-                        "de Lyon", "de Paris", "Montaigne", "Rousseau", "Diderot", "de la Fontaine", "du Port",
-                        "des Vignes", "Sainte-Anne", "de la Poste", "Lamartine", "Racine", "des Écuries", "du Stade",
-                        "des Halles", "Danton", "Mozart", "Berlioz"};
-                mainWords = new String[]{"Avenue", "Boulevard", "Avenue", "Cours"};
-                localWords = new String[]{"Rue", "Rue", "Rue", "Allée", "Impasse", "Place", "Chemin", "Passage"};
-                typeFirst = true;
-                ringRoad = "Périphérique";
-                townStart = new String[]{"Beau", "Mont", "Ville", "Château", "Fontaine", "Roche", "Pont", "Bourg",
-                        "Val", "Clair", "Champ", "Vieux", "Belle", "Saint-Amand-", "Chaumont-", "Neuf"};
-                townEnd = new String[]{"mont", "ville", "fort", "lieu", "bourg", "champ", "val", "mare", "court", "ry",
-                        "-sur-Loire", "-les-Bains", "-la-Forêt", "-sur-Mer"};
-                districtWords = new String[]{"Saint-Michel", "Le Marais", "Montmartre", "Les Halles", "Bellevue",
-                        "Les Lilas", "La Croix", "Le Moulin", "Beaulieu", "Les Chênes", "Le Port", "La Gare",
-                        "Les Vignes", "Le Château", "Sainte-Anne", "Les Tilleuls", "Le Parc", "La Plaine", "Les Prés", "Le Bourg"};
-                hamletEnds = new String[]{"-le-Petit", " Village", "-les-Champs", " Ferme", "-la-Croix", "-le-Haut",
-                        "-le-Bas", " Hameau"};
-                churches = new String[]{"Église Saint-Pierre", "Notre-Dame", "Église Sainte-Anne", "Église Saint-Martin",
-                        "Saint-Étienne", "Église Saint-Jean", "Sacré-Cœur", "Église Saint-Louis"};
-                schools = new String[]{"Lycée Victor Hugo", "École Jules Ferry", "Collège Pasteur", "Lycée Voltaire",
-                        "École des Lilas", "Collège Jean Moulin"};
-                markets = new String[]{"Carrefive", "Monoprix", "Intermarché", "SuperU", "Casino", "Franprix"};
-                pharmacies = new String[]{"Pharmacie Centrale", "Pharmacie de la Gare", "Pharmacie du Marché",
-                        "Grande Pharmacie"};
-                gunStores = new String[]{"Armurerie Lefèvre", "Chasse & Pêche", "Armurerie du Centre", "Armes Duval"};
-                bases = new String[]{"Quartier Lyautey", "Camp de Mailly", "Caserne Bessières", "Quartier Foch",
-                        "Camp de Canjuers", "Caserne Vauban"};
-                hospital = "Hôpital Central";
-                policeStation = "Commissariat ";
-                fireStation = "Caserne de Pompiers ";
-                first = new String[]{"Gabriel", "Jade", "Louis", "Louise", "Raphaël", "Emma", "Jules", "Alice", "Adam",
-                        "Chloé", "Lucas", "Léa", "Hugo", "Manon", "Arthur", "Inès", "Nathan", "Camille", "Théo", "Sarah",
-                        "Pierre", "Marie", "Antoine", "Claire", "Mehdi", "Yasmine", "Julien", "Élodie", "Paul", "Margaux"};
-                last = new String[]{"Martin", "Bernard", "Dubois", "Thomas", "Robert", "Richard", "Petit", "Durand",
-                        "Leroy", "Moreau", "Simon", "Laurent", "Lefebvre", "Michel", "Garcia", "David", "Bertrand",
-                        "Roux", "Vincent", "Fournier", "Morel", "Girard", "Bonnet", "Dupont", "Lambert", "Benali"};
-                dogs = new String[]{"Rex", "Filou", "Médor", "Pistache", "Caramel", "Oscar", "Lilou", "Nala", "Ulysse",
-                        "Praline", "Biscotte", "Hercule", "Gaston", "Pomme", "Vanille", "Tintin"};
-                carModels = new int[]{4, 4, 4, 4, 4, 0, 5, 5, 2, 6, 7};
-                carColors = new int[]{0xFF8A8F96, 0xFFE8E8E8, 0xFF2A2C30, 0xFF2E4F8A, 0xFFB03A2E, 0xFF5A5E66,
-                        0xFFE8E0D0, 0xFF3C6A4E};
-                taxiColor = 0xFF1A1A1C;
-                busColor = 0xFFE8E8EC;
-                pavement = 0xFFAEA592;
-                grass = 0xFF56723A;
-                plaza = 0xFFC2B494;
-                officeRoofs = new int[]{0xFF7A8490, 0xFF6C7682, 0xFF848E98, 0xFF5E6874, 0xFF707A86, 0xFF8A9298};
-                officeWalls = new int[]{0xFFE8DEC8, 0xFFDDD2B8, 0xFFEFE6D2, 0xFFD6C8A8, 0xFFE2D6BE};
-                oldWalls = new int[]{0xFFE8DEC8, 0xFFDDD2B8, 0xFFD6C8A8, 0xFFCCBC98, 0xFFEFE6D2};
-                oldRoofs = new int[]{0xFF7A8490, 0xFF5E6874, 0xFFB0623E, 0xFF4E5560};
-                break;
-            case MEXICO:
-                leftHand = false;
-                centreLine = 0xFFE0B83A;
-                houseRoofs = new int[]{0xFFC9BFAE, 0xFFB4583A, 0xFFA04A30, 0xFFD2C6B2, 0xFFBE6A44, 0xFFB8AE9C};
-                houseWalls = new int[]{0xFFE07A8C, 0xFFF0C04A, 0xFF4FB8B0, 0xFFE8873A, 0xFFF2EEE4, 0xFF7A9AD8};
-                shopRoofs = new int[]{0xFFC9BFAE, 0xFFD2C6B2, 0xFFB8AE9C, 0xFFB4583A, 0xFFC4B8A4, 0xFFBE6A44};
-                shopWalls = new int[]{0xFFE8504A, 0xFF3FA860, 0xFFF0C04A, 0xFF4FB8B0, 0xFFE07A8C, 0xFF7A5AC0};
-                apartmentWalls = new int[]{0xFFF0C04A, 0xFFE8873A, 0xFFE2DAC8, 0xFF4FB8B0, 0xFFE07A8C};
-                cruiserBody = 0xFFF2F2F2;
-                cruiserDoor = 0xFF1F5FB8;
-                cruiserRoof = 0;
-                cruiserChecks = false;
-                streets = new String[]{"Juárez", "Hidalgo", "Morelos", "Reforma", "Insurgentes", "5 de Mayo", "Madero",
-                        "Zaragoza", "Allende", "Guerrero", "de las Flores", "Independencia", "Revolución", "Obregón",
-                        "Constitución", "Benito Juárez", "Zapata", "Aldama", "Matamoros", "Victoria", "Galeana",
-                        "Bravo", "Abasolo", "Iturbide", "16 de Septiembre", "Juan Escutia", "Niños Héroes", "Colón",
-                        "Cuauhtémoc", "Moctezuma", "Las Palmas", "Los Pinos", "del Sol", "de la Luna", "Jacarandas",
-                        "Bugambilias", "Tulipanes", "Nogales", "Fresno", "Álamo", "Mercado", "de la Iglesia",
-                        "Ferrocarril", "del Río", "Lázaro Cárdenas", "Pino Suárez", "Carranza", "Vasconcelos",
-                        "Sor Juana", "Frida Kahlo"};
-                mainWords = new String[]{"Avenida", "Calzada", "Boulevard", "Avenida"};
-                localWords = new String[]{"Calle", "Calle", "Calle", "Privada", "Callejón", "Andador", "Cerrada"};
-                typeFirst = true;
-                ringRoad = "Periférico";
-                townStart = new String[]{"San Juan", "Santa María", "San Miguel", "Villa", "Puerto", "Ciudad",
-                        "Santa Cruz", "San Pedro", "Valle", "Real", "San Andrés", "Santa Rosa"};
-                townEnd = new String[]{" del Río", " de Allende", " de las Flores", " Nuevo", " de Hidalgo", " del Valle",
-                        " de Juárez", " Viejo", " del Monte", " de Guadalupe"};
-                districtWords = new String[]{"Las Palmas", "El Centro", "San Ángel", "La Condesa", "Los Pinos",
-                        "Santa Fe", "El Carmen", "La Merced", "San Rafael", "Las Flores", "Jardines", "Lomas", "El Mirador",
-                        "La Loma", "San José", "El Barrio", "Del Valle", "Los Álamos", "Guadalupe", "Tlalpan"};
-                hamletEnds = new String[]{" Rancho", " Ejido", " Hacienda", " Pueblo", " Ranchería", " La Cruz",
-                        " El Puente", " Los Pozos"};
-                churches = new String[]{"Parroquia de San José", "Templo de Guadalupe", "Iglesia de Santo Domingo",
-                        "Catedral de la Asunción", "Templo de San Francisco", "Parroquia de San Miguel",
-                        "Iglesia del Carmen", "Templo de Santa Rosa"};
-                schools = new String[]{"Escuela Benito Juárez", "Secundaria Técnica 12", "Preparatoria Hidalgo",
-                        "Primaria Niños Héroes", "Colegio Morelos", "Escuela Sor Juana"};
-                markets = new String[]{"Soriano", "Chedrahui", "Bodega Aurrera", "La Comer", "Mercado Municipal", "OXXO Grande"};
-                pharmacies = new String[]{"Farmacia Guadalajara", "Farmacias del Ahorro", "Farmacia San Pablo",
-                        "Farmacia Similar"};
-                gunStores = new String[]{"Armería del Norte", "Club de Caza Sierra", "Deportes Cinegéticos",
-                        "Armería Federal"};
-                bases = new String[]{"Campo Militar 1", "Zona Militar Norte", "Cuartel Hidalgo", "Campo Militar Morelos",
-                        "Base Aérea Santa Lucía", "Cuartel General Zaragoza"};
-                hospital = "Hospital General";
-                policeStation = "Comandancia ";
-                fireStation = "Estación de Bomberos ";
-                first = new String[]{"Santiago", "Sofía", "Mateo", "Valentina", "Sebastián", "Regina", "Leonardo",
-                        "Camila", "Diego", "Ximena", "Emiliano", "María José", "José", "Guadalupe", "Juan", "Fernanda",
-                        "Miguel", "Daniela", "Carlos", "Andrea", "Luis", "Lucía", "Alejandro", "Paola", "Jorge", "Itzel",
-                        "Fernando", "Renata", "Rafael", "Mariana"};
-                last = new String[]{"Hernández", "García", "Martínez", "López", "González", "Rodríguez", "Pérez",
-                        "Sánchez", "Ramírez", "Cruz", "Flores", "Gómez", "Morales", "Vázquez", "Reyes", "Jiménez",
-                        "Torres", "Díaz", "Gutiérrez", "Ruiz", "Mendoza", "Aguilar", "Ortiz", "Castillo", "Romero", "Chávez"};
-                dogs = new String[]{"Firulais", "Canela", "Chispa", "Max", "Luna", "Toby", "Manchas", "Princesa",
-                        "Pelusa", "Chato", "Negro", "Lobo", "Coco", "Rocky", "Chiquita", "Bruno"};
-                carModels = new int[]{8, 8, 0, 0, 1, 1, 1, 4, 2, 6, 6, 7};
-                carColors = new int[]{0xFFF2F2F2, 0xFFB03A2E, 0xFF2E5FB0, 0xFF3C8A4E, 0xFFE0C04A, 0xFF8A8F96,
-                        0xFFE07A2E, 0xFF5AB8C8};
-                taxiColor = 0xFFE0708C;
-                busColor = 0xFF3FA05A;
-                pavement = 0xFFB49C80;
-                grass = 0xFF77803F;
-                plaza = 0xFFC8A880;
-                officeRoofs = new int[]{0xFFCFC4B0, 0xFFC0B49C, 0xFFD8CEBA, 0xFFB8AC96, 0xFFC8BCA6, 0xFFB4583A};
-                officeWalls = new int[]{0xFFF2EEE4, 0xFFF0C04A, 0xFFE8873A, 0xFF4FB8B0, 0xFFE07A8C, 0xFFE2DAC8};
-                oldWalls = new int[]{0xFFE07A8C, 0xFFF0C04A, 0xFF4FB8B0, 0xFFE8873A, 0xFF7A9AD8, 0xFFC8503A};
-                oldRoofs = new int[]{0xFFB4583A, 0xFFA04A30, 0xFFC9BFAE, 0xFFBE6A44};
-                break;
-            case SWITZERLAND:
-                leftHand = false;
-                centreLine = 0xFFE8E8E4;
-                houseRoofs = new int[]{0xFF6A4A3A, 0xFF8A4A32, 0xFF4E5560, 0xFF7A5A48, 0xFF5A3D35, 0xFF9A5B3C};
-                houseWalls = new int[]{0xFFF2EEE4, 0xFFE8DEC8, 0xFFB88A5A, 0xFFDCD6C8, 0xFFE0D6C4, 0xFFC9A878};
-                shopRoofs = new int[]{0xFF6A4A3A, 0xFF8A9096, 0xFF4E5560, 0xFF7A5A48, 0xFF6C747C, 0xFF5A6670};
-                shopWalls = new int[]{0xFFF2EEE4, 0xFFD02A2A, 0xFFE8DEC8, 0xFF2E5A3A, 0xFFE0D0A8, 0xFFDCD6C8};
-                apartmentWalls = new int[]{0xFFF2EEE4, 0xFFE8DEC8, 0xFFDCD6C8, 0xFFE0D0A8, 0xFFC8C4BC};
-                cruiserBody = 0xFFF2F2F2;
-                cruiserDoor = 0xFFE87A1A;
-                cruiserRoof = 0;
-                cruiserChecks = true;
-                checkA = 0xFFE87A1A;
-                checkB = 0xFF1F3A8A;
-                streets = new String[]{"Bahnhof", "Haupt", "Kirch", "Dorf", "See", "Berg", "Markt", "Schul", "Post",
-                        "Linden", "Rosen", "Garten", "Bären", "Löwen", "Sonnen", "Wald", "Brunnen", "Mühle", "Rhein",
-                        "Aare", "Limmat", "Zürcher", "Berner", "Basler", "Luzerner", "Tell", "Alpen", "Matten", "Rain",
-                        "Tannen", "Eichen", "Buchen", "Felsen", "Allmend", "Schützen", "Zeughaus", "Spital", "Rathaus",
-                        "Ober", "Unter", "Neu", "Alt", "Hof", "Kloster", "Brücken", "Wiesen", "Hügel", "Sennhof",
-                        "Gotthard", "Pilatus"};
-                mainWords = new String[]{"strasse", "strasse", "allee", " Ring"};
-                localWords = new String[]{"gasse", "weg", "strasse", "gasse", "platz", "rain"};
-                typeFirst = false;
-                ringRoad = "Ring";
-                townStart = new String[]{"Ober", "Unter", "Neu", "Alt", "Kirch", "Berg", "See", "Wald", "Burg",
-                        "Rhein", "Stein", "Rapp", "Wil", "Lang", "Hinter", "Vorder", "Grind", "Engel"};
-                townEnd = new String[]{"dorf", "berg", "wil", "ikon", "ingen", "au", "egg", "matt", "bach", "see",
-                        "stein", "wald", "hausen", "brunnen"};
-                districtWords = new String[]{"Seefeld", "Enge", "Wiedikon", "Oberdorf", "Unterstadt", "Matte",
-                        "Breitenrain", "Kirchenfeld", "Gundeli", "Klein", "Neubad", "Sonnenberg", "Waldegg",
-                        "Rosenberg", "Bühl", "Hirslanden", "Altstetten", "Wollishofen", "Hottingen", "Lindenhof"};
-                hamletEnds = new String[]{"alp", "hof", "matt", "egg", " Weiler", "boden", "weid", "rüti"};
-                churches = new String[]{"Grossmünster", "Fraumünster", "St. Peter", "Berner Münster", "Kirche St. Martin",
-                        "Reformierte Kirche", "Kirche St. Anna", "Kapelle St. Jakob"};
-                schools = new String[]{"Kantonsschule", "Primarschule Dorf", "Sekundarschule See", "Gymnasium Rämibühl",
-                        "Schulhaus Matte", "Berufsschule"};
-                markets = new String[]{"Migrol", "Coup", "Denner", "Volg", "Aldi Suisse", "Manor Food"};
-                pharmacies = new String[]{"Apotheke am Bahnhof", "Amavita Apotheke", "Sun Store", "Dorf-Apotheke"};
-                gunStores = new String[]{"Waffen Hofer", "Schützenbedarf Kern", "Jagd & Sport Brunner", "Waffenladen Tell"};
-                bases = new String[]{"Kaserne Thun", "Kaserne Bière", "Waffenplatz Kloten", "Kaserne Aarau",
-                        "Waffenplatz Isone", "Kaserne Bern"};
-                hospital = "Kantonsspital";
-                policeStation = "Polizeiposten ";
-                fireStation = "Feuerwehr ";
-                first = new String[]{"Noah", "Mia", "Luca", "Emma", "Leon", "Lea", "Matteo", "Sofia", "Elias", "Lina",
-                        "Liam", "Laura", "Nico", "Anna", "Jonas", "Elena", "Samuel", "Chiara", "David", "Nina", "Urs",
-                        "Heidi", "Beat", "Ursula", "Reto", "Vreni", "Jan", "Sara", "Fabian", "Alessia"};
-                last = new String[]{"Müller", "Meier", "Schmid", "Keller", "Weber", "Huber", "Schneider", "Meyer",
-                        "Steiner", "Fischer", "Gerber", "Brunner", "Baumann", "Frei", "Zimmermann", "Moser", "Widmer",
-                        "Wyss", "Graf", "Roth", "Rossi", "Bernasconi", "Favre", "Bonvin", "Kälin", "Suter"};
-                dogs = new String[]{"Bello", "Barry", "Luna", "Rex", "Sämi", "Kira", "Bobby", "Gina", "Nero", "Fido",
-                        "Bläss", "Lumpi", "Tasso", "Mira", "Rocky", "Chico"};
-                carModels = new int[]{4, 4, 4, 0, 0, 2, 2, 5, 6, 7};
-                carColors = new int[]{0xFF2A2C30, 0xFFE8E8E8, 0xFF8A8F96, 0xFF2E4F8A, 0xFFB03A2E, 0xFF5A5E66, 0xFF3C6A4E};
-                taxiColor = 0xFFE8E8E8;
-                busColor = 0xFFE8C21A;
-                pavement = 0xFFA8A6A0;
-                grass = 0xFF4E8A3A;
-                officeRoofs = new int[]{0xFF8A9096, 0xFF6C747C, 0xFF9AA2AA, 0xFF5A6670, 0xFF6A4A3A};
-                officeWalls = new int[]{0xFFF2EEE4, 0xFFE8DEC8, 0xFFDCD6C8, 0xFFC8C8C4, 0xFFB8BCC0};
-                oldWalls = new int[]{0xFFF2EEE4, 0xFFE8DEC8, 0xFFD0B888, 0xFFB88A5A, 0xFFE0D0A8};
-                oldRoofs = new int[]{0xFF6A4A3A, 0xFF8A4A32, 0xFF5A3D35, 0xFF4E5560};
-                look = FRANCE;
-                churchLook = FRANCE;
-                shieldColor = 0xFFC02020;
-                break;
-            case KOREA:
-                leftHand = false;
-                centreLine = 0xFFE0B83A;
-                houseRoofs = new int[]{0xFF2E6A8A, 0xFF3F7A5A, 0xFF8A3A2E, 0xFF3A4656, 0xFF4A5A70, 0xFF5A6670};
-                houseWalls = new int[]{0xFFEDE8DC, 0xFFDCD6C8, 0xFFB8A48A, 0xFFE8E2D2, 0xFFC9C2B4, 0xFFF2EEE6};
-                shopRoofs = new int[]{0xFF8A9096, 0xFF6C747C, 0xFF9AA2AA, 0xFF5A6670, 0xFF2E6A8A, 0xFF3F7A5A};
-                shopWalls = new int[]{0xFFF2F0EA, 0xFFE0DCD4, 0xFFD02A2A, 0xFF2A5AA8, 0xFFF0D040, 0xFF3FA860};
-                apartmentWalls = new int[]{0xFFF2F0EA, 0xFFE8E4DC, 0xFFDCD8D0, 0xFFE8E0C8, 0xFFD4D8DC};
-                cruiserBody = 0xFFF2F2F2;
-                cruiserDoor = 0xFF1F4FA8;
-                cruiserRoof = 0;
-                cruiserChecks = false;
-                streets = new String[]{"Sejong", "Teheran", "Jongno", "Eulji", "Toegye", "Dosan", "Apgujeong",
-                        "Gangnam", "Hangang", "Namdaemun", "Yulgok", "Samil", "Insadong", "Sinchon", "Hongik", "Yeouido",
-                        "Mapo", "Itaewon", "Myeong", "Bukchon", "Gwanghwamun", "Dongho", "Seolleung", "Bongeunsa",
-                        "Banpo", "Jamsil", "Olympic", "Hyoja", "Changgyeong", "Daehak", "Haean", "Jungang", "Saemal",
-                        "Mugunghwa", "Sopung", "Gukhwa", "Baekbeom", "Ttukseom", "Ewha", "Sindang", "Gongdeok",
-                        "Hwarang", "Cheonho", "Seongsu", "Wangsimni", "Nonhyeon", "Yeoksam", "Dongil", "Haneul", "Bom"};
-                mainWords = new String[]{"-daero", "-ro", "-daero", "-ro"};
-                localWords = new String[]{"-gil", "-gil", "-ro", "-gil", "-ro", "-gil"};
-                typeFirst = false;
-                ringRoad = "Sunhwan-ro";
-                townStart = new String[]{"Cheong", "Gwang", "Dae", "Jeon", "Su", "Seong", "An", "Gim", "Yang",
-                        "Pyeong", "Hwa", "Mok", "Chun", "Won", "Gyeong", "Pa", "Il", "Song"};
-                townEnd = new String[]{"ju", "won", "san", "cheon", "dong", "pyeong", "seong", "po", "gang", "yang",
-                        "nam", "buk", "ri", "do"};
-                districtWords = new String[]{"Gangnam", "Jongno", "Mapo", "Seocho", "Songpa", "Yeongdeungpo",
-                        "Seongdong", "Dongdaemun", "Gwangjin", "Nowon", "Eunpyeong", "Gangseo", "Guro", "Yangcheon",
-                        "Jung", "Seodaemun", "Dobong", "Bukchon", "Haeundae", "Suyeong"};
-                hamletEnds = new String[]{"-ri", " Maeul", "-dong", " Farm", "-gol", " Village", "-teo", " Orchard"};
-                churches = new String[]{"Yoido Full Gospel Church", "Myeongdong Cathedral", "Jogyesa Temple",
-                        "Bongeunsa Temple", "Somang Church", "Onnuri Church", "Yakhyeon Cathedral", "Hwagyesa Temple"};
-                schools = new String[]{"Hangang High School", "Sejong Elementary", "Gangnam Middle School",
-                        "Daehan High School", "Mugunghwa Elementary", "Seoul Science High"};
-                markets = new String[]{"E-Mark", "HomePlus", "Lotty Mart", "GS26", "CU Mart", "Gwangjang Market"};
-                pharmacies = new String[]{"Olive Young", "Onnuri Pharmacy", "Daehan Yakguk", "Seoul Pharmacy"};
-                gunStores = new String[]{"Hanguk Hunting", "Daehan Shooting Supply", "Baekdu Outdoor", "Taeguk Sporting"};
-                bases = new String[]{"Camp Gyeryong", "Camp Pocheon", "Yongsan Garrison", "Camp Wonju", "Camp Cheorwon",
-                        "Camp Paju"};
-                hospital = "University Hospital";
-                policeStation = "Police Station ";
-                fireStation = "Fire Station ";
-                first = new String[]{"Min-jun", "Seo-yeon", "Ji-ho", "Ha-eun", "Do-yun", "Ji-woo", "Seo-jun", "Su-ah",
-                        "Ye-jun", "Ji-yoo", "Hyun-woo", "Min-seo", "Jae-won", "Da-eun", "Sung-min", "Eun-ji", "Tae-yang",
-                        "Hye-jin", "Dong-hyun", "So-yeon", "Jin", "Yuna", "Joon", "Mina", "Woo-jin", "Na-rae",
-                        "Kyung-soo", "Bo-ra", "Sang-hoon", "Ji-min"};
-                last = new String[]{"Kim", "Lee", "Park", "Choi", "Jung", "Kang", "Cho", "Yoon", "Jang", "Lim",
-                        "Han", "Oh", "Seo", "Shin", "Kwon", "Hwang", "Ahn", "Song", "Jeon", "Hong", "Yoo", "Ko", "Moon",
-                        "Yang", "Son", "Bae"};
-                dogs = new String[]{"Baduk", "Dubu", "Mandu", "Bori", "Kongi", "Choco", "Haru", "Dari", "Nuri",
-                        "Ttangkong", "Sarang", "Jindo", "Kkami", "Maru", "Bomi", "Hodu"};
-                carModels = new int[]{0, 0, 0, 2, 2, 2, 4, 3, 5, 6, 7};
-                carColors = new int[]{0xFFF2F2F2, 0xFFF2F2F2, 0xFF1A1A1C, 0xFFB8BCC0, 0xFF8A8F96, 0xFF2A2C30, 0xFF2E4F8A};
-                taxiColor = 0xFFE07A2E;
-                busColor = 0xFF2E7AC0;
-                pavement = 0xFFA8A4A0;
-                grass = 0xFF5A7A3E;
-                officeRoofs = new int[]{0xFFB8BCC0, 0xFFA8ACB0, 0xFFC4C6C8, 0xFF9AA0A6, 0xFF8E949A};
-                officeWalls = new int[]{0xFFE8E4DC, 0xFFD4D0C8, 0xFFC8C8C4, 0xFF9CB4C8, 0xFFB8BCC0};
-                oldWalls = new int[]{0xFFE8E2D2, 0xFFDCD2BC, 0xFFB8A48A, 0xFF8A3A2E, 0xFFC9C2B4};
-                oldRoofs = new int[]{0xFF3A4656, 0xFF2E3640, 0xFF2E6A8A, 0xFF46505C};
-                look = JAPAN;
-                shieldColor = 0xFF1E5AA8;
-                break;
-            case MALAYSIA:
-                leftHand = true;
-                centreLine = 0xFFE8E8E4;
-                houseRoofs = new int[]{0xFF8A9096, 0xFFB0583A, 0xFF7A2E28, 0xFF4C5048, 0xFF9A3A2E, 0xFF5A7A8A};
-                houseWalls = new int[]{0xFFF2EEE4, 0xFFE8D8B0, 0xFF9AC8B0, 0xFFE0C090, 0xFFB8D0E0, 0xFFE8B8A0};
-                shopRoofs = new int[]{0xFFB0583A, 0xFF8A9096, 0xFF7A2E28, 0xFF9A3A2E, 0xFF6C747C, 0xFF4C5048};
-                shopWalls = new int[]{0xFFE8D8B0, 0xFF9AC8B0, 0xFFE0C090, 0xFFB8D0E0, 0xFFE8B8A0, 0xFFF2EEE4};
-                apartmentWalls = new int[]{0xFFF2EEE4, 0xFFE8E0C8, 0xFFD4D8DC, 0xFFE0C090, 0xFFB8D0E0};
-                cruiserBody = 0xFFF2F2F2;
-                cruiserDoor = 0xFF1F3F8A;
-                cruiserRoof = 0;
-                cruiserChecks = true;
-                checkA = 0xFF1F3F8A;
-                checkB = 0xFFE03A3A;
-                streets = new String[]{"Tun Razak", "Ampang", "Bukit Bintang", "Sultan Ismail", "Raja Chulan",
-                        "Tuanku Abdul Rahman", "Masjid India", "Petaling", "Pudu", "Imbi", "Cheras", "Klang Lama",
-                        "Bangsar", "Damansara", "Kuching", "Ipoh", "Melaka", "Pahang", "Kelantan", "Perak", "Kenanga",
-                        "Melati", "Cempaka", "Mawar", "Seroja", "Kemboja", "Bunga Raya", "Merdeka", "Sentosa", "Bahagia",
-                        "Hang Tuah", "Hang Jebat", "Tunku", "Dato Onn", "Ahmad Shah", "Pantai", "Bukit", "Sungai", "Kebun",
-                        "Pasar", "Stesen", "Sekolah", "Hospital", "Besar", "Baru", "Lama", "Kampung", "Tasik", "Gurney",
-                        "Penang"};
-                mainWords = new String[]{"Jalan", "Lebuhraya", "Jalan", "Persiaran"};
-                localWords = new String[]{"Jalan", "Jalan", "Lorong", "Lorong", "Lebuh", "Persiaran"};
-                typeFirst = true;
-                ringRoad = "Jalan Lingkaran";
-                townStart = new String[]{"Kuala ", "Bukit ", "Sungai ", "Kampung ", "Port ", "Tanjung ", "Batu ",
-                        "Teluk ", "Pulau ", "Kota ", "Bandar ", "Seri "};
-                townEnd = new String[]{"Lumpur", "Mertajam", "Petani", "Pahang", "Raja", "Indah", "Jaya", "Baru",
-                        "Selangor", "Damai", "Permai", "Bahru", "Kemuning", "Bintang"};
-                districtWords = new String[]{"Melati", "Kenanga", "Cempaka", "Mawar", "Seroja", "Sri Hartamas",
-                        "Desa", "Bangsar", "Damansara", "Cheras", "Ampang", "Setapak", "Wangsa Maju", "Kepong",
-                        "Puchong", "Subang", "Bukit Jalil", "Sentul", "Pudu", "Kemuning"};
-                hamletEnds = new String[]{" Kampung", " Ladang", " Estate", " Hulu", " Hilir", " Tengah", " Felda", " Paya"};
-                churches = new String[]{"Masjid Jamek", "Masjid Negara", "Sri Mahamariamman Temple", "St. Mary's Cathedral",
-                        "Thean Hou Temple", "Masjid Al-Hidayah", "Sin Sze Si Ya Temple", "Masjid Putra"};
-                schools = new String[]{"SMK Bukit Bintang", "SK Taman Melati", "SMK Damansara Jaya", "SJK(C) Kuen Cheng",
-                        "SK Sultan Ismail", "Kolej Tunku Kurshiah"};
-                markets = new String[]{"Giant", "Mydin", "Jaya Grocer", "99 Speedmark", "Econsave", "Pasar Besar"};
-                pharmacies = new String[]{"Guardian", "Watsons", "Caring Pharmacy", "Farmasi Alpro"};
-                gunStores = new String[]{"Kedai Senjata Hang Tuah", "Malaysia Hunting Supply", "Sporting Arms KL", "Rimba Outdoor"};
-                bases = new String[]{"Kem Sungai Besi", "Kem Terendak", "Kem Batu Kentonment", "Kem Paya Jaras",
-                        "Kem Mahkota", "Kem Syed Sirajuddin"};
-                hospital = "Hospital Besar";
-                policeStation = "Balai Polis ";
-                fireStation = "Balai Bomba ";
-                first = new String[]{"Muhammad", "Nur", "Ahmad", "Siti", "Aiman", "Aisyah", "Hafiz", "Nurul", "Amir",
-                        "Farah", "Wei Jie", "Mei Ling", "Jun Hao", "Xin Yi", "Kumar", "Priya", "Arjun", "Kavitha", "Zul",
-                        "Izzah", "Daniel", "Sarah", "Haziq", "Alya", "Raj", "Lakshmi", "Ken", "Jia Hui", "Faiz", "Hana"};
-                last = new String[]{"bin Abdullah", "binti Ahmad", "bin Ismail", "binti Hassan", "bin Ibrahim", "Tan",
-                        "Lim", "Lee", "Wong", "Ng", "Chong", "Raj", "Kumar", "Subramaniam", "Pillai", "bin Yusof",
-                        "binti Osman", "Goh", "Chin", "Ong", "Teoh", "Nair", "bin Razak", "binti Omar", "Yap", "Loh"};
-                dogs = new String[]{"Lucky", "Coco", "Milo", "Snowy", "Lucky", "Ah Huat", "Bobo", "Tiger", "Kopi",
-                        "Kaya", "Mochi", "Rambo", "Bubu", "Lulu", "Max", "Boy"};
-                carModels = new int[]{4, 4, 4, 0, 0, 3, 2, 1, 5, 6, 7};
-                carColors = new int[]{0xFFF2F2F2, 0xFF8A8F96, 0xFF2A2C30, 0xFFB03A2E, 0xFF2E5FB0, 0xFFE8E0D0, 0xFF8A3A5A};
-                taxiColor = 0xFFB03A2E;
-                busColor = 0xFFE03A3A;
-                pavement = 0xFFA8A090;
-                grass = 0xFF4E8A36;
-                officeRoofs = new int[]{0xFFB8BCC0, 0xFFA8ACB0, 0xFF9AA0A6, 0xFF8E949A, 0xFFC4C6C8};
-                officeWalls = new int[]{0xFFE8E4DC, 0xFF9CB4C8, 0xFFC8C8C4, 0xFFD4D0C8, 0xFFB8BCC0};
-                oldWalls = new int[]{0xFFE8D8B0, 0xFF9AC8B0, 0xFFE0C090, 0xFFB8D0E0, 0xFFE8B8A0};
-                oldRoofs = new int[]{0xFFB0583A, 0xFF7A2E28, 0xFF9A3A2E, 0xFF8A9096};
-                look = AUSTRALIA;
-                churchLook = MEXICO;
-                shieldColor = 0xFF1E6A3A;
-                break;
-            case PORTUGAL:
-                leftHand = false;
-                centreLine = 0xFFE8E8E4;
-                houseRoofs = new int[]{0xFFB4583A, 0xFFA04A30, 0xFFBE6A44, 0xFFC0703E, 0xFF9E5A3C, 0xFFB86040};
-                houseWalls = new int[]{0xFFF2EEE4, 0xFFF2E6C0, 0xFFE8C8A0, 0xFFB8D0E8, 0xFFF0D8D0, 0xFFE8E0D0};
-                shopRoofs = new int[]{0xFFB4583A, 0xFFA04A30, 0xFFBE6A44, 0xFF8A9096, 0xFF9E5A3C, 0xFF6C747C};
-                shopWalls = new int[]{0xFFF2EEE4, 0xFF2E5AA8, 0xFFF2E6C0, 0xFFB8D0E8, 0xFF2E6A4A, 0xFFE8C8A0};
-                apartmentWalls = new int[]{0xFFF2EEE4, 0xFFF2E6C0, 0xFFB8D0E8, 0xFFF0D8D0, 0xFFE8E0D0};
-                cruiserBody = 0xFF1E2E5A;
-                cruiserDoor = 0xFF1E2E5A;
-                cruiserRoof = 0xFFF2F2F2;
-                cruiserChecks = true;
-                checkA = 0xFF1E2E5A;
-                checkB = 0xFFF2F2F2;
-                streets = new String[]{"da Liberdade", "Augusta", "do Ouro", "da Prata", "de Santa Catarina", "Garrett",
-                        "do Carmo", "da República", "dos Aliados", "de Camões", "de São Bento", "das Flores",
-                        "Almirante Reis", "da Boavista", "de Belém", "do Comércio", "da Sé", "de São Jorge", "dos Restauradores",
-                        "Marquês de Pombal", "de Ceuta", "Infante Dom Henrique", "Vasco da Gama", "de Sá da Bandeira",
-                        "do Alecrim", "da Misericórdia", "das Janelas Verdes", "de Santo António", "do Mercado", "da Igreja",
-                        "do Castelo", "da Estação", "das Laranjeiras", "dos Pescadores", "da Fonte", "do Moinho",
-                        "dos Navegantes", "do Rossio", "de Alfama", "da Graça", "das Amoreiras", "do Sol", "da Lua",
-                        "Fernando Pessoa", "Eça de Queirós", "dos Combatentes", "25 de Abril", "5 de Outubro",
-                        "do Mar", "da Ribeira"};
-                mainWords = new String[]{"Avenida", "Avenida", "Estrada", "Alameda"};
-                localWords = new String[]{"Rua", "Rua", "Rua", "Travessa", "Beco", "Largo", "Calçada", "Escadinhas"};
-                typeFirst = true;
-                ringRoad = "Circular";
-                townStart = new String[]{"Vila ", "Santa ", "São ", "Porto ", "Monte", "Castelo ", "Ponte de ",
-                        "Torre", "Vale de ", "Alto ", "Póvoa de ", "Fonte "};
-                townEnd = new String[]{"Real", "Nova", "Velha", "do Mar", "Verde", "Formosa", "Lima", "Branco",
-                        "Maria", "do Castelo", "da Serra", "Alegre", "Grande", "do Conde"};
-                districtWords = new String[]{"Alfama", "Graça", "Bairro Alto", "Chiado", "Mouraria", "Belém",
-                        "Campo de Ourique", "Estrela", "Lapa", "Ribeira", "Foz", "Boavista", "Bonfim", "Campanhã",
-                        "Alvalade", "Areeiro", "Benfica", "Marvila", "Ajuda", "Amoreiras"};
-                hamletEnds = new String[]{" Aldeia", " Quinta", " Monte", " Casal", " Lugar", " Moinho", " Herdade", " Ponte"};
-                churches = new String[]{"Sé Catedral", "Igreja de São Roque", "Mosteiro dos Jerónimos", "Igreja do Carmo",
-                        "Igreja de Santo António", "Basílica da Estrela", "Igreja de São Vicente", "Capela das Almas"};
-                schools = new String[]{"Escola Secundária Camões", "Escola Básica da Graça", "Liceu Pedro Nunes",
-                        "Escola Básica do Bonfim", "Colégio Militar", "Escola Secundária D. Dinis"};
-                markets = new String[]{"Pingo Ouro", "Continentes", "Minipreço", "Mercado da Ribeira", "Lidal", "Intermarché"};
-                pharmacies = new String[]{"Farmácia Central", "Farmácia Estácio", "Farmácia da Baixa", "Farmácia do Rossio"};
-                gunStores = new String[]{"Armeiro do Porto", "Casa de Caça Silva", "Armaria Lusitana", "Caça e Pesca Lima"};
-                bases = new String[]{"Quartel da Ajuda", "Quartel de Santa Margarida", "Base de Tancos", "Quartel da Serra do Pilar",
-                        "Regimento de Infantaria 1", "Quartel de Mafra"};
-                hospital = "Hospital de Santa Maria";
-                policeStation = "Esquadra da PSP ";
-                fireStation = "Bombeiros Voluntários ";
-                first = new String[]{"Francisco", "Maria", "Santiago", "Leonor", "Afonso", "Matilde", "Tomás", "Beatriz",
-                        "Duarte", "Carolina", "João", "Inês", "Rodrigo", "Mariana", "Martim", "Ana", "Gonçalo", "Sofia",
-                        "Diogo", "Rita", "Pedro", "Catarina", "Rui", "Joana", "Miguel", "Teresa", "Nuno", "Filipa",
-                        "Luís", "Marta"};
-                last = new String[]{"Silva", "Santos", "Ferreira", "Pereira", "Oliveira", "Costa", "Rodrigues",
-                        "Martins", "Jesus", "Sousa", "Fernandes", "Gonçalves", "Gomes", "Lopes", "Marques", "Alves",
-                        "Almeida", "Ribeiro", "Pinto", "Carvalho", "Teixeira", "Moreira", "Correia", "Mendes", "Nunes", "Soares"};
-                dogs = new String[]{"Bobi", "Pantufa", "Tejo", "Nina", "Farrusco", "Pipoca", "Lua", "Tobias",
-                        "Bolacha", "Kika", "Max", "Mel", "Nico", "Pastel", "Boneca", "Simba"};
-                carModels = new int[]{4, 4, 4, 4, 0, 0, 5, 2, 6, 7};
-                carColors = new int[]{0xFF8A8F96, 0xFFE8E8E8, 0xFF2A2C30, 0xFF2E4F8A, 0xFFB03A2E, 0xFF5A5E66, 0xFFE8E0D0};
-                taxiColor = 0xFF2A2C30;
-                busColor = 0xFFE8C21A;
-                pavement = 0xFFD8D4CC;
-                grass = 0xFF6E7A3A;
-                plaza = 0xFFE4E0D8;
-                officeRoofs = new int[]{0xFF8A9096, 0xFFB4583A, 0xFF9AA2AA, 0xFF6C747C, 0xFFA04A30};
-                officeWalls = new int[]{0xFFF2EEE4, 0xFFF2E6C0, 0xFFE8C8A0, 0xFFB8D0E8, 0xFFDCD6C8};
-                oldWalls = new int[]{0xFFF2E6C0, 0xFFB8D0E8, 0xFFF0D8D0, 0xFFE8C8A0, 0xFF6A9AC8};
-                oldRoofs = new int[]{0xFFB4583A, 0xFFA04A30, 0xFFBE6A44, 0xFF9E5A3C};
-                look = FRANCE;
-                churchLook = FRANCE;
-                shieldColor = 0xFF1E4AA8;
-                break;
-            case MOROCCO:
-                leftHand = false;
-                centreLine = 0xFFE8E8E4;
-                houseRoofs = new int[]{0xFFD8CCB4, 0xFFC8B494, 0xFFE0D4BC, 0xFFB89C78, 0xFFD0C0A0, 0xFFC0A884};
-                houseWalls = new int[]{0xFFF2EEE4, 0xFFE0A070, 0xFFD88A5A, 0xFFE8C890, 0xFF5A8AC0, 0xFFC86A4A};
-                shopRoofs = new int[]{0xFFD8CCB4, 0xFFC8B494, 0xFFE0D4BC, 0xFFB89C78, 0xFF2E7A5A, 0xFFD0C0A0};
-                shopWalls = new int[]{0xFFE0A070, 0xFF2E7A5A, 0xFFD88A5A, 0xFF5A8AC0, 0xFFF2EEE4, 0xFFC86A4A};
-                apartmentWalls = new int[]{0xFFF2EEE4, 0xFFE8C890, 0xFFE0A070, 0xFFD8D0C0, 0xFFE8E0D0};
-                cruiserBody = 0xFF7A8A7A;
-                cruiserDoor = 0xFFF2F2F2;
-                cruiserRoof = 0;
-                cruiserChecks = false;
-                streets = new String[]{"Mohammed V", "Hassan II", "des FAR", "Zerktouni", "Moulay Youssef",
-                        "Moulay Ismail", "Ibn Battouta", "Ibn Sina", "Al Massira", "Allal Ben Abdellah", "de la Liberté",
-                        "Abdelkrim Khattabi", "Al Mansour", "Yacoub El Mansour", "Bab Doukkala", "Derb Dabachi",
-                        "Riad Zitoun", "Dar El Bacha", "Fès", "Marrakech", "Tanger", "Rabat", "Agadir", "Oujda", "Meknès",
-                        "Atlas", "des Orangers", "des Palmiers", "Jemaa", "Kasbah", "Souk", "Mellah", "Andalous",
-                        "Al Qods", "Annakhil", "Oued", "Sahara", "Ziz", "Sebou", "Moulouya", "Al Wahda", "Ennasr",
-                        "Al Amal", "Essalam", "Al Fath", "Ibn Khaldoun", "Averroès", "Al Idrissi", "Tarik Ibn Ziad",
-                        "Al Andalous"};
-                mainWords = new String[]{"Avenue", "Boulevard", "Avenue", "Route"};
-                localWords = new String[]{"Rue", "Derb", "Rue", "Zankat", "Derb", "Impasse"};
-                typeFirst = true;
-                ringRoad = "Rocade";
-                townStart = new String[]{"Aït ", "Sidi ", "Ain ", "Bab ", "Ksar ", "Dar ", "Oued ", "Tizi ", "Beni ",
-                        "Moulay ", "Ouled ", "Bir "};
-                townEnd = new String[]{"Benhaddou", "Ifrane", "Slimane", "Kacem", "Bouzid", "Taourirt", "Zitoun",
-                        "Mellal", "Bennour", "Larbi", "Sebaa", "Amar", "Yacoub", "Kerma"};
-                districtWords = new String[]{"Gueliz", "Hivernage", "Mellah", "Kasbah", "Agdal", "Riad", "Souissi",
-                        "Maarif", "Anfa", "Bourgogne", "Hassan", "Ocean", "Palmeraie", "Bab Doukkala", "Daoudiate",
-                        "Massira", "Sidi Youssef", "Mouassine", "Zitoun", "Andalous"};
-                hamletEnds = new String[]{" Douar", " Ksar", " Kasbah", " Oasis", " Tighremt", " Agadir", " Ain", " Souk"};
-                churches = new String[]{"Mosquée Hassan II", "Mosquée Koutoubia", "Mosquée de la Kasbah", "Mosquée Ben Youssef",
-                        "Mosquée Al Atiqa", "Mosquée Moulay Idriss", "Église Notre-Dame", "Mosquée Bab Doukkala"};
-                schools = new String[]{"Lycée Mohammed V", "École Ibn Sina", "Collège Al Massira", "Lycée Hassan II",
-                        "École Al Andalous", "Lycée Victor Hugo"};
-                markets = new String[]{"Marjene", "Acima", "Label'Vie", "BIM", "Carrefour Market", "Souk El Had"};
-                pharmacies = new String[]{"Pharmacie Centrale", "Pharmacie de la Médina", "Pharmacie Al Amal", "Pharmacie du Souk"};
-                gunStores = new String[]{"Armurerie du Maroc", "Chasse Atlas", "Armurerie Al Fath", "Sport et Chasse Ifrane"};
-                bases = new String[]{"Caserne Moulay Ismail", "Base de Benguerir", "Caserne Al Massira", "Camp Kénitra",
-                        "Caserne Hassan II", "Base de Meknès"};
-                hospital = "Hôpital Ibn Rochd";
-                policeStation = "Commissariat ";
-                fireStation = "Protection Civile ";
-                first = new String[]{"Mohamed", "Fatima", "Youssef", "Khadija", "Amine", "Salma", "Omar", "Aya",
-                        "Hamza", "Imane", "Mehdi", "Zineb", "Ayoub", "Nour", "Karim", "Meryem", "Rachid", "Hanane",
-                        "Said", "Laila", "Adil", "Samira", "Anas", "Houda", "Ilyas", "Sara", "Hicham", "Nadia", "Yassine", "Ghita"};
-                last = new String[]{"Alaoui", "Benali", "El Amrani", "Bennani", "Tazi", "Idrissi", "El Fassi", "Berrada",
-                        "Cherkaoui", "Chraibi", "Lahlou", "Ouazzani", "Benjelloun", "Saidi", "El Mansouri", "Kettani",
-                        "Bouzidi", "Hajji", "Naciri", "Sebti", "Filali", "Zniber", "Amrani", "Lamrani", "Rifai", "Guessous"};
-                dogs = new String[]{"Simba", "Rex", "Lucky", "Rocky", "Max", "Luna", "Kira", "Zorro", "Nala", "Tiger",
-                        "Leo", "Bella", "Sahara", "Atlas", "Choco", "Lion"};
-                carModels = new int[]{0, 0, 4, 4, 4, 1, 5, 2, 6, 6, 7};
-                carColors = new int[]{0xFFF2F2F2, 0xFFE8E8E8, 0xFF8A8F96, 0xFF2A2C30, 0xFFB03A2E, 0xFFE8E0D0, 0xFF5A6E8A};
-                taxiColor = 0xFFE03A3A;
-                busColor = 0xFFE8E0C8;
-                pavement = 0xFFC8A880;
-                grass = 0xFF8A8A4A;
-                plaza = 0xFFD8B890;
-                officeRoofs = new int[]{0xFFD8CCB4, 0xFFC8B494, 0xFFE0D4BC, 0xFFB8BCC0, 0xFFB89C78};
-                officeWalls = new int[]{0xFFF2EEE4, 0xFFE8C890, 0xFFE0A070, 0xFFDCD6C8, 0xFFD8D0C0};
-                oldWalls = new int[]{0xFFD88A5A, 0xFFE0A070, 0xFFC86A4A, 0xFFE8C890, 0xFFB86040};
-                oldRoofs = new int[]{0xFFD8CCB4, 0xFF2E7A5A, 0xFFC8B494, 0xFFB89C78};
-                look = MEXICO;
-                churchLook = MEXICO;
-                shieldColor = 0xFF1E4AA8;
-                break;
-            case RUSSIA:
-                leftHand = false;
-                centreLine = 0xFFE8E8E4;
-                houseRoofs = new int[]{0xFF3F6A4A, 0xFF8A3A2E, 0xFF4E5560, 0xFF5A7A9A, 0xFF7A5A48, 0xFF6A7078};
-                houseWalls = new int[]{0xFFC89A6A, 0xFFB8D0C0, 0xFFE8D8A0, 0xFFB8C8E0, 0xFF8A6A4A, 0xFFE0C8C0};
-                shopRoofs = new int[]{0xFF6A7078, 0xFF8A9096, 0xFF4E5560, 0xFF3F6A4A, 0xFF5A6670, 0xFF8A3A2E};
-                shopWalls = new int[]{0xFFE8D8A0, 0xFFB8D0C0, 0xFFE0C8C0, 0xFFB8C8E0, 0xFFF2EEE4, 0xFFC8504A};
-                apartmentWalls = new int[]{0xFFE8D8A0, 0xFFD8D4CC, 0xFFC8C4BC, 0xFFE0C8C0, 0xFFB8C8E0};
-                cruiserBody = 0xFFF2F2F2;
-                cruiserDoor = 0xFF1F4FA8;
-                cruiserRoof = 0;
-                cruiserChecks = false;
-                streets = new String[]{"Lenina", "Pushkina", "Gagarina", "Mira", "Sovetskaya", "Pobedy", "Tverskaya",
-                        "Arbat", "Nevsky", "Sadovaya", "Lermontova", "Tolstogo", "Chekhova", "Gorkogo", "Kirova",
-                        "Lomonosova", "Mendeleeva", "Kosmonavtov", "Molodezhnaya", "Shkolnaya", "Zavodskaya",
-                        "Vokzalnaya", "Naberezhnaya", "Tsentralnaya", "Sportivnaya", "Lesnaya", "Polevaya", "Rechnaya",
-                        "Sirenevaya", "Berezovaya", "Dachnaya", "Novaya", "Krasnaya", "Oktyabrskaya", "Pervomayskaya",
-                        "Komsomolskaya", "Stroiteley", "Zhukova", "Suvorova", "Kutuzova", "Dostoevskogo", "Turgeneva",
-                        "Gogolya", "Tchaikovskogo", "Glinki", "Vernadskogo", "Leninsky", "Moskovskaya", "Kalinina", "Mayakovskogo"};
-                mainWords = new String[]{" Prospekt", " Shosse", " Prospekt", " Bulvar"};
-                localWords = new String[]{" Ulitsa", " Ulitsa", " Ulitsa", " Pereulok", " Proyezd", " Tupik"};
-                typeFirst = false;
-                ringRoad = "Koltsevaya";
-                townStart = new String[]{"Novo", "Staro", "Krasno", "Belo", "Zelen", "Pervo", "Sever", "Yuzhno",
-                        "Kamensk", "Ozer", "Les", "Bor", "Volgo", "Dnepro", "Ural", "Zavod"};
-                townEnd = new String[]{"grad", "sk", "ovo", "ino", "gorsk", "dar", "polye", "ovka", "evka", "slavl",
-                        "gorod", "yar", "ozersk", "sibirsk"};
-                districtWords = new String[]{"Tsentralny", "Sovetsky", "Leninsky", "Oktyabrsky", "Kirovsky",
-                        "Zavodskoy", "Pervomaysky", "Severny", "Yuzhny", "Vostochny", "Zapadny", "Kuntsevo", "Sokol",
-                        "Arbat", "Kitay-gorod", "Basmanny", "Khamovniki", "Presnya", "Zamoskvorechye", "Tagansky"};
-                hamletEnds = new String[]{"ovka", " Dachi", "ino", " Khutor", "evo", " Selo", " Derevnya", " Posyolok"};
-                churches = new String[]{"Cathedral of Christ the Saviour", "Church of the Intercession", "St Nicholas Church",
-                        "Kazan Cathedral", "Church of the Resurrection", "Uspensky Cathedral", "Trinity Church",
-                        "Church of St Elijah"};
-                schools = new String[]{"School No. 1", "School No. 17", "Gymnasium No. 5", "Lyceum No. 2",
-                        "School No. 44", "Cadet School"};
-                markets = new String[]{"Pyaterka", "Magnet", "Perekryostok", "Diksi", "Lenta", "Rynok"};
-                pharmacies = new String[]{"Apteka 36.6", "Rigla", "Apteka Zdorovye", "Gorzdrav"};
-                gunStores = new String[]{"Okhotnik", "Kalashnikov Shop", "Oruzheynaya Lavka", "Sibir Hunting"};
-                bases = new String[]{"Kantemirovskaya Base", "Alabino", "Kubinka", "Taman Garrison", "Mulino", "Pechenga"};
-                hospital = "City Hospital No. 1";
-                policeStation = "Police Department ";
-                fireStation = "Fire Station No. ";
-                first = new String[]{"Aleksandr", "Anastasia", "Dmitry", "Maria", "Maksim", "Anna", "Sergey", "Elena",
-                        "Ivan", "Olga", "Mikhail", "Tatiana", "Andrey", "Natalia", "Nikolai", "Ekaterina", "Alexei",
-                        "Irina", "Vladimir", "Svetlana", "Artyom", "Polina", "Pavel", "Yulia", "Igor", "Daria", "Oleg",
-                        "Ksenia", "Yuri", "Vera"};
-                last = new String[]{"Ivanov", "Smirnov", "Kuznetsov", "Popov", "Vasiliev", "Petrov", "Sokolov",
-                        "Mikhailov", "Novikov", "Fedorov", "Morozov", "Volkov", "Alekseev", "Lebedev", "Semenov",
-                        "Egorov", "Pavlov", "Kozlov", "Stepanov", "Nikolaev", "Orlov", "Andreev", "Makarov", "Zaitsev",
-                        "Solovyov", "Borisov"};
-                dogs = new String[]{"Sharik", "Druzhok", "Belka", "Strelka", "Laika", "Bobik", "Tuzik", "Zhuchka",
-                        "Rex", "Muhtar", "Polkan", "Naida", "Barbos", "Dina", "Grom", "Ryzhik"};
-                carModels = new int[]{0, 0, 0, 4, 4, 2, 2, 1, 5, 8, 6, 7};
-                carColors = new int[]{0xFFF2F2F2, 0xFF2A2C30, 0xFF8A8F96, 0xFF3C6A4E, 0xFF8A3A2E, 0xFFB8BCC0, 0xFF2E4F8A, 0xFFE8D8A0};
-                taxiColor = 0xFFE8C21A;
-                busColor = 0xFFE8E8E8;
-                pavement = 0xFF9A9894;
-                grass = 0xFF5E7A3E;
-                officeRoofs = new int[]{0xFF6A7078, 0xFF8A9096, 0xFF9AA2AA, 0xFF5A6670, 0xFF4E5560};
-                officeWalls = new int[]{0xFFE8D8A0, 0xFFD8D4CC, 0xFFC8C4BC, 0xFFB8C8E0, 0xFFE0C8C0};
-                oldWalls = new int[]{0xFFE8D8A0, 0xFFB8D0C0, 0xFFE0C8C0, 0xFFC8504A, 0xFFB8C8E0};
-                oldRoofs = new int[]{0xFF3F6A4A, 0xFF8A3A2E, 0xFF6A7078, 0xFF4E5560};
-                look = USA;
-                churchLook = MEXICO;
-                shieldColor = 0xFF1E4AA8;
-                break;
-            case CHINA:
-                leftHand = false;
-                centreLine = 0xFFE8C440;
-                houseRoofs = new int[]{0xFF4E5560, 0xFF5A5E62, 0xFF6A6E70, 0xFF3E4448, 0xFF7A5A48, 0xFF8A3A2E};
-                houseWalls = new int[]{0xFFD8D4CC, 0xFFB8B0A0, 0xFFE8E4DC, 0xFFC8C0B0, 0xFF9A8F80, 0xFFE0D8C8};
-                shopRoofs = new int[]{0xFF4E5560, 0xFF8A3A2E, 0xFF5A6670, 0xFF3E4448, 0xFF6A7078, 0xFF7A5A48};
-                shopWalls = new int[]{0xFFE8E4DC, 0xFFC8504A, 0xFFD8D4CC, 0xFFE0C890, 0xFFB8C8E0, 0xFFF2EEE4};
-                apartmentWalls = new int[]{0xFFE8E4DC, 0xFFD8D4CC, 0xFFE0D8C8, 0xFFC8C4BC, 0xFFE8D8C0};
-                cruiserBody = 0xFFF2F2F2;
-                cruiserDoor = 0xFF1F3F8A;
-                cruiserRoof = 0;
-                cruiserChecks = false;
-                streets = new String[]{"Zhongshan", "Renmin", "Jiefang", "Heping", "Xinhua", "Chang'an", "Nanjing", "Beijing", "Shanghai", "Guangzhou", "Wenhua", "Jianshe", "Dongfeng", "Chaoyang", "Huaihai", "Yan'an", "Hongqi", "Gongye", "Xueyuan", "Binjiang", "Hubin", "Shengli", "Minzhu", "Fuxing", "Yingbin", "Jinxiu", "Huanghe", "Changjiang", "Taishan", "Kunlun", "Tianshan", "Lianhua", "Meihua", "Taoyuan", "Longhua", "Fenghuang", "Qingnian", "Xingfu", "Kangle", "Anle", "Huayuan", "Zhongxin", "Xihu", "Donghu", "Nanhu", "Beihai", "Xiangyang", "Tiyu", "Huancheng", "Dongsheng"};
-                mainWords = new String[]{" Dadao", " Lu", " Dajie", " Lu"};
-                localWords = new String[]{" Lu", " Jie", " Lu", " Xiang", " Hutong", " Jie"};
-                typeFirst = false;
-                ringRoad = "Huancheng Lu";
-                townStart = new String[]{"Nan", "Bei", "Dong", "Xi", "Jin", "Yong", "Ping", "An", "Chang", "Fu", "Long", "Hua", "Qing", "Shan"};
-                townEnd = new String[]{"jing", "zhou", "yang", "ning", "shan", "hai", "chuan", "cheng", "ping", "kou", "ling", "tai", "feng", "de"};
-                districtWords = new String[]{"Chaoyang", "Haidian", "Xicheng", "Dongcheng", "Pudong", "Huangpu", "Tianhe", "Yuexiu", "Futian", "Nanshan", "Jinjiang", "Wuhou", "Gulou", "Xuanwu", "Jiangbei", "Binhai", "Longgang", "Baiyun", "Hongshan", "Lianhu"};
-                hamletEnds = new String[]{" Cun", "zhuang", " Village", "tun", " Zhen", "jiazhuang", "ying", " Xiang"};
-                churches = new String[]{"Guanyin Temple", "Confucius Temple", "White Horse Temple", "Jade Buddha Temple", "City God Temple", "Lingyin Temple", "Dragon King Temple", "Baoguo Temple"};
-                schools = new String[]{"No. 1 Middle School", "Experimental Primary School", "Foreign Languages School", "No. 4 High School", "Normal University School", "Yucai School"};
-                markets = new String[]{"Yonghui", "RT-Mart", "Wumart", "CR Vanguard", "Hualian", "Lianhua"};
-                pharmacies = new String[]{"Laobaixing Pharmacy", "Yixintang", "Tongrentang", "Dashenlin"};
-                gunStores = new String[]{"Outdoor Supplies"};
-                bases = new String[]{"PLA Garrison", "Eastern Barracks", "Northern Garrison", "PLA Camp 6", "Military District Depot", "Garrison Camp 2"};
-                hospital = "People's Hospital";
-                policeStation = "Police Station ";
-                fireStation = "Fire Station ";
-                first = new String[]{"Wei", "Fang", "Jing", "Lei", "Min", "Yan", "Jun", "Li", "Hao", "Xin", "Ying", "Tao", "Mei", "Qiang", "Hui", "Bo", "Lin", "Yu", "Chen", "Na", "Peng", "Xia", "Gang", "Juan", "Hong", "Ping", "Tian", "Zhen", "Ming", "Yue"};
-                last = new String[]{"Wang", "Li", "Zhang", "Liu", "Chen", "Yang", "Huang", "Zhao", "Wu", "Zhou", "Xu", "Sun", "Ma", "Zhu", "Hu", "Guo", "He", "Gao", "Lin", "Luo", "Zheng", "Liang", "Xie", "Song", "Tang", "Han"};
-                dogs = new String[]{"Wangcai", "Doudou", "Huanhuan", "Lele", "Xiaobai", "Dahuang", "Qiuqiu", "Mimi", "Laifu", "Bao", "Niuniu", "Tiantian", "Heihei", "Pangpang", "Duoduo", "Xiaohei"};
-                carModels = new int[]{0, 0, 0, 2, 2, 4, 4, 5, 6, 6, 7};
-                carColors = new int[]{0xFFF2F2F2, 0xFF2A2C30, 0xFF8A8F96, 0xFFB8BCC0, 0xFFB03A2E, 0xFF2E4F8A, 0xFFE8D8A0};
-                taxiColor = 0xFFE8C21A;
-                busColor = 0xFF2E7AC0;
-                pavement = 0xFF9A9894;
-                grass = 0xFF557A3E;
-                officeRoofs = new int[]{0xFF6A7078, 0xFF8A9096, 0xFF9AA2AA, 0xFF5A6670, 0xFF4E5560};
-                officeWalls = new int[]{0xFFE8E4DC, 0xFFB8C8E0, 0xFFD8D4CC, 0xFF9AB0C8, 0xFFC8C4BC};
-                oldWalls = new int[]{0xFFB8B0A0, 0xFF9A8F80, 0xFFC8504A, 0xFFD8D4CC, 0xFF8A3A2E};
-                oldRoofs = new int[]{0xFF4E5560, 0xFF5A5E62, 0xFF3E4448, 0xFF2E6A4E};
-                look = JAPAN;
-                churchLook = JAPAN;
-                shieldColor = 0xFF2E7A4A;
-                break;
-            case EGYPT:
-                leftHand = false;
-                centreLine = 0xFFE8E8E4;
-                houseRoofs = new int[]{0xFFC8B494, 0xFFB8A07C, 0xFFD8C8A8, 0xFFA88C68, 0xFFC0A884, 0xFFB09878};
-                houseWalls = new int[]{0xFFC8A880, 0xFFB8906A, 0xFFD8C0A0, 0xFFA87A58, 0xFFE0D0B4, 0xFF9A6A4A};
-                shopRoofs = new int[]{0xFFC8B494, 0xFFB8A07C, 0xFF8A9096, 0xFFA88C68, 0xFFD8C8A8, 0xFF6A7078};
-                shopWalls = new int[]{0xFFD8C0A0, 0xFF2E6A8A, 0xFFC8A880, 0xFFE0D0B4, 0xFFB03A2E, 0xFF3C7A4E};
-                apartmentWalls = new int[]{0xFFC8A880, 0xFFD8C0A0, 0xFFB8906A, 0xFFE0D0B4, 0xFFA87A58};
-                cruiserBody = 0xFFF2F2F2;
-                cruiserDoor = 0xFF1F2F5A;
-                cruiserRoof = 0;
-                cruiserChecks = false;
-                streets = new String[]{"Tahrir", "Ramses", "El Nil", "Salah Salem", "26th of July", "Gamal Abdel Nasser", "Port Said", "El Azhar", "Talaat Harb", "Qasr El Nil", "Mohamed Ali", "El Haram", "Faisal", "El Merghany", "Abbas El Akkad", "Makram Ebeid", "Mostafa El Nahas", "El Thawra", "Shubra", "El Gomhoreya", "Ahmed Orabi", "Saad Zaghloul", "El Galaa", "Champollion", "Hoda Shaarawi", "Sherif", "Emad El Din", "Kasr El Aini", "El Mesaha", "Shehab", "Gameat El Dowal", "Lebanon", "Syria", "Iraq", "El Nasr", "Mosaddak", "El Obour", "Omar Ibn El Khattab", "Ibn Tulun", "Khan El Khalili", "El Moez", "Bab Zuweila", "El Hussein", "Sayeda Zeinab", "Abdel Moneim Riad", "El Sudan", "Aswan", "Luxor", "Alexandria", "Suez"};
-                mainWords = new String[]{"Sharia", "Corniche", "Sharia", "Tariq"};
-                localWords = new String[]{"Sharia", "Darb", "Haret", "Sharia", "Atfet", "Midan"};
-                typeFirst = true;
-                ringRoad = "Ring Road";
-                townStart = new String[]{"El ", "Kafr ", "Mit ", "Beni ", "Nag ", "Ezbet ", "Deir ", "Tell ", "Shibin ", "Minyet ", "Sidi ", "Abu "};
-                townEnd = new String[]{"Sheikh", "Mansour", "Ghamr", "Suef", "Hammadi", "Zayed", "Salem", "Qurna", "Kom", "Mahalla", "Simbel", "Tig", "Qena", "Matai"};
-                districtWords = new String[]{"Zamalek", "Garden City", "Maadi", "Heliopolis", "Dokki", "Mohandessin", "Agouza", "Shubra", "Abbasiya", "Nasr City", "Sayeda Zeinab", "Bulaq", "Imbaba", "Giza", "Haram", "Manial", "Rod El Farag", "Ain Shams", "Matareya", "Helwan"};
-                hamletEnds = new String[]{" Ezba", " Kafr", " Nag", " Village", " Oasis", " Kom", " Deir", " Mit"};
-                churches = new String[]{"Al-Azhar Mosque", "Mosque of Ibn Tulun", "Al-Hussein Mosque", "Sultan Hassan Mosque", "The Hanging Church", "St Mark's Cathedral", "Al-Rifa'i Mosque", "Amr ibn al-As Mosque"};
-                schools = new String[]{"El Saidia Secondary School", "Gamal Abdel Nasser School", "El Orman Experimental School", "Victory College", "El Nasr Boys School", "Port Said School"};
-                markets = new String[]{"Carrefour", "Seoudi", "Spinneys", "Kheir Zaman", "Metro Market", "Hyper One"};
-                pharmacies = new String[]{"El Ezaby Pharmacy", "Seif Pharmacy", "19011 Pharmacy", "Misr Pharmacy"};
-                gunStores = new String[]{"Hunting Supplies"};
-                bases = new String[]{"Almaza Air Base", "Heikstep Camp", "Dahshur Camp", "El Galaa Barracks", "Hilmeya Camp", "Mohamed Naguib Base"};
-                hospital = "Kasr El Aini Hospital";
-                policeStation = "Police Station ";
-                fireStation = "Civil Defence ";
-                first = new String[]{"Mohamed", "Ahmed", "Mahmoud", "Fatma", "Mona", "Mostafa", "Aya", "Omar", "Nour", "Hassan", "Yasmin", "Karim", "Salma", "Ali", "Heba", "Youssef", "Mariam", "Tarek", "Dina", "Khaled", "Rana", "Amr", "Sara", "Hany", "Nadia", "Sherif", "Laila", "Ibrahim", "Reem", "Hossam"};
-                last = new String[]{"Hassan", "Mohamed", "Ibrahim", "Ali", "Mahmoud", "Abdel Rahman", "El Sayed", "Mostafa", "Salem", "Farouk", "Fathy", "Gamal", "Naguib", "Saleh", "Shawky", "Soliman", "Youssef", "Zaki", "Ragab", "Hamdy", "Kamel", "Fawzy", "Lotfy", "Sabry", "Morsi", "Badawi"};
-                dogs = new String[]{"Rex", "Lucky", "Simba", "Max", "Bobby", "Leo", "Lulu", "Fofa", "Bosy", "Rocky", "Shams", "Nile", "Amar", "Toto", "Jack", "Nana"};
-                carModels = new int[]{0, 0, 4, 4, 4, 5, 1, 6, 6, 7};
-                carColors = new int[]{0xFFF2F2F2, 0xFFE8E8E8, 0xFF8A8F96, 0xFF2A2C30, 0xFFB03A2E, 0xFFE8E0D0, 0xFF5A6E8A};
-                taxiColor = 0xFFF2F2F2;
-                busColor = 0xFFE8E0C8;
-                pavement = 0xFFC8B090;
-                grass = 0xFF7A8A4A;
-                plaza = 0xFFD8C098;
-                officeRoofs = new int[]{0xFFC8B494, 0xFFB8BCC0, 0xFFD8C8A8, 0xFF8A9096, 0xFFA88C68};
-                officeWalls = new int[]{0xFFD8C0A0, 0xFFE0D0B4, 0xFFC8A880, 0xFFB8C8D8, 0xFFDCD6C8};
-                oldWalls = new int[]{0xFFC8A880, 0xFFB8906A, 0xFFA87A58, 0xFFD8C0A0, 0xFF9A6A4A};
-                oldRoofs = new int[]{0xFFC8B494, 0xFFB8A07C, 0xFF2E6A4E, 0xFFA88C68};
-                look = MEXICO;
-                churchLook = MEXICO;
-                shieldColor = 0xFF1E4AA8;
-                break;
-            case SAUDI:
-                leftHand = false;
-                centreLine = 0xFFE8E8E4;
-                houseRoofs = new int[]{0xFFE0D4BC, 0xFFD8CCB0, 0xFFC8B898, 0xFFE8E0CC, 0xFFB8A888, 0xFFD0C4A8};
-                houseWalls = new int[]{0xFFE8DCC0, 0xFFD8C8A4, 0xFFF2EEE4, 0xFFC8B490, 0xFFE0D0B0, 0xFFB89C78};
-                shopRoofs = new int[]{0xFFE0D4BC, 0xFF8A9096, 0xFFD8CCB0, 0xFF6A7078, 0xFFC8B898, 0xFF2E6A4E};
-                shopWalls = new int[]{0xFFF2EEE4, 0xFFE8DCC0, 0xFF2E6A4E, 0xFFD8C8A4, 0xFFB8C8D8, 0xFFC8B490};
-                apartmentWalls = new int[]{0xFFE8DCC0, 0xFFF2EEE4, 0xFFD8C8A4, 0xFFE0D0B0, 0xFFC8B490};
-                cruiserBody = 0xFFF2F2F2;
-                cruiserDoor = 0xFF2E7A4A;
-                cruiserRoof = 0;
-                cruiserChecks = false;
-                streets = new String[]{"King Fahd", "King Abdulaziz", "King Abdullah", "King Faisal", "King Khalid", "Prince Sultan", "Prince Mohammed", "Olaya", "Tahlia", "Makkah", "Madinah", "Al Urubah", "Takhassusi", "Imam Saud", "Uthman bin Affan", "Abu Bakr", "Omar bin Al Khattab", "Ali bin Abi Talib", "Al Maather", "Al Thumama", "Prince Turki", "Prince Majid", "Palestine", "Al Rawdah", "Al Andalus", "Al Hamra", "Al Safa", "Al Marwah", "Al Nakheel", "Al Wurud", "Al Yasmin", "Al Narjis", "Al Malqa", "Hira", "Quraysh", "Dammam", "Jeddah", "Al Khobar", "Abha", "Taif", "Tabuk", "Najran", "Jazan", "Qassim", "Hail", "Al Ahsa", "Al Batha", "Diriyah", "Al Masmak", "Al Ula"};
-                mainWords = new String[]{" Road", " Highway", " Road", " Street"};
-                localWords = new String[]{" Street", " Street", " St", " Lane", " Road", " St"};
-                typeFirst = false;
-                ringRoad = "Ring Road";
-                townStart = new String[]{"Al ", "Ras ", "Ain ", "Wadi ", "Hafr ", "Khamis ", "Umm ", "Bir ", "Abu ", "Qasr ", "Jabal ", "Dar "};
-                townEnd = new String[]{"Khobar", "Tanura", "Mushait", "Batin", "Lajj", "Dawasir", "Sudair", "Majmaah", "Zulfi", "Kharj", "Ula", "Bisha", "Unaizah", "Qurayyat"};
-                districtWords = new String[]{"Olaya", "Al Malaz", "Al Murabba", "Al Sulimaniyah", "Al Nakheel", "Al Rawdah", "Al Hamra", "Al Yasmin", "Al Narjis", "Al Wurud", "Al Malqa", "Diriyah", "Al Batha", "Al Aziziyah", "Al Safa", "Al Shati", "Al Faisaliyah", "Al Naseem", "Al Rabwah", "Al Andalus"};
-                hamletEnds = new String[]{" Hijra", " Wadi", " Oasis", " Farms", " Qaryah", " Ain", " Hilla", " Bir"};
-                churches = new String[]{"King Fahd Mosque", "Al Rajhi Mosque", "Imam Turki Mosque", "King Khalid Mosque", "Grand Mosque", "Al Rahma Mosque", "Al Noor Mosque", "Al Taqwa Mosque"};
-                schools = new String[]{"King Abdulaziz School", "Al Faisaliah School", "Prince Sultan School", "Riyadh Schools", "Dar Al Fikr School", "Al Andalus School"};
-                markets = new String[]{"Panda", "Danube", "Tamimi Markets", "Al Othaim", "Carrefour", "Lulu Hypermarket"};
-                pharmacies = new String[]{"Nahdi Pharmacy", "Al Dawaa Pharmacy", "Whites Pharmacy", "United Pharmacy"};
-                gunStores = new String[]{"Hunting Supplies"};
-                bases = new String[]{"King Abdulaziz Military City", "King Khalid Military City", "Prince Sultan Air Base", "King Faisal Military City", "Al Hamra Garrison", "Al Kharj Camp"};
-                hospital = "King Faisal Specialist Hospital";
-                policeStation = "Police Station ";
-                fireStation = "Civil Defense Station ";
-                first = new String[]{"Mohammed", "Abdullah", "Fahad", "Noura", "Sara", "Faisal", "Reem", "Khalid", "Lama", "Sultan", "Hessa", "Turki", "Maha", "Saud", "Lulwa", "Nasser", "Dana", "Majed", "Ghada", "Bandar", "Amal", "Saad", "Huda", "Abdulaziz", "Jawaher", "Yousef", "Mashael", "Omar", "Rana", "Ali"};
-                last = new String[]{"Al Otaibi", "Al Ghamdi", "Al Qahtani", "Al Harbi", "Al Zahrani", "Al Dosari", "Al Shehri", "Al Mutairi", "Al Anazi", "Al Shamrani", "Al Juhani", "Al Maliki", "Al Subaie", "Al Rashid", "Al Amri", "Al Asmari", "Al Bishi", "Al Hajri", "Al Yami", "Al Balawi", "Al Sharif", "Al Rajhi", "Al Sulaiman", "Al Khalidi", "Al Shammari", "Al Tamimi"};
-                dogs = new String[]{"Saluki", "Rex", "Lucky", "Max", "Simba", "Sultan", "Shadow", "Bella", "Leo", "Coco", "Rocky", "Nala", "Falcon", "Sandy", "Zorro", "Hunter"};
-                carModels = new int[]{0, 0, 2, 2, 2, 1, 1, 5, 6, 7};
-                carColors = new int[]{0xFFF2F2F2, 0xFFF2F2F2, 0xFFE8E8E8, 0xFF8A8F96, 0xFF2A2C30, 0xFFB8BCC0, 0xFF8A3A2E, 0xFFE8D8A0};
-                taxiColor = 0xFFF2F2F2;
-                busColor = 0xFFE8E8E8;
-                pavement = 0xFFC8B494;
-                grass = 0xFF8A8A50;
-                plaza = 0xFFD8C8A0;
-                officeRoofs = new int[]{0xFF8A9096, 0xFFB8BCC0, 0xFFE0D4BC, 0xFF6A7078, 0xFFD8CCB0};
-                officeWalls = new int[]{0xFFE8DCC0, 0xFF9AB0C8, 0xFFF2EEE4, 0xFFB8C8D8, 0xFFD8C8A4};
-                oldWalls = new int[]{0xFFC8B490, 0xFFB89C78, 0xFFD8C8A4, 0xFFE0D0B0, 0xFFA88C68};
-                oldRoofs = new int[]{0xFFE0D4BC, 0xFFC8B898, 0xFFB8A888, 0xFF2E6A4E};
-                look = MEXICO;
-                churchLook = MEXICO;
-                shieldColor = 0xFF2E7A4A;
-                break;
-            case SWEDEN:
-                leftHand = false;
-                centreLine = 0xFFECECEC;
-                houseRoofs = new int[]{0xFF3A3A3C, 0xFF4E5560, 0xFF8A3A2E, 0xFF2E3236, 0xFF6A6E70, 0xFF7A2E28};
-                houseWalls = new int[]{0xFF8A2A22, 0xFFE0C060, 0xFFF2EEE4, 0xFF8A2A22, 0xFFB8C8D8, 0xFFD8B890};
-                shopRoofs = new int[]{0xFF3A3A3C, 0xFF4E5560, 0xFF6A7078, 0xFF8A3A2E, 0xFF5A6670, 0xFF2E3236};
-                shopWalls = new int[]{0xFFE0C060, 0xFFF2EEE4, 0xFF8A2A22, 0xFFB8C8D8, 0xFFD8B890, 0xFF7A9A8A};
-                apartmentWalls = new int[]{0xFFE0C060, 0xFFD8B890, 0xFFF2EEE4, 0xFFC8604A, 0xFFB8C8D8};
-                cruiserBody = 0xFFF2F2F2;
-                cruiserDoor = 0xFF1F3F8A;
-                cruiserRoof = 0;
-                cruiserChecks = true;
-                checkA = 0xFF1F3F8A;
-                checkB = 0xFFE8D020;
-                streets = new String[]{"Kungs", "Drottning", "Stor", "Ny", "Skol", "Kyrko", "Järnvägs", "Hamn", "Strand", "Björk", "Ek", "Lind", "Gran", "Tall", "Sjö", "Berg", "Ängs", "Park", "Torg", "Väster", "Öster", "Norr", "Söder", "Kvarn", "Smed", "Bryggar", "Fabriks", "Linné", "Vasa", "Karls", "Olofs", "Stens", "Alm", "Asp", "Hassel", "Rönn", "Lönn", "Bok", "Fjälls", "Skogs", "Ros", "Lilje", "Tulpan", "Vinter", "Sommar", "Höst", "Vår", "Älv", "Bäck", "Mosse"};
-                mainWords = new String[]{"vägen", "gatan", "leden", "vägen"};
-                localWords = new String[]{"gatan", "gatan", "vägen", "gränd", "stigen", "backen"};
-                typeFirst = false;
-                ringRoad = "Ringleden";
-                townStart = new String[]{"Kungs", "Stor", "Lin", "Norr", "Söder", "Väster", "Öster", "Ek", "Björk", "Sund", "Hel", "Kris", "Häl", "Ånge", "Sand", "Mal"};
-                townEnd = new String[]{"köping", "holm", "berg", "vik", "by", "sund", "torp", "hamn", "stad", "näs", "fors", "dal", "lund", "hult"};
-                districtWords = new String[]{"Söder", "Norrmalm", "Vasastan", "Östermalm", "Kungsholmen", "Haga", "Majorna", "Linné", "Johanneberg", "Rosengård", "Möllevången", "Väster", "Öster", "Hammarby", "Bromma", "Solna", "Kista", "Fridhem", "Björkhagen", "Sandviken"};
-                hamletEnds = new String[]{"torp", "by", " gård", "hult", "boda", "ryd", "näs", "sätra"};
-                churches = new String[]{"Storkyrkan", "Domkyrkan", "Sankt Jakobs kyrka", "Klara kyrka", "Gustav Vasa kyrka", "Hedvig Eleonora kyrka", "Maria Magdalena kyrka", "Sofia kyrka"};
-                schools = new String[]{"Kungsholmens gymnasium", "Norra Real", "Södra Latin", "Vasaskolan", "Engelbrektsskolan", "Björkskolan"};
-                markets = new String[]{"ICA", "Coop", "Hemköp", "Willys", "Lidl", "City Gross"};
-                pharmacies = new String[]{"Apoteket", "Apotek Hjärtat", "Kronans Apotek", "Lloyds Apotek"};
-                gunStores = new String[]{"Jaktia", "Vapenhandlarn", "Jakt & Fiske", "Älgjägarn"};
-                bases = new String[]{"Livgardet Kungsängen", "Skaraborgs regemente", "Norrbottens regemente", "Revingehed", "Boden garnison", "Ledningsregementet"};
-                hospital = "Universitetssjukhuset";
-                policeStation = "Polisstation ";
-                fireStation = "Brandstation ";
-                first = new String[]{"Erik", "Anna", "Lars", "Maria", "Karl", "Eva", "Johan", "Karin", "Anders", "Sara", "Per", "Emma", "Nils", "Elin", "Oskar", "Ida", "Gustav", "Linnea", "Axel", "Maja", "Olof", "Klara", "Magnus", "Sofia", "Henrik", "Frida", "Fredrik", "Astrid", "Björn", "Ingrid"};
-                last = new String[]{"Andersson", "Johansson", "Karlsson", "Nilsson", "Eriksson", "Larsson", "Olsson", "Persson", "Svensson", "Gustafsson", "Pettersson", "Jonsson", "Jansson", "Hansson", "Bengtsson", "Lindberg", "Lindqvist", "Lindgren", "Berg", "Axelsson", "Bergström", "Lundberg", "Lundgren", "Holm", "Sandberg", "Ekström"};
-                dogs = new String[]{"Sixten", "Bamse", "Ludde", "Molly", "Bella", "Charlie", "Selma", "Love", "Majken", "Totte", "Frasse", "Ronja", "Doris", "Sigge", "Elsa", "Vilgot"};
-                carModels = new int[]{0, 0, 0, 4, 4, 2, 2, 5, 6, 7};
-                carColors = new int[]{0xFFF2F2F2, 0xFF2A2C30, 0xFF8A8F96, 0xFF1E2E5A, 0xFFB03A2E, 0xFFB8BCC0, 0xFF3C5A4E};
-                taxiColor = 0xFFE8C21A;
-                busColor = 0xFFC83A2E;
-                pavement = 0xFF9A9894;
-                grass = 0xFF4E7A3A;
-                officeRoofs = new int[]{0xFF4E5560, 0xFF6A7078, 0xFF8A9096, 0xFF3A3A3C, 0xFF5A6670};
-                officeWalls = new int[]{0xFFE0C060, 0xFFD8B890, 0xFFB8C8D8, 0xFFF2EEE4, 0xFFC8604A};
-                oldWalls = new int[]{0xFFE0C060, 0xFFD8B890, 0xFFC8604A, 0xFF8A2A22, 0xFFE8D8A0};
-                oldRoofs = new int[]{0xFF3A3A3C, 0xFF8A3A2E, 0xFF3F6A4A, 0xFF4E5560};
-                look = USA;
-                churchLook = FRANCE;
-                shieldColor = 0xFF2E7A4A;
-                break;
-            case NORWAY:
-                leftHand = false;
-                centreLine = 0xFFE8C440;
-                houseRoofs = new int[]{0xFF2E3236, 0xFF3A3A3C, 0xFF4E5560, 0xFF4E6A3A, 0xFF6A6E70, 0xFF7A2E28};
-                houseWalls = new int[]{0xFFF2EEE4, 0xFF8A2A22, 0xFFE0C060, 0xFFB8C8D8, 0xFF6A8A6A, 0xFFD8B890};
-                shopRoofs = new int[]{0xFF2E3236, 0xFF4E5560, 0xFF6A7078, 0xFF3A3A3C, 0xFF5A6670, 0xFF7A2E28};
-                shopWalls = new int[]{0xFFF2EEE4, 0xFF8A2A22, 0xFFE0C060, 0xFFB8C8D8, 0xFF6A8A6A, 0xFFD8B890};
-                apartmentWalls = new int[]{0xFFF2EEE4, 0xFFE0C060, 0xFFD8B890, 0xFFB8C8D8, 0xFFC8604A};
-                cruiserBody = 0xFFF2F2F2;
-                cruiserDoor = 0xFF1F3F8A;
-                cruiserRoof = 0;
-                cruiserChecks = true;
-                checkA = 0xFF1F3F8A;
-                checkB = 0xFFE8D020;
-                streets = new String[]{"Kongens", "Dronningens", "Stor", "Kirke", "Skole", "Torg", "Strand", "Havne", "Fjord", "Bjørke", "Furu", "Gran", "Lønne", "Rosen", "Sjø", "Fjell", "Berg", "Elve", "Brygge", "Prinsens", "Olav", "Haakon", "Johan", "Munke", "Tordenskjold", "Nord", "Sør", "Vest", "Øst", "Bjørnson", "Ibsen", "Grieg", "Wergeland", "Nansen", "Amundsen", "Holmen", "Bakke", "Lia", "Dal", "Eng", "Bekke", "Myr", "Hage", "Park", "Løkke", "Sag", "Kvern", "Smie", "Mølle", "Bru"};
-                mainWords = new String[]{"veien", "gata", "veien", "gate"};
-                localWords = new String[]{"gata", "gata", "veien", "smuget", "stien", "bakken"};
-                typeFirst = false;
-                ringRoad = "Ring 3";
-                townStart = new String[]{"Lille", "Stor", "Hammer", "Kongs", "Sand", "Fred", "Lever", "Tøns", "Hauge", "Bø", "Lar", "Mo", "Nord", "Sør", "Vest", "Øst"};
-                townEnd = new String[]{"vik", "fjord", "dal", "berg", "sund", "nes", "stad", "by", "heim", "øy", "vang", "set", "strand", "haug"};
-                districtWords = new String[]{"Grünerløkka", "Majorstuen", "Frogner", "Sagene", "Tøyen", "Gamlebyen", "Bryggen", "Sandviken", "Nordnes", "Møhlenpris", "Bakklandet", "Lade", "Storhaug", "Våland", "Fjellsiden", "Holmen", "Bekkelaget", "Ullevål", "Sentrum", "Marka"};
-                hamletEnds = new String[]{"stølen", " gård", "seter", "vik", "bakken", "tun", "eng", "bu"};
-                churches = new String[]{"Domkirken", "Nidarosdomen", "Johanneskirken", "Fagerborg kirke", "Uranienborg kirke", "Trefoldighetskirken", "Mariakirken", "Gamle Aker kirke"};
-                schools = new String[]{"Katedralskolen", "Kongsberg videregående", "Hartvig Nissens skole", "Valle Hovin skole", "Ila skole", "Fjell skole"};
-                markets = new String[]{"Rema 1000", "Kiwi", "Coop Extra", "Meny", "Bunnpris", "Joker"};
-                pharmacies = new String[]{"Apotek 1", "Vitusapotek", "Boots apotek", "Ditt Apotek"};
-                gunStores = new String[]{"Jakt og Fiske", "Våpensmia", "Villmarksbutikken", "Elgjegeren"};
-                bases = new String[]{"Rena leir", "Bardufoss", "Setermoen", "Huseby leir", "Ørland", "Haakonsvern"};
-                hospital = "Universitetssykehuset";
-                policeStation = "Politistasjon ";
-                fireStation = "Brannstasjon ";
-                first = new String[]{"Ole", "Ingrid", "Lars", "Kari", "Jan", "Anne", "Per", "Nora", "Bjørn", "Emma", "Knut", "Sofie", "Hans", "Ida", "Erik", "Maja", "Magnus", "Thea", "Sindre", "Ingeborg", "Jonas", "Solveig", "Eirik", "Hedda", "Tor", "Astrid", "Henrik", "Sigrid", "Arne", "Liv"};
-                last = new String[]{"Hansen", "Johansen", "Olsen", "Larsen", "Andersen", "Pedersen", "Nilsen", "Kristiansen", "Jensen", "Karlsen", "Johnsen", "Pettersen", "Eriksen", "Berg", "Haugen", "Hagen", "Johannessen", "Andreassen", "Jacobsen", "Dahl", "Jørgensen", "Halvorsen", "Lund", "Solberg", "Bakken", "Moen"};
-                dogs = new String[]{"Bamse", "Leo", "Luna", "Tassen", "Rex", "Bella", "Mira", "Balder", "Frøya", "Odin", "Tinka", "Loke", "Pjokk", "Saga", "Bruno", "Fia"};
-                carModels = new int[]{0, 0, 4, 4, 4, 2, 2, 5, 6, 7};
-                carColors = new int[]{0xFFF2F2F2, 0xFF2A2C30, 0xFF8A8F96, 0xFF1E2E5A, 0xFFB03A2E, 0xFFB8BCC0, 0xFF3C5A4E};
-                taxiColor = 0xFF2A2C30;
-                busColor = 0xFFC83A2E;
-                pavement = 0xFF9A9894;
-                grass = 0xFF4A7638;
-                officeRoofs = new int[]{0xFF4E5560, 0xFF6A7078, 0xFF8A9096, 0xFF3A3A3C, 0xFF5A6670};
-                officeWalls = new int[]{0xFFF2EEE4, 0xFFB8C8D8, 0xFFD8B890, 0xFF9AB0C8, 0xFFC8604A};
-                oldWalls = new int[]{0xFFF2EEE4, 0xFF8A2A22, 0xFFE0C060, 0xFFD8B890, 0xFF6A8A6A};
-                oldRoofs = new int[]{0xFF2E3236, 0xFF4E6A3A, 0xFF7A2E28, 0xFF4E5560};
-                look = USA;
-                churchLook = FRANCE;
-                shieldColor = 0xFF2E7A4A;
-                break;
-            case DENMARK:
-                leftHand = false;
-                centreLine = 0xFFECECEC;
-                houseRoofs = new int[]{0xFF9A4A32, 0xFF8A3A2E, 0xFF3A3A3C, 0xFFB0583A, 0xFF4E5560, 0xFF7A2E28};
-                houseWalls = new int[]{0xFFE8C870, 0xFFC8604A, 0xFFF2EEE4, 0xFFE8D8A0, 0xFFB8503A, 0xFFD8B890};
-                shopRoofs = new int[]{0xFF9A4A32, 0xFF4E5560, 0xFF6A7078, 0xFF3A3A3C, 0xFF8A3A2E, 0xFF5A6670};
-                shopWalls = new int[]{0xFFE8C870, 0xFFC8604A, 0xFFF2EEE4, 0xFFB8C8D8, 0xFFE8D8A0, 0xFF7A9A8A};
-                apartmentWalls = new int[]{0xFFC8604A, 0xFFE8C870, 0xFFB8503A, 0xFFE8D8A0, 0xFFD8B890};
-                cruiserBody = 0xFFF2F2F2;
-                cruiserDoor = 0xFF1F3F8A;
-                cruiserRoof = 0;
-                cruiserChecks = true;
-                checkA = 0xFF1F3F8A;
-                checkB = 0xFFE8E020;
-                streets = new String[]{"Kongens", "Dronningens", "Nørre", "Vester", "Øster", "Søndre", "Store", "Lille", "Kirke", "Skole", "Strand", "Havne", "Bøge", "Ege", "Birke", "Linde", "Rose", "Mølle", "Torve", "Bred", "Amager", "Jernbane", "Frederiks", "Christians", "Valby", "Nyhavns", "Gammel", "Ny", "Holmens", "Prinsens", "Rådhus", "Slots", "Skov", "Sø", "Bakke", "Fjord", "Enghave", "Kalvebod", "Ravns", "Svane", "Hjorte", "Ørsteds", "Absalons", "Tordenskjolds", "Blegdams", "Isted", "Gothers", "Bredgade", "Toldbod", "Amalie"};
-                mainWords = new String[]{"vej", "gade", "boulevard", "allé"};
-                localWords = new String[]{"gade", "gade", "vej", "stræde", "sti", "vænge"};
-                typeFirst = false;
-                ringRoad = "Ringvejen";
-                townStart = new String[]{"Hille", "Frederiks", "Kø", "Ros", "Hel", "Kol", "Svend", "Silke", "Hor", "Ring", "Skander", "Thi", "Hjør", "Nyk", "Hol", "Vi"};
-                townEnd = new String[]{"rød", "borg", "by", "havn", "købing", "lev", "sted", "løse", "bjerg", "sund", "holm", "strup", "skov", "ager"};
-                districtWords = new String[]{"Nørrebro", "Vesterbro", "Østerbro", "Frederiksberg", "Christianshavn", "Amager", "Valby", "Vanløse", "Indre By", "Nordvest", "Sydhavn", "Brønshøj", "Bispebjerg", "Islands Brygge", "Ørestad", "Nyhavn", "Holmen", "Enghave", "Hellerup", "Trøjborg"};
-                hamletEnds = new String[]{"rup", "torp", " By", "lev", "sted", "løse", "bølle", "ager"};
-                churches = new String[]{"Vor Frue Kirke", "Marmorkirken", "Vor Frelsers Kirke", "Grundtvigs Kirke", "Holmens Kirke", "Sankt Petri Kirke", "Trinitatis Kirke", "Domkirken"};
-                schools = new String[]{"Metropolitanskolen", "Det Frie Gymnasium", "Østre Borgerdyd", "Rysensteen Gymnasium", "Sankt Annæ Skole", "Vesterbro Ny Skole"};
-                markets = new String[]{"Netto", "Føtex", "Irma", "Rema 1000", "Brugsen", "Lidl"};
-                pharmacies = new String[]{"Apoteket", "Matas Apotek", "Steno Apotek", "Svane Apoteket"};
-                gunStores = new String[]{"Jagt & Fiskeri", "Våbenhandleren", "Jægerhuset", "Hubertus Jagt"};
-                bases = new String[]{"Kastellet", "Antvorskov Kaserne", "Holstebro Kaserne", "Skive Kaserne", "Haderslev Kaserne", "Flyvestation Karup"};
-                hospital = "Rigshospitalet";
-                policeStation = "Politistation ";
-                fireStation = "Brandstation ";
-                first = new String[]{"Mads", "Sofie", "Frederik", "Ida", "Mikkel", "Emma", "Rasmus", "Anna", "Christian", "Freja", "Lasse", "Clara", "Søren", "Laura", "Jens", "Mathilde", "Anders", "Karen", "Niels", "Signe", "Magnus", "Astrid", "Kasper", "Line", "Henrik", "Mette", "Peter", "Camilla", "Oliver", "Julie"};
-                last = new String[]{"Nielsen", "Jensen", "Hansen", "Pedersen", "Andersen", "Christensen", "Larsen", "Sørensen", "Rasmussen", "Jørgensen", "Petersen", "Madsen", "Kristensen", "Olsen", "Thomsen", "Christiansen", "Poulsen", "Johansen", "Møller", "Mortensen", "Knudsen", "Jakobsen", "Mikkelsen", "Lauridsen", "Frederiksen", "Holm"};
-                dogs = new String[]{"Bella", "Molly", "Charlie", "Luna", "Rufus", "Bamse", "Lady", "Basse", "Frida", "Otto", "Kaj", "Vaks", "Pluto", "Fido", "Bonnie", "Viggo"};
-                carModels = new int[]{0, 0, 4, 4, 4, 4, 5, 6, 7};
-                carColors = new int[]{0xFFF2F2F2, 0xFF2A2C30, 0xFF8A8F96, 0xFF1E2E5A, 0xFFB03A2E, 0xFFB8BCC0, 0xFF3C5A4E};
-                taxiColor = 0xFF2A2C30;
-                busColor = 0xFFE8C21A;
-                pavement = 0xFF9A9894;
-                grass = 0xFF557E3E;
-                officeRoofs = new int[]{0xFF4E5560, 0xFF6A7078, 0xFF8A9096, 0xFF9A4A32, 0xFF5A6670};
-                officeWalls = new int[]{0xFFC8604A, 0xFFE8C870, 0xFFB8C8D8, 0xFFF2EEE4, 0xFFE8D8A0};
-                oldWalls = new int[]{0xFFE8C870, 0xFFC8604A, 0xFFB8503A, 0xFFE8D8A0, 0xFFF2EEE4};
-                oldRoofs = new int[]{0xFF9A4A32, 0xFF8A3A2E, 0xFF3F6A4A, 0xFF4E5560};
-                look = AUSTRALIA;
-                churchLook = FRANCE;
-                shieldColor = 0xFF2E7A4A;
-                break;
-            case CANADA:
-                leftHand = false;
-                centreLine = 0xFFD9B43A;
-                houseRoofs = new int[]{0xFF4E5560, 0xFF3A3A3C, 0xFF6E4A3A, 0xFF7A5A48, 0xFF5A6670, 0xFF8E3B2E};
-                houseWalls = new int[]{0xFFD8CBB0, 0xFFA7B4BE, 0xFFE0D6C4, 0xFF8A2A22, 0xFF7A9A8A, 0xFFC8604A};
-                shopRoofs = new int[]{0xFF5A6E8C, 0xFF7E7A5C, 0xFF4E5560, 0xFF8C5A4A, 0xFF6A7078, 0xFF4F6F66};
-                shopWalls = new int[]{0xFFC8604A, 0xFFB9C6D2, 0xFFE0C9A6, 0xFFD8B8A8, 0xFFE8DCC8, 0xFF9A4A32};
-                apartmentWalls = new int[]{0xFFC9B8A0, 0xFFB5A08A, 0xFFC8604A, 0xFFA89484, 0xFFD4C8B8};
-                cruiserBody = 0xFFF2F2F2;
-                cruiserDoor = 0xFF1F3F8A;
-                cruiserRoof = 0;
-                cruiserChecks = false;
-                streets = new String[]{"Main", "King", "Queen", "Yonge", "Bay", "Wellington", "Sherbrooke", "Maple", "Elm", "Birch", "Pine", "Cedar", "Spruce", "Victoria", "Albert", "Dundas", "Bloor", "Portage", "Granville", "Robson", "Jasper", "Whyte", "Barrington", "Water", "Front", "Church", "College", "Spadina", "Bathurst", "Sainte-Catherine", "Rideau", "Sparks", "Elgin", "Laurier", "Champlain", "Cartier", "Brock", "Simcoe", "Lakeshore", "Mountain", "Ridge", "Hillcrest", "Prospect", "Lansdowne", "Huron", "Erie", "Ontario", "Superior", "Muskoka", "Algonquin"};
-                mainWords = new String[]{"Ave", "Blvd", "Rd", "Dr"};
-                localWords = new String[]{"St", "St", "St", "Cres", "Way", "Pl", "Crt", "Dr"};
-                typeFirst = false;
-                ringRoad = "Ring Rd";
-                townStart = new String[]{"Maple", "Pine", "North", "Port ", "Fort ", "Grand ", "Spruce", "Red", "White", "Moose", "Beaver", "Elk", "Lake", "Saint-", "Sault ", "Thunder "};
-                townEnd = new String[]{"ville", "ton", "wood", "field", "brook", "ridge", "dale", "Falls", "Bay", "Lake", "mount", "view", "by", "borough"};
-                districtWords = new String[]{"Westmount", "Rosedale", "Kitsilano", "Plateau", "Glebe", "Annex", "Leslieville", "Gastown", "Riverdale", "Kensington", "Hillcrest", "Lakeview", "Parkdale", "Oakridge", "Beaches", "Old Port", "Byward", "Strathcona", "Mount Royal", "Fairview"};
-                hamletEnds = new String[]{" Corners", " Crossing", " Landing", " Mills", " Station", " Junction", " Harbour", " Bay"};
-                churches = new String[]{"St. Paul's Cathedral", "Notre-Dame Basilica", "St. Andrew's Church", "Christ Church Cathedral", "St. James Anglican Church", "Knox Presbyterian Church", "St. Mary's Basilica", "Holy Trinity Church"};
-                schools = new String[]{"Lord Byng Secondary", "Sir John A. Macdonald High", "Westdale Secondary", "Laurier Collegiate", "Riverside Public School", "Northern Secondary"};
-                markets = new String[]{"Loblaws", "Sobeys", "Metro", "No Frills", "Safeway", "IGA"};
-                pharmacies = new String[]{"Shoppers Drug Mart", "Rexall", "Jean Coutu", "London Drugs"};
-                gunStores = new String[]{"Northern Outfitters", "Lakeside Hunting Supply", "True North Arms", "Trapper's Sporting Goods"};
-                bases = new String[]{"CFB Petawawa", "CFB Valcartier", "CFB Edmonton", "CFB Gagetown", "CFB Borden", "CFB Wainwright"};
-                hospital = "General Hospital";
-                policeStation = "Division ";
-                fireStation = "Fire Hall ";
-                first = new String[]{"Liam", "Olivia", "Noah", "Emma", "William", "Charlotte", "Benjamin", "Ava", "Lucas", "Amelia", "Jacob", "Sophie", "Ethan", "Chloé", "Nathan", "Léa", "Owen", "Maya", "Gabriel", "Zoé", "Logan", "Hannah", "Félix", "Isla", "Samuel", "Mia", "Jack", "Abigail", "Arjun", "Priya"};
-                last = new String[]{"Smith", "Tremblay", "Martin", "Roy", "Gagnon", "Lee", "Wilson", "Johnson", "MacDonald", "Taylor", "Campbell", "Anderson", "Leblanc", "Côté", "Brown", "Bouchard", "Gauthier", "Morin", "Wong", "Singh", "Chen", "Pelletier", "Fortin", "Thompson", "Young", "White"};
-                dogs = new String[]{"Maple", "Moose", "Bear", "Juno", "Rocky", "Nanook", "Tucker", "Bella", "Charlie", "Daisy", "Hudson", "Willow", "Koda", "Sadie", "Cooper", "Luna"};
-                carModels = new int[]{0, 0, 1, 1, 1, 2, 2, 2, 5, 6, 7};
-                carColors = new int[]{0xFFB03A2E, 0xFF2E5FB0, 0xFFE0E0E0, 0xFF222428, 0xFF8A8F96, 0xFF3C8A4E, 0xFFF2F2F2};
-                taxiColor = 0xFFE8B81A;
-                busColor = 0xFFE8E8E8;
-                pavement = 0xFF9A9894;
-                grass = 0xFF4E7A3A;
-                officeRoofs = new int[]{0xFF6A7078, 0xFF8A9096, 0xFF9AA2AA, 0xFF5A6670, 0xFF4E5560};
-                officeWalls = new int[]{0xFFC8604A, 0xFFD8D4CC, 0xFFC8C4BC, 0xFFB8C8E0, 0xFFE0C8C0};
-                oldWalls = new int[]{0xFFC8604A, 0xFF9A4A32, 0xFFE8D8A0, 0xFFB8503A, 0xFFD8C8B0};
-                oldRoofs = new int[]{0xFF3F6A4A, 0xFF8A3A2E, 0xFF6A7078, 0xFF4E5560};
-                look = USA;
-                churchLook = FRANCE;
-                shieldColor = 0xFF2E7A4A;
-                break;
-            default:
-                leftHand = false;
-                centreLine = 0xFFD9B43A;
-                houseRoofs = new int[]{0xFF8E3B2E, 0xFF6E4A3A, 0xFF4E5560, 0xFF7A5A48, 0xFF9A5B3C, 0xFF5A3D35};
-                houseWalls = new int[]{0xFFD8CBB0, 0xFFC9B79C, 0xFFE0D6C4, 0xFFB8A48A, 0xFFA7B4BE, 0xFFC7A9A0};
-                shopRoofs = new int[]{0xFF8C5A4A, 0xFF5A6E8C, 0xFF7E7A5C, 0xFF6E5A7E, 0xFF8A6A3E, 0xFF4F6F66};
-                shopWalls = new int[]{0xFFE0C9A6, 0xFFB9C6D2, 0xFFD8B8A8, 0xFFC9D6B8, 0xFFE8DCC8, 0xFFB8A8C8};
-                apartmentWalls = new int[]{0xFFC9B8A0, 0xFFB5A08A, 0xFFD4C8B8, 0xFFA89484, 0xFFBFB0C0};
-                cruiserBody = 0xFF1C1D22;
-                cruiserDoor = 0xFFEDEDED;
-                cruiserRoof = 0;
-                cruiserChecks = false;
-                streets = new String[]{"Main", "Oak", "Pine", "Elm", "Maple", "Cedar", "Lake", "Hill", "Park",
-                        "Church", "Market", "Mill", "King", "Queen", "Walnut", "Spruce", "Birch", "Chestnut", "Harbor", "Union",
-                        "Rose", "Ash", "Willow", "Station", "River", "Bridge", "High", "Garden", "Orchard", "Victoria", "Albert",
-                        "Greene", "Water", "Grove", "Meadow", "Forest", "Bay", "Summit", "Liberty", "Franklin", "Madison",
-                        "Jackson", "Lincoln", "Hawthorn", "Laurel", "Poplar", "Sycamore", "Holly", "Juniper", "Linden"};
-                mainWords = new String[]{"Ave", "Blvd", "Rd", "Pkwy"};
-                localWords = new String[]{"St", "St", "St", "Ln", "Way", "Pl", "Ct", "Dr"};
-                typeFirst = false;
-                ringRoad = "Ring Rd";
-                townStart = new String[]{"Ash", "Maple", "Oak", "Stone", "Clay", "Wolf", "Fair", "Green", "North",
-                        "Silver", "Iron", "Elder", "Hollow", "Red", "Kings", "Bright", "Glen", "Hazel", "Thorn", "Mill"};
-                townEnd = new String[]{"ford", "field", "ville", "wood", "ton", "bury", "ridge", "haven", "dale",
-                        "stead", "wick", "gate", "hurst", "moor"};
-                districtWords = new String[]{"Oak", "Cedar", "Mill", "North", "South", "East", "West", "King's",
-                        "Linden", "Ash", "Fox", "Hazel", "Stone", "Maple", "Willow", "Brook", "Elm", "High", "Rose", "Birch"};
-                hamletEnds = new String[]{" Green", " End", " Cross", " Hamlet", " Farm", " Corner", " Bridge", " Hollow"};
-                churches = new String[]{"St. Mary's Church", "St. Luke's Church", "St. Peter's Church", "Grace Church",
-                        "St. Anne's Church", "Trinity Church", "St. Mark's Church", "Holy Cross Church"};
-                schools = new String[]{"Lincoln High", "Westside Elementary", "Roosevelt Middle School",
-                        "Jefferson High", "Oakwood Academy", "Hamilton Elementary"};
-                markets = new String[]{"FreshMart", "ValueFoods", "Corner Grocer", "SuperSaver", "GreenBasket", "MegaMart"};
-                pharmacies = new String[]{"CityCare Pharmacy", "Main Street Drugs", "HealthPlus", "Corner Pharmacy"};
-                gunStores = new String[]{"Liberty Guns", "Ace Firearms", "Frontier Outfitters", "Hunter's Supply", "Patriot Arms"};
-                bases = new String[]{"Fort Mercer", "Camp Redstone", "Fort Kessler", "Camp Hollow", "Fort Whitmore",
-                        "Camp Ironwood"};
-                hospital = "City Hospital";
-                carModels = new int[]{0, 0, 0, 1, 1, 1, 2, 2, 2, 5, 6, 7};
-                carColors = new int[]{0xFFB03A2E, 0xFF2E5FB0, 0xFFE0E0E0, 0xFF222428, 0xFFD4A21C, 0xFF3C8A4E,
-                        0xFF8A8F96, 0xFF6B2E8A, 0xFFE07A2E};
-                taxiColor = 0xFFE8B81A;
-                busColor = 0xFFF2B21A;
-                policeStation = "Precinct ";
-                fireStation = "Fire Station ";
-                first = new String[]{"Maria", "James", "Aisha", "Tom", "Sofia", "Daniel", "Mei", "Carlos",
-                        "Emma", "Omar", "Grace", "Liam", "Priya", "Noah", "Zoe", "Ivan", "Hana", "Lucas", "Nora", "Sam", "Ruth",
-                        "Kwame", "Elena", "Ben", "Yuki", "Diego", "Chloe", "Marcus", "Leila", "Owen", "Anna", "Jamal", "Rosa",
-                        "Felix", "Ines", "Hugo", "Tara", "Victor", "Lena", "Eli"};
-                last = new String[]{"Lopez", "Smith", "Khan", "Nguyen", "Brown", "Garcia", "Kim", "Okafor",
-                        "Miller", "Rossi", "Novak", "Silva", "Cohen", "Walker", "Tanaka", "Murphy", "Patel", "Jensen", "Moreau",
-                        "Haddad", "Clarke", "Santos", "Weber", "Reyes", "Hughes", "Ali", "Kowalski", "Park", "Diaz", "Stone"};
-                dogs = new String[]{"Rex", "Bella", "Max", "Luna", "Buddy", "Daisy", "Rocky", "Molly",
-                        "Scout", "Pepper", "Bear", "Rosie", "Duke", "Nala", "Biscuit", "Ziggy"};
-                break;
-        }
-        if (id <= MEXICO) {
-            look = id;
-            churchLook = id == JAPAN || id == FRANCE || id == MEXICO ? id : -1;
-            shieldColor = id == USA ? 0xFF1E3A8A : id == FRANCE ? 0xFFB02020 : 0xFF1E6A3A;
-        }
+    private Country() {
+        centreLine = 0xFFD9B43A;
+        houseRoofs = new int[]{0xFF8E3B2E, 0xFF6E4A3A, 0xFF4E5560, 0xFF7A5A48, 0xFF9A5B3C, 0xFF5A3D35};
+        houseWalls = new int[]{0xFFD8CBB0, 0xFFC9B79C, 0xFFE0D6C4, 0xFFB8A48A, 0xFFA7B4BE, 0xFFC7A9A0};
+        shopRoofs = new int[]{0xFF8C5A4A, 0xFF5A6E8C, 0xFF7E7A5C, 0xFF6E5A7E, 0xFF8A6A3E, 0xFF4F6F66};
+        shopWalls = new int[]{0xFFE0C9A6, 0xFFB9C6D2, 0xFFD8B8A8, 0xFFC9D6B8, 0xFFE8DCC8, 0xFFB8A8C8};
+        apartmentWalls = new int[]{0xFFC9B8A0, 0xFFB5A08A, 0xFFD4C8B8, 0xFFA89484, 0xFFBFB0C0};
+        cruiserBody = 0xFF1C1D22;
+        cruiserDoor = 0xFFEDEDED;
+        cruiserRoof = 0;
+        cruiserChecks = false;
+        streets = new String[]{"Main", "Oak", "Pine", "Elm", "Maple", "Cedar", "Lake", "Hill", "Park",
+                "Church", "Market", "Mill", "King", "Queen", "Walnut", "Spruce", "Birch", "Chestnut", "Harbor", "Union",
+                "Rose", "Ash", "Willow", "Station", "River", "Bridge", "High", "Garden", "Orchard", "Victoria", "Albert",
+                "Greene", "Water", "Grove", "Meadow", "Forest", "Bay", "Summit", "Liberty", "Franklin", "Madison",
+                "Jackson", "Lincoln", "Hawthorn", "Laurel", "Poplar", "Sycamore", "Holly", "Juniper", "Linden"};
+        mainWords = new String[]{"Ave", "Blvd", "Rd", "Pkwy"};
+        localWords = new String[]{"St", "St", "St", "Ln", "Way", "Pl", "Ct", "Dr"};
+        ringRoad = "Ring Rd";
+        townStart = new String[]{"Ash", "Maple", "Oak", "Stone", "Clay", "Wolf", "Fair", "Green", "North",
+                "Silver", "Iron", "Elder", "Hollow", "Red", "Kings", "Bright", "Glen", "Hazel", "Thorn", "Mill"};
+        townEnd = new String[]{"ford", "field", "ville", "wood", "ton", "bury", "ridge", "haven", "dale",
+                "stead", "wick", "gate", "hurst", "moor"};
+        districtWords = new String[]{"Oak", "Cedar", "Mill", "North", "South", "East", "West", "King's",
+                "Linden", "Ash", "Fox", "Hazel", "Stone", "Maple", "Willow", "Brook", "Elm", "High", "Rose", "Birch"};
+        hamletEnds = new String[]{" Green", " End", " Cross", " Hamlet", " Farm", " Corner", " Bridge", " Hollow"};
+        churches = new String[]{"St. Mary's Church", "St. Luke's Church", "St. Peter's Church", "Grace Church",
+                "St. Anne's Church", "Trinity Church", "St. Mark's Church", "Holy Cross Church"};
+        schools = new String[]{"Lincoln High", "Westside Elementary", "Roosevelt Middle School",
+                "Jefferson High", "Oakwood Academy", "Hamilton Elementary"};
+        markets = new String[]{"FreshMart", "ValueFoods", "Corner Grocer", "SuperSaver", "GreenBasket", "MegaMart"};
+        pharmacies = new String[]{"CityCare Pharmacy", "Main Street Drugs", "HealthPlus", "Corner Pharmacy"};
+        gunStores = new String[]{"Liberty Guns", "Ace Firearms", "Frontier Outfitters", "Hunter's Supply", "Patriot Arms"};
+        bases = new String[]{"Fort Mercer", "Camp Redstone", "Fort Kessler", "Camp Hollow", "Fort Whitmore",
+                "Camp Ironwood"};
+        hospital = "City Hospital";
+        carModels = new int[]{0, 0, 0, 1, 1, 1, 2, 2, 2, 5, 6, 7};
+        carColors = new int[]{0xFFB03A2E, 0xFF2E5FB0, 0xFFE0E0E0, 0xFF222428, 0xFFD4A21C, 0xFF3C8A4E,
+                0xFF8A8F96, 0xFF6B2E8A, 0xFFE07A2E};
+        taxiColor = 0xFFE8B81A;
+        busColor = 0xFFF2B21A;
+        policeStation = "Precinct ";
+        fireStation = "Fire Station ";
+        first = new String[]{"Maria", "James", "Aisha", "Tom", "Sofia", "Daniel", "Mei", "Carlos",
+                "Emma", "Omar", "Grace", "Liam", "Priya", "Noah", "Zoe", "Ivan", "Hana", "Lucas", "Nora", "Sam", "Ruth",
+                "Kwame", "Elena", "Ben", "Yuki", "Diego", "Chloe", "Marcus", "Leila", "Owen", "Anna", "Jamal", "Rosa",
+                "Felix", "Ines", "Hugo", "Tara", "Victor", "Lena", "Eli"};
+        last = new String[]{"Lopez", "Smith", "Khan", "Nguyen", "Brown", "Garcia", "Kim", "Okafor",
+                "Miller", "Rossi", "Novak", "Silva", "Cohen", "Walker", "Tanaka", "Murphy", "Patel", "Jensen", "Moreau",
+                "Haddad", "Clarke", "Santos", "Weber", "Reyes", "Hughes", "Ali", "Kowalski", "Park", "Diaz", "Stone"};
+        dogs = new String[]{"Rex", "Bella", "Max", "Luna", "Buddy", "Daisy", "Rocky", "Molly",
+                "Scout", "Pepper", "Bear", "Rosie", "Duke", "Nala", "Biscuit", "Ziggy"};
         agencies();
-        landscape();
     }
 
-    /** Kinds of tree (City.treeKind): broadleaf, pine, palm, birch, gum (eucalyptus) and acacia. */
-    static final byte TK_BROAD = 0, TK_PINE = 1, TK_PALM = 2, TK_BIRCH = 3, TK_GUM = 4, TK_ACACIA = 5;
+    /** Kinds of tree (City.treeKind): broadleaf and pine. */
+    static final byte TK_BROAD = 0, TK_PINE = 1;
     /**
-     * The country's land (cities built since 10.10): how hilly it is, how big its mountains are (0 none), how
-     * wooded, what share of the woods are pines, how many lakes, how far up the mountains the snow starts (as
-     * a share of the highest peak; 0 never), the trees of the lowlands, and whether the country is desert.
+     * The land (cities built since 10.10): how hilly it is, how big its mountains are, how wooded, what share of
+     * the woods are pines, how many lakes, how far up the mountains the snow starts (as a share of the highest
+     * peak), and the trees of the lowlands.
      */
-    float hills, mountains, forest, pineShare, lakes, snowLine;
-    byte lowTree;
-    boolean desert;
+    final float hills = 1f, mountains = 1f, forest = 1f, pineShare = 0.5f, lakes = 1f, snowLine = 0.86f;
+    final byte lowTree = TK_BROAD;
 
-    private void land(float hills, float mountains, float forest, float pineShare, float lakes, float snowLine, byte lowTree, boolean desert) {
-        this.hills = hills;
-        this.mountains = mountains;
-        this.forest = forest;
-        this.pineShare = pineShare;
-        this.lakes = lakes;
-        this.snowLine = snowLine;
-        this.lowTree = lowTree;
-        this.desert = desert;
-    }
-
-    private void landscape() {
-        switch (id) {
-            case AUSTRALIA: land(0.7f, 0.5f, 0.7f, 0, 0.4f, 0, TK_GUM, false); break;
-            case JAPAN: land(1.4f, 1.4f, 1.3f, 0.6f, 0.8f, 0.82f, TK_BROAD, false); break;
-            case FRANCE: land(1f, 0.8f, 1f, 0.4f, 1f, 0.86f, TK_BROAD, false); break;
-            case MEXICO: land(1.1f, 1.1f, 0.5f, 0.3f, 0.4f, 0, TK_ACACIA, false); break;
-            case SWITZERLAND: land(1.5f, 1.6f, 1.1f, 0.7f, 1.2f, 0.7f, TK_BROAD, false); break;
-            case KOREA: land(1.3f, 1.3f, 1.2f, 0.6f, 0.7f, 0.86f, TK_BROAD, false); break;
-            case MALAYSIA: land(1.1f, 1f, 1.5f, 0, 1f, 0, TK_PALM, false); break;
-            case PORTUGAL: land(1f, 0.8f, 0.8f, 0.5f, 0.6f, 0, TK_BROAD, false); break;
-            case MOROCCO: land(1f, 1.2f, 0.3f, 0.3f, 0.3f, 0.8f, TK_ACACIA, false); break;
-            case RUSSIA: land(0.8f, 0.6f, 1.3f, 0.7f, 1.4f, 0.8f, TK_BIRCH, false); break;
-            case CHINA: land(1.2f, 1.2f, 1f, 0.5f, 0.9f, 0.86f, TK_BROAD, false); break;
-            case EGYPT: land(0.5f, 0.6f, 0.05f, 0, 0.15f, 0, TK_PALM, true); break;
-            case SAUDI: land(0.6f, 0.9f, 0.03f, 0, 0.1f, 0, TK_PALM, true); break;
-            case SWEDEN: land(0.9f, 0.8f, 1.4f, 0.8f, 1.6f, 0.7f, TK_BIRCH, false); break;
-            case NORWAY: land(1.4f, 1.6f, 1.2f, 0.8f, 1.3f, 0.65f, TK_BIRCH, false); break;
-            case DENMARK: land(0.45f, 0, 0.8f, 0.3f, 0.9f, 0, TK_BROAD, false); break;
-            case CANADA: land(1.1f, 1.3f, 1.4f, 0.8f, 1.7f, 0.7f, TK_BIRCH, false); break;
-            default: land(1f, 1f, 1f, 0.5f, 1f, 0.86f, TK_BROAD, false); break;
-        }
-    }
-
-    /** Highways the country might have, as {name, what's on the signs}. */
+    /** Highways, as {name, what's on the signs}. */
     String[][] highways;
     /**
-     * Who polices the highway, and (in the USA) the countryside: the force's name, what an officer is called on
-     * the radio, and their car's body and door colours. ruralName is null where the police cover the country too.
+     * Who polices the highway and the countryside: the force's name, what an officer is called on the radio,
+     * and their car's body and door colours.
      */
     String hpName, hpShort, ruralName, ruralShort;
     int hpBody, hpDoor, hpShirt, ruralBody, ruralDoor, ruralShirt;
 
     private void agencies() {
-        switch (id) {
-            case AUSTRALIA:
-                highways = new String[][]{{"Hume Highway", "M31"}, {"Pacific Motorway", "M1"}, {"Bruce Highway", "A1"}, {"Princes Highway", "A1"}};
-                hpName = "Highway Patrol";
-                hpShort = "Highway";
-                hpBody = 0xFFF2F2F2;
-                hpDoor = 0xFFE8B020;
-                hpShirt = 0xFF3A5A8A;
-                break;
-            case JAPAN:
-                highways = new String[][]{{"Tomei Expressway", "E1"}, {"Chuo Expressway", "E20"}, {"Tohoku Expressway", "E4"}};
-                hpName = "Expressway Police";
-                hpShort = "Expressway";
-                hpBody = 0xFF202224;
-                hpDoor = 0xFFF2F2F2;
-                hpShirt = 0xFF2E3E6A;
-                break;
-            case FRANCE:
-                highways = new String[][]{{"Autoroute A6", "A6"}, {"Autoroute A7", "A7"}, {"Autoroute A10", "A10"}};
-                hpName = "Gendarmerie";
-                hpShort = "Gendarme";
-                hpBody = 0xFF1E2E5A;
-                hpDoor = 0xFFF2F2F2;
-                hpShirt = 0xFF1E2E5A;
-                break;
-            case MEXICO:
-                highways = new String[][]{{"Carretera Federal 15", "MEX 15"}, {"Autopista 57D", "MEX 57D"}, {"Carretera Federal 85", "MEX 85"}};
-                hpName = "Guardia Nacional";
-                hpShort = "Guardia";
-                hpBody = 0xFFF2F2F2;
-                hpDoor = 0xFF5A1E2E;
-                hpShirt = 0xFF4A4A3A;
-                break;
-            case SWITZERLAND:
-                highways = new String[][]{{"Autobahn A1", "A1"}, {"Autobahn A2", "A2"}, {"Autobahn A3", "A3"}};
-                hpName = "Autobahnpolizei";
-                hpShort = "Autobahn";
-                hpBody = 0xFFF2F2F2;
-                hpDoor = 0xFFE87A1A;
-                hpShirt = 0xFF2E3A4A;
-                break;
-            case KOREA:
-                highways = new String[][]{{"Gyeongbu Expressway", "1"}, {"Seohaean Expressway", "15"}, {"Yeongdong Expressway", "50"}};
-                hpName = "Expressway Patrol";
-                hpShort = "Expressway";
-                hpBody = 0xFFF2F2F2;
-                hpDoor = 0xFF1F4FA8;
-                hpShirt = 0xFF2E3E6A;
-                break;
-            case MALAYSIA:
-                highways = new String[][]{{"North-South Expressway", "E1"}, {"East Coast Expressway", "E8"}, {"Karak Highway", "E8"}};
-                hpName = "Traffic Police";
-                hpShort = "Trafik";
-                hpBody = 0xFFF2F2F2;
-                hpDoor = 0xFF1F3F8A;
-                hpShirt = 0xFF2E3A6A;
-                break;
-            case PORTUGAL:
-                highways = new String[][]{{"Autoestrada A1", "A1"}, {"Autoestrada A2", "A2"}, {"Autoestrada A25", "A25"}};
-                hpName = "GNR Trânsito";
-                hpShort = "GNR";
-                hpBody = 0xFF2E4A3A;
-                hpDoor = 0xFFF2F2F2;
-                hpShirt = 0xFF3A4A3A;
-                break;
-            case MOROCCO:
-                highways = new String[][]{{"Autoroute A1", "A1"}, {"Autoroute A3", "A3"}, {"Autoroute A7", "A7"}};
-                hpName = "Gendarmerie Royale";
-                hpShort = "Gendarme";
-                hpBody = 0xFF3A5A8A;
-                hpDoor = 0xFFF2F2F2;
-                hpShirt = 0xFF3A4A6A;
-                break;
-            case RUSSIA:
-                highways = new String[][]{{"M-11 Neva", "M-11"}, {"M-4 Don", "M-4"}, {"M-7 Volga", "M-7"}};
-                hpName = "DPS";
-                hpShort = "DPS";
-                hpBody = 0xFFF2F2F2;
-                hpDoor = 0xFF1F4FA8;
-                hpShirt = 0xFF4A4E56;
-                break;
-            case CHINA:
-                highways = new String[][]{{"G1 Jingha Expressway", "G1"}, {"G4 Jinggangao Expressway", "G4"}, {"G15 Shenhai Expressway", "G15"}};
-                hpName = "Traffic Police";
-                hpShort = "Jiaojing";
-                hpBody = 0xFFF2F2F2;
-                hpDoor = 0xFF1F3F8A;
-                hpShirt = 0xFF2E3E5A;
-                break;
-            case EGYPT:
-                highways = new String[][]{{"Cairo-Alexandria Desert Road", "1"}, {"Cairo Ring Road", "R"}, {"Cairo-Suez Road", "33"}};
-                hpName = "Traffic Police";
-                hpShort = "Traffic";
-                hpBody = 0xFFF2F2F2;
-                hpDoor = 0xFF2A2C30;
-                hpShirt = 0xFFE8E8E8;
-                break;
-            case SAUDI:
-                highways = new String[][]{{"Riyadh-Dammam Highway", "40"}, {"Makkah-Madinah Highway", "15"}, {"Riyadh-Taif Road", "40"}};
-                hpName = "Highway Patrol";
-                hpShort = "Patrol";
-                hpBody = 0xFFF2F2F2;
-                hpDoor = 0xFF2E7A4A;
-                hpShirt = 0xFF7A8A6A;
-                break;
-            case SWEDEN:
-                highways = new String[][]{{"E4", "E4"}, {"E6", "E6"}, {"E20", "E20"}};
-                hpName = "Trafikpolisen";
-                hpShort = "Trafik";
-                hpBody = 0xFFF2F2F2;
-                hpDoor = 0xFF1F3F8A;
-                hpShirt = 0xFF1E2A3A;
-                break;
-            case NORWAY:
-                highways = new String[][]{{"E6", "E6"}, {"E18", "E18"}, {"E39", "E39"}};
-                hpName = "Utrykningspolitiet";
-                hpShort = "UP";
-                hpBody = 0xFFF2F2F2;
-                hpDoor = 0xFF1F3F8A;
-                hpShirt = 0xFF1E2A3A;
-                break;
-            case DENMARK:
-                highways = new String[][]{{"E20", "E20"}, {"E45", "E45"}, {"E47", "E47"}};
-                hpName = "Færdselspolitiet";
-                hpShort = "Færdsel";
-                hpBody = 0xFFF2F2F2;
-                hpDoor = 0xFF1F3F8A;
-                hpShirt = 0xFF1E2A3A;
-                break;
-            case CANADA:
-                highways = new String[][]{{"Trans-Canada Highway", "1"}, {"Highway 401", "401"}, {"Autoroute 20", "20"}, {"Highway 16", "16"}};
-                hpName = "Provincial Police";
-                hpShort = "Constable";
-                hpBody = 0xFF2A2C30;
-                hpDoor = 0xFFF2F2F2;
-                hpShirt = 0xFF2E3A4A;
-                ruralName = "RCMP";
-                ruralShort = "Constable";
-                ruralBody = 0xFFF2F2F2;
-                ruralDoor = 0xFF1F2F6A;
-                ruralShirt = 0xFF2A3446;
-                break;
-            default:
-                highways = new String[][]{{"Interstate 80", "I-80"}, {"Interstate 40", "I-40"}, {"Interstate 95", "I-95"}, {"Interstate 70", "I-70"}};
-                hpName = "Highway Patrol";
-                hpShort = "Trooper";
-                hpBody = 0xFFC8B48A;
-                hpDoor = 0xFF3A2E22;
-                hpShirt = 0xFFC8B48A;
-                ruralName = "Sheriff";
-                ruralShort = "Deputy";
-                ruralBody = 0xFFF2F2F2;
-                ruralDoor = 0xFF2E5A3A;
-                ruralShirt = 0xFF6A5A3A;
-                break;
-        }
+        highways = new String[][]{{"Interstate 80", "I-80"}, {"Interstate 40", "I-40"}, {"Interstate 95", "I-95"}, {"Interstate 70", "I-70"}};
+        hpName = "Highway Patrol";
+        hpShort = "Trooper";
+        hpBody = 0xFFC8B48A;
+        hpDoor = 0xFF3A2E22;
+        hpShirt = 0xFFC8B48A;
+        ruralName = "Sheriff";
+        ruralShort = "Deputy";
+        ruralBody = 0xFFF2F2F2;
+        ruralDoor = 0xFF2E5A3A;
+        ruralShirt = 0xFF6A5A3A;
     }
 }

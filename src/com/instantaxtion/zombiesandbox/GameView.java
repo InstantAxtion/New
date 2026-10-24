@@ -128,6 +128,8 @@ final class GameView extends View implements Menu.Host {
     private boolean running, simPaused;
     private long lastFrame;
     private int speedIdx, brushIdx;
+    /** (11.3) Frames that failed to draw (and were skipped). */
+    int drawErrors;
     private int tool = TOOL_PAN;
     private int iconCopBody;
     private final RectF tmpRect = new RectF();
@@ -918,11 +920,30 @@ final class GameView extends View implements Menu.Host {
             lastMessageCount = world.dispatch.messageCount;
         }
 
-        drawWorld(c);
-        if (menu.isOpen()) menu.draw(c, getWidth(), getHeight(), dt);
-        else if (!hudHidden) {
-            drawUi(c);
-            if (tactical) drawTactical(c);
+        // ((11.3) Something going wrong while drawing (or memory running out zoomed right in) costs a frame, not
+        // the game: the map's close-ups are let go of if it's memory, and what went wrong is shown briefly.)
+        int saves = c.getSaveCount();
+        try {
+            drawWorld(c);
+            if (menu.isOpen()) menu.draw(c, getWidth(), getHeight(), dt);
+            else if (!hudHidden) {
+                drawUi(c);
+                if (tactical) drawTactical(c);
+            }
+        } catch (OutOfMemoryError oom) {
+            c.restoreToCount(saves);
+            chunks.clear();
+            world.freeMemory();
+            System.gc();
+        } catch (RuntimeException ex) {
+            c.restoreToCount(saves);
+            drawErrors++;
+            if (loadFailed == null) {
+                StackTraceElement[] st = ex.getStackTrace();
+                loadFailed = "Drawing hiccup: " + ex.getClass().getSimpleName() + (st.length > 0 ? " at " + st[0].getMethodName() + ":" + st[0].getLineNumber() : "");
+                loadFailedTime = 4;
+            }
+            System.err.println("Zombie City: a frame failed to draw: " + ex);
         }
         if (loadFailed != null) {
             loadFailedTime -= dt;

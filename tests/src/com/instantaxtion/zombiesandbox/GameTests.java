@@ -173,7 +173,7 @@ public final class GameTests {
                 CityConfig old = new CityConfig();
                 check(old.applyCode("12-44") && old.country() == Country.USA, "codes build American cities");
                 check(!new CityConfig().applyCode("22-77@16"), "a code for another country doesn't load");
-                for (int p : new int[]{19, 20, 21, 22, 24, 26, 27, 28}) {
+                for (int p : new int[]{10, 11, 19, 20, 21, 22, 24, 25, 26, 27, 28}) {
                     check(CityConfig.removed(p) && CityConfig.retired(CityConfig.OPT_PRESET, p), CityConfig.PRESETS[p] + " is gone");
                     check(!new CityConfig().applyCode(String.valueOf("123456789ABCDEFGHIJKLMNOPQRST".charAt(p)) + "3-5"), "and its city code doesn't load");
                     CityConfig c = new CityConfig();
@@ -181,7 +181,7 @@ public final class GameTests {
                     c.normalize();
                     check(c.preset() == CityConfig.METROPOLIS, "nor does it build");
                 }
-                check(!CityConfig.removed(CityConfig.BAY), "Bay City stays");
+                check(!CityConfig.removed(CityConfig.ISLANDS) && !CityConfig.removed(CityConfig.ARCHIPELAGO), "the island maps stay");
             }
         });
         test("cars never go round in circles (round a median, a roundabout or a highway gap)", new Check() {
@@ -304,9 +304,9 @@ public final class GameTests {
                 check(w.jailBroken && w.inmates == 0 && escaped > 0, "jailbreak when the power fails (" + escaped + " escaped)");
             }
         });
-        test("water maps: the sea, a river with bridges, a lake and a port; nobody ends up in the water", new Check() {
+        test("water maps: a lake and a port; nobody ends up in the water", new Check() {
             public void run() {
-                for (int preset = 10; preset < 14; preset++) {
+                for (int preset = 12; preset < 14; preset++) {
                     CityConfig c = new CityConfig();
                     c.seed = 21 + preset;
                     c.v[CityConfig.OPT_PRESET] = preset;
@@ -316,21 +316,11 @@ public final class GameTests {
                     w.populate(c);
                     City city = w.city;
                     String name = CityConfig.PRESETS[preset];
-                    int water = 0, sand = 0, pier = 0, bridges = 0;
-                    for (byte t : city.tiles) {
-                        if (t == City.WATER) water++;
-                        else if (t == City.SAND) sand++;
-                        else if (t == City.PIER) pier++;
-                    }
-                    if (city.riverY0 > 0) {
-                        int y = city.riverY0 + city.riverRows / 2;
-                        for (int x = 1; x < city.w; x++) if (city.tiles[y * city.w + x] == City.ROAD && city.tiles[y * city.w + x - 1] != City.ROAD) bridges++;
-                    }
+                    int water = 0;
+                    for (byte t : city.tiles) if (t == City.WATER) water++;
                     check(water > city.w * 8, name + ": water (" + water + " tiles)");
                     check(city.armory != null && city.cityHall != null, name + ": city hall and a National Guard armory");
                     switch (city.waterKind) {
-                        case CityConfig.W_SEA: check(sand > 0 && pier > 0, name + ": a beach and a pier"); break;
-                        case CityConfig.W_RIVER: check(bridges >= 3, name + ": " + bridges + " bridges"); break;
                         case CityConfig.W_LAKE: check(city.lakes.size() == 1, name + ": a lake"); break;
                         default: check(city.seaY > 0, name + ": the sea"); break;
                     }
@@ -3466,9 +3456,9 @@ public final class GameTests {
                 check(onFoot == 0, "nobody walks out with only buses and trains chosen (" + onFoot + ")");
             }
         });
-        test("11.0: the water maps (water out to the sea, bridges, Marines by boat), a thin band of country, the new units", new Check() {
+        test("11.0: Marines by boat on the island maps, a thin band of country, the new units", new Check() {
             public void run() throws Exception {
-                for (int p : new int[]{CityConfig.BAY}) {
+                for (int p : new int[]{CityConfig.ISLANDS}) {
                     CityConfig c = new CityConfig();
                     c.v[CityConfig.OPT_PRESET] = p;
                     c.v[CityConfig.OPT_SIZE] = CityConfig.LARGE;
@@ -3478,15 +3468,10 @@ public final class GameTests {
                     World w = new World(c);
                     City city = w.city;
                     String name = CityConfig.PRESETS[p];
-                    check(!city.channels.isEmpty(), name + ": water through the town");
-                    int water = 0, bridges = 0;
-                    for (int i = 0; i < city.w * city.h; i++) {
-                        if (city.tiles[i] == City.WATER) water++;
-                        if (city.bridge != null && city.bridge[i] && city.tiles[i] == City.ROAD) bridges++;
-                    }
+                    int water = 0;
+                    for (int i = 0; i < city.w * city.h; i++) if (city.tiles[i] == City.WATER) water++;
                     check(water > city.w * city.h / 12, name + ": plenty of water (" + water + ")");
-                    check(bridges > 20, name + ": bridges over it (" + bridges + ")");
-                    check(city.buildings.size() > 300, name + ": a town round it (" + city.buildings.size() + ")");
+                    check(city.buildings.size() > 300, name + ": towns on the islands (" + city.buildings.size() + ")");
                     // Marines come in over the water to the shore by the fighting, and get out on dry land.
                     // (A street the sea can reach: one a long way inland has no landing near it.)
                     java.util.Random qr = new java.util.Random(3);
@@ -3563,6 +3548,7 @@ public final class GameTests {
                     draw(v, size);
                     m.open(Menu.SAVES);
                     draw(v, size);
+                    check(v.drawErrors == 0, "every frame drew without an error (" + v.drawErrors + ")");
                     // Both graphics styles draw, and switching redraws the map.
                     Settings st = (Settings) field(v, "settings");
                     World w = (World) field(v, "world");

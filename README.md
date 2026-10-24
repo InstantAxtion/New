@@ -10,8 +10,7 @@ away from the middle of the screen as you pan, and the game plays in both portra
 ## Main menu
 
 - **New Game** opens the city setup, with a live preview of the city and these options: the map (Suburbs,
-  Metropolis, or the water maps Seaside, River City and Bay City, or Islands or
-  Archipelago), map size (Default, Large or
+  Metropolis, Islands or Archipelago), map size (Default, Large or
   Massive) and how many reinforcements can
   be called in (Off, Low, Medium or High, each spelled out: waves of police backup, army squads, tanks
   and helicopter sorties). Police and soldiers on duty are set by the size of the city (about one officer
@@ -265,13 +264,7 @@ Courts and pitches are marked at their real proportions (basketball keys and thr
 tennis service boxes, football penalty areas).
 Traffic drives the streets, pigeons flock in the parks, and explosions leave wrecks.
 
-**Water:** four maps are built on the water, and the dead can't swim.
-- **Seaside**: the town runs down to a seafront road and promenade, then a sandy beach with umbrellas,
-  towels and lifeguard huts, wooden piers out to sea, and boats on the water. People go down to the
-  beach.
-- **River City**: a wide river runs right across town between paved embankments lined with trees,
-  with a bridge (and footpaths) wherever a street reaches it. Boats pass under the bridges. Hold the
-  bridges and you hold the river.
+**Water:** the dead can't swim. (Older saves can still be on these two maps.)
 - **Lakeside**: a big lake in the middle of town, with avenues along its shores, trees round the water,
   an island, a jetty and rowing boats.
 - **Harbour**: a working port along the sea: a concrete quay, docks reaching out into the harbour with
@@ -420,6 +413,10 @@ of the highway, towns of different shapes, mountains spread about with lone hill
 mounting up, and lighter running with big populations.
 
 **More police than soldiers (10.35):** the army on the map is never more than two in five of the police force.
+
+**Steadier close-ups; fewer water maps (11.4):** a frame that can't be drawn when zoomed right in is skipped
+(and the map's close-ups freed if memory runs short) instead of the game closing. Seaside, River City and Bay City
+are gone; Islands and the Archipelago are the maps on the water.
 
 **The beat, real drivers, USA only (11.3):** police on the beat walk the streets in pairs, side by side, and are
 never fetched back to the station by car for it. Every police car, army truck and ambulance on the road has a real

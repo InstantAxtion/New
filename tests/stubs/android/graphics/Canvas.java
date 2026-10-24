@@ -8,6 +8,8 @@ public class Canvas {
  public Canvas(Graphics2D g){this.g=g; g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);}
  void ap(Paint p){ g.setColor(new Color(p.color,true)); g.setStroke(new BasicStroke(p.sw,p.cap==Paint.Cap.ROUND?BasicStroke.CAP_ROUND:p.cap==Paint.Cap.SQUARE?BasicStroke.CAP_SQUARE:BasicStroke.CAP_BUTT,BasicStroke.JOIN_ROUND)); }
  void sh(Shape s,Paint p){ap(p); if(p.style==Paint.Style.FILL) g.fill(s); else g.draw(s);}
+ public int getSaveCount(){return stack.size()+1;}
+ public void restoreToCount(int n){while(stack.size()+1>n) restore();}
  public int save(){stack.push(g.getTransform()); clips.push(g.getClip()==null?new Rectangle(0,0,100000,100000):g.getClip());pstack.push(P==null?new Matrix():P);return stack.size();}
  public void concat(Matrix mm){P=mm; Matrix c=new Matrix(); c.m=mm.m.clone(); P=c;}
  public void drawPath(Path p,Paint pa){sh(p.p,pa);}

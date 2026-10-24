@@ -29,8 +29,8 @@ final class CityConfig implements OptionSet {
             "Schools, sports fields, courts and student apartments.",
             "A huge, dense skyline: towers, apartments, garages, three precincts and a base.",
             "A few lanes of cottages among fields and gardens. Help is far away.",
-            "A beach town on the sea: the promenade, sand, piers and boats, with hotels and cafés along the front.",
-            "A river runs through the middle of town. Hold the bridges: the dead can't swim.",
+            "",
+            "",
             "Homes and parks round a lake in the middle of town, with a jetty, rowing boats and an island.",
             "A working port: quays, docks, cranes, container stacks and ships, with warehouses along the water.",
             "Three island towns in the sea, joined by bridges, with a causeway to the mainland. Always one size: between Large and Massive.",
@@ -38,7 +38,7 @@ final class CityConfig implements OptionSet {
             "",
             "One big island city in the middle of the sea, with two to five smaller island towns round it, every one lived in and joined to it by a bridge, and a causeway to the mainland. Always one size.",
             "",
-            "A city wrapped round a deep bay off the sea: avenues along both shores, parks at the water's edge, a long bridge across the bay and another over its mouth, and beaches either side.",
+            "",
             "", "",
             "",
     };
@@ -242,10 +242,7 @@ final class CityConfig implements OptionSet {
 
 
     /** Water on the map: none, the sea along one side (a beach or a port), a river, or a lake. */
-    static final int W_NONE = 0, W_SEA = 1, W_RIVER = 2, W_LAKE = 3, W_HARBOUR = 4, W_ISLANDS = 5, W_REAL = 6;
-    /** (11.0) The water maps still in the game (each has the sea along the bottom as well). */
-    static final int W_BAY = 7;
-    static final int BAY = 25;
+    static final int W_NONE = 0, W_LAKE = 3, W_HARBOUR = 4, W_ISLANDS = 5, W_REAL = 6;
     /** The Islands map, and its one size (tiles across: a bit bigger than Massive). */
     static final int ISLANDS = 14, ISLANDS_TILES = 640;
     /** (10.60) The Archipelago (always one size, like Islands). */
@@ -253,11 +250,12 @@ final class CityConfig implements OptionSet {
 
     /**
      * (11.3) Maps taken out of the game altogether, code and all: Sydney, Tokyo and Paris (their countries are
-     * gone), the Garrison State, the Mountain Valley, Delta Marsh, Fjord Town and Canal City. Their numbers stay taken so the other maps keep
+     * gone), Seaside, River City, the Garrison State, the Mountain Valley, Bay City, Delta Marsh, Fjord Town and
+     * Canal City. Their numbers stay taken so the other maps keep
      * theirs; saves and city codes on them no longer load.
      */
     static boolean removed(int preset) {
-        return preset == 19 || preset == 20 || preset == 21 || preset == 22 || preset == 24 || preset == 26 || preset == 27 || preset == 28;
+        return preset == 10 || preset == 11 || preset == 25 || preset == 19 || preset == 20 || preset == 21 || preset == 22 || preset == 24 || preset == 26 || preset == 27 || preset == 28;
     }
 
     boolean archipelago() { return v[OPT_PRESET] == ARCHIPELAGO; }
@@ -284,12 +282,9 @@ final class CityConfig implements OptionSet {
     int water() {
         if (RealCities.isReal(v[OPT_PRESET])) return W_REAL;
         switch (v[OPT_PRESET]) {
-            case 10: return W_SEA;
-            case 11: return W_RIVER;
             case 12: return W_LAKE;
             case 13: return W_HARBOUR;
             case ISLANDS: case ARCHIPELAGO: return W_ISLANDS;
-            case BAY: return W_BAY;
             default: return W_NONE;
         }
     }

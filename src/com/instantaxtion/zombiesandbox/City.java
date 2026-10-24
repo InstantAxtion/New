@@ -1025,7 +1025,7 @@ final class City {
      * Water: what kind the map has (CityConfig.W_), the first row of the sea (or -1), the river's first row
      * and width (or -1), and which road and pavement tiles are bridges over it.
      */
-    int waterKind, seaY = -1, riverY0 = -1, riverRows;
+    int waterKind, seaY = -1;
     boolean[] bridge;
     private boolean lakeMade;
 
@@ -2373,9 +2373,8 @@ final class City {
             shiftX = Math.round(real.downX * w - w / 2f);
             shiftY = Math.round(real.downY * h - h / 2f);
         }
-        if (waterKind == CityConfig.W_SEA || waterKind == CityConfig.W_HARBOUR) seaY = h - Math.max(24, (int) (h * 0.18f));
+        if (waterKind == CityConfig.W_HARBOUR) seaY = h - Math.max(24, (int) (h * 0.18f));
         // ((11.0) The four new water maps have the sea along the bottom too, a little narrower.)
-        if (waterKind >= CityConfig.W_BAY) seaY = h - Math.max(20, (int) (h * 0.12f));
         if (waterKind == CityConfig.W_ISLANDS) islandLayout();
         // Where the town is: the whole map, or a core surrounded by countryside.
         float core = cfg.coreFraction();
@@ -2456,12 +2455,8 @@ final class City {
             realLayout();
         } else if (waterKind == CityConfig.W_ISLANDS) {
             islands();
-        } else if (waterKind == CityConfig.W_RIVER) {
-            river(bx0, by0, bx1, by1, in);
         } else if (waterKind == CityConfig.W_LAKE) {
             lakeTown(bx0, by0, bx1, by1, in);
-        } else if (waterKind >= CityConfig.W_BAY) {
-            channelTown(bx0, by0, bx1, by1, in);
         } else if (village && m > 0) {
             villageCore(bx0, by0, bx1, by1);
         } else {
@@ -2470,7 +2465,6 @@ final class City {
         // ((11.1) Not since the thin band of country: whole corners of town left as fields undid it.)
         if (organic && cfg.civic < 27) erodeTown(bx0, by0, bx1, by1);
         if (seaY > 0) coast();
-        if (!channels.isEmpty()) finishChannels();
 
         // Out in the country, a highway runs past the town.
         if (m >= 16) highway(bx0, by0, bx1, by1);
@@ -4661,183 +4655,6 @@ final class City {
 
     // ------------------------------------------------------------------ water
 
-    /**
-     * A river across the middle of town: a pavement embankment on each bank, the water between, and a
-     * bridge wherever a street reaches it from both sides (and on the ring road), with footpaths.
-     */
-    private void river(int bx0, int by0, int bx1, int by1, int in) {
-        int th = by1 - by0;
-        riverRows = w >= 400 ? 26 : w >= 300 ? 22 : 18;
-        riverY0 = by0 + th * 2 / 5 + rnd.nextInt(Math.max(1, th / 5)) - riverRows / 2;
-        split(bx0 + in, by0 + in, bx1 - in, riverY0, 0, -1, -1);
-        split(bx0 + in, riverY0 + riverRows, bx1 - in, by1 - in, 0, -1, -1);
-        for (int y = riverY0; y < riverY0 + riverRows; y++)
-            for (int x = 0; x < w; x++) {
-                int i = y * w + x;
-                boolean above = roadDir[(riverY0 - 1) * w + x] == 1, below = roadDir[(riverY0 + riverRows) * w + x] == 1;
-                boolean ring = (x >= bx0 && x < bx0 + 3) || (x >= bx1 - 3 && x < bx1);
-                if ((above && below) || ring) {
-                    tiles[i] = ROAD;
-                    roadDir[i] = 1;
-                } else {
-                    boolean bank = y - riverY0 < 2 || riverY0 + riverRows - 1 - y < 2;
-                    tiles[i] = bank ? SIDEWALK : WATER;
-                    roadDir[i] = 0;
-                }
-            }
-        ensureCrossings(bx0, bx1, riverY0, riverRows);
-        int wy0 = riverY0 + 2, wy1 = riverY0 + riverRows - 2;
-        bridge = new boolean[w * h];
-        for (int y = wy0; y < wy1; y++)
-            for (int x = 1; x < w - 1; x++) {
-                int i = y * w + x;
-                if (tiles[i] != ROAD) continue;
-                bridge[i] = true;
-                // A footpath along each side of the bridge.
-                for (int dx = -1; dx <= 1; dx += 2)
-                    if (tiles[i + dx] == WATER) {
-                        tiles[i + dx] = SIDEWALK;
-                        bridge[i + dx] = true;
-                    }
-            }
-        // Trees along the embankments, clear of the bridges.
-        for (int y : new int[]{riverY0 + 1, riverY0 + riverRows - 2})
-            for (int x = 2; x < w - 2; x += 4) {
-                boolean clear = true;
-                for (int dx = -2; dx <= 2; dx++) if (tiles[y * w + x + dx] != SIDEWALK) clear = false;
-                if (clear) tiles[y * w + x] = TREE;
-            }
-        // Boats on the river.
-        for (int x = 8; x < w - 8; x += 22 + rnd.nextInt(30)) {
-            float bx = x * T, by = (wy0 + 1 + rnd.nextInt(Math.max(1, wy1 - wy0 - 2))) * T;
-            if (tiles[(int) (by / T) * w + x] != WATER || tiles[(int) (by / T) * w + x + 2] != WATER) continue;
-            addDecor(D_BOAT, bx, by, bx + 30, by + 10, rnd.nextInt(3));
-        }
-    }
-
-    /**
-     * (11.0) Water through the town, for the Bay City, Delta Marsh, Fjord Town and Canal City: each piece is
-     * {x0, y0, x1, y1, vertical, shore tile, shore width}, the whole width of it from bank to bank. A street runs
-     * along each bank (the quays), bridges cross it every so often, and the town is laid out in the land between.
-     */
-    final List<int[]> channels = new ArrayList<int[]>();
-
-    /** A piece of water (see {@link #channels}) with its quays along both banks. */
-    private void channel(int x0, int y0, int x1, int y1, boolean vertical, int shore, int shoreW) {
-        channels.add(new int[]{x0, y0, x1, y1, vertical ? 1 : 0, shore, shoreW, 0});
-        if (vertical) {
-            carve(new Street(x0 - 3, y0, x0, y1, true, true));
-            carve(new Street(x1, y0, x1 + 3, y1, true, true));
-        } else {
-            carve(new Street(x0, y0 - 3, x1, y0, false, true));
-            carve(new Street(x0, y1, x1, y1 + 3, false, true));
-        }
-    }
-
-    /** Bridges across a piece of water, from quay to quay, about every so many tiles (at least one). */
-    private void bridges(int[] c, int every) {
-        boolean vertical = c[4] == 1;
-        int lo = vertical ? c[1] : c[0], hi = vertical ? c[3] : c[2];
-        int n = Math.max(1, (hi - lo) / every);
-        // The streets that come down to each bank, by where they cross it (doubled centre), the way across.
-        List<Integer> nearSide = new ArrayList<Integer>(), farSide = new ArrayList<Integer>();
-        for (Street st : streets) {
-            if (st.vertical == vertical) continue;
-            int cc = vertical ? st.y0 + st.y1 : st.x0 + st.x1;
-            if (cc / 2 < lo + 4 || cc / 2 > hi - 5) continue;
-            if (vertical ? st.x1 == c[0] - 3 : st.y1 == c[1] - 3) nearSide.add(cc);
-            if (vertical ? st.x0 == c[2] + 3 : st.y0 == c[3] + 3) farSide.add(cc);
-        }
-        for (int k = 0; k < n; k++) {
-            int at = lo + (hi - lo) * (2 * k + 1) / (2 * n) - 1 + rnd.nextInt(5) - 2;
-            at = Math.max(lo + 4, Math.min(hi - 7, at));
-            // The street nearest the even spacing: one met on the far bank too, if one's within reach.
-            int pick = Integer.MIN_VALUE;
-            float bd = Math.max(every * 0.4f, 12);
-            for (int s = 0; s < 2 && pick == Integer.MIN_VALUE; s++)
-                for (int cc : nearSide) {
-                    // ((Not right beside a crossing already there: another canal's quay, or a bridge just built.))
-                    if (crossingNear(c, cc / 2 - 1, 8)) continue;
-                    boolean met = false;
-                    for (int o : farSide) if (Math.abs(o - cc) <= 2) met = true;
-                    if (s == 0 && !met) continue;
-                    float d = Math.abs(cc / 2f - (at + 1.5f));
-                    if (d < bd) {
-                        bd = d;
-                        pick = cc;
-                    }
-                }
-            if (pick != Integer.MIN_VALUE) at = pick / 2 - 1;
-            else if (crossingNear(c, at, 8)) continue;
-            if (vertical) carve(new Street(c[0], at, c[2], at + 3, false, k == n / 2));
-            else carve(new Street(at, c[1], at + 3, c[3], true, k == n / 2));
-        }
-    }
-
-    /** (11.1) A road already across this water within reach of the band from 'at' (three wide). */
-    private boolean crossingNear(int[] c, int at, int reach) {
-        boolean vertical = c[4] == 1;
-        int mid = vertical ? (c[0] + c[2]) / 2 : (c[1] + c[3]) / 2;
-        for (int k = at - reach; k < at + 3 + reach; k++) {
-            int x = vertical ? mid : k, y = vertical ? k : mid;
-            if (x >= 0 && y >= 0 && x < w && y < h && tiles[y * w + x] == ROAD) return true;
-        }
-        return false;
-    }
-
-    /** The town round its water: the water and its quays first, then the land between laid out in streets. */
-    private void channelTown(int bx0, int by0, int bx1, int by1, int in) {
-        int tw = bx1 - bx0, th = by1 - by0;
-        List<int[]> cells = new ArrayList<int[]>();
-        if (waterKind == CityConfig.W_BAY) {
-            // A deep wide bay off the sea, with a street round its head.
-            int ww = Math.round(tw * (0.3f + rnd.nextFloat() * 0.06f));
-            int cx = bx0 + tw / 2 + Math.round((rnd.nextFloat() - 0.5f) * tw * 0.12f);
-            int x0 = cx - ww / 2, x1 = x0 + ww;
-            int y0 = by0 + Math.round(th * (0.36f + rnd.nextFloat() * 0.08f));
-            channel(x0, y0, x1, by1, true, GRASS, 4);
-            carve(new Street(x0 - 3, y0 - 3, x1 + 3, y0, false, true));
-            channels.get(0)[7] = 1000;
-            cells.add(new int[]{bx0 + in, by0 + in, bx1 - in, y0 - 3});
-            cells.add(new int[]{bx0 + in, y0 - 3, x0 - 3, by1 - in});
-            cells.add(new int[]{x1 + 3, y0 - 3, bx1 - in, by1 - in});
-        }
-        for (int[] c : cells) {
-            if (c[2] - c[0] < 6 || c[3] - c[1] < 6) continue;
-            split(c[0], c[1], c[2], c[3], 0, -1, -1);
-        }
-        // ((11.1) The bridges once the streets are laid: each where a street comes down to the water on one bank,
-        // in line with one on the other where there is, so the street carries on across.)
-        for (int[] c : new ArrayList<int[]>(channels)) bridges(c, c[7]);
-        // The water itself: a walk along the bank, then the shore (rocks, or grass with trees), then the water.
-        double ph = rnd.nextDouble() * 10;
-        for (int[] c : channels) {
-            boolean vertical = c[4] == 1;
-            for (int y = Math.max(0, c[1]); y < Math.min(h, c[3]); y++)
-                for (int x = Math.max(0, c[0]); x < Math.min(w, c[2]); x++) {
-                    int i = y * w + x;
-                    if (tiles[i] == ROAD) continue;
-                    int along = vertical ? y : x;
-                    int dl = vertical ? x - c[0] : y - c[1], dr = vertical ? c[2] - 1 - x : c[3] - 1 - y;
-                    // (The water winds a little between its banks: the shore is wider on one side than the other.)
-                    float wob = (float) (Math.sin(along * 0.07 + ph + c[0] * 0.01) * 0.6 + Math.sin(along * 0.023 + ph * 2) * 0.4);
-                    int sl = c[6] == 0 ? 0 : Math.max(0, Math.round(c[6] * (0.5f + 0.5f * wob))), sr = c[6] == 0 ? 0 : Math.max(0, c[6] - sl + (c[6] > 2 ? 1 : 0));
-                    // (Round the head of an inlet too.)
-                    int dt = waterKind == CityConfig.W_BAY ? y - c[1] : 99;
-                    // (An inlet's head is rounded, not square.)
-                    int rr = waterKind == CityConfig.W_BAY ? (c[2] - c[0]) / 3 : 0;
-                    if (dt < rr && Math.min(dl, dr) < rr) {
-                        int inr = rr - (int) Math.round(Math.hypot(rr - dt, rr - Math.min(dl, dr)));
-                        dt = inr < 1 ? 1 : Math.min(dt, inr);
-                    }
-                    if (dl < 1 || dr < 1 || dt < 1) tiles[i] = SIDEWALK;
-                    else if (dl < 1 + sl || dr < 1 + sr || dt < 1 + c[6]) tiles[i] = (byte) (c[5] == GRASS && rnd.nextFloat() < 0.16f ? TREE : c[5]);
-                    else if (tiles[i] != WATER) tiles[i] = WATER;
-                    roadDir[i] = 0;
-                }
-        }
-    }
-
     private List<float[]> beachSpots;
 
     /**
@@ -4861,100 +4678,14 @@ final class City {
         return beachSpots;
     }
 
-    /**
-     * After the coast is in: where the water reaches the sea it runs on out under the seafront (a bridge) and
-     * through the beach or the quay; every road over water is a bridge, with a footpath each side.
-     */
-    private void finishChannels() {
-        if (bridge == null) bridge = new boolean[w * h];
-        for (int[] c : channels) {
-            if (c[4] != 1 || seaY <= 0 || c[3] < seaY) continue;
-            for (int x = c[0]; x < c[2]; x++) {
-                if (tiles[(seaY - 4) * w + x] != WATER) continue;
-                for (int y = seaY - 3; y < h; y++) {
-                    int i = y * w + x;
-                    if (y > seaY + 1 && tiles[i] == WATER) break;
-                    if (tiles[i] != ROAD) tiles[i] = WATER;
-                }
-            }
-            // (Nothing left standing in the way out: no cranes or ships or umbrellas.)
-            float wx0 = c[0] * T, wx1 = c[2] * T;
-            for (int k = decor.size() - 1; k >= 0; k--) {
-                float[] d = decor.get(k);
-                int kind = (int) d[0];
-                if ((kind == D_CRANE || kind == D_CONTAINERS || kind == D_SHIP || kind == D_UMBRELLA || kind == D_LIFEGUARD || kind == D_BOAT)
-                        && d[3] > wx0 && d[1] < wx1 && d[4] > (seaY - 4) * T) decor.remove(k);
-            }
-        }
-        for (int[] c : channels)
-            for (int y = Math.max(1, c[1]); y < Math.min(h - 1, Math.max(c[3], c[4] == 1 && seaY > 0 && c[3] >= seaY ? h - 1 : c[3])); y++)
-                for (int x = Math.max(1, c[0]); x < Math.min(w - 1, c[2]); x++) {
-                    int i = y * w + x;
-                    if (tiles[i] != ROAD) continue;
-                    // (A road over water: a tile of water under it on one side or the other.)
-                    boolean over = tiles[i - 1] == WATER || tiles[i + 1] == WATER || tiles[i - w] == WATER || tiles[i + w] == WATER || bridge[i - 1] || bridge[i - w];
-                    if (!over) continue;
-                    bridge[i] = true;
-                    int[] side = roadDir[i] == 2 ? new int[]{-w, w} : new int[]{-1, 1};
-                    for (int d : side)
-                        if (tiles[i + d] == WATER) {
-                            tiles[i + d] = SIDEWALK;
-                            bridge[i + d] = true;
-                        }
-                }
-        // Boats along the water.
-        for (int[] c : channels)
-            for (int k = 0; k < 3; k++) {
-                float bx = (c[0] + rnd.nextFloat() * (c[2] - c[0])) * T, by = (c[1] + rnd.nextFloat() * (c[3] - c[1])) * T;
-                int t = tileIndex(bx, by);
-                if (t >= 0 && tiles[t] == WATER && tiles[t + 1] == WATER && tiles[t + 2] == WATER) addDecor(D_BOAT, bx, by, bx + 22, by + 9, rnd.nextInt(3));
-            }
-    }
-
-    /**
-     * The sea along the bottom of the map: a promenade, then a sandy beach with piers, umbrellas and
-     * lifeguards (Seaside), or a concrete quay with docks, cranes, containers and ships (Harbour).
-     */
+    /** The sea along the bottom of the map (Harbour): a concrete quay with docks, cranes, containers and ships. */
     private void coast() {
-        boolean port = waterKind == CityConfig.W_HARBOUR;
         bridge = new boolean[w * h];
         fill(0, seaY, w, 2, SIDEWALK);
         int shore = seaY + 2;
         fill(0, shore, w, h - shore, WATER);
         double ph = rnd.nextDouble() * 10;
-        if (!port) {
-            int beach = w >= 400 ? 9 : 7;
-            int[] edge = new int[w];
-            for (int x = 0; x < w; x++) {
-                int depth = beach + (int) Math.round(Math.sin(x * 0.06 + ph) * 1.6 + Math.sin(x * 0.021 + ph * 2) * 1.2);
-                edge[x] = shore + depth;
-                fill(x, shore, 1, depth, SAND);
-            }
-            // Piers out to sea, with a platform at the end.
-            int piers = Math.max(1, w / 130);
-            for (int k = 0; k < piers; k++) {
-                int px = (int) (w * (k + 0.5f) / piers) + rnd.nextInt(17) - 8;
-                int len = 10 + rnd.nextInt(8);
-                int end = Math.min(h - 6, edge[px] + len);
-                fill(px, shore, 2, end - shore, PIER);
-                fill(px - 2, end, 6, 4, PIER);
-            }
-            // Umbrellas and towels on the sand, lifeguard huts, and boats out on the water.
-            for (int x = 3; x < w - 3; x++) {
-                if (rnd.nextFloat() < 0.18f) {
-                    float ux = x * T + rnd.nextFloat() * T, uy = (shore + 1 + rnd.nextFloat() * (edge[x] - shore - 2)) * T;
-                    if (tiles[(int) (uy / T) * w + x] == SAND) addDecor(D_UMBRELLA, ux - 7, uy - 7, ux + 7, uy + 7, rnd.nextInt(5));
-                }
-                if (x % 45 == 20) addDecor(D_LIFEGUARD, x * T, (edge[x] - 3) * T, (x + 2) * T, (edge[x] - 1) * T, 0);
-            }
-            for (int k = 0; k < w / 25; k++) {
-                float bx = (4 + rnd.nextInt(w - 10)) * T, by = (edge[0] + 6 + rnd.nextInt(Math.max(1, h - edge[0] - 10))) * T;
-                if (tiles[(int) (by / T) * w + (int) (bx / T)] != WATER) continue;
-                addDecor(D_BOAT, bx, by, bx + 30, by + 10, rnd.nextInt(3));
-            }
-            // People go down to the beach.
-            for (int x = 20; x < w - 20; x += 40) openAreas.add(new float[]{(x + 0.5f) * T, (shore + 3) * T, 0});
-        } else {
+        {
             // The quay, and docks reaching out into the harbour.
             int quay = 4;
             fill(0, shore, w, quay, LOT);
@@ -5053,7 +4784,7 @@ final class City {
 
     /** The colour of a tile of open water: darker the further it is from the shore. */
     private int waterColor(int x, int y) {
-        int base = waterKind == CityConfig.W_LAKE || waterKind == CityConfig.W_NONE ? 0xFF2F6E80 : waterKind == CityConfig.W_RIVER ? 0xFF2E6584 : 0xFF2A6390;
+        int base = waterKind == CityConfig.W_LAKE || waterKind == CityConfig.W_NONE ? 0xFF2F6E80 : 0xFF2A6390;
         int land = 9;
         for (int r = 1; r <= 8 && land == 9; r++)
             for (int k = -r; k <= r && land == 9; k += r)

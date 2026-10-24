@@ -5450,15 +5450,14 @@ final class World {
             }
             return;
         }
-        int n = c.waterKind == CityConfig.W_LAKE ? 3 : Math.max(2, c.w / (c.waterKind == CityConfig.W_RIVER ? 70 : 50));
+        int n = c.waterKind == CityConfig.W_LAKE ? 3 : Math.max(2, c.w / 50);
         for (int k = 0, tries = 0; k < n && tries < 400; tries++) {
             int tx = 2 + r.nextInt(c.w - 4), ty;
-            if (c.waterKind == CityConfig.W_RIVER) ty = c.riverY0 + c.riverRows / 2 - 2 + r.nextInt(5);
-            else if (c.seaY > 0) ty = c.seaY + 14 + r.nextInt(Math.max(1, c.h - c.seaY - 17));
+            if (c.seaY > 0) ty = c.seaY + 14 + r.nextInt(Math.max(1, c.h - c.seaY - 17));
             else ty = r.nextInt(c.h);
             if (ty < 0 || ty >= c.h || c.tiles[ty * c.w + tx] != City.WATER) continue;
             int kind = c.waterKind == CityConfig.W_LAKE ? 0 : c.waterKind == CityConfig.W_HARBOUR ? (r.nextBoolean() ? 3 : 1)
-                    : c.waterKind == CityConfig.W_RIVER ? (r.nextInt(3) == 0 ? 0 : 1) : 1 + r.nextInt(2);
+                    : 1 + r.nextInt(2);
             float dir = r.nextBoolean() ? 1 : -1;
             float dy = c.waterKind == CityConfig.W_LAKE ? (r.nextFloat() - 0.5f) : 0;
             float speed = kind == 0 ? 7 + r.nextFloat() * 4 : kind == 2 ? 10 + r.nextFloat() * 8 : 16 + r.nextFloat() * 14;

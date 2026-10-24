@@ -2,11 +2,16 @@ package com.instantaxtion.zombiesandbox;
 
 /** The in-game patch notes log, newest version first. */
 final class PatchNotes {
-    static final String VERSION = "11.3";
-    static final int VERSION_CODE = 105;
+    static final String VERSION = "11.4";
+    static final int VERSION_CODE = 106;
 
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
+            {
+                    "11.4  -  Steadier close-ups; fewer water maps",
+                    "Zooming right in no longer takes the game down: if a frame can't be drawn (or memory runs short close up), that frame is skipped, the map's close-ups are let go of and drawn again, and a short note says what went wrong instead of the game closing.",
+                    "Seaside, River City and Bay City are gone, code and all. The maps on the water are now Islands and the Archipelago. Saves and city codes on a removed map don't load.",
+            },
             {
                     "11.3  -  The beat, real drivers, USA only",
                     "Police on the beat walk the streets with their partner side by side: down the block, round the corner now and then, and back towards the precinct at the end of the beat, with the odd stop to look up and down the street. They aren't 'stranded' any more, so no more cars coming out to fetch officers who were only on patrol.",

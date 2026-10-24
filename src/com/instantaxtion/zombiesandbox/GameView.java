@@ -1925,7 +1925,7 @@ final class GameView extends View implements Menu.Host {
                 stroke.setStrokeWidth(1.6f);
                 c.drawLine(p.x - 4, p.y + 2, p.x + 4, p.y - 2, stroke);
                 if (p.melee == Entity.M_CROWBAR) c.drawLine(p.x + 4, p.y - 2, p.x + 5, p.y + 0.5f, stroke);
-            } else if (p.weapon == Entity.W_SHOTGUN || p.weapon == Entity.W_RIFLE || p.weapon == Entity.W_HUNTING) {
+            } else if (p.weapon == Entity.W_SHOTGUN || p.weapon == Entity.W_RIFLE || p.weapon == Entity.W_HUNTING || p.weapon >= Entity.W_SMG) {
                 stroke.setColor(0xFF1A1A1A);
                 c.drawLine(p.x - 4.5f, p.y + 1, p.x + 5, p.y - 1, stroke);
                 stroke.setColor(p.weapon == Entity.W_SHOTGUN || p.weapon == Entity.W_HUNTING ? 0xFF8A5A30 : 0xFF3A4430);
@@ -5676,7 +5676,23 @@ final class GameView extends View implements Menu.Host {
                     : soldier || marksman ? r * 0.42f : r * 0.32f);
             float muzzle = role == Entity.ROLE_SNIPER || marksman ? r * 3.3f : role == Entity.ROLE_GUNNER ? r * 2.6f
                     : role == Entity.ROLE_COMMANDER ? r * 1.8f : soldier ? r * 2.5f : r * 2f;
+            // ((11.4) Each gun its own length: a stubby submachine gun, a long marksman rifle, a wooden-stocked shotgun.)
+            int gun = e.weapon;
+            if (gun == Entity.W_SMG) muzzle = r * 1.9f;
+            else if (gun == Entity.W_CARBINE) muzzle = r * 2.4f;
+            else if (gun == Entity.W_DMR || gun == Entity.W_HUNTING) muzzle = r * 3.0f;
+            else if (gun == Entity.W_SHOTGUN) muzzle = r * 2.5f;
+            if (gun == Entity.W_SHOTGUN || gun == Entity.W_HUNTING) stroke.setColor(0xFF5A3A20);
             c.drawLine(r * 0.6f, r * 0.3f, muzzle, r * 0.3f, stroke);
+            stroke.setColor(0xFF161616);
+            if (gun == Entity.W_SMG) {
+                // The magazine sticking down.
+                fill.setColor(0xFF161616);
+                c.drawRect(r * 1.1f, r * 0.4f, r * 1.3f, r * 0.85f, fill);
+            } else if (gun == Entity.W_DMR || gun == Entity.W_HUNTING) {
+                fill.setColor(0xFF0E0E0E);
+                c.drawRect(r * 1.1f, r * 0.05f, r * 1.8f, r * 0.2f, fill);
+            }
             if (role == Entity.ROLE_GRENADIER) {
                 // The launcher slung under the barrel.
                 fill.setColor(0xFF34362A);
@@ -6784,7 +6800,7 @@ final class GameView extends View implements Menu.Host {
         }
         // Who you are, and the way out.
         String who = e.isZombie() ? Entity.NAMES[e.type] : e.type == Entity.DOG ? Names.dog(e.nameSeed) : Names.person(e.nameSeed);
-        String gun = e.canShoot() ? "   " + Entity.WEAPON_NAMES[e.gunKind()] + " " + e.ammo + " + " + e.reserve : "";
+        String gun = e.canShoot() ? "   " + e.gunName() + " " + e.ammo + " + " + e.reserve : "";
         String place = car != null ? "   Driving (" + Math.max(0, (int) (100 * car.hp / car.maxHp)) + "%)"
                 : world.controlledIn != null ? "   Inside: barricade " + (int) world.controlledIn.barricade + "%, food " + world.controlledIn.food : "";
         int group = 0;

@@ -403,6 +403,8 @@ final class Fleet {
     private int unitCount;
     /** How many patrol cars the police keep on the streets. */
     int patrolTarget;
+    /** ((11.4) Patrol cars on the streets, counted once a frame.) */
+    int patrolCount;
     private float staffCd;
 
     Fleet(World w) {
@@ -2053,6 +2055,7 @@ final class Fleet {
     }
 
     void update(float dt) {
+        patrolCount = patrolCars();
         staffPatrols(dt);
         driverTimer -= dt;
         if (driverTimer <= 0) {
@@ -4961,8 +4964,10 @@ final class Fleet {
     private void staffPatrols(float dt) {
         staffCd -= dt;
         if (staffCd > 0) return;
-        staffCd = 8;
-        if (patrolCars() >= patrolTarget) return;
+        staffCd = 4;
+        // ((11.4) In quiet times every officer who isn't on a foot beat gets a car; under attack, only up to the
+        // target, the rest guarding the precinct.)
+        if (w.alert >= 1 && patrolCount >= patrolTarget) return;
         for (City.Facility f : city.facilities) {
             if (f.kind != City.FACILITY_POLICE || w.countZombiesNear(f.x, f.y, 120) > 0) continue;
             boolean bike = city.cfg.nature() && (unitCount + 1) % 5 == 0;
@@ -4972,6 +4977,9 @@ final class Fleet {
                 Entity e = w.entities.get(i);
                 if (e.dead || e.type != Entity.COP || e.task != Dispatch.T_NONE || e.rig != null) continue;
                 if (e.role == Entity.ROLE_MARKSMAN || e.role == Entity.ROLE_K9) continue;
+                // ((11.4) The foot patrols keep walking their beat.)
+                if (World.footPatrol(e) && w.alert < 1) continue;
+                if (patrolCount >= patrolTarget && (e.role != Entity.ROLE_RIFLE || e.agency != 0)) continue;
                 if (Math.hypot(e.x - f.x, e.y - f.y) < 220) two.add(e);
             }
             if (two.size() < want) continue;

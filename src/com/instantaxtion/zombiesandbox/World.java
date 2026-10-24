@@ -591,8 +591,9 @@ final class World {
         for (City.Facility f : city.facilities) if (f.kind == City.FACILITY_POLICE) stations++;
         int[] force = forces(cfg, city);
         int cops = force[0], soldiers = force[1], satEach = force[2];
-        // Most officers are out in patrol cars, two to a car; the rest are at their precinct.
-        int cars = stations > 0 ? Math.max(1, (int) (cops * 0.65f / 2)) : 0;
+        // Most officers are out in patrol cars, two to a car ((11.4) about five in six of them); the rest are at their
+        // precinct.
+        int cars = stations > 0 ? Math.max(1, (int) (cops * PATROL_SHARE / 2)) : 0;
         fleet.patrolTarget = cars;
         int made = 0;
         City.Facility[] precincts = new City.Facility[Math.max(1, stations)];
@@ -1212,6 +1213,12 @@ final class World {
         if (type == Entity.COP || type == Entity.SOLDIER) e.hp *= ARMED_HP;
         e.maxHp = e.hp;
         e.ammo = e.magSize;
+        // ((11.4) Not every patrol officer carries the same: some have the shotgun from the car, some the patrol carbine.)
+        if (type == Entity.COP) {
+            int pick = (e.nameSeed >>> 3) % 8;
+            if (pick == 0) issue(e, Entity.W_SHOTGUN);
+            else if (pick == 1) issue(e, Entity.W_CARBINE);
+        }
         e.flank = (rnd.nextFloat() - 0.5f) * 1.8f;
         return e;
     }
@@ -1221,11 +1228,7 @@ final class World {
         Entity e = spawn(Entity.COP, x, y);
         if (e == null) return null;
         if (role == Entity.ROLE_RIOT) {
-            e.role = Entity.ROLE_RIOT;
-            e.hp = e.maxHp = 90;
-            e.speed = 18;
-            e.runSpeed = 32;
-            e.mass = 1.4f;
+            applyRole(e, Entity.ROLE_RIOT);
         } else if (role == Entity.ROLE_SWAT || role == Entity.ROLE_MARKSMAN) {
             applyRole(e, role);
         } else if (role == Entity.ROLE_SAR) {
@@ -1369,6 +1372,15 @@ final class World {
                 break;
         }
         e.ammo = e.magSize;
+        // ((11.4) Each kind of unit carries its own gun.)
+        switch (role) {
+            case Entity.ROLE_RIOT: issue(e, Entity.W_SHOTGUN); break;
+            case Entity.ROLE_SWAT: issue(e, (e.nameSeed & 1) == 0 ? Entity.W_SMG : Entity.W_CARBINE); break;
+            case Entity.ROLE_RECON: issue(e, Entity.W_CARBINE); break;
+            case Entity.ROLE_MARINE: if (e.member % 4 == 2) issue(e, Entity.W_DMR); else e.weapon = Entity.W_STD; break;
+            case Entity.ROLE_GUARD: if (e.member % 4 == 3) issue(e, Entity.W_CARBINE); else e.weapon = Entity.W_STD; break;
+            default: e.weapon = Entity.W_STD; break;
+        }
     }
 
     /**
@@ -1383,6 +1395,9 @@ final class World {
             e.body = 0xFF1C2638;
             e.hp = e.maxHp = Math.max(e.maxHp, 70);
         } else e.body = agency == 1 || city.country.ruralShirt == 0 ? city.country.hpShirt : city.country.ruralShirt;
+        // ((11.4) Troopers keep a carbine in the car, deputies a shotgun, the feds submachine guns.)
+        int gun = agency == 1 ? Entity.W_CARBINE : agency == 2 ? Entity.W_SHOTGUN : agency == 4 ? Entity.W_SMG : Entity.W_STD;
+        if (gun != Entity.W_STD && e.type == Entity.COP && e.role != Entity.ROLE_SWAT && e.role != Entity.ROLE_MARKSMAN) issue(e, gun);
     }
 
     void reinforce(Entity e) {
@@ -1394,6 +1409,9 @@ final class World {
 
     /** Full spare ammo for a unit's weapon. */
     static int fullReserve(Entity e) {
+        // ((11.4) Their own gun's rounds, where it isn't the usual.)
+        int spare = spareFor(e.weapon);
+        if (spare >= 0 && (e.type == Entity.COP || e.type == Entity.SOLDIER)) return spare;
         if (e.type != Entity.SOLDIER)
             return e.role == Entity.ROLE_SWAT ? 150 : e.role == Entity.ROLE_MARKSMAN ? 40 : e.type == Entity.COP ? 45 : 48;
         switch (e.role) {
@@ -1449,7 +1467,9 @@ final class World {
         fleet.stationHelis();
         int cops = 0;
         for (Entity e : entities) if (!e.dead && e.type == Entity.COP) cops++;
-        fleet.patrolTarget = Math.max(1, (int) (cops * 0.6f / 2));
+        // ((11.4) Counting those aboard the patrol cars too.)
+        for (Fleet.Vehicle v : fleet.vehicles) if (v.patrol && v.agency == 0) cops += v.crew.size();
+        fleet.patrolTarget = Math.max(1, (int) (cops * PATROL_SHARE / 2));
         fleet.spawnTraffic(fleet.trafficTarget);
         buildHash();
         city.computeFields(entities);
@@ -2089,6 +2109,9 @@ final class World {
             case Entity.W_SHOTGUN: return 245;
             case Entity.W_RIFLE: return 265;
             case Entity.W_HUNTING: return 285;
+            case Entity.W_SMG: return 200;
+            case Entity.W_CARBINE: return 240;
+            case Entity.W_DMR: return 290;
             default: return e.type == Entity.SOLDIER ? 255 : e.type == Entity.COP ? 205 : 190;
         }
     }
@@ -3173,7 +3196,34 @@ final class World {
     // ------------------------------------------------------------------ weapons
 
     static int magFor(int kind) {
-        return kind == Entity.W_SHOTGUN ? 6 : kind == Entity.W_RIFLE ? 30 : kind == Entity.W_HUNTING ? 5 : kind == Entity.W_REVOLVER ? 6 : 12;
+        switch (kind) {
+            case Entity.W_SHOTGUN: return 6;
+            case Entity.W_RIFLE: case Entity.W_SMG: case Entity.W_CARBINE: return 30;
+            case Entity.W_HUNTING: return 5;
+            case Entity.W_REVOLVER: return 6;
+            case Entity.W_DMR: return 20;
+            default: return 12;
+        }
+    }
+
+    /** (11.4) The rounds carried for a gun beyond the one in it. */
+    static int spareFor(int kind) {
+        switch (kind) {
+            case Entity.W_SHOTGUN: return 30;
+            case Entity.W_SMG: case Entity.W_CARBINE: return 120;
+            case Entity.W_DMR: return 80;
+            case Entity.W_HUNTING: return 25;
+            default: return -1;
+        }
+    }
+
+    /** (11.4) Issues an officer or soldier their own gun, full and with the spare rounds that go with it. */
+    void issue(Entity e, int kind) {
+        e.weapon = kind;
+        e.magSize = magFor(kind);
+        e.ammo = e.magSize;
+        int spare = spareFor(kind);
+        if (spare >= 0) e.reserve = spare;
     }
 
     /** Puts a particular gun in someone's hands. */
@@ -7096,6 +7146,14 @@ final class World {
         float range = soldier ? (e.role == Entity.ROLE_SNIPER ? 380 : e.role == Entity.ROLE_COMMANDER ? 180
                 : e.role == Entity.ROLE_CORPSMAN ? 200 : 230)
                 : e.role == Entity.ROLE_SWAT ? 210 : e.role == Entity.ROLE_MARKSMAN ? 320 : 160;
+        // ((11.4) How far they'll take a shot depends on the gun too.)
+        switch (e.weapon) {
+            case Entity.W_SHOTGUN: range = Math.min(range, 130); break;
+            case Entity.W_SMG: range = Math.min(range, 170); break;
+            case Entity.W_CARBINE: range = Math.max(range, 220); break;
+            case Entity.W_HUNTING: range = Math.max(range, 280); break;
+            case Entity.W_DMR: range = Math.max(range, 300); break;
+        }
         if (e.role == Entity.ROLE_COMMANDER && soldier) command(e, dt);
         // The rescue team brings people in to the helicopter.
         if (e.role == Entity.ROLE_SAR && e.task == Dispatch.T_RESCUE && rescuer(e, dt)) return;
@@ -7627,6 +7685,14 @@ final class World {
         wander(e, e.speed * 0.6f);
     }
 
+    /** ((11.4) The share of officers out in patrol cars.) */
+    static final float PATROL_SHARE = 0.85f;
+
+    /** ((11.4) One pair of officers in four walks a beat; the rest patrol by car.) */
+    static boolean footPatrol(Entity e) {
+        return (e.callsign / 2) % 4 == 0;
+    }
+
     /**
      * (11.1) A police officer's beat: out of the precinct in pairs, along the streets round it from one spot to
      * the next, a few moments at each, then on. With the city under attack it's a tighter beat round the precinct,
@@ -7636,6 +7702,17 @@ final class World {
     private boolean policeBeat(Entity e, float dt) {
         City.Facility st = city.nearestFacility(City.FACILITY_POLICE, e.x, e.y);
         if (st == null) return false;
+        // ((11.4) Mostly car patrols: only one pair in four walks a beat. The rest head back in to the precinct to
+        // crew a car (see Fleet.staffPatrols).)
+        if (!footPatrol(e) && alert < 1 && e.agency == 0 && e.role == Entity.ROLE_RIFLE) {
+            float gx = st.gateX > 0 ? st.gateX : st.x, gy = st.gateY > 0 ? st.gateY : st.y;
+            float bx = gx - e.x, by = gy - e.y;
+            e.dutyFor = 0;
+            e.dutyHx = e.dutyHy = 0;
+            if (bx * bx + by * by > 40 * 40) walkToSpot(e, gx, gy, e.speed);
+            else steer(e, 0, 0, 0);
+            return true;
+        }
         float reach = alert >= 1 ? 320 : 760;
         // ((11.2) Partners: the one with the higher callsign keeps to the other's side, a step behind.)
         Entity mate = beatMate(e, st);
@@ -7791,7 +7868,7 @@ final class World {
         for (int i = 0, n = entities.size(); i < n; i++) {
             Entity o = entities.get(i);
             if (o == e || o.dead || o.type != Entity.COP || o.beatMate != null || o.task != Dispatch.T_NONE || o.rig != null || o.agency != e.agency
-                    || o.role != e.role) continue;
+                    || o.role != e.role || footPatrol(o) != footPatrol(e)) continue;
             float d = (o.x - e.x) * (o.x - e.x) + (o.y - e.y) * (o.y - e.y);
             if (d < bd && city.nearestFacility(City.FACILITY_POLICE, o.x, o.y) == st) {
                 bd = d;
@@ -9152,6 +9229,22 @@ final class World {
             e.cooldown = 0.7f;
             dmg = 18;
             accuracy = 0.68f;
+        } else if (e.weapon == Entity.W_SMG) {
+            // ((11.4) A submachine gun: quick four-round bursts of pistol rounds, best up close.)
+            e.burst++;
+            e.cooldown = e.burst % 4 == 0 ? 0.4f : 0.08f;
+            dmg = 9;
+            accuracy = d < 90 ? 0.66f : 0.5f;
+        } else if (e.weapon == Entity.W_CARBINE) {
+            // ((11.4) A carbine: steady aimed shots, further and harder than a pistol.)
+            e.cooldown = 0.3f;
+            dmg = 15;
+            accuracy = 0.72f;
+        } else if (e.weapon == Entity.W_DMR) {
+            // ((11.4) A marksman rifle: a scoped semi-automatic, between a rifle and a sniper's.)
+            e.cooldown = 0.9f;
+            dmg = 40;
+            accuracy = 0.9f;
         }
         if (e.weapon == Entity.W_SHOTGUN && d < 60) pellets(e, t, dmg);
         // Soldiers near their commander fight better.
@@ -9177,7 +9270,7 @@ final class World {
         float ca = (float) Math.cos(e.angle), sa = (float) Math.sin(e.angle);
         float mx = e.x + ca * e.radius * (soldier ? 2.5f : 2f) - sa * e.radius * 0.3f;
         float my = e.y + sa * e.radius * (soldier ? 2.5f : 2f) + ca * e.radius * 0.3f;
-        boolean scoped = e.role == Entity.ROLE_SNIPER || e.role == Entity.ROLE_MARKSMAN;
+        boolean scoped = e.role == Entity.ROLE_SNIPER || e.role == Entity.ROLE_MARKSMAN || e.weapon == Entity.W_DMR;
         float hit = accuracy * (1 - (scoped ? 0.1f : 0.4f) * d / range) + (t.type == Entity.BRUTE ? 0.1f : 0);
         if (t.type == Entity.CRAWLER) hit *= 0.6f;
         if (rnd.nextFloat() < hit) {
@@ -9229,7 +9322,8 @@ final class World {
             tracer(mx, my, ex, ey);
         }
         particle(mx, my, 0, 0, 0.06f, soldier ? 3.2f : 2.6f, 0xFFFFE9A0, P_FLASH);
-        int gunSound = e.weapon == Entity.W_SHOTGUN ? Sfx.SHOTGUN : e.weapon == Entity.W_HUNTING ? Sfx.HUNTING : e.weapon == Entity.W_REVOLVER ? Sfx.REVOLVER : -1;
+        int gunSound = e.weapon == Entity.W_SHOTGUN ? Sfx.SHOTGUN : e.weapon == Entity.W_HUNTING ? Sfx.HUNTING : e.weapon == Entity.W_REVOLVER ? Sfx.REVOLVER
+                : e.weapon == Entity.W_SMG || e.weapon == Entity.W_CARBINE ? Sfx.RIFLE : e.weapon == Entity.W_DMR ? Sfx.SNIPER : -1;
         if (gunSound >= 0) emit(gunSound, e.x, e.y);
         else emit(e.role == Entity.ROLE_MARKSMAN ? Sfx.SNIPER : !soldier || e.role == Entity.ROLE_COMMANDER ? Sfx.PISTOL : e.role == Entity.ROLE_SNIPER ? Sfx.SNIPER
                 : e.role == Entity.ROLE_GUNNER ? Sfx.MG : Sfx.RIFLE, e.x, e.y);
@@ -11022,6 +11116,8 @@ final class World {
     void makeRanger(Entity e) {
         e.agency = 3;
         e.body = RANGER_SHIRT;
+        // ((11.4) Rangers carry a hunting rifle.)
+        if (e.type == Entity.COP) issue(e, Entity.W_HUNTING);
     }
 
     private void makeLookout(Entity e, int k) {

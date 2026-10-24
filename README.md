@@ -414,9 +414,12 @@ mounting up, and lighter running with big populations.
 
 **More police than soldiers (10.35):** the army on the map is never more than two in five of the police force.
 
-**Steadier close-ups; fewer water maps (11.4):** a frame that can't be drawn when zoomed right in is skipped
+**Steadier close-ups; fewer water maps; more guns; car patrols (11.4):** a frame that can't be drawn when zoomed right in is skipped
 (and the map's close-ups freed if memory runs short) instead of the game closing. Seaside, River City and Bay City
-are gone; Islands and the Archipelago are the maps on the water.
+are gone; Islands and the Archipelago are the maps on the water. New guns too: submachine guns, carbines and
+marksman rifles, with each kind of unit carrying its own (SWAT, riot officers, troopers, deputies, federal agents,
+rangers, recon, marines, guardsmen and some patrol officers), each firing, sounding and looking its own way. And
+police patrol mostly by car: one pair in four walks a beat, the rest take a car from the precinct.
 
 **The beat, real drivers, USA only (11.3):** police on the beat walk the streets in pairs, side by side, and are
 never fetched back to the station by car for it. Every police car, army truck and ambulance on the road has a real

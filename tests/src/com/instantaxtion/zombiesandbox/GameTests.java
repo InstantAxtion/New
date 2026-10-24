@@ -392,11 +392,27 @@ public final class GameTests {
                 // (An unprepared city has only half the spare rounds.)
                 boolean half = w.readiness == 1;
                 for (Entity e : w.entities) {
-                    if (e.type == Entity.COP && e.role == 0 && e.agency == 0)
+                    if (e.type == Entity.COP && e.role == 0 && e.agency == 0 && e.weapon == Entity.W_STD)
                         check(e.ammo + e.reserve == (half ? 15 + 22 : 60), "an officer carries 60 rounds (" + (e.ammo + e.reserve) + ")");
                     if (e.type == Entity.SOLDIER && e.role == Entity.ROLE_RIFLE)
                         check(e.ammo + e.reserve == (half ? 30 + 90 : 210), "a soldier carries 210 rounds (" + (e.ammo + e.reserve) + ")");
                 }
+                // ((11.4) Different units carry different guns: patrol officers with shotguns and carbines among them,
+                // SWAT with submachine guns or carbines, each named on the card.)
+                java.util.List<Entity> police = new java.util.ArrayList<Entity>();
+                for (Entity e : w.entities) if (e.type == Entity.COP) police.add(e);
+                for (Fleet.Vehicle v : w.fleet.vehicles) for (Entity e : v.crew) if (e.type == Entity.COP) police.add(e);
+                java.util.Set<Integer> guns = new java.util.HashSet<Integer>();
+                for (Entity e : police) if (e.role == 0 && e.agency == 0) guns.add(e.gunKind());
+                check(guns.contains(Entity.W_PISTOL) && guns.contains(Entity.W_SHOTGUN) && guns.contains(Entity.W_CARBINE),
+                        "patrol officers carry pistols, shotguns and carbines " + guns);
+                Entity swat = w.spawnCop(Entity.ROLE_SWAT, police.get(0).x, police.get(0).y);
+                check(swat != null && (swat.weapon == Entity.W_SMG || swat.weapon == Entity.W_CARBINE) && swat.ammo == 30,
+                        "SWAT carry a submachine gun or a carbine");
+                Entity riot = w.spawnCop(Entity.ROLE_RIOT, police.get(0).x, police.get(0).y);
+                check(riot != null && riot.weapon == Entity.W_SHOTGUN && riot.gunName().equals("Shotgun"), "riot officers carry a shotgun");
+                for (Entity e : w.entities)
+                    if (e.type == Entity.SOLDIER && e.role == Entity.ROLE_GUNNER) check(e.gunName().equals("Machine gun"), "a gunner's machine gun is named");
                 // Two minutes into a busy outbreak, hardly anyone has run dry.
                 for (int f = 0; f < 30 * 120; f++) w.update(1 / 30f);
                 int armed = 0, dry = 0;
@@ -3412,13 +3428,16 @@ public final class GameTests {
                 for (int k = 0; k < 2; k++) {
                     float[] q = w.city.findWalkable(car.x + 40 + k * 20, car.y + 30);
                     Entity e = q == null ? null : w.spawnCop(0, q[0], q[1]);
+                    // ((11.4) A pair on a foot beat: the rest go back to the precinct for a car of their own.)
+                    if (e != null) e.callsign = 8 + k;
                     if (e != null) cops.add(e);
                 }
                 check(!cops.isEmpty(), "officers on foot near it");
                 boolean taken = false;
                 for (int f = 0; f < 30 * 40 && !taken; f++) {
                     w.update(1 / 30f);
-                    for (Entity e : cops) if (car.crew.contains(e)) taken = true;
+                    // ((11.4) Or other officers on their way back to the precinct for a car: they want one too.)
+                    for (Entity e : car.crew) if (e.type == Entity.COP) taken = true;
                 }
                 check(taken, "they take the car (state " + car.state + ", crew " + car.crew.size() + ")");
                 // Bus and train: once the news breaks, people wait at the stops and on the platform, and get out of the

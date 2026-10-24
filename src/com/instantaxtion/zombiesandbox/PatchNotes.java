@@ -8,9 +8,11 @@ final class PatchNotes {
     /** Each entry: a heading, then one line per change. */
     static final String[][] NOTES = {
             {
-                    "11.4  -  Steadier close-ups; fewer water maps",
+                    "11.4  -  Steadier close-ups; fewer water maps; more guns; car patrols",
                     "Zooming right in no longer takes the game down: if a frame can't be drawn (or memory runs short close up), that frame is skipped, the map's close-ups are let go of and drawn again, and a short note says what went wrong instead of the game closing.",
                     "Seaside, River City and Bay City are gone, code and all. The maps on the water are now Islands and the Archipelago. Saves and city codes on a removed map don't load.",
+                    "New guns: submachine guns, carbines and marksman rifles. SWAT carry a submachine gun or a carbine, riot officers a shotgun, highway patrol troopers a carbine, sheriff's deputies a shotgun, federal agents submachine guns, rangers a hunting rifle, recon scouts carbines, and some marines and guardsmen a marksman rifle or carbine. About one patrol officer in four has the car's shotgun or patrol carbine instead of a pistol. Each gun fires, sounds, reaches and looks its own way, and a person's card names it (the soldiers' machine guns and sniper rifles too).",
+                    "Police patrol mostly by car now: only one pair of officers in four walks a beat, and the rest take a car from the precinct as soon as they're free. Under attack they still guard the precinct as before.",
             },
             {
                     "11.3  -  The beat, real drivers, USA only",

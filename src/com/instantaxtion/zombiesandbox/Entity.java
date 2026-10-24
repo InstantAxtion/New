@@ -230,13 +230,33 @@ final class Entity {
     /** The gun they carry if it isn't their standard issue (pistol, shotgun or rifle), and a bat or axe. */
     int weapon, melee;
     static final int W_STD = 0, W_PISTOL = 1, W_SHOTGUN = 2, W_RIFLE = 3, W_HUNTING = 4, W_REVOLVER = 5;
+    /** (11.4) A submachine gun (SWAT, the feds), a carbine (troopers, recon, some patrol officers), a marksman rifle. */
+    static final int W_SMG = 6, W_CARBINE = 7, W_DMR = 8;
     static final int M_NONE = 0, M_BAT = 1, M_AXE = 2, M_MACHETE = 3, M_CROWBAR = 4;
-    static final String[] WEAPON_NAMES = {"", "Pistol", "Shotgun", "Rifle", "Hunting rifle", "Revolver"};
+    static final String[] WEAPON_NAMES = {"", "Pistol", "Shotgun", "Rifle", "Hunting rifle", "Revolver", "Submachine gun", "Carbine",
+            "Marksman rifle"};
     static final String[] MELEE_NAMES = {"", "Bat", "Axe", "Machete", "Crowbar"};
 
     /** The kind of gun in their hands. */
     int gunKind() {
         return weapon != W_STD ? weapon : type == SOLDIER ? W_RIFLE : W_PISTOL;
+    }
+
+    /** (11.4) What the gun in their hands is called, the specialists' own included. */
+    String gunName() {
+        if (weapon == W_STD) {
+            if (type == SOLDIER) {
+                switch (role) {
+                    case ROLE_GUNNER: return "Machine gun";
+                    case ROLE_SNIPER: return "Sniper rifle";
+                    case ROLE_GRENADIER: return "Rifle and grenade launcher";
+                    case ROLE_COMMANDER: return "Pistol";
+                    default: return "Assault rifle";
+                }
+            }
+            if (role == ROLE_MARKSMAN) return "Scoped rifle";
+        }
+        return WEAPON_NAMES[gunKind()];
     }
     /** The last place this one went on an errand (so they go somewhere else next). */
     City.Building lastErrand;
